@@ -23,7 +23,7 @@ interface Props {
   onEditarOperacion?: (opId: string) => void;
 }
 
-const fmt = (n: number) => `$${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`;
+const fmt = (n: number) => `$${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; // ✅ V00274: 2 decimales
 
 export const HiloModal: React.FC<Props> = ({ tipo, pago, facturaId, onClose, onEditarOperacion }) => {
   const [facs, setFacs] = useState<FacHilo[] | null>(null);

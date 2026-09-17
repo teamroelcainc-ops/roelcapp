@@ -86,7 +86,7 @@ interface PagoDoc {
 
 // ✅ V00126: sin redondeo — hasta 6 decimales tal cual resultan del cálculo.
 const money = (n: number, moneda = '') =>
-  `$${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })}${moneda ? ` ${moneda}` : ''}`;
+  `$${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${moneda ? ` ${moneda}` : ''}`; // ✅ V00274: 2 decimales
 
 // ✅ FIX DUPLICADOS FANTASMA: las facturas guardan el nombre de la entidad
 //   como texto y algunas traen diferencias invisibles (espacio al final,

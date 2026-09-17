@@ -350,3 +350,13 @@
 .tc-doc-firmado--falta { border-color: #d29922; background: rgba(210, 153, 34, 0.12); animation: tcDocPulso 2s ease-in-out infinite; }
 @keyframes tcDocPulso { 0%, 100% { box-shadow: 0 0 0 0 rgba(210, 153, 34, 0.25); } 50% { box-shadow: 0 0 0 4px rgba(210, 153, 34, 0.0); } }
 .tc-input-doc-oculto { display: none; }
+
+/* ✅ V00274: tarifario firmado en el formulario y la ficha */
+.tc-campo-docfirmado { grid-column: 1 / -1; }
+.tc-docfirmado-linea { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tc-docfirmado-nombre { font-size: 0.82rem; color: #c9d1d9; }
+.tc-docfirmado-nombre--vacio { color: #8b949e; font-style: italic; }
+.tc-docfirmado-ver { background: none; border: 1px solid #238636; border-radius: 6px; color: #3fb950; padding: 4px 10px; font-size: 0.8rem; cursor: pointer; }
+.tc-docfirmado-ver:hover { background: rgba(35, 134, 54, 0.12); }
+.tc-docfirmado-btn { cursor: pointer; }
+.tc-doc-firmado-ficha { cursor: pointer; }

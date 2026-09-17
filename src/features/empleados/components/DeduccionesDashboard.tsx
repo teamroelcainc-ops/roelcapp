@@ -88,10 +88,12 @@ export const DeduccionesDashboard = () => {
     const num = parseFloat(monto || 0);
     return isNaN(num) ? '$ 0.00' : `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
-  // $ con 4 decimales (Fonacot, préstamos y ahorros), como en AppSheet.
+  // ✅ V00274: regla nueva — TODOS los montos a 2 decimales (antes Fonacot/
+  //   préstamos/ahorros iban a 4 como en AppSheet); solo el tipo de cambio
+  //   puede llevar hasta 4.
   const formatoMoneda4 = (monto: any) => {
     const num = parseFloat(monto || 0);
-    return isNaN(num) ? '$ 0.0000' : `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
+    return isNaN(num) ? '$ 0.00' : `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
   // ✅ (ISR = 7.5%) El ISR es un PORCENTAJE, no un monto ni un factor.
   //   Normaliza cualquier representación heredada al porcentaje real:

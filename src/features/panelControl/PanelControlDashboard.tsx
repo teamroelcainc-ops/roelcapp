@@ -18,7 +18,7 @@ import './PanelControlDashboard.css';
 interface Metas { opsMes: number; opsAnio: number; factMes: number; factAnio: number; utilMes: number; utilAnio: number; }
 const METAS_VACIAS: Metas = { opsMes: 0, opsAnio: 0, factMes: 0, factAnio: 0, utilMes: 0, utilAnio: 0 };
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-const fmtMon = (n: number) => `$${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+const fmtMon = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; // ✅ V00274: 2 decimales
 // Etiqueta compacta para que quepa sobre la barra: $2.9M, $210K, 75
 const fmtCompacto = (n: number, dinero?: boolean) => {
   const abs = Math.abs(n);

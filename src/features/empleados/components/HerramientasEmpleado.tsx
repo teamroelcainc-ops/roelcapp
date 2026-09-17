@@ -179,7 +179,7 @@ export const HerramientasEmpleado: React.FC<Props> = ({ empleadoId }) => {
                       {h.NuevoUsado}
                     </span>
                   </td>
-                  <td className="he-x13">${Number(h.VALOR || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
+                  <td className="he-x13">${Number(h.VALOR || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   <td className="he-x15">
                     {h.DOCUMENTO ? <a className="he-x16" href={h.DOCUMENTO} target="_blank" rel="noopener noreferrer">Ver Archivo ↗</a> : <span className="he-x17">Sin adjunto</span>}
                   </td>

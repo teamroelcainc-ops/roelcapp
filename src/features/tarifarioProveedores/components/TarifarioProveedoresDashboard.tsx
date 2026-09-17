@@ -323,6 +323,7 @@ export function TarifarioProveedoresDashboard() {
 
   const limpiarCaptura = () => {
     setEditandoId('');
+    setDocNuevoFile(null); // ✅ V00274
     setFechaVencimiento(`${hoyLocalISO().slice(0, 4)}-12-31`); // ✅ V00212
     setSeleccion(new Set());
     setExtras([]); // ✅ V00214
@@ -483,6 +484,7 @@ export function TarifarioProveedoresDashboard() {
           editadoPor: auth.currentUser?.email || '',
         });
         await registrarLog('Tarifario Proveedores', 'Edición', `Editó el pre convenio del proveedor "${proveedorSel.nombre}" (${fecha}) con ${elegidas.length} tarifa(s).`);
+        if (docNuevoFile) { try { await subirDocFirmadoA(editandoId, docNuevoFile, String(proveedorSel?.nombre || '')); } catch (eDoc) { console.error(eDoc); alert('El tarifario se guardó, pero el documento firmado no se pudo subir. Súbelo desde la fila (📎).'); } } // ✅ V00274
       } else {
         // ✅ V00203: consecutivo TAR-### reservado por transacción; la CLAVE del doc ES el consecutivo.
         const [consecTar] = await reservarConsecutivosTarifarioProveedor(1);
@@ -493,6 +495,7 @@ export function TarifarioProveedoresDashboard() {
           creadoPor: auth.currentUser?.email || '',
         });
         await registrarLog('Tarifario Proveedores', 'Creación', `Creó el pre convenio ${consecTar} de "${proveedorSel.nombre}" con ${elegidas.length} tarifa(s) (status Pendiente).`);
+        if (docNuevoFile) { try { await subirDocFirmadoA(consecTar, docNuevoFile, String(proveedorSel?.nombre || '')); } catch (eDoc) { console.error(eDoc); alert('El tarifario se creó, pero el documento firmado no se pudo subir. Súbelo desde la fila (📎).'); } } // ✅ V00274
       }
       setModalAbierto(false);
       setCapturaAbierta(false);
@@ -550,6 +553,24 @@ export function TarifarioProveedoresDashboard() {
     aprobarTrasSubirRef.current = aprobarDespues;
     inputDocFirmadoRef.current?.click();
   };
+  // ✅ V00274: subida reutilizable (fila, ficha, editar y NUEVO — en el nuevo
+  //   se difiere el archivo hasta tener el consecutivo del tarifario).
+  const subirDocFirmadoA = async (id: string, archivo: File, nombreEntidad: string) => {
+    const limpio = archivo.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const destino = storageRef(storage, `tarifarios_firmados/tarifario_proveedores/${id}/${Date.now()}_${limpio}`);
+    await uploadBytes(destino, archivo, archivo.type ? { contentType: archivo.type } : undefined);
+    const url = await getDownloadURL(destino);
+    await updateDoc(doc(db, 'tarifario_proveedores', id), {
+      docFirmadoUrl: url,
+      docFirmadoNombre: archivo.name,
+      docFirmadoFecha: new Date().toISOString().slice(0, 10),
+    });
+    await registrarLog('Tarifario Proveedores', 'Edición', `Subió el tarifario firmado de "${nombreEntidad}" (${id}): ${archivo.name}.`);
+    return url;
+  };
+  const [docNuevoFile, setDocNuevoFile] = useState<File | null>(null); // ✅ V00274: archivo elegido en el modal (nuevo/editar)
+  const inputDocModalRef = useRef<HTMLInputElement | null>(null);
+
   const alElegirDocFirmado = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const archivo = e.target.files?.[0];
     e.target.value = ''; // permite volver a elegir el mismo archivo
@@ -557,16 +578,7 @@ export function TarifarioProveedoresDashboard() {
     if (!archivo || !r) return;
     setSubiendoDocFirmado(String(r.id));
     try {
-      const limpio = archivo.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const destino = storageRef(storage, `tarifarios_firmados/tarifario_proveedores/${r.id}/${Date.now()}_${limpio}`);
-      await uploadBytes(destino, archivo, archivo.type ? { contentType: archivo.type } : undefined);
-      const url = await getDownloadURL(destino);
-      await updateDoc(doc(db, 'tarifario_proveedores', r.id), {
-        docFirmadoUrl: url,
-        docFirmadoNombre: archivo.name,
-        docFirmadoFecha: new Date().toISOString().slice(0, 10),
-      });
-      await registrarLog('Tarifario Proveedores', 'Edición', `Subió el tarifario firmado de "${r.proveedorNombre}" (${r.consecutivo || r.id}): ${archivo.name}.`);
+      const url = await subirDocFirmadoA(String(r.id), archivo, String(r.proveedorNombre || ''));
       if (aprobarTrasSubirRef.current) {
         aprobarTrasSubirRef.current = false;
         await aprobarRegistro({ ...r, docFirmadoUrl: url }); // continúa la aprobación
@@ -1232,6 +1244,16 @@ export function TarifarioProveedoresDashboard() {
                 <span className="tc-conteo-sel">{Array.isArray(r.tarifas) ? r.tarifas.length : 0} tarifa(s) en este pre convenio</span>
                 <div className="tc-modal-botones">
                   {/* ✅ V00199: en el detalle, los botones llevan su NOMBRE */}
+                  <button
+                    type="button"
+                    className={`btn-small tc-btn-nombrado tc-doc-firmado-ficha${String(r.docFirmadoUrl || '') ? ' tc-doc-firmado--ok' : (String(r.status || '') === 'Aprobado' ? ' tc-doc-firmado--falta' : '')}`}
+                    title={String(r.docFirmadoUrl || '') ? `Tarifario firmado subido${r.docFirmadoFecha ? ` el ${r.docFirmadoFecha}` : ''} — clic para verlo; Ctrl+clic para reemplazarlo` : 'Subir el tarifario firmado (obligatorio para aprobar)'}
+                    onClick={(e) => { /* ✅ V00274: documento firmado desde la ficha */
+                      const url = String(r.docFirmadoUrl || '');
+                      if (url && !e.ctrlKey) { window.open(url, '_blank', 'noopener'); return; }
+                      pedirTarifarioFirmado(r);
+                    }}
+                  >{String(r.docFirmadoUrl || '') ? '📄' : '📎'} Tarifario firmado</button>
                   <button type="button" className="btn-small btn-edit tc-btn-nombrado" title="Editar este pre convenio" onClick={() => { setDetalleId(''); abrirEdicion(r); }}><IconoEditar /> Editar</button>
                   <button type="button" className="btn-small btn-danger tc-btn-nombrado" title="Eliminar este pre convenio" onClick={() => { setDetalleId(''); eliminarRegistro(r); }}><IconoEliminar /> Eliminar</button>
                   {String(r.status) !== 'Aprobado' && (
@@ -1268,6 +1290,33 @@ export function TarifarioProveedoresDashboard() {
               <div className="tc-campo">
                 <label className="tc-label">Fecha de Vencimiento</label>
                 <input type="date" className="form-control" value={fechaVencimiento} onChange={(e) => setFechaVencimiento(e.target.value)} />
+              </div>
+
+              {/* ✅ V00274: TARIFARIO FIRMADO también desde el formulario — en
+                  edición muestra el ya subido; el archivo elegido se sube AL
+                  GUARDAR (en el nuevo, cuando ya existe el consecutivo). */}
+              <div className="tc-campo tc-campo-docfirmado">
+                <label className="tc-label">Tarifario firmado (escaneado) — obligatorio para aprobar</label>
+                <div className="tc-docfirmado-linea">
+                  {(() => {
+                    const rEd = editandoId ? registros.find((x: Doc) => String(x.id) === editandoId) : null;
+                    const urlActual = String(rEd?.docFirmadoUrl || '');
+                    return (
+                      <>
+                        {docNuevoFile ? (
+                          <span className="tc-docfirmado-nombre" title="Se subirá al guardar">📎 {docNuevoFile.name}</span>
+                        ) : urlActual ? (
+                          <button type="button" className="tc-docfirmado-ver" onClick={() => window.open(urlActual, '_blank', 'noopener')} title={`Subido${rEd?.docFirmadoFecha ? ` el ${rEd.docFirmadoFecha}` : ''} — clic para verlo`}>📄 {String(rEd?.docFirmadoNombre || 'Ver documento')}</button>
+                        ) : (
+                          <span className="tc-docfirmado-nombre tc-docfirmado-nombre--vacio">Sin documento</span>
+                        )}
+                        <button type="button" className="btn-small tc-docfirmado-btn" onClick={() => inputDocModalRef.current?.click()}>{urlActual || docNuevoFile ? 'Reemplazar…' : 'Elegir archivo…'}</button>
+                        {docNuevoFile && <button type="button" className="btn-small tc-docfirmado-btn" onClick={() => setDocNuevoFile(null)} title="Quitar el archivo elegido">✕</button>}
+                        <input ref={inputDocModalRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="tc-input-doc-oculto" onChange={(e) => { const f = e.target.files?.[0] || null; e.target.value = ''; if (f) setDocNuevoFile(f); }} />
+                      </>
+                    );
+                  })()}
+                </div>
               </div>
 
               <div className="tc-campo tc-campo-cliente">

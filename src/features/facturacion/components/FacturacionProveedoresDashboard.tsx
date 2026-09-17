@@ -600,7 +600,7 @@ export const FacturacionProveedoresDashboard = () => {
   // ✅ V00126: sin redondeo — hasta 6 decimales tal cual resultan del cálculo.
   const formatoMoneda = (monto: any) => {
     const num = parseFloat(monto || 0);
-    return isNaN(num) ? '$ 0.00' : `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`;
+    return isNaN(num) ? '$ 0.00' : `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; // ✅ V00274: todos los montos a 2 decimales
   };
   const formatearFechaSpanish = (fechaString: any) => {
     if (!fechaString) return '-';
@@ -3081,8 +3081,8 @@ export const FacturacionProveedoresDashboard = () => {
             {ops.map((op: any, idx: number) => (
               <button className="fpd-x12"
                 key={`${f.id}_ref_${op?.id || idx}`}
-                onClick={(e) => { e.stopPropagation(); if (op?.id) verDetalleOperacion(op.id); }}
-                title="Ver detalle de la operación">
+                onClick={(e) => { e.stopPropagation(); if (op?.id) setOpEditandoId(String(op.id)); }} /* ✅ V00274: abre el EDITOR de la operación */
+                title="Editar esta operación en el formulario de Operaciones">
                 {refDeOp(op)}
               </button>
             ))}
