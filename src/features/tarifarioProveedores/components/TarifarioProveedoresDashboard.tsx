@@ -82,7 +82,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
-import { db, auth } from '../../../config/firebase';
+import { db, auth, storage } from '../../../config/firebase'; // ✅ V00273: storage para el tarifario firmado
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'; // ✅ V00273
 import { registrarLog } from '../../../utils/logger';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
@@ -535,7 +536,60 @@ export function TarifarioProveedoresDashboard() {
   // ✅ V00196: al aprobar, los pre convenios PASAN A CONVENIOS — se agregan al
   //   convenio del cliente (o se crea uno nuevo CONV-###) y cada detalle nace
   //   con su consecutivo. Mientras está Pendiente no se toca Convenios.
+  // ✅ V00273: TARIFARIO FIRMADO — regla nueva: para APROBAR un tarifario debe
+  //   tener subido su documento firmado (el mismo tarifario escaneado y
+  //   firmado). El archivo va a Storage y el doc guarda docFirmadoUrl/Nombre/
+  //   Fecha (relación 1:1 con el tarifario). Los aprobados de antes se quedan
+  //   aprobados, pero la fila muestra ⚠ hasta que se les suba el documento.
+  const inputDocFirmadoRef = useRef<HTMLInputElement | null>(null);
+  const tarifarioDocRef = useRef<Doc | null>(null);
+  const aprobarTrasSubirRef = useRef(false);
+  const [subiendoDocFirmado, setSubiendoDocFirmado] = useState<string>('');
+  const pedirTarifarioFirmado = (r: Doc, aprobarDespues = false) => {
+    tarifarioDocRef.current = r;
+    aprobarTrasSubirRef.current = aprobarDespues;
+    inputDocFirmadoRef.current?.click();
+  };
+  const alElegirDocFirmado = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const archivo = e.target.files?.[0];
+    e.target.value = ''; // permite volver a elegir el mismo archivo
+    const r = tarifarioDocRef.current;
+    if (!archivo || !r) return;
+    setSubiendoDocFirmado(String(r.id));
+    try {
+      const limpio = archivo.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const destino = storageRef(storage, `tarifarios_firmados/tarifario_proveedores/${r.id}/${Date.now()}_${limpio}`);
+      await uploadBytes(destino, archivo, archivo.type ? { contentType: archivo.type } : undefined);
+      const url = await getDownloadURL(destino);
+      await updateDoc(doc(db, 'tarifario_proveedores', r.id), {
+        docFirmadoUrl: url,
+        docFirmadoNombre: archivo.name,
+        docFirmadoFecha: new Date().toISOString().slice(0, 10),
+      });
+      await registrarLog('Tarifario Proveedores', 'Edición', `Subió el tarifario firmado de "${r.proveedorNombre}" (${r.consecutivo || r.id}): ${archivo.name}.`);
+      if (aprobarTrasSubirRef.current) {
+        aprobarTrasSubirRef.current = false;
+        await aprobarRegistro({ ...r, docFirmadoUrl: url }); // continúa la aprobación
+      } else {
+        alert('Tarifario firmado subido. ✅');
+      }
+    } catch (err) {
+      console.error('No se pudo subir el tarifario firmado:', err);
+      alert('No se pudo subir el tarifario firmado.');
+    } finally {
+      setSubiendoDocFirmado('');
+      tarifarioDocRef.current = null;
+    }
+  };
+
   const aprobarRegistro = async (r: Doc) => {
+    // ✅ V00273: CANDADO — sin el tarifario firmado no hay aprobación.
+    if (!String(r.docFirmadoUrl || '').trim()) {
+      if (window.confirm('Para aprobar, primero sube el TARIFARIO FIRMADO (escaneado).\n\n¿Quieres subirlo ahora? Al terminar la subida, la aprobación continúa sola.')) {
+        pedirTarifarioFirmado(r, true);
+      }
+      return;
+    }
     if (!aut.verificarAccion('editar', ['status'])) return; // ✅ V00195: aprobar = editar Status
     if (!window.confirm(`¿Aprobar el pre convenio del proveedor "${r.proveedorNombre}" del ${r.fecha}?\n\nSus tarifas pasarán al módulo de Convenios (Detalles del Convenio).`)) return;
     try {
@@ -1038,6 +1092,8 @@ export function TarifarioProveedoresDashboard() {
 
   return (
     <div className="tc-contenedor">
+      {/* ✅ V00273: selector de archivo del tarifario firmado (oculto) */}
+      <input ref={inputDocFirmadoRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="tc-input-doc-oculto" onChange={alElegirDocFirmado} />
       <div className="tc-encabezado">
         <div>
           <h1 className="tc-titulo">Tarifario Proveedores</h1>
@@ -1101,6 +1157,20 @@ export function TarifarioProveedoresDashboard() {
                   <tr key={r.id} className="tc-fila-click" onClick={() => setDetalleId(r.id)}>
                     <td className="tc-td-acciones" onClick={(e) => e.stopPropagation()}>
                       {/* ✅ V00200: iconos estándar azul/rojo (adiós emojis) */}
+                      <span
+                        className={`tc-doc-firmado${String(r.docFirmadoUrl || '') ? ' tc-doc-firmado--ok' : (String(r.status || '') === 'Aprobado' ? ' tc-doc-firmado--falta' : '')}`}
+                        title={String(r.docFirmadoUrl || '')
+                          ? `Tarifario firmado subido${r.docFirmadoFecha ? ` el ${r.docFirmadoFecha}` : ''} — clic para verlo; clic con Ctrl para reemplazarlo`
+                          : (String(r.status || '') === 'Aprobado'
+                            ? 'APROBADO SIN el tarifario firmado — clic para subir el escaneado firmado'
+                            : 'Aún sin tarifario firmado — clic para subirlo (obligatorio para aprobar)')}
+                        onClick={(e) => { /* ✅ V00273 */
+                          if (subiendoDocFirmado === String(r.id)) return;
+                          const url = String(r.docFirmadoUrl || '');
+                          if (url && !e.ctrlKey) { window.open(url, '_blank', 'noopener'); return; }
+                          pedirTarifarioFirmado(r);
+                        }}
+                      >{subiendoDocFirmado === String(r.id) ? '⏳' : (String(r.docFirmadoUrl || '') ? '📄' : (String(r.status || '') === 'Aprobado' ? '⚠' : '📎'))}</span>
                       <button type="button" className="btn-small btn-edit tc-mr6" title="Editar este pre convenio" onClick={() => abrirEdicion(r)}><IconoEditar /></button>
                       <button type="button" className="btn-small btn-danger tc-mr6" title="Eliminar este pre convenio" onClick={() => eliminarRegistro(r)}><IconoEliminar /></button>
                       <button type="button" className="tc-btn-pdf" title="Exportar el tarifario en PDF" onClick={() => exportarPDF(r)}>PDF</button>

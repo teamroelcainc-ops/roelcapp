@@ -342,3 +342,11 @@
 }
 .tc-btn-limpiar:hover { border-color: #f85149; color: #f85149; }
 .tc-filtros-conteo { margin-left: auto; color: #8b949e; font-size: 0.78rem; white-space: nowrap; }
+
+/* ✅ V00273: indicador del tarifario firmado en la fila (ambos tarifarios) */
+.tc-doc-firmado { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; margin-right: 6px; border-radius: 6px; border: 1px solid #30363d; cursor: pointer; font-size: 0.82rem; user-select: none; }
+.tc-doc-firmado:hover { background: rgba(139, 148, 158, 0.12); }
+.tc-doc-firmado--ok { border-color: #238636; }
+.tc-doc-firmado--falta { border-color: #d29922; background: rgba(210, 153, 34, 0.12); animation: tcDocPulso 2s ease-in-out infinite; }
+@keyframes tcDocPulso { 0%, 100% { box-shadow: 0 0 0 0 rgba(210, 153, 34, 0.25); } 50% { box-shadow: 0 0 0 4px rgba(210, 153, 34, 0.0); } }
+.tc-input-doc-oculto { display: none; }
