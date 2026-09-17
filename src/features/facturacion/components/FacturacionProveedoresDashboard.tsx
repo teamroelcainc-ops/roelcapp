@@ -15,7 +15,7 @@
 //    catálogo de empresas. Vacío ('') = el buscador muestra TODAS las empresas.
 // ═══════════════════════════════════════════════════════════════════════
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { EditorOperacionEmbebido } from '../../operaciones/components/EditorOperacionEmbebido';
 import { HiloModal } from '../../hilo/HiloModal';
@@ -38,7 +38,8 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import { SelectBuscable } from '../../catalogos/components/SelectBuscable';
-import { db } from '../../../config/firebase';
+import { db, storage } from '../../../config/firebase'; // ✅ V00276: storage para el documento de la factura
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'; // ✅ V00276
 import * as XLSX from 'xlsx';
 import { exportarExcelProfesional } from './exportarExcelProfesional';
 import { generarRemisionPDF } from './generarRemisionPDF';
@@ -548,6 +549,66 @@ export const FacturacionProveedoresDashboard = () => {
   const [modalAbierto, setModalAbierto] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [facturaViendo, setFacturaViendo] = useState<any | null>(null);
+  // ✅ V00276: DOCUMENTO DE LA FACTURA (el PDF/imagen de la factura emitida) —
+  //   relación 1:1 con la factura (docFacturaUrl/Nombre/Fecha), archivo en
+  //   Storage `facturas_documentos/facturas_proveedores/{id}/`. Se pide al facturar,
+  //   y se puede subir desde la fila, la ficha o el editor. Mismo patrón que
+  //   el tarifario firmado (V00273/V00274).
+  const inputDocFacturaRef = useRef<HTMLInputElement | null>(null);
+  const facturaDocRef = useRef<{ id?: unknown; invoice?: unknown; docFacturaUrl?: unknown; docFacturaNombre?: unknown; docFacturaFecha?: unknown } | null>(null);
+  const [subiendoDocFactura, setSubiendoDocFactura] = useState<string>('');
+  const [docFacturaFile, setDocFacturaFile] = useState<File | null>(null); // archivo diferido (facturar / editar)
+  const inputDocFacturaModalRef = useRef<HTMLInputElement | null>(null);
+  const subirDocFacturaA = async (id: string, archivo: File, etiqueta: string) => {
+    const limpio = archivo.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const destino = storageRef(storage, `facturas_documentos/facturas_proveedores/${id}/${Date.now()}_${limpio}`);
+    await uploadBytes(destino, archivo, archivo.type ? { contentType: archivo.type } : undefined);
+    const url = await getDownloadURL(destino);
+    await setDoc(doc(db, 'facturas_proveedores', id), {
+      docFacturaUrl: url,
+      docFacturaNombre: archivo.name,
+      docFacturaFecha: new Date().toISOString().slice(0, 10),
+    }, { merge: true });
+    await registrarLog('Facturación Proveedores', 'Edición', `Subió el documento de la factura ${etiqueta}: ${archivo.name}.`);
+    setFacturasGlobales(prev => prev.map(f => String(f.id) === id ? { ...f, docFacturaUrl: url, docFacturaNombre: archivo.name } : f));
+    return url;
+  };
+  const pedirDocFactura = (f: { id?: unknown; invoice?: unknown; docFacturaUrl?: unknown; docFacturaNombre?: unknown; docFacturaFecha?: unknown }) => {
+    facturaDocRef.current = f;
+    inputDocFacturaRef.current?.click();
+  };
+  const alElegirDocFactura = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const archivo = e.target.files?.[0];
+    e.target.value = '';
+    const f = facturaDocRef.current;
+    if (!archivo || !f) return;
+    setSubiendoDocFactura(String(f.id));
+    try {
+      await subirDocFacturaA(String(f.id), archivo, String(f.invoice || f.id));
+    } catch (err) {
+      console.error('No se pudo subir el documento de la factura:', err);
+      alert('No se pudo subir el documento de la factura.');
+    } finally {
+      setSubiendoDocFactura('');
+      facturaDocRef.current = null;
+    }
+  };
+  /** Indicador 📄/⚠ del documento de la factura (fila, ficha). */
+  const indicadorDocFactura = (f: { id?: unknown; invoice?: unknown; docFacturaUrl?: unknown; docFacturaNombre?: unknown; docFacturaFecha?: unknown }, ficha = false) => (
+    <span
+      className={`fpd-doc-factura${String(f?.docFacturaUrl || '') ? ' fpd-doc-factura--ok' : ' fpd-doc-factura--falta'}${ficha ? ' fpd-doc-factura--ficha' : ''}`}
+      title={String(f?.docFacturaUrl || '')
+        ? `Documento subido${f?.docFacturaFecha ? ` el ${f.docFacturaFecha}` : ''} — clic para verlo; Ctrl+clic para reemplazarlo`
+        : 'SIN el documento de la factura — clic para subirlo'}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (subiendoDocFactura === String(f?.id)) return;
+        const url = String(f?.docFacturaUrl || '');
+        if (url && !e.ctrlKey) { window.open(url, '_blank', 'noopener'); return; }
+        pedirDocFactura(f);
+      }}
+    >{subiendoDocFactura === String(f?.id) ? '⏳' : (String(f?.docFacturaUrl || '') ? '📄' : '⚠')}{ficha ? ' Documento' : ''}</span>
+  );
   // Cruce con Facturación de CLIENTES: para saber si la operación ya fue facturada a cliente.
   const [facturasClientesGlobales, setFacturasClientesGlobales] = useState<any[]>([]);
   const [facturaClienteViendo, setFacturaClienteViendo] = useState<any | null>(null);
@@ -2288,6 +2349,8 @@ export const FacturacionProveedoresDashboard = () => {
     if (seleccionMultiProveedor || !proveedorFacturaId) {
       return alert('Las operaciones seleccionadas deben ser de un mismo proveedor. Selecciona un proveedor en el filtro o elige operaciones de un solo proveedor.');
     }
+    // ✅ V00276: la factura debe llevar su documento; sin él se pide confirmación.
+    if (!docFacturaFile && !window.confirm('No adjuntaste el DOCUMENTO de la factura.\n\n¿Facturar sin el documento? (quedará marcada con ⚠ hasta que lo subas)')) return;
     setGuardando(true);
     try {
       const batch = writeBatch(db);
@@ -2384,6 +2447,12 @@ export const FacturacionProveedoresDashboard = () => {
         });
       });
       await batch.commit();
+      // ✅ V00276: el documento adjuntado se sube ya con el id real de la factura.
+      if (docFacturaFile) {
+        try { await subirDocFacturaA(docId, docFacturaFile, invoiceForm.trim() || docId); }
+        catch (eDoc) { console.error(eDoc); alert('La factura se guardó, pero el documento no se pudo subir. Súbelo desde la fila (⚠).'); }
+        setDocFacturaFile(null);
+      }
       setModalAbierto(false);
       const idsFacturadas = [...seleccionadas];
       const invoiceTrim = invoiceForm.trim();
@@ -2425,6 +2494,7 @@ export const FacturacionProveedoresDashboard = () => {
   };
 
   const abrirEditarFactura = (e: React.MouseEvent, f: any) => {
+    setDocFacturaFile(null); // ✅ V00276: sin arrastre entre facturas
     e.stopPropagation();
     setFacturaEditando(f);
     setEditInvoice(String(f.invoice || ''));
@@ -2439,6 +2509,12 @@ export const FacturacionProveedoresDashboard = () => {
   const handleGuardarEdicionFactura = async () => {
     if (!facturaEditando) return;
     if (!editInvoice.trim()) return alert('El # de Invoice es obligatorio.');
+    // ✅ V00276: si eligieron documento en el editor, se sube con el id de la factura.
+    if (docFacturaFile) {
+      try { await subirDocFacturaA(String(facturaEditando.id), docFacturaFile, String(facturaEditando.invoice || facturaEditando.id)); }
+      catch (eDoc) { console.error(eDoc); alert('El documento no se pudo subir; los demás cambios continúan. Súbelo desde la fila (⚠).'); }
+      setDocFacturaFile(null);
+    }
     setGuardandoEdit(true);
     try {
       const ids: string[] = Array.isArray(facturaEditando.__groupIds) && facturaEditando.__groupIds.length ? facturaEditando.__groupIds : [facturaEditando.id];
@@ -3243,6 +3319,8 @@ export const FacturacionProveedoresDashboard = () => {
 
   return (
     <div className="module-container fpd-x28">
+      {/* ✅ V00276: selector del documento de la factura (oculto, subida inmediata) */}
+      <input ref={inputDocFacturaRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="fcd-input-doc-oculto" onChange={alElegirDocFactura} />
       {hiloFacturaId && <HiloModal tipo="proveedor" facturaId={hiloFacturaId} onClose={() => setHiloFacturaId(null)} onEditarOperacion={(id) => setOpEditandoId(id)} />}
       {opEditandoId && (
         <EditorOperacionEmbebido operacionId={opEditandoId} operacion={operacionesGlobales.find((o: any) => String(o.id) === opEditandoId)} onClose={() => setOpEditandoId(null)} />
@@ -3483,7 +3561,7 @@ export const FacturacionProveedoresDashboard = () => {
                   const seguir = window.confirm(`ATENCIÓN: ${enCero.length} operación(es) tienen los montos EN CERO:\n\n${refs}\n\nRevisa su registro en el módulo de Operaciones (convenio del proveedor y montos) antes de facturar.\n\n¿Deseas continuar de todos modos?`);
                   if (!seguir) return;
                 }
-                setStatusFacturaForm('Facturado'); setModalAbierto(true);
+                setStatusFacturaForm('Facturado'); setDocFacturaFile(null); setModalAbierto(true);
               }}
                 style={{ padding: '8px 20px', backgroundColor: (seleccionadas.length > 0 && !seleccionMultiProveedor) ? '#D84315' : '#30363d', color: '#fff', border: 'none', borderRadius: '6px', cursor: (seleccionadas.length > 0 && !seleccionMultiProveedor) ? 'pointer' : 'not-allowed', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
                 Generar Factura ({seleccionadas.length})
@@ -3672,6 +3750,7 @@ export const FacturacionProveedoresDashboard = () => {
                     <tr className="fpd-x111" key={f.id}>
                       <td className="fpd-x95">
                         <div className="fpd-x112">
+                          {indicadorDocFactura(f)}{/* ✅ V00276 */}
                           <button className="fpd-x113" title="Ver Ficha" onClick={() => setFacturaViendo(f)}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                           </button>
@@ -3873,6 +3952,16 @@ export const FacturacionProveedoresDashboard = () => {
                 <div>
                   <label className="fpd-x143">REFERENCIA (Opcional)</label>
                   <input className="fpd-x163" type="text" placeholder="Referencia interna..." value={facturaCcpForm} onChange={e => setFacturaCcpForm(e.target.value)} />
+                  {/* ✅ V00276: documento de la factura (se sube al confirmar) */}
+                  <label className="fpd-x143">DOCUMENTO DE LA FACTURA</label>
+                  <div className="fcd-docfactura-linea">
+                    {docFacturaFile
+                      ? <span className="fcd-docfactura-nombre" title="Se subirá al confirmar la factura">📎 {docFacturaFile.name}</span>
+                      : <span className="fcd-docfactura-nombre fcd-docfactura-nombre--vacio">Sin documento</span>}
+                    <button type="button" className="btn-small fcd-docfactura-btn" onClick={() => inputDocFacturaModalRef.current?.click()}>{docFacturaFile ? 'Cambiar…' : 'Elegir archivo…'}</button>
+                    {docFacturaFile && <button type="button" className="btn-small fcd-docfactura-btn" onClick={() => setDocFacturaFile(null)} title="Quitar el archivo elegido">✕</button>}
+                    <input ref={inputDocFacturaModalRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="fcd-input-doc-oculto" onChange={(e) => { const a = e.target.files?.[0] || null; e.target.value = ''; if (a) setDocFacturaFile(a); }} />
+                  </div>
                 </div>
               </div>
               <div className="fpd-x164">
@@ -3923,6 +4012,7 @@ export const FacturacionProveedoresDashboard = () => {
           <div className="fpd-x179">
             <div className="fpd-x180">
               <h2 className="fpd-x181">Ficha de Factura</h2>
+              {indicadorDocFactura(facturaViendo, true)}{/* ✅ V00276 */}
               <button className="fpd-x41" onClick={() => setFacturaViendo(null)}>✕</button>
             </div>
             <div className="fpd-x182">
@@ -4211,6 +4301,19 @@ export const FacturacionProveedoresDashboard = () => {
               <div className="fpd-x161">
                 <label className="fpd-x143">NÚMERO DE FACTURA</label>
                 <input className="fpd-x147" type="text" value={editInvoice} onChange={e => setEditInvoice(e.target.value)} placeholder="Ej. A-1234" />
+              </div>
+              <div className="fpd-x161">
+                {/* ✅ V00276: documento de la factura desde el editor (se sube al guardar) */}
+                <label className="fpd-x143">DOCUMENTO DE LA FACTURA</label>
+                <div className="fcd-docfactura-linea">
+                  {docFacturaFile
+                    ? <span className="fcd-docfactura-nombre" title="Se subirá al guardar">📎 {docFacturaFile.name}</span>
+                    : (String(facturaEditando.docFacturaUrl || '')
+                      ? <button type="button" className="fcd-docfactura-ver" onClick={() => window.open(String(facturaEditando.docFacturaUrl), '_blank', 'noopener')} title={`Subido${facturaEditando.docFacturaFecha ? ` el ${facturaEditando.docFacturaFecha}` : ''} — clic para verlo`}>📄 {String(facturaEditando.docFacturaNombre || 'Ver documento')}</button>
+                      : <span className="fcd-docfactura-nombre fcd-docfactura-nombre--vacio">Sin documento</span>)}
+                  <button type="button" className="btn-small fcd-docfactura-btn" onClick={() => inputDocFacturaModalRef.current?.click()}>{String(facturaEditando.docFacturaUrl || '') || docFacturaFile ? 'Reemplazar…' : 'Elegir archivo…'}</button>
+                  {docFacturaFile && <button type="button" className="btn-small fcd-docfactura-btn" onClick={() => setDocFacturaFile(null)} title="Quitar el archivo elegido">✕</button>}
+                </div>
               </div>
               <div>
                 <label className="fpd-x143">FECHA DE FACTURACIÓN</label>

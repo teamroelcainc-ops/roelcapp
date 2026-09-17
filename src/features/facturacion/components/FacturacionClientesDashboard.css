@@ -504,3 +504,19 @@
 .fac-tarjeta-modal__c-moneda { width: 70px; color: #10b981; font-weight: 700; }
 .fac-tarjeta-modal__c-total { width: 110px; text-align: right; color: #c9d1d9; font-weight: 700; }
 .fac-tarjeta-modal__vacio { padding: 18px; color: #8b949e; text-align: center; }
+
+/* ✅ V00276: documento de la factura (indicador en fila/ficha y campo en formularios).
+   Clases compartidas también por Facturación de Proveedores. */
+.fcd-doc-factura, .fpd-doc-factura { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; height: 26px; border-radius: 6px; border: 1px solid #30363d; cursor: pointer; font-size: 0.82rem; user-select: none; gap: 4px; }
+.fcd-doc-factura:hover, .fpd-doc-factura:hover { background: rgba(139, 148, 158, 0.12); }
+.fcd-doc-factura--ok, .fpd-doc-factura--ok { border-color: #238636; }
+.fcd-doc-factura--falta, .fpd-doc-factura--falta { border-color: #d29922; background: rgba(210, 153, 34, 0.12); animation: fcdDocPulso 2s ease-in-out infinite; }
+.fcd-doc-factura--ficha, .fpd-doc-factura--ficha { padding: 6px 12px; font-size: 0.85rem; }
+@keyframes fcdDocPulso { 0%, 100% { box-shadow: 0 0 0 0 rgba(210, 153, 34, 0.25); } 50% { box-shadow: 0 0 0 4px rgba(210, 153, 34, 0.0); } }
+.fcd-input-doc-oculto { display: none; }
+.fcd-docfactura-linea { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.fcd-docfactura-nombre { font-size: 0.82rem; color: #c9d1d9; }
+.fcd-docfactura-nombre--vacio { color: #8b949e; font-style: italic; }
+.fcd-docfactura-ver { background: none; border: 1px solid #238636; border-radius: 6px; color: #3fb950; padding: 4px 10px; font-size: 0.8rem; cursor: pointer; }
+.fcd-docfactura-ver:hover { background: rgba(35, 134, 54, 0.12); }
+.fcd-docfactura-btn { cursor: pointer; }
