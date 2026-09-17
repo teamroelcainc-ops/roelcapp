@@ -378,6 +378,21 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
   const [catTiposServicioFull, setCatTiposServicioFull] = useState<{ id: string; nombre: string }[]>([]);
 
   const [modalDireccionAbierto, setModalDireccionAbierto] = useState(false);
+  // ✅ V00268: selección temporal del buscador de cada bloque "Dirección {tipo}".
+  const [dirTipoSeleccion, setDirTipoSeleccion] = useState<Record<string, { id: string; label: string }>>({});
+  const agregarDireccionTipo = (tipoNombre: string) => {
+    const sel = dirTipoSeleccion[tipoNombre];
+    if (!sel || !sel.id) return;
+    setFormData(prev => {
+      const ya = (prev.direccionesPorTipo || []).some(d => d.tipoNombre === tipoNombre && String(d.direccionId) === String(sel.id));
+      if (ya) return prev; // sin duplicados del mismo tipo+dirección
+      return { ...prev, direccionesPorTipo: [...(prev.direccionesPorTipo || []), { tipoNombre, direccionId: sel.id, direccionNombre: sel.label }] };
+    });
+    setDirTipoSeleccion(prev => ({ ...prev, [tipoNombre]: { id: '', label: '' } }));
+  };
+  const quitarDireccionTipo = (tipoNombre: string, direccionId: string) => {
+    setFormData(prev => ({ ...prev, direccionesPorTipo: (prev.direccionesPorTipo || []).filter(d => !(d.tipoNombre === tipoNombre && String(d.direccionId) === String(direccionId))) }));
+  };
   const [modalRegimenAbierto, setModalRegimenAbierto] = useState(false);
   const [mostrarSubirDoc, setMostrarSubirDoc] = useState(false);
 
@@ -406,6 +421,11 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
 
     direccionId: '',
     direccionLabel: '',
+    // ✅ V00268: DIRECCIONES MÚLTIPLES etiquetadas por tipo de empresa —
+    //   si la empresa es Cliente (Mercancía) Y Bodega, puede capturar varias
+    //   "Dirección Cliente (Mercancía)" y varias "Dirección Bódega", todas
+    //   del Directorio de Direcciones (relacional: se guarda el ID + nombre).
+    direccionesPorTipo: [] as { tipoNombre: string; direccionId: string; direccionNombre: string }[],
     maps: '', 
     telefono: '',
     correo: ''
@@ -520,6 +540,8 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
       } else if (!data.tiposServicio) {
         data.tiposServicio = [];
       }
+      // ✅ V00268: direcciones por tipo (empresas viejas no traen el campo)
+      if (!Array.isArray(data.direccionesPorTipo)) data.direccionesPorTipo = [];
 
       // ✅ Compatibilidad: convertir el cliente relacionado único (formato viejo)
       // a los nuevos arreglos de selección múltiple.
@@ -639,6 +661,14 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
         ...formData,
         tiposEmpresa: (formData.tiposEmpresa || []).map(n => idTipoEmpresaDeNombre(String(n))),
         tiposServicio: (formData.tiposServicio || []).map(n => idTipoServicioDeNombre(String(n))),
+        // ✅ V00268: cada dirección viaja con el ID del tipo y el ID de la
+        //   dirección del Directorio (el nombre es caché regenerable).
+        direccionesPorTipo: (formData.direccionesPorTipo || []).map((dt) => ({
+          tipoId: idTipoEmpresaDeNombre(String(dt.tipoNombre)),
+          tipoNombre: String(dt.tipoNombre),
+          direccionId: String(dt.direccionId),
+          direccionNombre: String(dt.direccionNombre),
+        })),
       };
 
       if (initialData && initialData.id) {
@@ -980,6 +1010,45 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                         );
                       })()}
                     </div>
+
+                    {/* ✅ V00268: DIRECCIONES POR TIPO DE EMPRESA — un bloque por
+                        cada tipo seleccionado en Información General; se pueden
+                        AGREGAR VARIAS direcciones del Directorio en cada uno. */}
+                    {(formData.tiposEmpresa || []).length > 0 && (
+                      <div className="form-group fe-x47 fe-dirtipo">
+                        <label className="form-label fe-x43">Direcciones por tipo de empresa</label>
+                        <div className="fe-dirtipo__nota">Cada tipo seleccionado tiene su propia lista — agrega tantas como necesites desde el Directorio de Direcciones (Bases de Datos → Direcciones).</div>
+                        {(formData.tiposEmpresa || []).map((tipoNombre: string) => {
+                          const deEsteTipo = (formData.direccionesPorTipo || []).filter(d => d.tipoNombre === tipoNombre);
+                          const sel = dirTipoSeleccion[tipoNombre] || { id: '', label: '' };
+                          return (
+                            <div key={tipoNombre} className="fe-dirtipo__bloque">
+                              <div className="fe-dirtipo__titulo">Dirección {tipoNombre} <span className="fe-dirtipo__conteo">({deEsteTipo.length})</span></div>
+                              {deEsteTipo.map((d) => (
+                                <div key={`${tipoNombre}_${d.direccionId}`} className="fe-dirtipo__fila">
+                                  <span className="fe-dirtipo__nombre" title={d.direccionNombre}>{d.direccionNombre}</span>
+                                  <button type="button" className="fe-dirtipo__quitar" title="Quitar esta dirección" onClick={() => quitarDireccionTipo(tipoNombre, d.direccionId)}>✕</button>
+                                </div>
+                              ))}
+                              <div className="fe-x48">
+                                <div className="fe-x49">
+                                  <SearchableSelect
+                                    options={direccionesDB}
+                                    value={sel.id}
+                                    onChange={(id, label) => setDirTipoSeleccion(prev => ({ ...prev, [tipoNombre]: { id, label } }))}
+                                    placeholder={`Buscar dirección para ${tipoNombre}…`}
+                                  />
+                                </div>
+                                <button type="button" className="btn btn-outline fe-x50" disabled={!sel.id} onClick={() => agregarDireccionTipo(tipoNombre)}>
+                                  + Agregar
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        <div className="fe-dirtipo__nota">¿La dirección no existe todavía? Créala con "+ Añadir Nueva" (arriba) y luego agrégala aquí.</div>
+                      </div>
+                    )}
 
                     <div className="form-group fe-x35">
                       <label className="form-label fe-x38">Google Maps (URL)</label>

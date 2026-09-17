@@ -76,3 +76,14 @@
   .fe-x55 { flex-wrap: wrap; }
   .fe-x56 { flex-wrap: wrap; }
 }
+
+/* ✅ V00268: direcciones múltiples por tipo de empresa (pestaña Contacto) */
+.fe-dirtipo { border: 1px solid #21262d; border-radius: 8px; padding: 12px; background: rgba(13, 17, 23, 0.5); }
+.fe-dirtipo__nota { color: #8b949e; font-size: 0.76rem; margin: 4px 0 10px 0; }
+.fe-dirtipo__bloque { border: 1px solid #21262d; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; background: #0d1117; }
+.fe-dirtipo__titulo { color: #58a6ff; font-size: 0.82rem; font-weight: 700; margin-bottom: 8px; }
+.fe-dirtipo__conteo { color: #8b949e; font-weight: normal; }
+.fe-dirtipo__fila { display: flex; align-items: center; gap: 8px; padding: 5px 10px; margin-bottom: 6px; border: 1px solid #30363d; border-radius: 6px; background: #161b22; }
+.fe-dirtipo__nombre { flex: 1; min-width: 0; color: #c9d1d9; font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fe-dirtipo__quitar { background: none; border: none; color: #ef4444; cursor: pointer; font-size: 0.8rem; padding: 2px 6px; }
+.fe-dirtipo__quitar:hover { background: rgba(239, 68, 68, 0.12); border-radius: 4px; }
