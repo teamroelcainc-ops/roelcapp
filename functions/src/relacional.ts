@@ -40,7 +40,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 if (getApps().length === 0) initializeApp();
 const dbRel = getFirestore();
 
-const REL_VERSION = 'relacional-v1.0';
+const REL_VERSION = 'relacional-v1.1'; // ✅ V00275: + cascada de montos
 
 /** Normaliza: sin acentos, espacios colapsados, minúsculas (misma regla del cliente V00257). */
 const normR = (t: unknown): string =>
@@ -312,3 +312,161 @@ export const verificarIntegridad = onCall({ region: 'us-central1', timeoutSecond
   return reporte;
 });
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5) ✅ V00275 — CASCADA DE MONTOS (regla de Jesús):
+//    · Cambia un monto en la OPERACIÓN → se actualizan las FACTURAS que la
+//      contienen (su renglón en operacionesGuardadas y los agregados).
+//    · Cambia el total de una FACTURA → se actualiza su saldo en PAGOS
+//      (saldoPendiente y statusPago; los documentos de pago aplicados son
+//      historial y no se tocan).
+//    Las fórmulas son ESPEJO de Facturación (calcularConversionCliente /
+//    Proveedor y totalNativoFactura) — si cambian allá, cambiar aquí.
+// ─────────────────────────────────────────────────────────────────────────────
+const ID_USD_REL = '7dca62b3';
+const ID_MXN_REL = 'f95d8894';
+const r2rel = (n: unknown): number => Math.round((Number(n) || 0) * 100) / 100;
+
+type Dict = Record<string, unknown>;
+
+const esUSDTexto = (v: unknown): boolean => {
+  const t = String(v ?? '').toUpperCase();
+  return t === ID_USD_REL.toUpperCase() || t.includes('USD') || t.includes('DOLAR') || t.includes('DÓLAR');
+};
+const esMXNTexto = (v: unknown): boolean => {
+  const t = String(v ?? '').toUpperCase();
+  return t === ID_MXN_REL.toUpperCase() || t.includes('MXN') || t.includes('PESO');
+};
+
+/** Espejo de calcularConversionCliente / calcularConversionProveedor. */
+const conversionOperacion = (op: Dict, lado: 'cliente' | 'proveedor') => {
+  const fact = lado === 'cliente' ? op.facturadoEnCobrar : op.facturadoEnUnidad;
+  const tc = Number(op.tipoCambioAprobado) || Number(op.tipoCambioDia) || 0;
+  const montoConvenio = Number(lado === 'cliente' ? op.montoConvenioCliente : op.totalAPagarProv) || 0;
+  const cargos = Number(lado === 'cliente' ? op.cargosAdicionales : op.cargosAdicionalesProv) || 0;
+  const nombreMoneda = String((lado === 'cliente' ? op.monedaCobroNombre : op.monedaUnidadNombre) || '');
+  const factUSD = fact === ID_USD_REL || esUSDTexto(nombreMoneda);
+  const factMXN = fact === ID_MXN_REL || esMXNTexto(nombreMoneda);
+  const monConv = String((lado === 'cliente' ? op.monedaConvenioCliente : op.monedaConvenioProv) || '');
+  const convUSD = monConv === ID_USD_REL || (!!monConv && esUSDTexto(monConv));
+  const convMXN = monConv === ID_MXN_REL || (!!monConv && esMXNTexto(monConv));
+  let subtotal = montoConvenio;
+  if (convUSD && factMXN) subtotal = tc > 0 ? montoConvenio * tc : 0;
+  else if (convMXN && factUSD) subtotal = tc > 0 ? montoConvenio / tc : 0;
+  let cargosFact = cargos;
+  if (convUSD && factMXN) cargosFact = tc > 0 ? cargos * tc : 0;
+  else if (convMXN && factUSD) cargosFact = tc > 0 ? cargos / tc : 0;
+  const total = r2rel(r2rel(subtotal) + r2rel(cargosFact));
+  let dol = 0; let pes = 0; let conv = 0;
+  const facturaUSD = factUSD || (!factMXN && convUSD);
+  if (facturaUSD) { dol = total; pes = 0; conv = total * tc; }
+  else { dol = 0; pes = total; conv = total; }
+  return { subtotal: r2rel(subtotal), total, dol: r2rel(dol), pes: r2rel(pes), conv: r2rel(conv) };
+};
+
+/** Espejo de totalNativoFactura (Facturación): total en la MONEDA de la factura. */
+const totalNativoFacturaRel = (fac: Dict, ops: Dict[]): number => {
+  const monTxt = normR(fac.monedaFacturacion || fac.monedaProveedor || fac.moneda || fac.monedaId);
+  const esUSD = monTxt === ID_USD_REL || monTxt === 'usd' || monTxt === 'us$' || monTxt === 'dls' || monTxt.startsWith('dolar');
+  const esMXN = monTxt === ID_MXN_REL || monTxt === 'mxn' || monTxt === 'mn' || monTxt.startsWith('peso');
+  const suma = (campo: string) => ops.reduce((s, o) => s + (Number(o?.[campo]) || 0), 0);
+  if (ops.length > 0) {
+    if (esUSD) { const dol = suma('dol'); if (dol > 0) return r2rel(dol); const base = suma('subtotalBase'); if (base > 0) return r2rel(base); }
+    else if (esMXN) { const conv = suma('monto'); if (conv > 0) return r2rel(conv); const pes = suma('pes'); if (pes > 0) return r2rel(pes); const base = suma('subtotalBase'); if (base > 0) return r2rel(base); }
+    else { const base = suma('subtotalBase'); if (base > 0) return r2rel(base); }
+  }
+  return r2rel(fac.subtotalFactura || fac.total || fac.montoFactura || 0);
+};
+
+const difiere = (a: unknown, b: unknown): boolean => Math.abs((Number(a) || 0) - (Number(b) || 0)) > 0.005;
+
+/** Cascada Operación → Facturas de un lado (clientes o proveedores). */
+const propagarMontoOperacionAFacturas = async (opId: string, op: Dict, lado: 'cliente' | 'proveedor'): Promise<number> => {
+  const coleccion = lado === 'cliente' ? 'facturas_clientes' : 'facturas_proveedores';
+  const snap = await dbRel.collection(coleccion).where('operacionesIds', 'array-contains', opId).get();
+  if (snap.empty) return 0;
+  const m = conversionOperacion(op, lado);
+  let n = 0;
+  for (const d of snap.docs) {
+    const fac = d.data() as Dict;
+    const ops = Array.isArray(fac.operacionesGuardadas) ? [...(fac.operacionesGuardadas as Dict[])] : [];
+    const idx = ops.findIndex((o) => String(o?.id || '') === opId);
+    if (idx === -1) continue; // factura sin snapshot detallado: no se inventa
+    const viejo = ops[idx] as Dict;
+    const nuevo: Dict = {
+      ...viejo,
+      monto: m.conv,
+      subtotalBase: m.subtotal,
+      dol: m.dol,
+      pes: m.pes,
+      convenioNombre: String((lado === 'cliente' ? (op.convenioNombre || op.convenioClienteNombre) : (op.convenioProveedorNombre || op.convenioNombre)) ?? viejo.convenioNombre ?? ''),
+    };
+    if (lado === 'cliente') nuevo.refCliente = String(op.refCliente ?? viejo.refCliente ?? '');
+    const cambioRenglon = difiere(viejo.monto, nuevo.monto) || difiere(viejo.subtotalBase, nuevo.subtotalBase) ||
+      difiere(viejo.dol, nuevo.dol) || difiere(viejo.pes, nuevo.pes) ||
+      String(viejo.convenioNombre || '') !== String(nuevo.convenioNombre || '') ||
+      (lado === 'cliente' && String(viejo.refCliente || '') !== String(nuevo.refCliente || ''));
+    if (!cambioRenglon) continue; // anti-bucle
+    ops[idx] = nuevo;
+    const subtotalFactura = r2rel(ops.reduce((s, o) => s + (Number(o?.monto) || 0), 0));
+    const subtotalMonedaFactura = totalNativoFacturaRel(fac, ops);
+    const cambios: Dict = { operacionesGuardadas: ops };
+    if (difiere(fac.subtotalFactura, subtotalFactura)) cambios.subtotalFactura = subtotalFactura;
+    if (difiere(fac.subtotalMonedaFactura, subtotalMonedaFactura)) cambios.subtotalMonedaFactura = subtotalMonedaFactura;
+    await d.ref.update(cambios);
+    n += 1;
+  }
+  return n;
+};
+
+const CAMPOS_DINERO_CLIENTE = ['montoConvenioCliente', 'cargosAdicionales', 'facturadoEnCobrar', 'monedaConvenioCliente', 'monedaCobroNombre', 'tipoCambioAprobado', 'tipoCambioDia', 'convenioNombre', 'refCliente'];
+const CAMPOS_DINERO_PROV = ['totalAPagarProv', 'cargosAdicionalesProv', 'facturadoEnUnidad', 'monedaConvenioProv', 'monedaUnidadNombre', 'tipoCambioAprobado', 'tipoCambioDia', 'convenioProveedorNombre'];
+
+export const operacionMontoCambiado = onDocumentUpdated({ document: 'operaciones/{opId}', region: 'us-central1' }, async (event) => {
+  const antes = event.data?.before.data() as Dict | undefined;
+  const despues = event.data?.after.data() as Dict | undefined;
+  if (!antes || !despues) return;
+  const opId = event.params.opId;
+  try {
+    const cambioCliente = CAMPOS_DINERO_CLIENTE.some((c) => String(antes[c] ?? '') !== String(despues[c] ?? ''));
+    const cambioProv = CAMPOS_DINERO_PROV.some((c) => String(antes[c] ?? '') !== String(despues[c] ?? ''));
+    if (!cambioCliente && !cambioProv) return;
+    let n = 0;
+    if (cambioCliente) n += await propagarMontoOperacionAFacturas(opId, despues, 'cliente');
+    if (cambioProv) n += await propagarMontoOperacionAFacturas(opId, despues, 'proveedor');
+    if (n > 0) logger.info(`[${REL_VERSION}] operacionMontoCambiado: ${String(despues.ref || opId)} → ${n} factura(s) actualizada(s)`);
+  } catch (e) {
+    logger.error(`[${REL_VERSION}] operacionMontoCambiado: fallo en ${opId}`, e);
+  }
+});
+
+/** Cascada Factura → saldo de Pagos: si la factura ya tiene pagos aplicados,
+ *  su saldoPendiente y statusPago se recalculan con el total nuevo. */
+const recalcularSaldoFactura = async (event: { data?: { after?: FirebaseFirestore.DocumentSnapshot } }, etiqueta: string) => {
+  const despues = event.data?.after;
+  if (!despues || !despues.exists) return;
+  const fac = despues.data() as Dict;
+  const montoPagado = Number(fac.montoPagado) || 0;
+  const tieneAplicaciones = montoPagado > 0 || typeof fac.saldoPendiente === 'number';
+  if (!tieneAplicaciones) return; // sin pagos: nada que recalcular
+  const ops = Array.isArray(fac.operacionesGuardadas) ? (fac.operacionesGuardadas as Dict[]) : [];
+  const total = totalNativoFacturaRel(fac, ops);
+  const saldo = Math.max(0, r2rel(total - montoPagado));
+  const status = saldo <= 0.009 ? 'PAGADA' : (montoPagado > 0 ? 'PARCIAL' : String(fac.statusPago || ''));
+  const cambios: Dict = {};
+  if (difiere(fac.saldoPendiente, saldo)) cambios.saldoPendiente = saldo;
+  if (status && String(fac.statusPago || '') !== status) cambios.statusPago = status;
+  if (Object.keys(cambios).length === 0) return; // anti-bucle
+  await despues.ref.update(cambios);
+  logger.info(`[${REL_VERSION}] ${etiqueta}: ${String(fac.invoice || despues.id)} saldo recalculado`, cambios);
+};
+
+export const facturaClienteMontoCambiado = onDocumentWritten({ document: 'facturas_clientes/{facId}', region: 'us-central1' }, async (event) => {
+  try { await recalcularSaldoFactura(event, 'facturaClienteMontoCambiado'); }
+  catch (e) { logger.error(`[${REL_VERSION}] facturaClienteMontoCambiado: fallo en ${event.params.facId}`, e); }
+});
+
+export const facturaProveedorMontoCambiado = onDocumentWritten({ document: 'facturas_proveedores/{facId}', region: 'us-central1' }, async (event) => {
+  try { await recalcularSaldoFactura(event, 'facturaProveedorMontoCambiado'); }
+  catch (e) { logger.error(`[${REL_VERSION}] facturaProveedorMontoCambiado: fallo en ${event.params.facId}`, e); }
+});
