@@ -30,7 +30,7 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import { SelectBuscable } from '../../catalogos/components/SelectBuscable';
-import { db, storage } from '../../../config/firebase'; // ✅ V00276: storage para el documento de la factura
+import { db, storage, auth } from '../../../config/firebase'; // ✅ V00276 · ✅ V00283: auth para registrar quién sube
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'; // ✅ V00276
 import { exportarExcelProfesional } from './exportarExcelProfesional';
 import { generarRemisionPDF } from './generarRemisionPDF';
@@ -554,6 +554,7 @@ export const FacturacionClientesDashboard = () => {
       docFacturaUrl: url,
       docFacturaNombre: archivo.name,
       docFacturaFecha: new Date().toISOString().slice(0, 10),
+        docFacturaPor: auth.currentUser?.email || '', // ✅ V00283
     }, { merge: true });
     await registrarLog('Facturación Clientes', 'Edición', `Subió el documento de la factura ${etiqueta}: ${archivo.name}.`);
     setFacturasGlobales(prev => prev.map(f => String(f.id) === id ? { ...f, docFacturaUrl: url, docFacturaNombre: archivo.name } : f));
@@ -580,11 +581,11 @@ export const FacturacionClientesDashboard = () => {
     }
   };
   /** Indicador 📄/⚠ del documento de la factura (fila, ficha). */
-  const indicadorDocFactura = (f: { id?: unknown; invoice?: unknown; docFacturaUrl?: unknown; docFacturaNombre?: unknown; docFacturaFecha?: unknown }, ficha = false) => (
+  const indicadorDocFactura = (f: { id?: unknown; invoice?: unknown; docFacturaUrl?: unknown; docFacturaNombre?: unknown; docFacturaFecha?: unknown; docFacturaPor?: unknown }, ficha = false) => (
     <span
       className={`fcd-doc-factura${String(f?.docFacturaUrl || '') ? ' fcd-doc-factura--ok' : ' fcd-doc-factura--falta'}${ficha ? ' fcd-doc-factura--ficha' : ''}`}
       title={String(f?.docFacturaUrl || '')
-        ? `Documento subido${f?.docFacturaFecha ? ` el ${f.docFacturaFecha}` : ''} — clic para verlo; Ctrl+clic para reemplazarlo`
+        ? `Documento subido${f?.docFacturaFecha ? ` el ${f.docFacturaFecha}` : ''}${String(f?.docFacturaPor || '') ? ` por ${f.docFacturaPor}` : ''} — clic para verlo; Ctrl+clic para reemplazarlo`
         : 'SIN el documento de la factura — clic para subirlo'}
       onClick={(e) => {
         e.stopPropagation();

@@ -161,6 +161,12 @@ const fechaLarga = (iso: string): string => {
 export function TarifarioClientesDashboard() {
   // ── Catálogos ──
   const [empresas, setEmpresas] = useState<Doc[]>([]);
+  // ✅ V00283: el NOMBRE del cliente es SIEMPRE la razón social actual de la
+  //   empresa (por clienteId); el texto guardado solo es respaldo.
+  const razonSocialDe = (r: Doc): string => {
+    const emp = empresas.find((e) => String(e.id) === String(r.clienteId || ''));
+    return String(emp?.nombre || r.clienteNombre || '');
+  };
   const [tiposEmpresaCat, setTiposEmpresaCat] = useState<Record<string, string>>({});
   const [tarifasRef, setTarifasRef] = useState<Doc[]>([]);
   const [cargandoCat, setCargandoCat] = useState(true);
@@ -479,6 +485,14 @@ export function TarifarioClientesDashboard() {
           status: 'Pendiente',
         };
       };
+      // ✅ V00283: la MONEDA DE COTIZACIÓN es obligatoria en cada línea.
+      const sinMoneda = elegidas.filter((t) => !canonMoneda(monedaTarifa[t.id]));
+      const extrasSinMoneda = extras.filter((x) => seleccion.has(x.tarifaRefId) && !canonMoneda(x.moneda));
+      if (sinMoneda.length > 0 || extrasSinMoneda.length > 0) {
+        alert(`Elige la MONEDA DE COTIZACIÓN (USD o MXN) de cada tarifa antes de guardar.\n\nFalta en: ${[...sinMoneda.map((t) => String(t.descripcion || '')), ...extrasSinMoneda.map(() => '(tarifa adicional)')].join(', ')}`);
+        setGuardando(false);
+        return;
+      }
       const lineas = [
         ...elegidas.map((t) => lineaDe(t, Number(tarifaValor[t.id]) || 0, monedaTarifa[t.id] || '')),
         ...extras
@@ -602,6 +616,7 @@ export function TarifarioClientesDashboard() {
       docFirmadoUrl: url,
       docFirmadoNombre: archivo.name,
       docFirmadoFecha: new Date().toISOString().slice(0, 10),
+      docFirmadoPor: auth.currentUser?.email || '', // ✅ V00283: quién subió el documento
     });
     await registrarLog('Tarifario Clientes', 'Edición', `Subió el tarifario firmado de "${nombreEntidad}" (${id}): ${archivo.name}.`);
     return url;
@@ -891,6 +906,89 @@ export function TarifarioClientesDashboard() {
 
   // ✅ V00198: cambiar el status de UNA línea del pre convenio (Cancelado /
   //   Inactivo / etc.) sin afectar el resto — se autoriza como editar Status.
+  // ✅ V00283: EDITOR DE LÍNEA (lápiz de la fila del convenio en la ficha) y
+  //   ALTA de tarifas nuevas al pre convenio. idx === null → línea nueva.
+  const [lineaEditor, setLineaEditor] = useState<{ regId: string; idx: number | null; tarifaRefId: string; costo: string; cotizadoEn: string; status: string } | null>(null);
+  const [guardandoLinea, setGuardandoLinea] = useState(false);
+
+  const guardarLineaEditor = async () => {
+    if (!lineaEditor || guardandoLinea) return;
+    const r = registros.find((x) => String(x.id) === lineaEditor.regId);
+    if (!r) return;
+    if (!canonMoneda(lineaEditor.cotizadoEn)) { alert('La MONEDA DE COTIZACIÓN (USD o MXN) es obligatoria.'); return; }
+    if (!aut.verificarAccion('editar', ['tarifa'])) return;
+    setGuardandoLinea(true);
+    try {
+      const tarifas: Doc[] = Array.isArray(r.tarifas) ? [...(r.tarifas as Doc[])] : [];
+      if (lineaEditor.idx === null) {
+        // Línea NUEVA — nace del catálogo de tarifas de referencia.
+        const ref = tarifasRef.find((t) => String(t.id) === lineaEditor.tarifaRefId);
+        if (!ref) { alert('Elige la TARIFA del catálogo.'); setGuardandoLinea(false); return; }
+        const nueva: Doc = {
+          tarifaReferenciaId: String(ref.id),
+          descripcion: String(ref.descripcion || ''),
+          clave: claveDe(ref),
+          origen: String(ref.origen || ''),
+          destino: String(ref.destino || ''),
+          costosSugeridos: costosDe(ref),
+          tarifa: Number(lineaEditor.costo) || 0,
+          cotizadoEn: canonMoneda(lineaEditor.cotizadoEn),
+          status: lineaEditor.status || 'Pendiente',
+        };
+        if (String(r.convenioId || '')) {
+          // El tarifario YA tiene convenio: la línea nace con consecutivo y detalle.
+          const [cc] = await reservarConsecutivosDetalle(1);
+          nueva.consecutivo = cc;
+          await setDoc(doc(db, 'convenios_clientes_detalles', cc), {
+            convenioId: String(r.convenioId),
+            tipoConvenioId: String(ref.id),
+            tipoConvenioNombre: String(ref.descripcion || ''),
+            tarifa: Number(lineaEditor.costo) || 0,
+            moneda: nombreMoneda(lineaEditor.cotizadoEn),
+            consecutivo: cc,
+            status: nueva.status,
+            tarifarioId: String(r.id),
+          });
+        }
+        tarifas.push(nueva);
+        await updateDoc(doc(db, 'tarifario_clientes', r.id), { tarifas });
+        await registrarLog('Tarifario Clientes', 'Edición', `Agregó la tarifa "${nueva.descripcion}" (${fmtMoney(Number(nueva.tarifa) || 0)} ${nueva.cotizadoEn}) al pre convenio de "${razonSocialDe(r)}".`);
+      } else {
+        const t = tarifas[lineaEditor.idx];
+        if (!t) { setGuardandoLinea(false); return; }
+        tarifas[lineaEditor.idx] = { ...t, tarifa: Number(lineaEditor.costo) || 0, cotizadoEn: canonMoneda(lineaEditor.cotizadoEn), status: lineaEditor.status || String(t.status || 'Pendiente') };
+        await updateDoc(doc(db, 'tarifario_clientes', r.id), { tarifas });
+        // ✅ la línea y su detalle del convenio comparten datos (relación por consecutivo)
+        const cc = String(t.consecutivo || '').trim();
+        if (cc) { try { await updateDoc(doc(db, 'convenios_clientes_detalles', cc), { tarifa: Number(lineaEditor.costo) || 0, moneda: nombreMoneda(lineaEditor.cotizadoEn), status: tarifas[lineaEditor.idx].status, tarifarioId: String(r.id) }); } catch { /* lo cubre el motor v1.2 */ } }
+        await registrarLog('Tarifario Clientes', 'Edición', `Editó la tarifa "${t.descripcion || ''}" del pre convenio de "${razonSocialDe(r)}" (${fmtMoney(Number(lineaEditor.costo) || 0)} ${canonMoneda(lineaEditor.cotizadoEn)}).`);
+      }
+      setLineaEditor(null);
+    } catch (e) {
+      console.error('No se pudo guardar la tarifa:', e);
+      alert('No se pudo guardar la tarifa.');
+    }
+    setGuardandoLinea(false);
+  };
+
+  const eliminarLinea = async (r: Doc, idx: number) => {
+    if (!aut.verificarAccion('borrar')) return;
+    const tarifas: Doc[] = Array.isArray(r.tarifas) ? [...(r.tarifas as Doc[])] : [];
+    const t = tarifas[idx];
+    if (!t) return;
+    const cc = String(t.consecutivo || '').trim();
+    if (!window.confirm(`¿Eliminar la tarifa "${t.descripcion || ''}"${cc ? ` (${cc})` : ''} de este pre convenio?${cc ? '\n\nTambién se eliminará su detalle en Convenios (Detalles del Convenio).' : ''}`)) return;
+    try {
+      tarifas.splice(idx, 1);
+      await updateDoc(doc(db, 'tarifario_clientes', r.id), { tarifas });
+      if (cc) { try { await deleteDoc(doc(db, 'convenios_clientes_detalles', cc)); } catch { /* mejor esfuerzo */ } }
+      await registrarLog('Tarifario Clientes', 'Eliminación', `Eliminó la tarifa "${t.descripcion || ''}"${cc ? ` (${cc})` : ''} del pre convenio de "${razonSocialDe(r)}".`);
+    } catch (e) {
+      console.error('No se pudo eliminar la tarifa:', e);
+      alert('No se pudo eliminar la tarifa.');
+    }
+  };
+
   const cambiarStatusLinea = async (r: Doc, idx: number, nuevo: string) => {
     if (!aut.verificarAccion('editar', ['status'])) return;
     try {
@@ -1113,7 +1211,7 @@ export function TarifarioClientesDashboard() {
   const tablaTarifasDe = (r: Doc, editable = false) => (
     <table className="tc-tabla-interna">
       <thead>
-        <tr><th>CONSECUTIVO</th><th>TARIFAS</th><th>TARIFAS SUGERIDAS</th><th>TARIFA</th><th>COTIZADO EN</th><th>STATUS</th></tr>{/* ✅ V00200 */}
+        <tr><th>CONSECUTIVO</th><th>TARIFAS</th><th>TARIFAS SUGERIDAS</th><th>TARIFA</th><th>COTIZADO EN</th><th>STATUS</th>{editable && <th>ACCIONES</th>}</tr>{/* ✅ V00200 · ✅ V00283 */}
       </thead>
       <tbody>
         {lineasConConsecutivo(r).map((t: Doc, i: number) => (
@@ -1148,6 +1246,14 @@ export function TarifarioClientesDashboard() {
                 <span className={chipStatus(t.status)}>{t.status || 'Pendiente'}</span>
               )}
             </td>
+            {editable && (
+              <td className="tc-td-acciones-linea">{/* ✅ V00283: editar/eliminar la línea */}
+                <button type="button" className="tc-btn-linea tc-btn-linea--editar" title="Editar esta tarifa (costo, moneda y status)"
+                  onClick={() => setLineaEditor({ regId: String(r.id), idx: i, tarifaRefId: String(t.tarifaReferenciaId || ''), costo: String(t.tarifa ?? ''), cotizadoEn: canonMoneda(t.cotizadoEn || r.moneda) || '', status: String(t.status || 'Pendiente') })}>✏</button>
+                <button type="button" className="tc-btn-linea tc-btn-linea--borrar" title="Eliminar esta tarifa del pre convenio"
+                  onClick={() => eliminarLinea(r, i)}>🗑</button>
+              </td>
+            )}
           </tr>
         ))}
       </tbody>
@@ -1245,7 +1351,7 @@ export function TarifarioClientesDashboard() {
                     <td className="tc-td-consecutivo">{r.consecutivo || (String(r.id).startsWith('TARI-') || String(r.id).startsWith('TAR-') ? r.id : '—')}</td>
                     <td>{r.fecha || '—'}</td>
                     <td className={vencido(r) ? 'tc-td-vencido' : ''}>{vencimientoDe(r)}</td>{/* ✅ V00219 */}{/* ✅ V00212 */}
-                    <td className="tc-td-cliente">{r.clienteNombre || '—'}</td>
+                    <td className="tc-td-cliente">{razonSocialDe(r) || '—'}</td>{/* ✅ V00283 */}
                     <td>{r.moneda ? <span className={`tc-chip ${r.moneda === 'USD' ? 'tc-chip-usd' : 'tc-chip-mxn'}`}>{r.moneda}</span> : '—'}</td>
                     <td>{r.creditoDias > 0 ? `${r.creditoDias} día(s)` : '—'}</td>
                     <td className="tc-td-num">{Array.isArray(r.tarifas) ? r.tarifas.length : 0}</td>
@@ -1267,7 +1373,7 @@ export function TarifarioClientesDashboard() {
             <div className="tc-modal tc-modal-detalle" onClick={(e) => e.stopPropagation()}>
               <div className="tc-modal-encabezado">
                 <div>
-                  <h3 className="tc-modal-titulo">Detalle del Pre Convenio — <span className="tc-td-cliente">{r.clienteNombre || '—'}</span></h3>
+                  <h3 className="tc-modal-titulo">Detalle del Pre Convenio — <span className="tc-td-cliente">{razonSocialDe(r) || '—'}</span></h3>
                   <p className="tc-modal-sub">Toda la información del registro. Desde aquí puedes aprobarlo o descargar el PDF.</p>
                 </div>
                 <button type="button" className="tc-cerrar" onClick={() => setDetalleId('')}>✕</button>
@@ -1288,6 +1394,9 @@ export function TarifarioClientesDashboard() {
                 </div>
                 <div><span className="tc-label">Creado por</span><b>{r.creadoPor || '—'}</b></div>
                 <div><span className="tc-label">{String(r.status) === 'Aprobado' ? 'Aprobado por' : 'Editado por'}</span><b>{(String(r.status) === 'Aprobado' ? r.aprobadoPor : r.editadoPor) || '—'}</b></div>
+                {String(r.docFirmadoUrl || '') !== '' && (
+                  <div><span className="tc-label">Documento subido por</span><b>{r.docFirmadoPor || '—'}{r.docFirmadoFecha ? ` · ${r.docFirmadoFecha}` : ''}</b></div>
+                )}{/* ✅ V00283 */}
               </div>
 
               <div className="tc-marco tc-modal-marco">
@@ -1296,6 +1405,8 @@ export function TarifarioClientesDashboard() {
 
               <div className="tc-modal-pie">
                 <span className="tc-conteo-sel">{Array.isArray(r.tarifas) ? r.tarifas.length : 0} tarifa(s) en este pre convenio</span>
+                <button type="button" className="tc-btn-agregar-linea" title="Agregar otra tarifa a este pre convenio"
+                  onClick={() => setLineaEditor({ regId: String(r.id), idx: null, tarifaRefId: '', costo: '', cotizadoEn: '', status: 'Pendiente' })}>+ Agregar tarifa</button>{/* ✅ V00283 */}
                 <div className="tc-modal-botones">
                   {/* ✅ V00199: en el detalle, los botones llevan su NOMBRE */}
                   <button
@@ -1538,9 +1649,10 @@ export function TarifarioClientesDashboard() {
                           <td className="tc-td-num" onClick={(e) => e.stopPropagation()}>
                             <select
                               className="form-control tc-select-costo"
-                              value={monedaTarifa[t.id] || monedaCliente || 'USD'}
+                              value={monedaTarifa[t.id] || ''}
                               onChange={(e) => setMonedaTarifa((p) => ({ ...p, [t.id]: e.target.value as 'USD' | 'MXN' }))}
                             >
+                              <option value="">— Elegir —</option>{/* ✅ V00283: obligatoria */}
                               <option value="USD">USD</option>
                               <option value="MXN">MXN</option>
                             </select>
@@ -1550,7 +1662,7 @@ export function TarifarioClientesDashboard() {
                                 type="button"
                                 className="tc-btn-otra-tarifa"
                                 title="Agregar otra tarifa para este mismo servicio (con monto distinto)"
-                                onClick={() => setExtras((p) => [...p, { key: `x${Date.now()}-${t.id}`, tarifaRefId: String(t.id), valor: '', moneda: monedaTarifa[t.id] || (monedaCliente as 'USD' | 'MXN') || 'USD' }])}
+                                onClick={() => setExtras((p) => [...p, { key: `x${Date.now()}-${t.id}`, tarifaRefId: String(t.id), valor: '', moneda: (monedaTarifa[t.id] || '') as 'USD' | 'MXN' }])}
                               >
                                 + otra tarifa
                               </button>
@@ -1613,6 +1725,66 @@ export function TarifarioClientesDashboard() {
           </div>
         </div>
       )}
+
+      {/* ✅ V00283: MINI-EDITOR de línea — editar una tarifa o agregar una nueva */}
+      {lineaEditor && (() => {
+        const rEd = registros.find((x) => String(x.id) === lineaEditor.regId);
+        if (!rEd) return null;
+        const esNueva = lineaEditor.idx === null;
+        const refSel = tarifasRef.find((t) => String(t.id) === lineaEditor.tarifaRefId);
+        return (
+          <div className="tc-overlay" onClick={() => setLineaEditor(null)}>
+            <div className="tc-modal tc-modal-linea" onClick={(e) => e.stopPropagation()}>
+              <div className="tc-modal-encabezado">
+                <div>
+                  <h3 className="tc-modal-titulo">{esNueva ? 'Agregar tarifa' : 'Editar tarifa'} — <span className="tc-td-cliente">{razonSocialDe(rEd)}</span></h3>
+                  <p className="tc-modal-sub">{esNueva ? 'La tarifa se agrega a este pre convenio.' : `${String((Array.isArray(rEd.tarifas) ? (rEd.tarifas as Doc[])[lineaEditor.idx as number] : undefined)?.consecutivo || '')} ${String((Array.isArray(rEd.tarifas) ? (rEd.tarifas as Doc[])[lineaEditor.idx as number] : undefined)?.descripcion || '')}`.trim() || 'Edición de la línea.'}</p>
+                </div>
+                <button type="button" className="tc-cerrar" onClick={() => setLineaEditor(null)}>✕</button>
+              </div>
+              <div className="tc-form-grid">
+                {esNueva && (
+                  <label className="tc-campo tc-campo-ancho">
+                    <span>Tarifa (catálogo) *</span>
+                    <select className="form-control" value={lineaEditor.tarifaRefId} onChange={(e) => setLineaEditor((p) => (p ? { ...p, tarifaRefId: e.target.value } : p))}>
+                      <option value="">— Elegir tarifa —</option>
+                      {tarifasRef.map((t) => <option key={String(t.id)} value={String(t.id)}>{String(t.descripcion || t.id)}</option>)}
+                    </select>
+                    {refSel && (refSel.origen || refSel.destino) ? <small className="tc-sub-linea">{`${refSel.origen || '?'} → ${refSel.destino || '?'}`}</small> : null}
+                  </label>
+                )}
+                <label className="tc-campo">
+                  <span>Costo de la tarifa</span>
+                  <input type="number" min="0" step="0.01" className="form-control" value={lineaEditor.costo} onChange={(e) => setLineaEditor((p) => (p ? { ...p, costo: e.target.value } : p))} />
+                </label>
+                <label className="tc-campo">
+                  <span>Moneda de cotización *</span>
+                  <select className="form-control" value={lineaEditor.cotizadoEn} onChange={(e) => setLineaEditor((p) => (p ? { ...p, cotizadoEn: e.target.value } : p))}>
+                    <option value="">— Elegir —</option>
+                    <option value="USD">USD</option>
+                    <option value="MXN">MXN</option>
+                  </select>
+                </label>
+                <label className="tc-campo">
+                  <span>Status</span>
+                  <select className="form-control" value={lineaEditor.status} onChange={(e) => setLineaEditor((p) => (p ? { ...p, status: e.target.value } : p))}>
+                    {STATUS_TARIFARIO.map((st) => <option key={st} value={st}>{st}</option>)}
+                  </select>
+                </label>
+              </div>
+              <div className="tc-modal-pie">
+                <span className="tc-conteo-sel">{canonMoneda(lineaEditor.cotizadoEn) ? '' : 'Elige la moneda de cotización para poder guardar.'}</span>
+                <div className="tc-modal-botones">
+                  <button type="button" className="btn btn-outline" onClick={() => setLineaEditor(null)}>Cancelar</button>
+                  <button type="button" className="tc-btn-guardar-cabecera" disabled={guardandoLinea || !canonMoneda(lineaEditor.cotizadoEn) || (esNueva && !lineaEditor.tarifaRefId)} onClick={guardarLineaEditor}>
+                    {guardandoLinea ? 'Guardando…' : 'Guardar cambios'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

@@ -597,6 +597,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
 
   const guardarEdicion = async () => {
     if (!editando || guardandoEdicion) return;
+    if (!String(editForm.moneda || '').trim()) { alert('Selecciona la moneda de cotización (Cotizado En) — es obligatoria.'); return; } // ✅ V00283
     const f = editando;
     const tocados: string[] = [];
     if (editForm.tarifaId !== (f.tarifaId || '')) tocados.push('tarifa');

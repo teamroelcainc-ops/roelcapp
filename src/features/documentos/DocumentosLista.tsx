@@ -195,7 +195,7 @@ export const DocumentosLista: React.FC<DocumentosListaProps> = ({ coleccionOrige
               <div className="dl-x10">{d.nombreArchivo || '-'}</div>
 
               <div className="dl-x11">
-                <span>Subido: {formatearFecha(d.createdAt)}</span>
+                <span>Subido: {formatearFecha(d.createdAt)}{d.subidoPor ? ` · por ${d.subidoPor}` : ''}</span>{/* ✅ V00283 */}
                 {d.vence && <span>Expedición: {formatearFecha(d.fechaExpedicion)}</span>}
               </div>
 

@@ -26,7 +26,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, doc, getDocs, setDoc } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../../config/firebase';
+import { db, storage, auth } from '../../config/firebase';
 import { SelectBuscable } from '../catalogos/components/SelectBuscable';
 import './DocumentoUploadModal.css';
 
@@ -302,6 +302,7 @@ export const DocumentoUploadModal: React.FC<DocumentoUploadModalProps> = ({
         fechaExpedicion: vence ? fechaExpedicion : '',
         fechaVencimiento: vence ? fechaVencimiento : '',
         observaciones: observaciones || '',
+        subidoPor: auth.currentUser?.email || '', // ✅ V00283: quién subió el documento
         createdAt: new Date().toISOString(),
       }, { merge: true });
 
