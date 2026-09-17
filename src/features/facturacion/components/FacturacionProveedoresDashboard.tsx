@@ -2349,8 +2349,8 @@ export const FacturacionProveedoresDashboard = () => {
     if (seleccionMultiProveedor || !proveedorFacturaId) {
       return alert('Las operaciones seleccionadas deben ser de un mismo proveedor. Selecciona un proveedor en el filtro o elige operaciones de un solo proveedor.');
     }
-    // ✅ V00276: la factura debe llevar su documento; sin él se pide confirmación.
-    if (!docFacturaFile && !window.confirm('No adjuntaste el DOCUMENTO de la factura.\n\n¿Facturar sin el documento? (quedará marcada con ⚠ hasta que lo subas)')) return;
+    // ✅ V00279: el documento NO es obligatorio para facturar — sin adjunto se
+    //   factura directo y la fila queda con ⚠ como recordatorio visual.
     setGuardando(true);
     try {
       const batch = writeBatch(db);
@@ -2450,7 +2450,7 @@ export const FacturacionProveedoresDashboard = () => {
       // ✅ V00276: el documento adjuntado se sube ya con el id real de la factura.
       if (docFacturaFile) {
         try { await subirDocFacturaA(docId, docFacturaFile, invoiceForm.trim() || docId); }
-        catch (eDoc) { console.error(eDoc); alert('La factura se guardó, pero el documento no se pudo subir. Súbelo desde la fila (⚠).'); }
+        catch (eDoc: unknown) { console.error(eDoc); const det = (eDoc as { code?: string; message?: string })?.code || (eDoc as { message?: string })?.message || String(eDoc); alert(`La factura se guardó, pero el documento no se pudo subir.\n\nMotivo: ${det}\n\nSi dice "unauthorized", hay que permitir la ruta facturas_documentos/ en las reglas de Storage. Puedes reintentar desde la fila (⚠).`); }
         setDocFacturaFile(null);
       }
       setModalAbierto(false);
@@ -2509,12 +2509,6 @@ export const FacturacionProveedoresDashboard = () => {
   const handleGuardarEdicionFactura = async () => {
     if (!facturaEditando) return;
     if (!editInvoice.trim()) return alert('El # de Invoice es obligatorio.');
-    // ✅ V00276: si eligieron documento en el editor, se sube con el id de la factura.
-    if (docFacturaFile) {
-      try { await subirDocFacturaA(String(facturaEditando.id), docFacturaFile, String(facturaEditando.invoice || facturaEditando.id)); }
-      catch (eDoc) { console.error(eDoc); alert('El documento no se pudo subir; los demás cambios continúan. Súbelo desde la fila (⚠).'); }
-      setDocFacturaFile(null);
-    }
     setGuardandoEdit(true);
     try {
       const ids: string[] = Array.isArray(facturaEditando.__groupIds) && facturaEditando.__groupIds.length ? facturaEditando.__groupIds : [facturaEditando.id];
@@ -2552,6 +2546,20 @@ export const FacturacionProveedoresDashboard = () => {
         }, { merge: true });
       });
       await batch.commit();
+      // ✅ V00279: el DOCUMENTO se sube DESPUÉS de guardar — el guardado de la
+      //   factura nunca depende de la subida (recuerda: el documento en
+      //   facturación NO es obligatorio; la ⚠ solo avisa). Si Storage rechaza
+      //   la subida, se muestra el motivo exacto para diagnosticarlo.
+      if (docFacturaFile) {
+        try {
+          await subirDocFacturaA(String(facturaEditando.id), docFacturaFile, String(facturaEditando.invoice || facturaEditando.id));
+        } catch (eDoc: unknown) {
+          console.error(eDoc);
+          const det = (eDoc as { code?: string; message?: string })?.code || (eDoc as { message?: string })?.message || String(eDoc);
+          alert(`Los cambios de la factura SÍ se guardaron, pero el documento no se pudo subir.\n\nMotivo: ${det}\n\nSi dice "unauthorized", hay que permitir la ruta facturas_documentos/ en las reglas de Storage. Puedes reintentar desde la fila (⚠).`);
+        }
+        setDocFacturaFile(null);
+      }
       setFacturasGlobales(prev => prev.map(f => {
         if (!ids.includes(f.id)) return f;
         const esPrimero = f.id === ids[0];
