@@ -3146,6 +3146,10 @@ export const FacturacionClientesDashboard = () => {
     <div className="module-container fcd-x30">
       {/* ✅ V00276: selector del documento de la factura (oculto, subida inmediata) */}
       <input ref={inputDocFacturaRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="fcd-input-doc-oculto" onChange={alElegirDocFactura} />
+      {/* ✅ V00277.1: el selector del archivo DIFERIDO (facturar/editar) vive aquí,
+          SIEMPRE montado — antes estaba dentro del modal de facturar y el botón
+          "Reemplazar…" del EDITOR apuntaba a un input inexistente. */}
+      <input ref={inputDocFacturaModalRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="fcd-input-doc-oculto" onChange={(e) => { const a = e.target.files?.[0] || null; e.target.value = ''; if (a) setDocFacturaFile(a); }} />
       {hiloFacturaId && <HiloModal tipo="cliente" facturaId={hiloFacturaId} onClose={() => setHiloFacturaId(null)} onEditarOperacion={(id) => setOpEditandoId(id)} />}
       {opEditandoId && (
         <EditorOperacionEmbebido operacionId={opEditandoId} operacion={operacionesGlobales.find((o: any) => String(o.id) === opEditandoId)} onClose={() => setOpEditandoId(null)} />
@@ -3900,7 +3904,6 @@ export const FacturacionClientesDashboard = () => {
                       : <span className="fcd-docfactura-nombre fcd-docfactura-nombre--vacio">Sin documento</span>}
                     <button type="button" className="btn-small fcd-docfactura-btn" onClick={() => inputDocFacturaModalRef.current?.click()}>{docFacturaFile ? 'Cambiar…' : 'Elegir archivo…'}</button>
                     {docFacturaFile && <button type="button" className="btn-small fcd-docfactura-btn" onClick={() => setDocFacturaFile(null)} title="Quitar el archivo elegido">✕</button>}
-                    <input ref={inputDocFacturaModalRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="fcd-input-doc-oculto" onChange={(e) => { const a = e.target.files?.[0] || null; e.target.value = ''; if (a) setDocFacturaFile(a); }} />
                   </div>
                 </div>
               </div>
