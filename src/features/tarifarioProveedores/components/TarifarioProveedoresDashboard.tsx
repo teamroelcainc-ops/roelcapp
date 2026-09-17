@@ -81,7 +81,7 @@
 // ---------------------------------------------------------------------------
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
-import { collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db, auth, storage } from '../../../config/firebase'; // ✅ V00273: storage para el tarifario firmado
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'; // ✅ V00273
 import { registrarLog } from '../../../utils/logger';
@@ -1002,6 +1002,69 @@ export function TarifarioProveedoresDashboard() {
     setGuardandoLinea(false);
   };
 
+  // ✅ V00289: SINCRONIZAR CONVENIOS — repara las líneas SIN # de convenio:
+  //   busca su detalle por (convenioId + tarifa del catálogo + monto) y adopta
+  //   su consecutivo; si no existe y el tarifario ya tiene convenio, lo CREA.
+  //   Con esto lo del tarifario y lo de Convenios queda igual, tal cual.
+  const [sincronizandoConv, setSincronizandoConv] = useState(false);
+  const sincronizarConvenios = async (r: Doc) => {
+    if (sincronizandoConv) return;
+    if (!aut.verificarAccion('editar', ['status'])) return;
+    setSincronizandoConv(true);
+    try {
+      const tarifas: Doc[] = Array.isArray(r.tarifas) ? [...(r.tarifas as Doc[])] : [];
+      const convId = String(r.convenioId || '');
+      const snapDet = convId ? await getDocs(query(collection(db, 'convenios_proveedores_detalles'), where('convenioId', '==', convId))) : null;
+      const detalles = (snapDet?.docs || []).map((d) => ({ id: d.id, ...(d.data() as Doc) }));
+      const usados = new Set(tarifas.map((t) => String(t.consecutivo || '')).filter(Boolean));
+      let ligadas = 0, creadas = 0;
+      for (let i = 0; i < tarifas.length; i++) {
+        const t = tarifas[i];
+        if (String(t.consecutivo || '').trim()) continue;
+        // 1) adoptar un detalle existente equivalente que nadie use
+        const det = detalles.find((d) => !usados.has(String(d.consecutivo || d.id)) &&
+          String(d.tipoConvenioId || '') === String(t.tarifaReferenciaId || '') &&
+          Math.abs((Number(d.tarifa) || 0) - (Number(t.tarifa) || 0)) < 0.005);
+        if (det) {
+          const cc = String(det.consecutivo || det.id);
+          tarifas[i] = { ...t, consecutivo: cc };
+          usados.add(cc);
+          try { await updateDoc(doc(db, 'convenios_proveedores_detalles', String(det.id)), { status: String(t.status || 'Aprobado'), tarifarioId: String(r.id) }); } catch { /* motor */ }
+          ligadas += 1;
+          continue;
+        }
+        // 2) crearlo (solo si ya hay convenio)
+        if (convId) {
+          const [cc] = await reservarConsecutivosDetalleProveedor(1);
+          tarifas[i] = { ...t, consecutivo: cc };
+          usados.add(cc);
+          await setDoc(doc(db, 'convenios_proveedores_detalles', cc), {
+            convenioId: convId,
+            tipoConvenioId: String(t.tarifaReferenciaId || ''),
+            tipoConvenioNombre: String(t.descripcion || ''),
+            tarifa: Number(t.tarifa) || 0,
+            moneda: nombreMoneda(t.cotizadoEn || r.moneda),
+            consecutivo: cc,
+            status: String(t.status || 'Aprobado'),
+            tarifarioId: String(r.id),
+          });
+          creadas += 1;
+        }
+      }
+      if (ligadas + creadas > 0) {
+        await updateDoc(doc(db, 'tarifario_proveedores', r.id), { tarifas });
+        await registrarLog('Tarifario Proveedores', 'Edición', `Sincronizó convenios del pre convenio de "${razonSocialDe(r)}": ${ligadas} línea(s) ligada(s) y ${creadas} creada(s).`);
+        alert(`Sincronización completa. ✅\n\n· Líneas ligadas a su convenio: ${ligadas}\n· Convenios creados: ${creadas}`);
+      } else {
+        alert(convId ? 'Todas las líneas ya tienen su # de convenio. ✅' : 'Este tarifario aún no tiene convenio (se asigna al aprobar).');
+      }
+    } catch (e) {
+      console.error('No se pudo sincronizar:', e);
+      alert('No se pudo completar la sincronización.');
+    }
+    setSincronizandoConv(false);
+  };
+
   const eliminarLinea = async (r: Doc, idx: number) => {
     if (!aut.verificarAccion('borrar')) return;
     const tarifas: Doc[] = Array.isArray(r.tarifas) ? [...(r.tarifas as Doc[])] : [];
@@ -1280,7 +1343,7 @@ export function TarifarioProveedoresDashboard() {
             {editable && (
               <td className="tc-td-acciones-linea">{/* ✅ V00283: editar/eliminar la línea */}
                 <button type="button" className="tc-btn-linea tc-btn-linea--editar" title="Editar esta tarifa (costo, moneda y status)"
-                  onClick={(e) => { e.stopPropagation(); setLineaEditor({ regId: String(r.id), idx: i, tarifaRefId: String(t.tarifaReferenciaId || ''), costo: String(t.tarifa ?? ''), cotizadoEn: canonMoneda(t.cotizadoEn || r.moneda) || '', status: String(t.status || 'Pendiente'), origen: String(t.origen || ''), destino: String(t.destino || '') }); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button>
+                  onClick={(e) => { e.stopPropagation(); setLineaEditor({ regId: String(r.id), idx: i, tarifaRefId: String(t.tarifaReferenciaId || ''), costo: String(t.tarifa ?? ''), cotizadoEn: canonMoneda(t.cotizadoEn || r.moneda) || '', status: String(t.status || 'Pendiente'), origen: String(t.origen || ''), destino: String(t.destino || ''), tarifaTexto: String(t.descripcion || '') }); }}>{/* ✅ V00289: la descripción viaja con la línea (sin esperas) */}<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button>
                 <button type="button" className="tc-btn-linea tc-btn-linea--borrar" title="Eliminar esta tarifa del pre convenio"
                   onClick={(e) => { e.stopPropagation(); eliminarLinea(r, i); }}>🗑</button>
               </td>
@@ -1438,6 +1501,7 @@ export function TarifarioProveedoresDashboard() {
                 <span className="tc-conteo-sel">{Array.isArray(r.tarifas) ? r.tarifas.length : 0} tarifa(s) en este pre convenio</span>
                 <button type="button" className="tc-btn-agregar-linea" title="Agregar otra tarifa a este pre convenio"
                   onClick={() => setLineaEditor({ regId: String(r.id), idx: null, tarifaRefId: '', costo: '', cotizadoEn: '', status: 'Pendiente', origen: '', destino: '' })}>+ Agregar tarifa</button>{/* ✅ V00283 */}
+                <button type="button" className="tc-btn-sincronizar-conv" title="Ligar las líneas sin # de convenio con su detalle en Convenios (o crearlo)" disabled={sincronizandoConv} onClick={() => sincronizarConvenios(r)}>{sincronizandoConv ? 'Sincronizando…' : '⟳ Sincronizar convenios'}</button>{/* ✅ V00289 */}
                 <div className="tc-modal-botones">
                   {/* ✅ V00199: en el detalle, los botones llevan su NOMBRE */}
                   <button
@@ -1818,7 +1882,7 @@ export function TarifarioProveedoresDashboard() {
                 <label className="tc-campo">
                   <span>Tarifa (catálogo){ast('tarifaRefId')}</span>
                   <input type="text" className="form-control" list="tcListaTarifasProv" placeholder="Buscar..." disabled={!esNueva}
-                    value={refSel ? String(refSel.descripcion || '') : (lineaEditor.tarifaRefId ? String((tarifasRef.find((x) => String(x.id) === lineaEditor.tarifaRefId)?.descripcion) || '') : lineaEditor.tarifaTexto || '')}
+                    value={refSel ? String(refSel.descripcion || '') : (lineaEditor.tarifaTexto || (lineaEditor.tarifaRefId ? String((tarifasRef.find((x) => String(x.id) === lineaEditor.tarifaRefId)?.descripcion) || '') : ''))}
                     onChange={(e) => {
                       const texto = e.target.value;
                       const t = tarifasRef.find((x) => String(x.descripcion || '') === texto);
@@ -1846,8 +1910,11 @@ export function TarifarioProveedoresDashboard() {
                 </label>
                 <label className="tc-campo">
                   <span>Cotizado En *</span>
-                  <input type="text" className="form-control" list="tcListaMonedasProv" placeholder="Buscar..." value={lineaEditor.cotizadoEn} onChange={(e) => setLineaEditor((p) => (p ? { ...p, cotizadoEn: e.target.value.toUpperCase() } : p))} />
-                  <datalist id="tcListaMonedasProv"><option value="USD" /><option value="MXN" /></datalist>
+                  <select className="form-control" value={lineaEditor.cotizadoEn} onChange={(e) => setLineaEditor((p) => (p ? { ...p, cotizadoEn: e.target.value } : p))}>{/* ✅ V00289: lista desplegable */}
+                    <option value="">Selecciona una moneda</option>
+                    <option value="USD">USD</option>
+                    <option value="MXN">MXN</option>
+                  </select>
                 </label>
                 <label className="tc-campo">
                   <span>Status{ast('status')}</span>

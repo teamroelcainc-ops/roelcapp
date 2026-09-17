@@ -8,7 +8,7 @@
 .tc-btn-linea--borrar:hover { background: rgba(218, 54, 51, 0.15); }
 .tc-btn-agregar-linea { background: #d84315; border: 1px solid #d84315; color: #fff; border-radius: 6px; padding: 7px 14px; cursor: pointer; font-weight: 700; }
 .tc-btn-agregar-linea:hover { filter: brightness(1.1); }
-.tc-modal-linea { max-width: 560px; }
+.tc-modal-linea { max-width: 900px; width: min(900px, 94vw); } /* ✅ V00289: formulario ancho */
 .tc-campo-ancho { grid-column: 1 / -1; }
 
 /* ✅ V00284: el mini-editor de línea SIEMPRE encima del detalle */
@@ -32,3 +32,9 @@
 .tc-cliente-linea > input[readonly] { opacity: 0.85; cursor: default; }
 .tc-btn-cambiar-cliente { background: transparent; border: 1px solid #1f6feb; color: #58a6ff; border-radius: 6px; padding: 7px 12px; cursor: pointer; font-size: 0.8rem; flex-shrink: 0; }
 .tc-btn-cambiar-cliente:hover { background: rgba(31, 111, 235, 0.15); }
+
+/* ✅ V00289: el modal del tarifario nunca se desborda — scroll interno */
+.tc-modal { max-height: 92vh; overflow-y: auto; }
+.tc-btn-sincronizar-conv { background: transparent; border: 1px solid #1f6feb; color: #58a6ff; border-radius: 6px; padding: 7px 14px; cursor: pointer; font-weight: 700; margin-left: 8px; }
+.tc-btn-sincronizar-conv:hover { background: rgba(31, 111, 235, 0.15); }
+.tc-btn-sincronizar-conv:disabled { opacity: 0.6; cursor: wait; }
