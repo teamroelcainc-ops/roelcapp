@@ -340,6 +340,9 @@ export function TarifarioClientesDashboard() {
       await updateDoc(doc(db, 'tarifario_clientes', editandoId), {
         fecha,
         fechaVencimiento,
+        // ✅ V00288: si se CAMBIÓ el cliente (elegido de la lista), se guarda la
+        //   relación real; el nombre es siempre la razón social de Empresas.
+        ...(clienteSel ? { clienteId: String(clienteSel.id), clienteNombre: String(clienteSel.nombre || '') } : {}),
         docObligatorio: docObligatorioForm, // ✅ V00277
         editadoEl: new Date().toISOString(),
         editadoPor: auth.currentUser?.email || '',
@@ -911,7 +914,7 @@ export function TarifarioClientesDashboard() {
   //   Inactivo / etc.) sin afectar el resto — se autoriza como editar Status.
   // ✅ V00283: EDITOR DE LÍNEA (lápiz de la fila del convenio en la ficha) y
   //   ALTA de tarifas nuevas al pre convenio. idx === null → línea nueva.
-  const [lineaEditor, setLineaEditor] = useState<{ regId: string; idx: number | null; tarifaRefId: string; costo: string; cotizadoEn: string; status: string; origen: string; destino: string } | null>(null);
+  const [lineaEditor, setLineaEditor] = useState<{ regId: string; idx: number | null; tarifaRefId: string; costo: string; cotizadoEn: string; status: string; origen: string; destino: string; tarifaTexto?: string; tarifarioTexto?: string } | null>(null);
   // ✅ V00286: configuración COMPARTIDA de campos obligatorios (Firestore).
   const [configOblig, setConfigOblig] = useState<CamposObligatoriosTarifa>({ ...OBLIGATORIOS_TARIFA_DEFAULT });
   const [mostrarConfigOblig, setMostrarConfigOblig] = useState(false);
@@ -946,6 +949,7 @@ export function TarifarioClientesDashboard() {
     const r = registros.find((x) => String(x.id) === lineaEditor.regId);
     if (!r) return;
     if (!canonMoneda(lineaEditor.cotizadoEn)) { alert('La MONEDA DE COTIZACIÓN (USD o MXN) es obligatoria.'); return; }
+    if (lineaEditor.status && !STATUS_TARIFARIO.includes(lineaEditor.status as typeof STATUS_TARIFARIO[number])) { alert(`El STATUS debe ser uno de la lista: ${STATUS_TARIFARIO.join(', ')}.`); return; } // ✅ V00288
     { const faltan = faltantesSegunConfig(lineaEditor); if (faltan.length > 0) { alert(`Completa los campos obligatorios antes de guardar:\n\n· ${faltan.join('\n· ')}`); return; } } // ✅ V00286
     if (!aut.verificarAccion('editar', ['tarifa'])) return;
     setGuardandoLinea(true);
@@ -1280,9 +1284,9 @@ export function TarifarioClientesDashboard() {
             {editable && (
               <td className="tc-td-acciones-linea">{/* ✅ V00283: editar/eliminar la línea */}
                 <button type="button" className="tc-btn-linea tc-btn-linea--editar" title="Editar esta tarifa (costo, moneda y status)"
-                  onClick={() => setLineaEditor({ regId: String(r.id), idx: i, tarifaRefId: String(t.tarifaReferenciaId || ''), costo: String(t.tarifa ?? ''), cotizadoEn: canonMoneda(t.cotizadoEn || r.moneda) || '', status: String(t.status || 'Pendiente'), origen: String(t.origen || ''), destino: String(t.destino || '') })}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button>
+                  onClick={(e) => { e.stopPropagation(); setLineaEditor({ regId: String(r.id), idx: i, tarifaRefId: String(t.tarifaReferenciaId || ''), costo: String(t.tarifa ?? ''), cotizadoEn: canonMoneda(t.cotizadoEn || r.moneda) || '', status: String(t.status || 'Pendiente'), origen: String(t.origen || ''), destino: String(t.destino || '') }); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button>
                 <button type="button" className="tc-btn-linea tc-btn-linea--borrar" title="Eliminar esta tarifa del pre convenio"
-                  onClick={() => eliminarLinea(r, i)}>🗑</button>
+                  onClick={(e) => { e.stopPropagation(); eliminarLinea(r, i); }}>🗑</button>
               </td>
             )}
           </tr>
@@ -1523,15 +1527,22 @@ export function TarifarioClientesDashboard() {
 
               <div className="tc-campo tc-campo-cliente">
                 <label className="tc-label">Cliente que Paga</label>
+                <div className="tc-cliente-linea">{/* ✅ V00288: en EDICIÓN el nombre NO se escribe a mano — solo se elige de la lista */}
                 <input
                   type="text"
                   className="form-control"
                   placeholder={cargandoCat ? 'Cargando empresas…' : 'Buscar cliente…'}
                   value={busquedaCliente}
                   disabled={cargandoCat}
-                  onChange={(e) => { setBusquedaCliente(e.target.value); setClienteSel(null); setSugerenciasAbiertas(true); }}
-                  onFocus={() => setSugerenciasAbiertas(true)}
+                  readOnly={!!editandoId && !!clienteSel}
+                  title={editandoId && clienteSel ? 'El nombre viene de Empresas (razón social). Usa "Cambiar" para elegir otro cliente de la lista.' : undefined}
+                  onChange={(e) => { if (editandoId && clienteSel) return; setBusquedaCliente(e.target.value); setClienteSel(null); setSugerenciasAbiertas(true); }}
+                  onFocus={() => { if (editandoId && clienteSel) return; setSugerenciasAbiertas(true); }}
                 />
+                {!!editandoId && !!clienteSel && (
+                  <button type="button" className="tc-btn-cambiar-cliente" title="Elegir otro cliente de la lista" onClick={() => { setClienteSel(null); setBusquedaCliente(''); setSugerenciasAbiertas(true); }}>Cambiar</button>
+                )}
+                </div>
                 {sugerenciasAbiertas && sugerencias.length > 0 && !clienteSel && (
                   <div className="tc-sugerencias">
                     {sugerencias.map((emp) => (
@@ -1773,7 +1784,7 @@ export function TarifarioClientesDashboard() {
         const ob = configOblig;
         const ast = (k: keyof typeof ob) => (ob[k] ? ' *' : '');
         return (
-          <div className="modal-overlay tc-overlay tc-overlay-linea" onClick={() => { if (window.confirm('¿Seguro que quieres salir?\n\nSe perderán los cambios sin guardar.')) setLineaEditor(null); }}>
+          <div className="modal-overlay tc-overlay tc-overlay-linea" onClick={(e) => { if (e.target !== e.currentTarget) return; if (window.confirm('¿Seguro que quieres salir?\n\nSe perderán los cambios sin guardar.')) setLineaEditor(null); }}>{/* ✅ V00288: solo el clic DIRECTO al fondo pregunta */}
             <div className="tc-modal tc-modal-linea" onClick={(e) => e.stopPropagation()}>
               <div className="tc-modal-encabezado">
                 <div>
@@ -1810,14 +1821,16 @@ export function TarifarioClientesDashboard() {
                 </label>
                 <label className="tc-campo">
                   <span>Tarifa (catálogo){ast('tarifaRefId')}</span>
-                  <select className="form-control" value={lineaEditor.tarifaRefId} disabled={!esNueva} onChange={(e) => {
-                    const id = e.target.value;
-                    const t = tarifasRef.find((x) => String(x.id) === id);
-                    setLineaEditor((p) => (p ? { ...p, tarifaRefId: id, origen: String(t?.origen || p.origen || ''), destino: String(t?.destino || p.destino || '') } : p));
-                  }}>
-                    <option value="">— Elegir tarifa —</option>
-                    {tarifasRef.map((t) => <option key={String(t.id)} value={String(t.id)}>{String(t.descripcion || t.id)}</option>)}
-                  </select>
+                  <input type="text" className="form-control" list="tcListaTarifasCli" placeholder="Buscar..." disabled={!esNueva}
+                    value={refSel ? String(refSel.descripcion || '') : (lineaEditor.tarifaRefId ? String((tarifasRef.find((x) => String(x.id) === lineaEditor.tarifaRefId)?.descripcion) || '') : lineaEditor.tarifaTexto || '')}
+                    onChange={(e) => {
+                      const texto = e.target.value;
+                      const t = tarifasRef.find((x) => String(x.descripcion || '') === texto);
+                      setLineaEditor((p) => (p ? { ...p, tarifaTexto: texto, tarifarioTexto: p.tarifarioTexto, tarifaRefId: t ? String(t.id) : '', origen: t ? String(t.origen || p.origen || '') : p.origen, destino: t ? String(t.destino || p.destino || '') : p.destino } : p));
+                    }} />
+                  <datalist id="tcListaTarifasCli">
+                    {tarifasRef.map((t) => <option key={String(t.id)} value={String(t.descripcion || t.id)} />)}
+                  </datalist>
                 </label>
                 <label className="tc-campo">
                   <span>Origen{ast('origen')}</span>
@@ -1837,17 +1850,13 @@ export function TarifarioClientesDashboard() {
                 </label>
                 <label className="tc-campo">
                   <span>Cotizado En *</span>
-                  <select className="form-control" value={lineaEditor.cotizadoEn} onChange={(e) => setLineaEditor((p) => (p ? { ...p, cotizadoEn: e.target.value } : p))}>
-                    <option value="">Selecciona una moneda</option>
-                    <option value="USD">USD</option>
-                    <option value="MXN">MXN</option>
-                  </select>
+                  <input type="text" className="form-control" list="tcListaMonedasCli" placeholder="Buscar..." value={lineaEditor.cotizadoEn} onChange={(e) => setLineaEditor((p) => (p ? { ...p, cotizadoEn: e.target.value.toUpperCase() } : p))} />
+                  <datalist id="tcListaMonedasCli"><option value="USD" /><option value="MXN" /></datalist>
                 </label>
                 <label className="tc-campo">
                   <span>Status{ast('status')}</span>
-                  <select className="form-control" value={lineaEditor.status} onChange={(e) => setLineaEditor((p) => (p ? { ...p, status: e.target.value } : p))}>
-                    {STATUS_TARIFARIO.map((st) => <option key={st} value={st}>{st}</option>)}
-                  </select>
+                  <input type="text" className="form-control" list="tcListaStatusCli" placeholder="Buscar..." value={lineaEditor.status} onChange={(e) => setLineaEditor((p) => (p ? { ...p, status: e.target.value } : p))} />
+                  <datalist id="tcListaStatusCli">{STATUS_TARIFARIO.map((st) => <option key={st} value={st} />)}</datalist>
                 </label>
               </div>
               <div className="tc-modal-pie">
