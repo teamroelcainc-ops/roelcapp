@@ -133,3 +133,8 @@
 /* ✅ V00173: exportar carpetas de documentos */
 .ud-btn-carpetas { border: 1px solid #a371f7 !important; color: #a371f7 !important; }
 .ud-btn-carpetas:hover { background-color: rgba(163, 113, 247, 0.12) !important; }
+
+/* ✅ V00270: acciones de la unidad en la cabecera del DETALLE */
+.ud-det-accion { min-width: 30px; height: 30px; font-size: 0.85rem; }
+.ud-det-accion:hover { background-color: rgba(139, 148, 158, 0.12); }
+.ud-det-accion--docs { color: #fb923c; }

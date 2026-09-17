@@ -110,3 +110,8 @@
   .dd-x67 { flex-wrap: wrap; }
   .dd-x77 { flex-wrap: wrap; }
 }
+
+/* ✅ V00270: uso de la dirección (empresas / colaboradores) */
+.dd-uso { display: inline-flex; align-items: center; gap: 4px; border: 1px solid #30363d; border-radius: 999px; padding: 3px 10px; font-size: 0.78rem; color: #c9d1d9; background: #0d1117; white-space: nowrap; }
+.dd-uso--cero { opacity: 0.45; }
+.dd-uso--cargando { opacity: 0.6; }

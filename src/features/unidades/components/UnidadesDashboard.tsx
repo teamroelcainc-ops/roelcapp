@@ -331,18 +331,7 @@ export const UnidadesDashboard: React.FC = () => {
                       {/* Celda de Acciones fija a la izquierda */}
                       <td className="ud-x32" onClick={(e: any) => e.stopPropagation()}>
                         <div className="actions-cell ud-x33">
-                          <button
-                            className="btn-small ud-btn-carpetas"
-                            title="Exportar zip con las carpetas de documentos (vacías) de esta unidad — llénalas y súbelas con la carga de documentos"
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              try {
-                                const nombre = String((reg as any).unidad || (reg as any).placas || reg.id);
-                                const n = await exportarEstructuraCarpetas({ registroNombre: nombre, modulos: ['unidad'] });
-                                alert(`Zip generado con ${n} carpeta(s) para "${nombre}".`);
-                              } catch (err: any) { alert(`No se pudo exportar: ${err?.message || err}`); }
-                            }}
-                          >📦</button>
+                          {/* ✅ V00270: 📦 Carpetas vive en el DETALLE de la unidad */}
                           <button 
                             className="btn-small btn-edit ud-x34" 
                             title="Editar Unidad"
@@ -353,28 +342,7 @@ export const UnidadesDashboard: React.FC = () => {
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                           </button>
 
-                          {/* Ver Documentos de la unidad */}
-                          <button 
-                            className="btn-small ud-x35" 
-                            title="Ver Documentos"
-                            onClick={(e) => { e.stopPropagation(); setUnidadDocumentos(reg); }}
-                            onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(251, 146, 60, 0.1)'}
-                            onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
-                          >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                          </button>
-
-                          {/* ✅ NUEVO: subir documento directo desde la fila (sin abrir el visor) */}
-                          <button
-                            className="btn-small ud-x35"
-                            title="Subir documento"
-                            style={{ color: '#fb923c' }}
-                            onClick={(e) => { e.stopPropagation(); setUnidadSubirDocs(reg); setMostrarSubirDoc(true); }}
-                            onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(251, 146, 60, 0.1)'}
-                            onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
-                          >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                          </button>
+                          {/* ✅ V00270: 📄 Ver documentos y ⬆ Subir documento viven en el DETALLE de la unidad */}
 
                           <button 
                             className="btn-small btn-danger ud-x36" 
@@ -472,6 +440,20 @@ export const UnidadesDashboard: React.FC = () => {
             <div className="ud-det-header">
               <h3 className="ud-det-titulo">Detalle de Unidad: <span className="ud-det-nombre">{(unidadDetalle as any).unidad || (unidadDetalle as any).placas || unidadDetalle.id}</span></h3>
               <div className="ud-det-acciones-top">
+                {/* ✅ V00270: las ACCIONES de la unidad viven aquí (en la fila solo quedan Editar y Eliminar) */}
+                <button
+                  className="btn-small ud-btn-carpetas ud-det-accion"
+                  title="Exportar zip con las carpetas de documentos (vacías) de esta unidad — llénalas y súbelas con la carga de documentos"
+                  onClick={async () => {
+                    try {
+                      const nombre = String((unidadDetalle as any).unidad || (unidadDetalle as any).placas || unidadDetalle.id);
+                      const n = await exportarEstructuraCarpetas({ registroNombre: nombre, modulos: ['unidad'] });
+                      alert(`Zip generado con ${n} carpeta(s) para "${nombre}".`);
+                    } catch (err: any) { alert(`No se pudo exportar: ${err?.message || err}`); }
+                  }}
+                >📦</button>
+                <button className="btn-small ud-det-accion ud-det-accion--docs" title="Ver Documentos" onClick={() => setUnidadDocumentos(unidadDetalle)}>📄</button>
+                <button className="btn-small ud-det-accion ud-det-accion--docs" title="Subir documento" onClick={() => { setUnidadSubirDocs(unidadDetalle); setMostrarSubirDoc(true); }}>⬆</button>
                 <button className="ud-det-btn-editar" onClick={() => { const reg = unidadDetalle; setUnidadDetalle(null); editarRegistro(reg); }}>✎ Editar</button>
                 <button className="ud-x59" onClick={() => setUnidadDetalle(null)}>✕</button>
               </div>

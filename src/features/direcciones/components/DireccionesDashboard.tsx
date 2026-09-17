@@ -1,6 +1,7 @@
 // src/features/direcciones/components/DireccionesDashboard.tsx
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, doc, deleteDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, deleteDoc, getDocs } from 'firebase/firestore'; // ✅ V00270
+import { obtenerCacheMemoria, guardarCacheMemoria } from '../../../utils/cacheMemoria'; // ✅ V00270
 import { db } from '../../../config/firebase'; 
 import type { DireccionRecord } from '../../../types/direccion';
 import { FormularioDireccion } from './FormularioDireccion';
@@ -17,11 +18,73 @@ const COLUMNAS_BASE = [
   { id: 'calle', label: 'Calle', visible: false },
   { id: 'numExterior', label: '# Ext.', visible: false },
   { id: 'numInterior', label: '# Int.', visible: false },
-  { id: 'direccionCompleta', label: 'Dirección Completa', visible: true }
+  { id: 'direccionCompleta', label: 'Dirección Completa', visible: true },
+  { id: 'uso', label: 'Uso (Empresas / Colab.)', visible: true } // ✅ V00270: relación viva con Empresas y Contactos
 ];
 
 export const DireccionesDashboard = () => {
   const [registrosGlobales, setRegistrosGlobales] = useState<DireccionRecord[]>([]);
+  // ✅ V00270: USO POR DIRECCIÓN — la relación Direcciones ↔ Empresas ↔
+  //   Colaboradores (contactos): cuántas empresas usan cada dirección (la de
+  //   facturación `direccionId` o cualquiera de sus `direccionesPorTipo`) y
+  //   cuántos colaboradores pertenecen a esas empresas.
+  const [usoDirecciones, setUsoDirecciones] = useState<Record<string, { empresas: number; colaboradores: number; nombres: string[] }> | null>(null);
+  useEffect(() => {
+    const CLAVE = 'direcciones_uso_v1';
+    const enMemoria = obtenerCacheMemoria<Record<string, { empresas: number; colaboradores: number; nombres: string[] }>>(CLAVE, 5 * 60 * 1000);
+    if (enMemoria) {
+      // El caché se aplica en microtarea para no encadenar renders en el montaje.
+      const t = setTimeout(() => setUsoDirecciones(enMemoria), 0);
+      return () => clearTimeout(t);
+    }
+    let activo = true;
+    (async () => {
+      try {
+        const [empSnap, conSnap] = await Promise.all([
+          getDocs(collection(db, 'empresas')),
+          getDocs(collection(db, 'contactos')),
+        ]);
+        // Colaboradores por empresa.
+        const colabPorEmpresa: Record<string, number> = {};
+        conSnap.docs.forEach((d) => {
+          const idCli = String((d.data() as Record<string, unknown>).id_cliente || '').trim();
+          if (idCli) colabPorEmpresa[idCli] = (colabPorEmpresa[idCli] || 0) + 1;
+        });
+        // Empresas que usan cada dirección (facturación + por tipo).
+        const porDireccion: Record<string, { ids: Set<string>; nombres: string[] }> = {};
+        const anotar = (dirId: unknown, empId: string, empNombre: string) => {
+          const k = String(dirId || '').trim();
+          if (!k) return;
+          if (!porDireccion[k]) porDireccion[k] = { ids: new Set(), nombres: [] };
+          if (!porDireccion[k].ids.has(empId)) {
+            porDireccion[k].ids.add(empId);
+            if (porDireccion[k].nombres.length < 6) porDireccion[k].nombres.push(empNombre);
+          }
+        };
+        empSnap.docs.forEach((d) => {
+          const x = d.data() as Record<string, unknown>;
+          const nombre = String(x.nombre || x.nombreCorto || d.id);
+          anotar(x.direccionId, d.id, nombre);
+          (Array.isArray(x.direccionesPorTipo) ? x.direccionesPorTipo : []).forEach((dt) => {
+            anotar((dt as Record<string, unknown>)?.direccionId, d.id, nombre);
+          });
+        });
+        const mapa: Record<string, { empresas: number; colaboradores: number; nombres: string[] }> = {};
+        Object.entries(porDireccion).forEach(([dirId, info]) => {
+          let colab = 0;
+          info.ids.forEach((empId) => { colab += colabPorEmpresa[empId] || 0; });
+          mapa[dirId] = { empresas: info.ids.size, colaboradores: colab, nombres: info.nombres };
+        });
+        if (!activo) return;
+        guardarCacheMemoria(CLAVE, mapa);
+        setUsoDirecciones(mapa);
+      } catch (e) {
+        console.error('No se pudo calcular el uso de las direcciones:', e);
+        if (activo) setUsoDirecciones({});
+      }
+    })();
+    return () => { activo = false; };
+  }, []);
   
   const [modalEstado, setModalEstado] = useState<'cerrado' | 'abierto' | 'minimizado' | 'detalle'>('cerrado');
   const [registroActual, setRegistroActual] = useState<DireccionRecord | null>(null);
@@ -137,6 +200,18 @@ export const DireccionesDashboard = () => {
       case 'numExterior': return <span className="dd-x2">{reg.numExterior || '-'}</span>;
       case 'numInterior': return <span className="dd-x2">{reg.numInterior || '-'}</span>;
       case 'direccionCompleta': return <span className="dd-x4">{reg.direccionCompleta || '-'}</span>;
+      case 'uso': { // ✅ V00270: empresas y colaboradores ligados a esta dirección
+        if (!usoDirecciones) return <span className="dd-uso dd-uso--cargando" title="Calculando uso…">…</span>;
+        const u = usoDirecciones[String(reg.id)] || { empresas: 0, colaboradores: 0, nombres: [] };
+        const titulo = u.empresas > 0
+          ? `Empresas que usan esta dirección (facturación o por tipo): ${u.nombres.join(', ')}${u.empresas > u.nombres.length ? '…' : ''} · Colaboradores = contactos de esas empresas`
+          : 'Ninguna empresa usa esta dirección todavía';
+        return (
+          <span className={`dd-uso${u.empresas > 0 ? '' : ' dd-uso--cero'}`} title={titulo}>
+            🏢 {u.empresas} · 👤 {u.colaboradores}
+          </span>
+        );
+      }
       default: return <span className="dd-x2">-</span>;
     }
   };
