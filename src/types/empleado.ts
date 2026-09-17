@@ -40,4 +40,8 @@ export interface Employee {
 
   // Herramienta de trabajo
   telefonoAsignado: string;
+  // ✅ V00287: firma del colaborador (pestaña Firmas)
+  firmaNombre?: string;
+  firmaCorreo?: string;
+  firmaCargo?: string;
 }

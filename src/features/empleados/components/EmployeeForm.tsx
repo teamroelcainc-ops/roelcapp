@@ -2,8 +2,9 @@
 import React, { useState, useEffect } from 'react';
 import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
-import { collection, onSnapshot, getDocs, query, orderBy, limit } from 'firebase/firestore';
-import { db } from '../../../config/firebase';
+import { collection, onSnapshot, getDocs, query, orderBy, limit, addDoc, updateDoc, doc } from 'firebase/firestore';
+import { db, storage } from '../../../config/firebase';
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'; // ✅ V00287: foto del empleado
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 import { guardarEmpleadoConTransaccion } from '../../../services/employeeService';
 import { FormularioDireccion } from '../../direcciones/components/FormularioDireccion';
@@ -163,14 +164,14 @@ interface Props {
   onRestore: () => void;
 }
 
-type TabKey = 'personales' | 'empresa' | 'operador' | 'herramientas';
+type TabKey = 'personales' | 'empresa' | 'operador' | 'herramientas' | 'firmas';
 
 export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, onMinimize, onRestore }) => {
   const todayISO = hoyLocalISO();
   
   const estadoInicial: Employee & { fechaBaja?: string, observacionBaja?: string, observacionesEmpresa?: string } = {
     employeeId: 'Generando...', 
-    activo: true, foto: '', firstName: '', lastNamePaternal: '', lastNameMaternal: '', alias: '', rfc: '', birthDate: '', mapsLink: '', addressId: '', addressLabel: '', personalPhone: '', personalEmail: '', emergencyContactName: '', emergencyContactPhone: '', cargoId: '', cargoNombre: '', departamentoId: '', departamentoNombre: '', operacionesIds: [], empresaId: '', empresaNombre: '', fechaIngreso: todayISO, fechaAltaIMSS: '', salarioDiario: 0, descuentoIMSS: 0, descuentoInfonavit: 0, gastosAsignados: 0, telefonoAsignado: '', fechaBaja: '', observacionBaja: '', observacionesEmpresa: ''
+    activo: true, foto: '', firstName: '', lastNamePaternal: '', lastNameMaternal: '', alias: '', rfc: '', birthDate: '', mapsLink: '', addressId: '', addressLabel: '', personalPhone: '', personalEmail: '', emergencyContactName: '', emergencyContactPhone: '', cargoId: '', cargoNombre: '', departamentoId: '', departamentoNombre: '', operacionesIds: [], empresaId: '', empresaNombre: '', fechaIngreso: todayISO, fechaAltaIMSS: '', salarioDiario: 0, descuentoIMSS: 0, descuentoInfonavit: 0, gastosAsignados: 0, telefonoAsignado: '', fechaBaja: '', observacionBaja: '', observacionesEmpresa: '', firmaNombre: '', firmaCorreo: '', firmaCargo: ''
   };
 
   const [formData, setFormData] = useState<any>(estadoInicial);
@@ -187,6 +188,34 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
 
   const [direccionesDB, setDireccionesDB] = useState<{id: string, label: string}[]>([]);
   const [cargosDB, setCargosDB] = useState<{id: string, label: string}[]>([]);
+  // ✅ V00287: FOTO del empleado (subida a Storage al guardar).
+  const [fotoFile, setFotoFile] = useState<File | null>(null);
+  const [fotoPreview, setFotoPreview] = useState<string>('');
+  const elegirFoto = (f: File | null) => {
+    setFotoFile(f);
+    if (f) { const r = new FileReader(); r.onload = () => setFotoPreview(String(r.result || '')); r.readAsDataURL(f); }
+    else setFotoPreview('');
+  };
+  // ✅ V00287: ALTA RÁPIDA a los catálogos desde el propio formulario — lo
+  //   agregado queda guardado en su catálogo (base de datos) y seleccionado.
+  const agregarCargoRapido = async () => {
+    const nombre = String(window.prompt('Nombre del nuevo CARGO (se guarda en el catálogo catalogo_tipo_cargo):') || '').trim();
+    if (!nombre) return;
+    try {
+      const refN = await addDoc(collection(db, 'catalogo_tipo_cargo'), { nombre_puesto: nombre, creadoDesde: 'formulario_colaboradores', createdAt: new Date().toISOString() });
+      setCargosDB((prev) => [...prev, { id: refN.id, label: nombre }].sort((a, b) => a.label.localeCompare(b.label, 'es')));
+      setFormData((prev: typeof formData) => ({ ...prev, cargoId: refN.id, cargoNombre: nombre }));
+    } catch (e) { console.error(e); alert('No se pudo guardar el cargo en el catálogo.'); }
+  };
+  const agregarDepartamentoRapido = async () => {
+    const nombre = String(window.prompt('Nombre del nuevo DEPARTAMENTO (se guarda en el catálogo catalogo_departamentos):') || '').trim();
+    if (!nombre) return;
+    try {
+      const refN = await addDoc(collection(db, 'catalogo_departamentos'), { nombre, creadoDesde: 'formulario_colaboradores', createdAt: new Date().toISOString() });
+      setDepartamentosDB((prev) => [...prev, { id: refN.id, label: nombre }].sort((a, b) => a.label.localeCompare(b.label, 'es')));
+      setFormData((prev: typeof formData) => ({ ...prev, departamentoId: refN.id, departamentoNombre: nombre }));
+    } catch (e) { console.error(e); alert('No se pudo guardar el departamento en el catálogo.'); }
+  };
   const [departamentosDB, setDepartamentosDB] = useState<{id: string, label: string}[]>([]);
   const [operacionesDB, setOperacionesDB] = useState<{id: string, label: string}[]>([]);
   const [empresasDB, setEmpresasDB] = useState<{id: string, label: string}[]>([]);
@@ -336,6 +365,7 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
         ...initialData,
         observacionesEmpresa: (initialData as any).observacionesEmpresa || ''
       });
+      setFotoPreview(String(initialData.foto || '')); // ✅ V00287
     }
   }, [initialData]);
 
@@ -365,9 +395,12 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
+    // ✅ V00284: preventDefault SIEMPRE va PRIMERO — si Autorizaciones bloqueaba,
+    //   el return dejaba pasar el submit nativo del navegador (recarga de la
+    //   página) y el registro "no se guardaba" sin explicación.
+    e.preventDefault();
     // ✅ V00140: reglas de acción (crear/editar) de Autorizaciones
     if (!aut.verificarAccion(initialData?.id ? 'editar' : 'crear', Object.keys(formData || {}))) return;
-    e.preventDefault();
     
     if (!formData.employeeId || formData.employeeId.trim() === '' || formData.employeeId === 'Generando...') {
       return alert('El Número de Empleado (Ej. Col-001) es estrictamente necesario.');
@@ -388,7 +421,20 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
     
     setCargando(true);
     try {
-      await guardarEmpleadoConTransaccion(formData); 
+      const idEmpleado = await guardarEmpleadoConTransaccion(formData);
+      // ✅ V00287: la FOTO se sube a Storage con el id real y se liga al doc.
+      if (fotoFile && idEmpleado) {
+        try {
+          const limpio = fotoFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+          const destino = storageRef(storage, `empleados_fotos/${idEmpleado}/${Date.now()}_${limpio}`);
+          await uploadBytes(destino, fotoFile, fotoFile.type ? { contentType: fotoFile.type } : undefined);
+          const url = await getDownloadURL(destino);
+          await updateDoc(doc(db, 'empleados', idEmpleado), { foto: url });
+        } catch (eFoto) {
+          console.error(eFoto);
+          alert('El empleado se guardó, pero la FOTO no se pudo subir. Inténtalo de nuevo desde Editar.');
+        }
+      }
       alert('Operación exitosa.');
       onClose();
     } catch (error) {
@@ -402,7 +448,8 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
     { id: 'personales', label: 'Datos Personales' },
     { id: 'empresa', label: 'Alta Empresa' },
     { id: 'operador', label: 'Operador' },
-    { id: 'herramientas', label: 'Herramientas' }
+    { id: 'herramientas', label: 'Herramientas' },
+    { id: 'firmas', label: 'Firmas' } // ✅ V00287
   ];
 
   return (
@@ -460,6 +507,19 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
               {/* PESTAÑA 1 */}
               {pestañaActiva === 'personales' && (
                 <div className="ef-x33">
+
+                  {/* ✅ V00287: FOTO del colaborador */}
+                  <div className="ef-foto-bloque">
+                    <div className="ef-foto-marco">
+                      {(fotoPreview || formData.foto) ? <img className="ef-foto-img" src={fotoPreview || formData.foto} alt="Foto del colaborador" /> : <span className="ef-foto-vacia">Sin foto</span>}
+                    </div>
+                    <div className="ef-foto-controles">
+                      <label className="form-label ef-foto-label">Foto del Empleado</label>
+                      <input type="file" accept="image/*" className="ef-foto-input" onChange={(e) => elegirFoto(e.target.files?.[0] || null)} />
+                      {(fotoPreview || formData.foto) && <button type="button" className="ef-foto-quitar" onClick={() => { elegirFoto(null); setFormData((prev: typeof formData) => ({ ...prev, foto: '' })); }}>Quitar foto</button>}
+                      <small className="ef-foto-nota">Se sube al guardar el empleado.</small>
+                    </div>
+                  </div>
                   
                   {isVis('activo') && (
                     <div style={{ gridColumn: '1 / -1', backgroundColor: '#161b22', padding: '20px', borderRadius: '8px', border: formData.activo ? '1px solid #30363d' : '1px solid #f85149', marginBottom: '24px' }}>
@@ -547,8 +607,8 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
                 <div className="ef-x33">
                   <div className="strict-3-col-grid">
                     {isVis('empresaId') && <div className="form-group"><label className="form-label">Empresa {isReq('empresaId') && '*'}</label><SearchableSelect options={empresasDB} value={formData.empresaId} onChange={(id, label) => setFormData((prev:any) => ({ ...prev, empresaId: id, empresaNombre: label }))} required={isReq('empresaId')} /></div>}
-                    {isVis('cargoId') && <div className="form-group"><label className="form-label">Cargo {isReq('cargoId') && '*'}</label><SearchableSelect options={cargosDB} value={formData.cargoId} onChange={(id, label) => setFormData((prev:any) => ({ ...prev, cargoId: id, cargoNombre: label }))} required={isReq('cargoId')} /></div>}
-                    {isVis('departamentoId') && <div className="form-group"><label className="form-label">Departamento {isReq('departamentoId') && '*'}</label><SearchableSelect options={departamentosDB} value={formData.departamentoId} onChange={(id, label) => setFormData((prev:any) => ({ ...prev, departamentoId: id, departamentoNombre: label }))} required={isReq('departamentoId')} /></div>}
+                    {isVis('cargoId') && <div className="form-group"><label className="form-label">Cargo {isReq('cargoId') && '*'}</label><div className="ef-select-con-mas"><SearchableSelect options={cargosDB} value={formData.cargoId} onChange={(id, label) => setFormData((prev:any) => ({ ...prev, cargoId: id, cargoNombre: label }))} required={isReq('cargoId')} /><button type="button" className="ef-btn-mas-catalogo" title="Agregar un cargo nuevo al catálogo (se guarda en catalogo_tipo_cargo)" onClick={agregarCargoRapido}>+</button></div></div>}
+                    {isVis('departamentoId') && <div className="form-group"><label className="form-label">Departamento {isReq('departamentoId') && '*'}</label><div className="ef-select-con-mas"><SearchableSelect options={departamentosDB} value={formData.departamentoId} onChange={(id, label) => setFormData((prev:any) => ({ ...prev, departamentoId: id, departamentoNombre: label }))} required={isReq('departamentoId')} /><button type="button" className="ef-btn-mas-catalogo" title="Agregar un departamento nuevo al catálogo (se guarda en catalogo_departamentos)" onClick={agregarDepartamentoRapido}>+</button></div></div>}
                     
                     {isVis('operacionesIds') && (
                     <div className="form-group ef-x48">
@@ -596,6 +656,26 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
               )}
 
               {/* PESTAÑA 4: HERRAMIENTAS */}
+              {pestañaActiva === 'firmas' && (
+                <div className="ef-x33 ef-firmas-tab">{/* ✅ V00287: pestaña Firmas */}
+                  <p className="ef-firmas-nota">La firma del colaborador se guarda con el empleado y se refleja en el directorio de Firmas del módulo.</p>
+                  <div className="strict-3-col-grid">
+                    <div className="form-group">
+                      <label className="form-label">Nombre de la firma</label>
+                      <input type="text" name="firmaNombre" className="form-control" value={formData.firmaNombre || ''} onChange={handleChange} placeholder="Ej. Nelda Inocencio" />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Correo de la firma</label>
+                      <input type="email" name="firmaCorreo" className="form-control" value={formData.firmaCorreo || ''} onChange={handleChange} placeholder="correo@roelca.com" />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Cargo de la firma</label>
+                      <input type="text" name="firmaCargo" className="form-control" value={formData.firmaCargo || ''} onChange={handleChange} placeholder="Ej. Gerencia / Operaciones" />
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {pestañaActiva === 'herramientas' && (
                 <div className="ef-x33">
                   <div className="strict-3-col-grid">

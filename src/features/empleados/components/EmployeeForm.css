@@ -77,3 +77,20 @@
   .ef-x40 { grid-template-columns: 1fr; }
   .ef-x47 { flex-wrap: wrap; }
 }
+
+/* ✅ V00287: foto del colaborador + pestaña Firmas + alta rápida a catálogos */
+.ef-foto-bloque { grid-column: 1 / -1; display: flex; align-items: center; gap: 18px; background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px 18px; margin-bottom: 24px; }
+.ef-foto-marco { width: 86px; height: 86px; border-radius: 50%; overflow: hidden; border: 2px solid #30363d; background: #0d1117; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.ef-foto-img { width: 100%; height: 100%; object-fit: cover; }
+.ef-foto-vacia { color: #6e7681; font-size: 0.72rem; }
+.ef-foto-controles { display: flex; flex-direction: column; gap: 6px; }
+.ef-foto-label { margin: 0; }
+.ef-foto-input { color: #c9d1d9; font-size: 0.85rem; }
+.ef-foto-quitar { align-self: flex-start; background: transparent; border: 1px solid #da3633; color: #f85149; border-radius: 6px; padding: 3px 10px; cursor: pointer; font-size: 0.78rem; }
+.ef-foto-quitar:hover { background: rgba(218, 54, 51, 0.15); }
+.ef-foto-nota { color: #6e7681; font-size: 0.72rem; }
+.ef-select-con-mas { display: flex; align-items: center; gap: 8px; }
+.ef-select-con-mas > :first-child { flex: 1; }
+.ef-btn-mas-catalogo { background: #d84315; border: 1px solid #d84315; color: #fff; border-radius: 6px; width: 34px; height: 34px; cursor: pointer; font-size: 1.1rem; font-weight: 700; flex-shrink: 0; }
+.ef-btn-mas-catalogo:hover { filter: brightness(1.1); }
+.ef-firmas-nota { color: #8b949e; font-size: 0.85rem; margin: 0 0 16px; }

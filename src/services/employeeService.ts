@@ -9,7 +9,7 @@ const COLLECTION_NAME = 'empleados';
 /**
  * Guarda un empleado garantizando un ID secuencial único mediante una Transacción Atómica.
  */
-export const guardarEmpleadoConTransaccion = async (empleadoData: Employee): Promise<void> => {
+export const guardarEmpleadoConTransaccion = async (empleadoData: Employee): Promise<string> => {
   // ✅ V00284: GUARDADO ROBUSTO —
   //   1) Firestore RECHAZA valores `undefined`: se limpian SIEMPRE (antes, un
   //      solo campo undefined tiraba el guardado completo y el registro "no se
@@ -27,7 +27,8 @@ export const guardarEmpleadoConTransaccion = async (empleadoData: Employee): Pro
     // Actualización: el documento ya existe.
     if (empleadoData.id) {
       await updateDoc(doc(db, COLLECTION_NAME, empleadoData.id), dataToSave);
-      return;
+      await sincronizarFirmaEmpleado(empleadoData.id, dataToSave); // ✅ V00287
+      return empleadoData.id;
     }
 
     // Creación: consecutivo del formulario (Col-###) o derivado del último.
@@ -44,9 +45,29 @@ export const guardarEmpleadoConTransaccion = async (empleadoData: Employee): Pro
       employeeId = `${prefijo}-${String(n).padStart(3, '0')}`;
     }
     dataToSave.employeeId = employeeId;
-    await setDoc(doc(collection(db, COLLECTION_NAME)), dataToSave);
+    const nuevoRef = doc(collection(db, COLLECTION_NAME));
+    await setDoc(nuevoRef, dataToSave);
+    await sincronizarFirmaEmpleado(nuevoRef.id, dataToSave); // ✅ V00287
+    return nuevoRef.id;
   } catch (error) {
     console.error('Fallo al guardar empleado:', error);
     throw error; // Propagamos el error para que la UI muestre el motivo real
   }
+};
+
+// ✅ V00287: la FIRMA capturada en la pestaña Firmas del empleado se refleja
+//   también en el directorio de firmas (firmas_colaboradores) — un doc por
+//   empleado (id = id del empleado). Mejor esfuerzo: nunca rompe el guardado.
+const sincronizarFirmaEmpleado = async (empleadoId: string, d: Record<string, unknown>): Promise<void> => {
+  try {
+    const nombre = String(d.firmaNombre || '').trim();
+    const correo = String(d.firmaCorreo || '').trim();
+    const cargo = String(d.firmaCargo || '').trim();
+    if (!nombre && !correo && !cargo) return;
+    await setDoc(doc(db, 'firmas_colaboradores', empleadoId), {
+      nombre, correo, cargoDepartamento: cargo,
+      empleadoId,
+      actualizadoEl: new Date().toISOString(),
+    }, { merge: true });
+  } catch (e) { console.warn('No se pudo sincronizar la firma del empleado:', e); }
 };
