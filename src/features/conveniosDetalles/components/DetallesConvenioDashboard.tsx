@@ -143,7 +143,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   // ✅ V00231: alta de convenios desde este módulo.
   const [modalAgregar, setModalAgregar] = useState(false);
   const [guardandoAlta, setGuardandoAlta] = useState(false);
-  const [tarifariosAlta, setTarifariosAlta] = useState<{ id: string; etiqueta: string; entidad: string; convenioId: string; moneda: string }[]>([]);
+  const [tarifariosAlta, setTarifariosAlta] = useState<{ id: string; etiqueta: string; entidad: string; convenioId: string; moneda: string; consecutivosTarifas?: string[] }[]>([]);
   const [tarifasAlta, setTarifasAlta] = useState<{ id: string; nombre: string }[]>([]);
   const [municipiosAlta, setMunicipiosAlta] = useState<{ id: string; nombre: string }[]>([]);
   const [alta, setAlta] = useState({ tarifarioId: '', tarifaId: '', origen: '', destino: '', moneda: '', status: 'Aprobado', costo: '' });
@@ -309,7 +309,8 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
             const t = d.data() as Record<string, unknown>;
             const cons = String(t.consecutivo || d.id);
             const ent = String((esClientes ? t.clienteNombre : t.proveedorNombre) || '');
-            return { id: d.id, etiqueta: `${cons} - ${ent}`, entidad: ent, convenioId: String(t.convenioId || ''), moneda: String(t.moneda || '') };
+            const consecutivosTarifas = (Array.isArray(t.tarifas) ? t.tarifas : []).map((lt) => String((lt as Record<string, unknown>)?.consecutivo || '').trim()).filter(Boolean); // ✅ V00282
+            return { id: d.id, etiqueta: `${cons} - ${ent}`, entidad: ent, convenioId: String(t.convenioId || ''), moneda: String(t.moneda || ''), consecutivosTarifas };
           })
           .filter((t) => t.entidad)
           .sort((a, b) => a.etiqueta.localeCompare(b.etiqueta, 'es', { sensitivity: 'base' }))
@@ -550,6 +551,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     //   precargan los municipios guardados en el detalle.
     try {
       // ✅ V00234: el editar usa EXACTAMENTE los mismos catálogos que el alta.
+      let listaTar = tarifariosAlta; // ✅ V00282: lista local (el estado recién seteado aún no está disponible aquí)
       if (tarifasAlta.length === 0 || municipiosAlta.length === 0 || tarifariosAlta.length === 0) {
         const [snapRef, snapMun, snapTar] = await Promise.all([
           getDocs(collection(db, 'catalogo_tarifas_referencia')),
@@ -558,23 +560,36 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         ]);
         setTarifasAlta(snapRef.docs.map((d) => ({ id: d.id, nombre: String((d.data() as Record<string, unknown>).descripcion || '') })).filter((t) => t.nombre).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' })));
         setMunicipiosAlta(snapMun.docs.map((d) => ({ id: d.id, nombre: String((d.data() as Record<string, unknown>).municipio || '') })).filter((m) => m.nombre).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' })));
-        setTarifariosAlta(
-          snapTar.docs.map((d) => {
+        listaTar = snapTar.docs.map((d) => {
             const t = d.data() as Record<string, unknown>;
             const ent = String((esClientes ? t.clienteNombre : t.proveedorNombre) || '');
-            return { id: d.id, etiqueta: `${String(t.consecutivo || d.id)} - ${ent}`, entidad: ent, convenioId: String(t.convenioId || ''), moneda: String(t.moneda || '') };
-          }).filter((t) => t.entidad).sort((a, b) => a.etiqueta.localeCompare(b.etiqueta, 'es', { sensitivity: 'base' }))
-        );
+            const consecutivosTarifas = (Array.isArray(t.tarifas) ? t.tarifas : []).map((lt) => String((lt as Record<string, unknown>)?.consecutivo || '').trim()).filter(Boolean); // ✅ V00282
+            return { id: d.id, etiqueta: `${String(t.consecutivo || d.id)} - ${ent}`, entidad: ent, convenioId: String(t.convenioId || ''), moneda: String(t.moneda || ''), consecutivosTarifas };
+          }).filter((t) => t.entidad).sort((a, b) => a.etiqueta.localeCompare(b.etiqueta, 'es', { sensitivity: 'base' }));
+        setTarifariosAlta(listaTar);
       }
       const det = await getDocs(query(collection(db, COL_DETALLES), where('__name__', '==', f.id)));
       if (!det.empty) {
         const x = det.docs[0].data() as Record<string, unknown>;
+        // ✅ V00282: el # de tarifario se resuelve con LAS TRES relaciones —
+        //   1) tarifarioId guardado en el detalle; 2) el tarifario cuyas
+        //   tarifas[] contienen el consecutivo de ESTE detalle (relación más
+        //   directa); 3) el tarifario ligado al mismo convenio. Antes solo se
+        //   usaba la 1 y los migrados quedaban con el campo vacío.
+        const consDetalle = String(x.consecutivo || f.id || '').trim();
+        let tarifarioResuelto = String(x.tarifarioId || '').trim();
+        if (!tarifarioResuelto && consDetalle) {
+          tarifarioResuelto = listaTar.find((t) => (t.consecutivosTarifas || []).includes(consDetalle))?.id || '';
+        }
+        if (!tarifarioResuelto) {
+          const convId = String(x.convenioId || '').trim();
+          if (convId) tarifarioResuelto = listaTar.find((t) => t.convenioId === convId)?.id || '';
+        }
         setEditForm((p) => ({
           ...p,
           origen: String(x.origen || ''),
           destino: String(x.destino || ''),
-          // el tarifario guardado, o el que corresponda al mismo convenio
-          tarifarioId: String(x.tarifarioId || ''),
+          tarifarioId: tarifarioResuelto,
         }));
       }
     } catch (e) { console.error('No se pudieron cargar los catálogos de edición:', e); }

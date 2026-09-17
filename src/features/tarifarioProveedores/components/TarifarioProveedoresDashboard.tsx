@@ -717,6 +717,14 @@ export function TarifarioProveedoresDashboard() {
           aprobadoPor: auth.currentUser?.email || '',
         });
         await registrarLog('Tarifario Proveedores', 'Aprobación', `Aprobó el pre convenio del proveedor "${r.proveedorNombre}" (${r.fecha}).`);
+        // ✅ V00282: SINCRONIZACIÓN RELACIONAL — al re-aprobar el tarifario, sus
+        //   detalles de convenio (clave = consecutivo de cada línea) se aprueban
+        //   también. Antes esta rama no los tocaba y quedaban en Pendiente.
+        for (const t of (Array.isArray(r.tarifas) ? r.tarifas : [])) {
+          const cc = String((t as Doc).consecutivo || '').trim();
+          if (!cc) continue;
+          try { await updateDoc(doc(db, 'convenios_proveedores_detalles', cc), { status: 'Aprobado', tarifarioId: String(r.id) }); } catch { /* detalle inexistente: lo cubre el motor */ }
+        }
       }
     } catch (e) {
       console.error('No se pudo aprobar el pre convenio:', e);

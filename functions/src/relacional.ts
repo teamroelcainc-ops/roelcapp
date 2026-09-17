@@ -40,7 +40,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 if (getApps().length === 0) initializeApp();
 const dbRel = getFirestore();
 
-const REL_VERSION = 'relacional-v1.1'; // ✅ V00275: + cascada de montos
+const REL_VERSION = 'relacional-v1.2'; // ✅ V00282: + sync tarifario→detalles
 
 /** Normaliza: sin acentos, espacios colapsados, minúsculas (misma regla del cliente V00257). */
 const normR = (t: unknown): string =>
@@ -469,4 +469,60 @@ export const facturaClienteMontoCambiado = onDocumentWritten({ document: 'factur
 export const facturaProveedorMontoCambiado = onDocumentWritten({ document: 'facturas_proveedores/{facId}', region: 'us-central1' }, async (event) => {
   try { await recalcularSaldoFactura(event, 'facturaProveedorMontoCambiado'); }
   catch (e) { logger.error(`[${REL_VERSION}] facturaProveedorMontoCambiado: fallo en ${event.params.facId}`, e); }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 6) ✅ V00282 — SINCRONIZACIÓN TARIFARIO → DETALLES DE CONVENIO (server-side).
+//    Regla de Jesús: el tarifario y sus convenios NO pueden decir cosas
+//    distintas. Cada línea del tarifario guarda su consecutivo CONV-### y la
+//    CLAVE del detalle ES ese consecutivo → al escribirse un tarifario, el
+//    status de cada línea se refleja en su detalle (y se repara el
+//    tarifarioId del detalle si falta). Anti-bucle: solo escribe si difiere.
+// ─────────────────────────────────────────────────────────────────────────────
+const sincronizarDetallesDeTarifario = async (
+  tarifarioId: string,
+  tarifario: Dict,
+  coleccionDetalles: string,
+): Promise<number> => {
+  const lineas = Array.isArray(tarifario.tarifas) ? (tarifario.tarifas as Dict[]) : [];
+  let n = 0;
+  for (const t of lineas) {
+    const cc = String(t?.consecutivo || '').trim();
+    if (!cc) continue;
+    const statusLinea = String(t?.status || tarifario.status || '').trim();
+    if (!statusLinea) continue;
+    const ref = dbRel.collection(coleccionDetalles).doc(cc);
+    const snap = await ref.get();
+    if (!snap.exists) continue; // el detalle aún no existe: nada que sincronizar
+    const det = snap.data() as Dict;
+    const cambios: Dict = {};
+    if (String(det.status || '') !== statusLinea) cambios.status = statusLinea;
+    if (!String(det.tarifarioId || '').trim()) cambios.tarifarioId = tarifarioId; // repara la relación
+    if (Object.keys(cambios).length === 0) continue;
+    await ref.update(cambios);
+    n += 1;
+  }
+  return n;
+};
+
+export const tarifarioClienteEscrito = onDocumentWritten({ document: 'tarifario_clientes/{tarId}', region: 'us-central1' }, async (event) => {
+  const despues = event.data?.after;
+  if (!despues || !despues.exists) return;
+  try {
+    const n = await sincronizarDetallesDeTarifario(event.params.tarId, despues.data() as Dict, 'convenios_clientes_detalles');
+    if (n > 0) logger.info(`[${REL_VERSION}] tarifarioClienteEscrito: ${event.params.tarId} → ${n} detalle(s) sincronizado(s)`);
+  } catch (e) {
+    logger.error(`[${REL_VERSION}] tarifarioClienteEscrito: fallo en ${event.params.tarId}`, e);
+  }
+});
+
+export const tarifarioProveedorEscrito = onDocumentWritten({ document: 'tarifario_proveedores/{tarId}', region: 'us-central1' }, async (event) => {
+  const despues = event.data?.after;
+  if (!despues || !despues.exists) return;
+  try {
+    const n = await sincronizarDetallesDeTarifario(event.params.tarId, despues.data() as Dict, 'convenios_proveedores_detalles');
+    if (n > 0) logger.info(`[${REL_VERSION}] tarifarioProveedorEscrito: ${event.params.tarId} → ${n} detalle(s) sincronizado(s)`);
+  } catch (e) {
+    logger.error(`[${REL_VERSION}] tarifarioProveedorEscrito: fallo en ${event.params.tarId}`, e);
+  }
 });

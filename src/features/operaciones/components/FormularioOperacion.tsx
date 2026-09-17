@@ -3089,7 +3089,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                               </div>
                             )}
                           </div>
-                          {/* ✅ V00252: se retiró el botón "+" de alta rápida (los clientes y proveedores se dan de alta en Empresas / sus tarifarios). */}
+                          <BotonAgregar title="Agregar nuevo Cliente (Mercancía)" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_CLIENTE_MERCANCIA }, (id, reg) => { setFormData(prev => ({ ...prev, clienteMercancia: id })); setSearchClienteMercancia(labelEmpresa(reg)); })} />{/* ✅ V00282: alta rápida de vuelta SOLO en Cliente (Mercancía) */}
                         </div>
                       </div>
                       <div className="form-group"><label className="form-label">Descripción de Mercancía <span className="campo-badge">descripcionMercancia</span></label><input type="text" name="descripcionMercancia" className={`form-control${claseSiFalta('descripcionMercancia')}`} value={formData.descripcionMercancia || ''} onChange={handleChange} /></div>
