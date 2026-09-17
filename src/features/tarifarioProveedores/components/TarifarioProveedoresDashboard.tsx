@@ -91,6 +91,7 @@ import html2pdf from 'html2pdf.js'; // ✅ V00250: descarga directa (como Operac
 import { LOGO_CTPAT_SRC } from '../../../utils/logoCtpat'; // ✅ V00250/V00251
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import { reservarConsecutivosDetalleProveedor, reservarConsecutivosTarifarioProveedor } from '../../conveniosDetalles/consecutivos'; // ✅ V00199/V00203
+import { cargarObligatoriosTarifa, guardarObligatoriosTarifa, ETIQUETAS_CAMPOS_TARIFA, OBLIGATORIOS_TARIFA_DEFAULT, type CamposObligatoriosTarifa } from '../../../utils/camposObligatoriosTarifa'; // ✅ V00286
 import '../../tarifarioClientes/components/TarifarioClientesDashboard.css'; // ✅ V00211: mismo estilo
 
 const ID_USD = '7dca62b3';
@@ -910,7 +911,34 @@ export function TarifarioProveedoresDashboard() {
   //   Inactivo / etc.) sin afectar el resto — se autoriza como editar Status.
   // ✅ V00283: EDITOR DE LÍNEA (lápiz de la fila del convenio en la ficha) y
   //   ALTA de tarifas nuevas al pre convenio. idx === null → línea nueva.
-  const [lineaEditor, setLineaEditor] = useState<{ regId: string; idx: number | null; tarifaRefId: string; costo: string; cotizadoEn: string; status: string } | null>(null);
+  const [lineaEditor, setLineaEditor] = useState<{ regId: string; idx: number | null; tarifaRefId: string; costo: string; cotizadoEn: string; status: string; origen: string; destino: string } | null>(null);
+  // ✅ V00286: configuración COMPARTIDA de campos obligatorios (Firestore).
+  const [configOblig, setConfigOblig] = useState<CamposObligatoriosTarifa>({ ...OBLIGATORIOS_TARIFA_DEFAULT });
+  const [mostrarConfigOblig, setMostrarConfigOblig] = useState(false);
+  const [guardandoOblig, setGuardandoOblig] = useState(false);
+  useEffect(() => { if (lineaEditor) { setMostrarConfigOblig(false); cargarObligatoriosTarifa().then(setConfigOblig); } // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lineaEditor !== null]);
+  const guardarConfigOblig = async () => {
+    if (guardandoOblig) return;
+    setGuardandoOblig(true);
+    try {
+      await guardarObligatoriosTarifa(configOblig);
+      await registrarLog('Tarifario Proveedores', 'Edición', `Cambió los campos obligatorios del formulario de tarifas (aplica a todos los usuarios).`);
+      setMostrarConfigOblig(false);
+      alert('Configuración guardada. Aplica para TODOS los usuarios. ✅');
+    } catch (e) { console.error(e); alert('No se pudo guardar la configuración.'); }
+    setGuardandoOblig(false);
+  };
+  /** ✅ V00286: valida los campos según la configuración compartida. */
+  const faltantesSegunConfig = (le: NonNullable<typeof lineaEditor>): string[] => {
+    const faltan: string[] = [];
+    if (configOblig.tarifaRefId && !le.tarifaRefId) faltan.push(ETIQUETAS_CAMPOS_TARIFA.tarifaRefId);
+    if (configOblig.origen && !le.origen.trim()) faltan.push(ETIQUETAS_CAMPOS_TARIFA.origen);
+    if (configOblig.destino && !le.destino.trim()) faltan.push(ETIQUETAS_CAMPOS_TARIFA.destino);
+    if (configOblig.costo && !(Number(le.costo) > 0)) faltan.push(ETIQUETAS_CAMPOS_TARIFA.costo);
+    if (configOblig.status && !le.status) faltan.push(ETIQUETAS_CAMPOS_TARIFA.status);
+    return faltan;
+  };
   const [guardandoLinea, setGuardandoLinea] = useState(false);
 
   const guardarLineaEditor = async () => {
@@ -918,6 +946,7 @@ export function TarifarioProveedoresDashboard() {
     const r = registros.find((x) => String(x.id) === lineaEditor.regId);
     if (!r) return;
     if (!canonMoneda(lineaEditor.cotizadoEn)) { alert('La MONEDA DE COTIZACIÓN (USD o MXN) es obligatoria.'); return; }
+    { const faltan = faltantesSegunConfig(lineaEditor); if (faltan.length > 0) { alert(`Completa los campos obligatorios antes de guardar:\n\n· ${faltan.join('\n· ')}`); return; } } // ✅ V00286
     if (!aut.verificarAccion('editar', ['tarifa'])) return;
     setGuardandoLinea(true);
     try {
@@ -929,8 +958,8 @@ export function TarifarioProveedoresDashboard() {
           tarifaReferenciaId: String(ref.id),
           descripcion: String(ref.descripcion || ''),
           clave: claveDe(ref),
-          origen: String(ref.origen || ''),
-          destino: String(ref.destino || ''),
+          origen: String(lineaEditor.origen || ref.origen || ''),
+          destino: String(lineaEditor.destino || ref.destino || ''),
           costosSugeridos: costosDe(ref),
           tarifa: Number(lineaEditor.costo) || 0,
           cotizadoEn: canonMoneda(lineaEditor.cotizadoEn),
@@ -956,7 +985,7 @@ export function TarifarioProveedoresDashboard() {
       } else {
         const t = tarifas[lineaEditor.idx];
         if (!t) { setGuardandoLinea(false); return; }
-        tarifas[lineaEditor.idx] = { ...t, tarifa: Number(lineaEditor.costo) || 0, cotizadoEn: canonMoneda(lineaEditor.cotizadoEn), status: lineaEditor.status || String(t.status || 'Pendiente') };
+        tarifas[lineaEditor.idx] = { ...t, tarifa: Number(lineaEditor.costo) || 0, cotizadoEn: canonMoneda(lineaEditor.cotizadoEn), status: lineaEditor.status || String(t.status || 'Pendiente'), origen: lineaEditor.origen.trim(), destino: lineaEditor.destino.trim() };
         await updateDoc(doc(db, 'tarifario_proveedores', r.id), { tarifas });
         const cc = String(t.consecutivo || '').trim();
         if (cc) { try { await updateDoc(doc(db, 'convenios_proveedores_detalles', cc), { tarifa: Number(lineaEditor.costo) || 0, moneda: nombreMoneda(lineaEditor.cotizadoEn), status: tarifas[lineaEditor.idx].status, tarifarioId: String(r.id) }); } catch { /* lo cubre el motor v1.2 */ } }
@@ -1248,7 +1277,7 @@ export function TarifarioProveedoresDashboard() {
             {editable && (
               <td className="tc-td-acciones-linea">{/* ✅ V00283: editar/eliminar la línea */}
                 <button type="button" className="tc-btn-linea tc-btn-linea--editar" title="Editar esta tarifa (costo, moneda y status)"
-                  onClick={() => setLineaEditor({ regId: String(r.id), idx: i, tarifaRefId: String(t.tarifaReferenciaId || ''), costo: String(t.tarifa ?? ''), cotizadoEn: canonMoneda(t.cotizadoEn || r.moneda) || '', status: String(t.status || 'Pendiente') })}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button>
+                  onClick={() => setLineaEditor({ regId: String(r.id), idx: i, tarifaRefId: String(t.tarifaReferenciaId || ''), costo: String(t.tarifa ?? ''), cotizadoEn: canonMoneda(t.cotizadoEn || r.moneda) || '', status: String(t.status || 'Pendiente'), origen: String(t.origen || ''), destino: String(t.destino || '') })}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button>
                 <button type="button" className="tc-btn-linea tc-btn-linea--borrar" title="Eliminar esta tarifa del pre convenio"
                   onClick={() => eliminarLinea(r, i)}>🗑</button>
               </td>
@@ -1405,7 +1434,7 @@ export function TarifarioProveedoresDashboard() {
               <div className="tc-modal-pie">
                 <span className="tc-conteo-sel">{Array.isArray(r.tarifas) ? r.tarifas.length : 0} tarifa(s) en este pre convenio</span>
                 <button type="button" className="tc-btn-agregar-linea" title="Agregar otra tarifa a este pre convenio"
-                  onClick={() => setLineaEditor({ regId: String(r.id), idx: null, tarifaRefId: '', costo: '', cotizadoEn: '', status: 'Pendiente' })}>+ Agregar tarifa</button>{/* ✅ V00283 */}
+                  onClick={() => setLineaEditor({ regId: String(r.id), idx: null, tarifaRefId: '', costo: '', cotizadoEn: '', status: 'Pendiente', origen: '', destino: '' })}>+ Agregar tarifa</button>{/* ✅ V00283 */}
                 <div className="tc-modal-botones">
                   {/* ✅ V00199: en el detalle, los botones llevan su NOMBRE */}
                   <button
@@ -1725,47 +1754,94 @@ export function TarifarioProveedoresDashboard() {
         </div>
       )}
 
-      {/* ✅ V00283: MINI-EDITOR de línea — editar una tarifa o agregar una nueva */}
+      {/* ✅ V00286: FORMULARIO de tarifa (Agregar/Editar) — mismo diseño que
+          "Agregar convenio": tarifario, tarifa del catálogo, origen/destino,
+          descripción automática, costo, moneda y status. El ⚙ configura los
+          CAMPOS OBLIGATORIOS y esa configuración es compartida (Firestore):
+          aplica a TODOS los usuarios. */}
       {lineaEditor && (() => {
         const rEd = registros.find((x) => String(x.id) === lineaEditor.regId);
         if (!rEd) return null;
         const esNueva = lineaEditor.idx === null;
         const refSel = tarifasRef.find((t) => String(t.id) === lineaEditor.tarifaRefId);
+        const lineaAct = !esNueva && Array.isArray(rEd.tarifas) ? (rEd.tarifas as Doc[])[lineaEditor.idx as number] : undefined;
+        const consLinea = String(lineaAct?.consecutivo || '');
+        const descripcionAuto = `${consLinea || 'CONV-### (al guardar)'} - ${String(refSel?.descripcion || lineaAct?.descripcion || '')}`.trim();
+        const ob = configOblig;
+        const ast = (k: keyof typeof ob) => (ob[k] ? ' *' : '');
         return (
-          <div className="modal-overlay tc-overlay tc-overlay-linea" onClick={() => { if (window.confirm('¿Seguro que quieres salir?\n\nSe perderán los cambios sin guardar.')) setLineaEditor(null); }}>{/* ✅ V00284: modal-overlay da el posicionamiento real (antes era invisible) */}
+          <div className="modal-overlay tc-overlay tc-overlay-linea" onClick={() => { if (window.confirm('¿Seguro que quieres salir?\n\nSe perderán los cambios sin guardar.')) setLineaEditor(null); }}>
             <div className="tc-modal tc-modal-linea" onClick={(e) => e.stopPropagation()}>
               <div className="tc-modal-encabezado">
                 <div>
                   <h3 className="tc-modal-titulo">{esNueva ? 'Agregar tarifa' : 'Editar tarifa'} — <span className="tc-td-cliente">{razonSocialDe(rEd)}</span></h3>
-                  <p className="tc-modal-sub">{esNueva ? 'La tarifa se agrega a este pre convenio.' : `${String((Array.isArray(rEd.tarifas) ? (rEd.tarifas as Doc[])[lineaEditor.idx as number] : undefined)?.consecutivo || '')} ${String((Array.isArray(rEd.tarifas) ? (rEd.tarifas as Doc[])[lineaEditor.idx as number] : undefined)?.descripcion || '')}`.trim() || 'Edición de la línea.'}</p>
+                  <p className="tc-modal-sub">{esNueva ? 'El consecutivo CONV-### se asigna solo al guardar (si el tarifario ya tiene convenio).' : `${consLinea} · edición de la línea.`}</p>
                 </div>
-                <button type="button" className="tc-cerrar" onClick={() => { if (window.confirm('¿Seguro que quieres salir?\n\nSe perderán los cambios sin guardar.')) setLineaEditor(null); }}>✕</button>
+                <div className="tc-linea-encabezado-acciones">
+                  <button type="button" className="tc-btn-config-oblig" title="Configurar los campos obligatorios de este formulario (aplica a TODOS los usuarios)" onClick={() => setMostrarConfigOblig((v) => !v)}>⚙</button>
+                  <button type="button" className="tc-cerrar" onClick={() => { if (window.confirm('¿Seguro que quieres salir?\n\nSe perderán los cambios sin guardar.')) setLineaEditor(null); }}>✕</button>
+                </div>
               </div>
-              <div className="tc-form-grid">
-                {esNueva && (
-                  <label className="tc-campo tc-campo-ancho">
-                    <span>Tarifa (catálogo) *</span>
-                    <select className="form-control" value={lineaEditor.tarifaRefId} onChange={(e) => setLineaEditor((p) => (p ? { ...p, tarifaRefId: e.target.value } : p))}>
-                      <option value="">— Elegir tarifa —</option>
-                      {tarifasRef.map((t) => <option key={String(t.id)} value={String(t.id)}>{String(t.descripcion || t.id)}</option>)}
-                    </select>
-                    {refSel && (refSel.origen || refSel.destino) ? <small className="tc-sub-linea">{`${refSel.origen || '?'} → ${refSel.destino || '?'}`}</small> : null}
+
+              {mostrarConfigOblig && (
+                <div className="tc-config-oblig">
+                  <div className="tc-config-oblig-titulo">Campos obligatorios (para todos los usuarios)</div>
+                  {(Object.keys(ETIQUETAS_CAMPOS_TARIFA) as (keyof CamposObligatoriosTarifa)[]).map((k) => (
+                    <label key={k} className="tc-config-oblig-item">
+                      <input type="checkbox" checked={!!configOblig[k]} onChange={(e) => setConfigOblig((p) => ({ ...p, [k]: e.target.checked }))} />
+                      <span>{ETIQUETAS_CAMPOS_TARIFA[k]}</span>
+                    </label>
+                  ))}
+                  <label className="tc-config-oblig-item tc-config-oblig-item--fija" title="Regla de negocio: no se puede desactivar">
+                    <input type="checkbox" checked disabled />
+                    <span>Cotizado En (siempre obligatoria)</span>
                   </label>
-                )}
+                  <button type="button" className="tc-btn-guardar-cabecera tc-btn-guardar-oblig" disabled={guardandoOblig} onClick={guardarConfigOblig}>{guardandoOblig ? 'Guardando…' : 'Guardar configuración'}</button>
+                </div>
+              )}
+
+              <div className="tc-form-grid tc-form-grid-linea">
                 <label className="tc-campo">
-                  <span>Costo de la tarifa</span>
+                  <span># de tarifario</span>
+                  <input type="text" className="form-control" value={`${String(rEd.consecutivo || rEd.id)} - ${razonSocialDe(rEd)}`} readOnly />
+                </label>
+                <label className="tc-campo">
+                  <span>Tarifa (catálogo){ast('tarifaRefId')}</span>
+                  <select className="form-control" value={lineaEditor.tarifaRefId} disabled={!esNueva} onChange={(e) => {
+                    const id = e.target.value;
+                    const t = tarifasRef.find((x) => String(x.id) === id);
+                    setLineaEditor((p) => (p ? { ...p, tarifaRefId: id, origen: String(t?.origen || p.origen || ''), destino: String(t?.destino || p.destino || '') } : p));
+                  }}>
+                    <option value="">— Elegir tarifa —</option>
+                    {tarifasRef.map((t) => <option key={String(t.id)} value={String(t.id)}>{String(t.descripcion || t.id)}</option>)}
+                  </select>
+                </label>
+                <label className="tc-campo">
+                  <span>Origen{ast('origen')}</span>
+                  <input type="text" className="form-control" placeholder="Buscar..." value={lineaEditor.origen} onChange={(e) => setLineaEditor((p) => (p ? { ...p, origen: e.target.value } : p))} />
+                </label>
+                <label className="tc-campo">
+                  <span>Destino{ast('destino')}</span>
+                  <input type="text" className="form-control" placeholder="Buscar..." value={lineaEditor.destino} onChange={(e) => setLineaEditor((p) => (p ? { ...p, destino: e.target.value } : p))} />
+                </label>
+                <label className="tc-campo tc-campo-ancho">
+                  <span>Descripción (automática)</span>
+                  <input type="text" className="form-control" value={descripcionAuto} readOnly />
+                </label>
+                <label className="tc-campo">
+                  <span>Costo de la Tarifa{ast('costo')}</span>
                   <input type="number" min="0" step="0.01" className="form-control" value={lineaEditor.costo} onChange={(e) => setLineaEditor((p) => (p ? { ...p, costo: e.target.value } : p))} />
                 </label>
                 <label className="tc-campo">
-                  <span>Moneda de cotización *</span>
+                  <span>Cotizado En *</span>
                   <select className="form-control" value={lineaEditor.cotizadoEn} onChange={(e) => setLineaEditor((p) => (p ? { ...p, cotizadoEn: e.target.value } : p))}>
-                    <option value="">— Elegir —</option>
+                    <option value="">Selecciona una moneda</option>
                     <option value="USD">USD</option>
                     <option value="MXN">MXN</option>
                   </select>
                 </label>
                 <label className="tc-campo">
-                  <span>Status</span>
+                  <span>Status{ast('status')}</span>
                   <select className="form-control" value={lineaEditor.status} onChange={(e) => setLineaEditor((p) => (p ? { ...p, status: e.target.value } : p))}>
                     {STATUS_TARIFARIO.map((st) => <option key={st} value={st}>{st}</option>)}
                   </select>
