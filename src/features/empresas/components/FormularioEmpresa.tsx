@@ -1,5 +1,6 @@
 // src/features/empresas/components/FormularioEmpresa.tsx
 import React, { useState, useEffect, useRef } from 'react';
+import { obtenerCacheMemoria, guardarCacheMemoria } from '../../../utils/cacheMemoria'; // ✅ V00269
 import { propagarMonedaEmpresa } from '../services/propagarMoneda';
 import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
@@ -432,32 +433,59 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
   });
 
   useEffect(() => {
+    // ✅ V00269: EDITAR/ABRIR RÁPIDO — el formulario se monta en cada apertura
+    //   y antes esperaba TODAS sus colecciones desde cero (por eso los selects
+    //   salían vacíos unos segundos y "la información no estaba"). Ahora cada
+    //   catálogo se SIEMBRA desde el caché del módulo (últimos datos conocidos,
+    //   pintado instantáneo) y el snapshot en vivo lo actualiza y re-cachea.
+    const sembrar = <T,>(clave: string, setter: (v: T) => void) => {
+      const c = obtenerCacheMemoria<T>(clave, 10 * 60 * 1000);
+      if (c) setter(c);
+    };
+    sembrar<{ id: string; label: string }[]>('fe_cat_regimenes', setRegimenesFiscales);
+    sembrar<Record<string, unknown>[]>('fe_cat_direcciones', setDireccionesDB as (v: Record<string, unknown>[]) => void);
+    sembrar<Record<string, unknown>[]>('fe_cat_tipos_factura', setTiposFacturas as (v: Record<string, unknown>[]) => void);
+
     const unsubRegimenes = onSnapshot(collection(db, 'catalogo_regimen_fiscal'), (snap) => {
-      setRegimenesFiscales(snap.docs.map(doc => {
+      const lista = snap.docs.map(doc => {
         const d = doc.data();
         return { id: doc.id, label: `${d.clave} - ${d.descripcion}` };
-      }));
+      });
+      guardarCacheMemoria('fe_cat_regimenes', lista);
+      setRegimenesFiscales(lista);
     });
 
     const unsubDirecciones = onSnapshot(collection(db, 'direcciones'), (snap) => {
-      setDireccionesDB(snap.docs.map(doc => {
+      const lista = snap.docs.map(doc => {
         const d: any = doc.data();
         // ✅ Se conservan TODOS los campos estructurados (país, estado, colonia,
         //   calle, C.P., números) para mostrarlos separados en el formulario.
         return { id: doc.id, label: d.direccionCompleta || 'Dirección sin formato', ...d };
-      }));
+      });
+      guardarCacheMemoria('fe_cat_direcciones', lista);
+      setDireccionesDB(lista);
     });
 
     const unsubFacturas = onSnapshot(collection(db, 'catalogo_tipo_factura'), (snap) => {
-      setTiposFacturas(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const lista = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      guardarCacheMemoria('fe_cat_tipos_factura', lista);
+      setTiposFacturas(lista);
     });
 
     const fetchTiposLists = async () => {
       try {
+        // ✅ V00269: siembra instantánea de tipos y monedas desde el caché.
+        const cE = obtenerCacheMemoria<{ id: string; nombre: string }[]>('fe_cat_tipos_empresa', 10 * 60 * 1000);
+        if (cE) { setCatTiposEmpresaFull(cE); setCatalogoTiposEmpresa(cE.map(x => x.nombre)); }
+        const cS = obtenerCacheMemoria<{ id: string; nombre: string }[]>('fe_cat_tipos_servicio', 10 * 60 * 1000);
+        if (cS) { setCatTiposServicioFull(cS); setCatalogoTiposServicio(cS.map(x => x.nombre)); }
+        const cM = obtenerCacheMemoria<Record<string, unknown>[]>('fe_cat_monedas', 10 * 60 * 1000) as never[] | null;
+        if (cM) setMonedas(cM);
         const tEmpresas = await getDocs(collection(db, 'catalogo_tipo_empresa'));
         const emp = tEmpresas.docs
           .map(doc => ({ id: doc.id, nombre: String((doc.data() as any).tipo || '') }))
           .filter(x => x.nombre);
+        guardarCacheMemoria('fe_cat_tipos_empresa', emp); // ✅ V00269
         setCatTiposEmpresaFull(emp);
         setCatalogoTiposEmpresa(emp.map(x => x.nombre));
 
@@ -465,11 +493,14 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
         const serv = tServicios.docs
           .map(doc => ({ id: doc.id, nombre: String((doc.data() as any).nombre || '') }))
           .filter(x => x.nombre);
+        guardarCacheMemoria('fe_cat_tipos_servicio', serv); // ✅ V00269
         setCatTiposServicioFull(serv);
         setCatalogoTiposServicio(serv.map(x => x.nombre));
 
         const monedaSnap = await getDocs(collection(db, 'catalogo_moneda'));
-        setMonedas(monedaSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        const listaMon = monedaSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        guardarCacheMemoria('fe_cat_monedas', listaMon); // ✅ V00269
+        setMonedas(listaMon);
       } catch (error) {
         console.error("Error cargando catálogos secundarios", error);
       }

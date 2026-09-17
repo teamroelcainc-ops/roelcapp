@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { propagarMonedaEmpresa } from '../services/propagarMoneda';
 import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
-import { collection, onSnapshot, getDocs, query, where, limit, orderBy, writeBatch, doc, deleteDoc } from 'firebase/firestore';
+import { collection, onSnapshot, getDocs, query, where, limit, orderBy, writeBatch, doc, deleteDoc, getCountFromServer } from 'firebase/firestore'; // ✅ V00269
 import { db, eliminarRegistro, actualizarRegistro } from '../../../config/firebase';
 import { FormularioEmpresa, TIPOS_DOCUMENTO_EMPRESA } from './FormularioEmpresa';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
@@ -99,44 +99,7 @@ const EmpresasDashboard = () => {
   //   cada operación cuenta UNA vez por empresa, sin importar en cuántos papeles
   //   aparezca (cliente que paga, mercancía, proveedor, unidad, origen o destino).
   const [conteoOps, setConteoOps] = useState<Record<string, number> | null>(null);
-  useEffect(() => {
-    const CLAVE = 'empresas_conteo_ops_v1';
-    const enMemoria = obtenerCacheMemoria<Record<string, number>>(CLAVE, 15 * 60 * 1000);
-    if (enMemoria) { setConteoOps(enMemoria); return; }
-    const crudo = almacenSesion.getItem(CLAVE);
-    if (crudo) {
-      try {
-        const mapa = JSON.parse(crudo);
-        guardarCacheMemoria(CLAVE, mapa);
-        setConteoOps(mapa);
-        return;
-      } catch { /* caché corrupta: se recalcula abajo */ }
-    }
-    let activo = true;
-    (async () => {
-      try {
-        const snap = await getDocs(collection(db, 'operaciones'));
-        const mapa: Record<string, number> = {};
-        snap.docs.forEach((d) => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc de operación sin tipo canónico.
-          const x: any = d.data();
-          const participantes = new Set(
-            [x.clientePaga, x.clienteMercancia, x.provServicios, x.proveedorUnidad, x.origen, x.destino]
-              .filter((v) => v && typeof v === 'string') as string[]
-          );
-          participantes.forEach((idEmp) => { mapa[idEmp] = (mapa[idEmp] || 0) + 1; });
-        });
-        if (!activo) return;
-        guardarCacheMemoria(CLAVE, mapa);
-        almacenSesion.setItem(CLAVE, JSON.stringify(mapa));
-        setConteoOps(mapa);
-      } catch (e) {
-        console.error('No se pudo contar las operaciones por empresa:', e);
-        if (activo) setConteoOps({});
-      }
-    })();
-    return () => { activo = false; };
-  }, []);
+  // ✅ V00269: el effect que llena conteoOps vive tras declararse `empresas` (más abajo).
 
   // ═══════════════════════════════════════════════════════════════════════
   // ✅ EMPRESAS DUPLICADAS: grupos con el MISMO NOMBRE (normalizado) o el
@@ -340,6 +303,12 @@ const EmpresasDashboard = () => {
     setSeccionRefs('operaciones'); setOpDetalle(null);
   }, [empresaViendo?.id]);
   const [operacionesUso, setOperacionesUso] = useState<any[]>([]);
+  // ✅ V00269: USO POR ROL — conteo EXACTO y AL MOMENTO por cada rol de la
+  //   empresa (Cliente Paga, Cliente Mercancía, Prov. Servicios, Prov.
+  //   Unidad, Origen, Destino) vía agregación del servidor, sumando las
+  //   operaciones que la guardan por ID y las migradas que la guardan por
+  //   NOMBRE. Es la relación Empresas ↔ Operaciones de verdad.
+  const [usoPorRol, setUsoPorRol] = useState<Record<string, number> | null>(null);
   const [cargandoUso, setCargandoUso] = useState(false);
   const [mostrarSubirDoc, setMostrarSubirDoc] = useState(false);
   // ✅ V00156: carga masiva de documentos por carpetas (como en Colaboradores)
@@ -349,6 +318,55 @@ const EmpresasDashboard = () => {
   const [empresaDocs, setEmpresaDocs] = useState<any | null>(null);
 
   const [empresas, setEmpresas] = useState<any[]>([]);
+  useEffect(() => {
+    if (!empresas || empresas.length === 0) return; // ✅ V00269: espera las empresas para resolver nombres→id
+    const CLAVE = 'empresas_conteo_ops_v2'; // ✅ V00269: v2 = resuelve nombres→id
+    const enMemoria = obtenerCacheMemoria<Record<string, number>>(CLAVE, 5 * 60 * 1000);
+    if (enMemoria) { setConteoOps(enMemoria); return; }
+    const crudo = almacenSesion.getItem(CLAVE);
+    if (crudo) {
+      try {
+        const mapa = JSON.parse(crudo);
+        guardarCacheMemoria(CLAVE, mapa);
+        setConteoOps(mapa);
+        return;
+      } catch { /* caché corrupta: se recalcula abajo */ }
+    }
+    let activo = true;
+    (async () => {
+      try {
+        const snap = await getDocs(collection(db, 'operaciones'));
+        // ✅ V00269: las operaciones migradas guardan NOMBRES en estos campos;
+        //   se resuelven al id de la empresa para que la celda de la tabla
+        //   cuadre con el desglose exacto del detalle (misma relación).
+        const planoE = (t: unknown) => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+        const idPorNombre = new Map<string, string>();
+        (empresas || []).forEach((e: { id?: unknown; nombre?: unknown; nombreCorto?: unknown }) => {
+          [e.nombre, e.nombreCorto].forEach((n2: unknown) => { const k = planoE(n2); if (k && !idPorNombre.has(k)) idPorNombre.set(k, String(e.id)); });
+        });
+        const idsEmpresas = new Set((empresas || []).map((e: { id?: unknown }) => String(e.id)));
+        const mapa: Record<string, number> = {};
+        snap.docs.forEach((d) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc de operación sin tipo canónico.
+          const x: any = d.data();
+          const participantes = new Set(
+            [x.clientePaga, x.clienteMercancia, x.provServicios, x.proveedorUnidad, x.origen, x.destino]
+              .filter((v) => v && typeof v === 'string')
+              .map((v) => { const s2 = String(v); return idsEmpresas.has(s2) ? s2 : (idPorNombre.get(planoE(s2)) || s2); }) as string[]
+          );
+          participantes.forEach((idEmp) => { mapa[idEmp] = (mapa[idEmp] || 0) + 1; });
+        });
+        if (!activo) return;
+        guardarCacheMemoria(CLAVE, mapa);
+        almacenSesion.setItem(CLAVE, JSON.stringify(mapa));
+        setConteoOps(mapa);
+      } catch (e) {
+        console.error('No se pudo contar las operaciones por empresa:', e);
+        if (activo) setConteoOps({});
+      }
+    })();
+    return () => { activo = false; };
+  }, [empresas]); // ✅ V00269: recalcula al llegar/cambiar las empresas (resuelve nombres→id)
   const [lastUsedMap, setLastUsedMap] = useState<Record<string, string>>({}); 
   const [filtroActivo, setFiltroActivo] = useState('Todo');
   // ✅ V00186: filtro por MONEDA + autocompletado del buscador
@@ -568,6 +586,7 @@ const EmpresasDashboard = () => {
     setActiveTabDetalle('general');
     setCargandoUso(true);
     setOperacionesUso([]);
+    setUsoPorRol(null); // ✅ V00269
 
     const camposConsulta = [
       { field: 'clientePaga', label: 'Cliente (Paga)' },
@@ -577,25 +596,42 @@ const EmpresasDashboard = () => {
       { field: 'destino', label: 'Destino' },
       { field: 'origen', label: 'Origen' }
     ];
+    // ✅ V00269: las operaciones MIGRADAS pueden guardar el NOMBRE de la
+    //   empresa en vez de su id — se consulta por ambos para que el conteo y
+    //   la lista salgan de la MISMA realidad (adiós "dice 2 y no hay ninguna").
+    const llaves = Array.from(new Set([String(empresa.id), String(empresa.nombre || '').trim()].filter(Boolean)));
 
     const opsMap = new Map();
+    const conteos: Record<string, number> = {};
 
     Promise.all(camposConsulta.map(async (c) => {
-      const q = query(collection(db, 'operaciones'), where(c.field, '==', empresa.id), limit(15));
-      const snap = await getDocs(q);
-      
-      snap.forEach(doc => {
-        if (!opsMap.has(doc.id)) {
-          opsMap.set(doc.id, { id: doc.id, ...doc.data(), rolesUso: [c.label] });
-        } else {
-          opsMap.get(doc.id).rolesUso.push(c.label);
-        }
-      });
+      // Conteo EXACTO por agregación del servidor (al momento, sin caché).
+      let totalRol = 0;
+      await Promise.all(llaves.map(async (llave) => {
+        try {
+          const snapC = await getCountFromServer(query(collection(db, 'operaciones'), where(c.field, '==', llave)));
+          totalRol += snapC.data().count;
+        } catch { /* rol sin índice o sin permiso: el conteo queda con lo demás */ }
+      }));
+      conteos[c.label] = totalRol;
+      // Muestras para la lista (las 50 más recientes por rol y llave).
+      await Promise.all(llaves.map(async (llave) => {
+        const q = query(collection(db, 'operaciones'), where(c.field, '==', llave), limit(50));
+        const snap = await getDocs(q);
+        snap.forEach(doc => {
+          if (!opsMap.has(doc.id)) {
+            opsMap.set(doc.id, { id: doc.id, ...doc.data(), rolesUso: [c.label] });
+          } else if (!opsMap.get(doc.id).rolesUso.includes(c.label)) {
+            opsMap.get(doc.id).rolesUso.push(c.label);
+          }
+        });
+      }));
     })).then(() => {
       const opsList = Array.from(opsMap.values()).sort((a, b) => 
         new Date(b.fechaServicio || b.createdAt || 0).getTime() - new Date(a.fechaServicio || a.createdAt || 0).getTime()
       );
       setOperacionesUso(opsList);
+      setUsoPorRol(conteos);
       setCargandoUso(false);
     }).catch(() => setCargandoUso(false));
   };
@@ -1603,7 +1639,7 @@ const EmpresasDashboard = () => {
               <button type="button" onClick={() => setActiveTabDetalle('documentos')} style={tabStyle(activeTabDetalle === 'documentos')}>Documentos</button>
               {/* ✅ NUEVO (V00191): la pestaña muestra el conteo de operaciones sin necesidad de abrirla */}
               <button type="button" onClick={() => setActiveTabDetalle('referencias')} style={tabStyle(activeTabDetalle === 'referencias')}>
-                Referencias{conteoOps ? ` (${conteoOps[empresaViendo.id] || 0})` : ''}
+                Referencias{usoPorRol ? ` (${Object.values(usoPorRol).reduce((a, b) => a + b, 0)})` : (cargandoUso ? ' (…)' : '')}
               </button>
             </div>
 
@@ -1699,8 +1735,18 @@ const EmpresasDashboard = () => {
                     </div>
                   ) : (
                     <>
+                      {/* ✅ V00269: DESGLOSE POR ROL — conteo exacto del servidor, al momento */}
+                      {usoPorRol && (
+                        <div className="ed-uso-roles">
+                          {Object.entries(usoPorRol).map(([rol, n]) => (
+                            <span key={rol} className={`ed-uso-rol${n > 0 ? '' : ' ed-uso-rol--cero'}`} title={`Operaciones donde esta empresa participa como ${rol} (conteo exacto en la base, ahora mismo)`}>
+                              {rol}: <b>{n.toLocaleString('es-MX')}</b>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                       <p className="ed-x96">
-                        Mostrando las operaciones donde esta empresa coincidió como: Cliente Paga, Cliente Mercancía, Prov. Servicios, Prov. Unidad, Destino u Origen.
+                        Mostrando las operaciones más recientes donde esta empresa coincidió en cada rol (hasta 50 por rol); los números de arriba son el total exacto por rol en la base.
                       </p>
                       <table className="ed-x97">
                         <thead className="ed-x98">
