@@ -9,7 +9,7 @@
 //     instante en Firestore).
 // ---------------------------------------------------------------------------
 import { useEffect, useMemo, useState } from 'react';
-import { collection, doc, getDocs, onSnapshot, updateDoc } from 'firebase/firestore';
+import { addDoc, collection, doc, getDocs, onSnapshot, updateDoc } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
 import { db } from '../../config/firebase';
 import { EditorEncabezados } from '../../components/EditorEncabezados';
@@ -82,6 +82,8 @@ export const ReporteVencimientosDashboard = () => {
     finally { setReubicandoId(''); }
   };
   const [filtroOrigen, setFiltroOrigen] = useState<string>('todos');
+  // ✅ V00292: FILTRO DE DÍAS — de inicio SOLO vencidos y ≤45 días.
+  const [filtroDias, setFiltroDias] = useState<'45' | '60' | 'mas60' | 'todos'>('45');
   const [busqueda, setBusqueda] = useState('');
   const [soloQueVencen, setSoloQueVencen] = useState(true); // pestaña 2
   const [guardandoId, setGuardandoId] = useState('');
@@ -196,10 +198,14 @@ export const ReporteVencimientosDashboard = () => {
 
   const filasVencimientos = useMemo(() => {
     const conFecha = docsVisibles.filter((d) => d.vence && d.dias !== null && coincide(d));
-    const vencidos = conFecha.filter((d) => (d.dias as number) < 0).sort((a, b) => (a.dias! - b.dias!)); // más vencido primero
-    const porVencer = conFecha.filter((d) => (d.dias as number) >= 0).sort((a, b) => (a.dias! - b.dias!)); // más próximo primero
+    let vencidos = conFecha.filter((d) => (d.dias as number) < 0).sort((a, b) => (a.dias! - b.dias!)); // más vencido primero
+    let porVencer = conFecha.filter((d) => (d.dias as number) >= 0).sort((a, b) => (a.dias! - b.dias!)); // más próximo primero
+    // ✅ V00292: de inicio solo lo urgente (vencidos y ≤45 días); el select amplía.
+    if (filtroDias === '45') porVencer = porVencer.filter((d) => (d.dias as number) <= 45);
+    else if (filtroDias === '60') porVencer = porVencer.filter((d) => (d.dias as number) <= 60);
+    else if (filtroDias === 'mas60') { porVencer = porVencer.filter((d) => (d.dias as number) > 60); vencidos = []; }
     return { vencidos, porVencer, todas: [...vencidos, ...porVencer] };
-  }, [docs, filtroOrigen, busqueda]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [docs, filtroOrigen, busqueda, filtroDias, bajas]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Pestaña 2: sin fecha de emisión o vencimiento (editable en la tabla).
   const filasSinFechas = useMemo(() =>
@@ -213,6 +219,52 @@ export const ReporteVencimientosDashboard = () => {
     catch (e: any) { alert(`No se pudo guardar: ${e?.message || e}`); }
     finally { setGuardandoId(''); }
   };
+
+  // ✅ V00292: el TIPO también se edita en la tabla y guarda EN SU TABLA
+  //   (documentos), con la relación del catálogo (subcarpeta y vence).
+  const guardarTipo = async (d: DocVenc, tipoNombre: string) => {
+    const cat = tiposCatalogo.find((t) => t.nombre === tipoNombre);
+    if (!cat) return;
+    setGuardandoId(d.id);
+    try { await updateDoc(doc(db, 'documentos', d.id), { tipoDocumento: cat.nombre, subcarpeta: cat.nombre, vence: cat.vence, porClasificar: false }); }
+    catch (e) { alert(`No se pudo guardar el tipo: ${(e as { message?: string })?.message || e}`); }
+    finally { setGuardandoId(''); }
+  };
+
+  // ✅ V00292: EDITOR del registro (botón ✏ en las tres pestañas) — guarda todo
+  //   junto en la colección `documentos` respetando la relación del catálogo.
+  const [docEditor, setDocEditor] = useState<{ id: string; tipoDocumento: string; vence: boolean; fechaExpedicion: string; fechaVencimiento: string } | null>(null);
+  const [guardandoEditor, setGuardandoEditor] = useState(false);
+  const abrirEditorDoc = (d: DocVenc) => setDocEditor({ id: d.id, tipoDocumento: d.tipoDocumento, vence: d.vence, fechaExpedicion: d.fechaExpedicion, fechaVencimiento: d.fechaVencimiento });
+  const guardarEditorDoc = async () => {
+    if (!docEditor || guardandoEditor) return;
+    setGuardandoEditor(true);
+    try {
+      const cat = tiposCatalogo.find((t) => t.nombre === docEditor.tipoDocumento);
+      await updateDoc(doc(db, 'documentos', docEditor.id), {
+        ...(cat ? { tipoDocumento: cat.nombre, subcarpeta: cat.nombre, porClasificar: false } : {}),
+        vence: docEditor.vence,
+        fechaExpedicion: docEditor.fechaExpedicion,
+        fechaVencimiento: docEditor.vence ? docEditor.fechaVencimiento : '',
+      });
+      setDocEditor(null);
+    } catch (e) { alert(`No se pudo guardar: ${(e as { message?: string })?.message || e}`); }
+    setGuardandoEditor(false);
+  };
+
+  // ✅ V00292: alta rápida de TIPOS DE ARCHIVO al catálogo (botón + como el de
+  //   Cliente Mercancía) — queda guardado en catalogo_tipo_archivo para todos.
+  const agregarTipoRapido = async (): Promise<string> => {
+    const nombre = String(window.prompt('Nombre del nuevo TIPO DE ARCHIVO (se guarda en el catálogo catalogo_tipo_archivo):') || '').trim();
+    if (!nombre) return '';
+    const vence = window.confirm('¿Este tipo de documento VENCE (controla fecha de vencimiento)?\n\nAceptar = Sí vence · Cancelar = No vence');
+    try {
+      await addDoc(collection(db, 'catalogo_tipo_archivo'), { nombre, vence, modulo: ['todos'], creadoDesde: 'reporte_vencimientos', createdAt: new Date().toISOString() });
+      setTiposCatalogo((prev) => [...prev, { nombre, vence, modulos: ['todos'] }].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')));
+      return nombre;
+    } catch (e) { alert(`No se pudo guardar el tipo: ${(e as { message?: string })?.message || e}`); return ''; }
+  };
+
 
   const exportarExcel = () => {
     const wb = XLSX.utils.book_new();
@@ -270,6 +322,14 @@ export const ReporteVencimientosDashboard = () => {
 
       <div className="rv-filtros">
         <input className="form-control rv-buscar" type="text" placeholder="Buscar por usuario o documento…" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
+        {pestana === 'vencimientos' && (
+          <select className="form-control rv-select" value={filtroDias} onChange={(e) => setFiltroDias(e.target.value as typeof filtroDias)} title="Rango de días por vencer (los vencidos siempre se muestran, salvo en 'Más de 60')">{/* ✅ V00292 */}
+            <option value="45">Vence en 45 días o menos</option>
+            <option value="60">Vence en 60 días o menos</option>
+            <option value="mas60">Más de 60 días</option>
+            <option value="todos">Todos</option>
+          </select>
+        )}
         <select className="form-control rv-select" value={filtroOrigen} onChange={(e) => setFiltroOrigen(e.target.value)}>
           <option value="todos">Todos (empleados, empresas, unidades)</option>
           <option value="empleados">Empleados</option>
@@ -300,13 +360,17 @@ export const ReporteVencimientosDashboard = () => {
                     <td>
                       {/* ✅ V00179: elegir el tipo lo REUBICA al instante en la carpeta
                           correcta de ese cliente/proveedor/colaborador/unidad */}
-                      <select className="rv-select-tipo" value="" disabled={reubicandoId === d.id}
-                        onChange={(e) => { if (e.target.value) reubicarDoc(d, e.target.value); }}>
-                        <option value="">{reubicandoId === d.id ? '⏳ Reubicando…' : '— Elegir carpeta/tipo —'}</option>
-                        {tiposParaDoc(d).map((t) => <option key={t.nombre} value={t.nombre}>{t.nombre}{t.vence ? ' · vence' : ''}</option>)}
-                      </select>
+                      <div className="rv-reubicar-linea">{/* ✅ V00292: búsqueda + alta rápida al catálogo */}
+                        <input type="text" className="form-control rv-input-reubicar" list={`rvTipos_${d.id}`} placeholder={reubicandoId === d.id ? '⏳ Reubicando…' : 'Buscar carpeta/tipo…'} disabled={reubicandoId === d.id} defaultValue=""
+                          onChange={(e) => { const t = tiposParaDoc(d).find((x) => x.nombre === e.target.value); if (t) { reubicarDoc(d, t.nombre); e.target.value = ''; } }} />
+                        <datalist id={`rvTipos_${d.id}`}>
+                          {tiposParaDoc(d).map((t) => <option key={t.nombre} value={t.nombre}>{t.vence ? 'vence' : ''}</option>)}
+                        </datalist>
+                        <button type="button" className="rv-btn-mas-tipo" title="Agregar un tipo de archivo nuevo al catálogo y reubicar aquí" disabled={reubicandoId === d.id}
+                          onClick={async () => { const nombre = await agregarTipoRapido(); if (nombre) reubicarDoc(d, nombre); }}>+</button>
+                      </div>
                     </td>
-                    <td className="rv-celda-ver">{d.url ? <a href={d.url} target="_blank" rel="noreferrer">Ver</a> : '—'}</td>
+                    <td className="rv-celda-ver"><button type="button" className="rv-btn-editar" title="Editar este registro (tipo, vence y fechas)" onClick={() => abrirEditorDoc(d)}>✎</button>{d.url ? <a href={d.url} target="_blank" rel="noreferrer">Ver</a> : '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -318,14 +382,23 @@ export const ReporteVencimientosDashboard = () => {
               <tbody>
                 {filasVencimientos.todas.length === 0 && <tr><td colSpan={7} className="rv-vacio">Sin documentos vencidos ni por vencer con los filtros actuales. ✅</td></tr>}
                 {filasVencimientos.todas.map((d) => (
-                  <tr key={d.id} className={(d.dias as number) < 0 ? 'rv-fila-vencido' : 'rv-fila-porvencer'}>
+                  <tr key={d.id} className={`${(d.dias as number) < 0 ? 'rv-fila-vencido' : 'rv-fila-porvencer'}${guardandoId === d.id ? ' rv-fila-guardando' : ''}`}>
                     <td>{ETQ_ORIGEN[d.coleccionOrigen] || d.coleccionOrigen || '—'}</td>
                     <td className="rv-registro">{nombreRegistro(d)}</td>
-                    <td className="rv-doc">{d.tipoDocumento}</td>
-                    <td className="rv-fecha">{fmtFecha(d.fechaExpedicion)}</td>
-                    <td className="rv-fecha">{fmtFecha(d.fechaVencimiento)}</td>
+                    {/* ✅ V00292: tipo y vencimiento editables EN LA TABLA — guardan en `documentos` con la relación del catálogo */}
+                    <td className="rv-doc">
+                      <select className="rv-select-tipo" value={tiposCatalogo.some((t) => t.nombre === d.tipoDocumento) ? d.tipoDocumento : ''} onChange={(e) => { if (e.target.value) guardarTipo(d, e.target.value); }}>
+                        {!tiposCatalogo.some((t) => t.nombre === d.tipoDocumento) && <option value="">{d.tipoDocumento}</option>}
+                        {tiposParaDoc(d).map((t) => <option key={t.nombre} value={t.nombre}>{t.nombre}</option>)}
+                      </select>
+                    </td>
+                    <td className="rv-fecha"><input type="date" className="rv-input-fecha" value={d.fechaExpedicion} onChange={(e) => guardarCampo(d, 'fechaExpedicion', e.target.value)} /></td>
+                    <td className="rv-fecha"><input type="date" className="rv-input-fecha" value={d.fechaVencimiento} onChange={(e) => guardarCampo(d, 'fechaVencimiento', e.target.value)} /></td>
                     <td>{chipEstado(d)}</td>
-                    <td>{d.url && <a className="rv-ver" href={d.url} target="_blank" rel="noopener noreferrer">Ver</a>}</td>
+                    <td className="rv-celda-ver">
+                      <button type="button" className="rv-btn-editar" title="Editar este registro (tipo, vence y fechas)" onClick={() => abrirEditorDoc(d)}>✎</button>
+                      {d.url && <a className="rv-ver" href={d.url} target="_blank" rel="noopener noreferrer">Ver</a>}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -339,12 +412,17 @@ export const ReporteVencimientosDashboard = () => {
                   <tr key={d.id} className={guardandoId === d.id ? 'rv-fila-guardando' : ''}>
                     <td>{ETQ_ORIGEN[d.coleccionOrigen] || d.coleccionOrigen || '—'}</td>
                     <td className="rv-registro">{nombreRegistro(d)}</td>
-                    <td className="rv-doc">{d.tipoDocumento}</td>
+                    <td className="rv-doc">
+                      <select className="rv-select-tipo" value={tiposCatalogo.some((t) => t.nombre === d.tipoDocumento) ? d.tipoDocumento : ''} onChange={(e) => { if (e.target.value) guardarTipo(d, e.target.value); }}>{/* ✅ V00292 */}
+                        {!tiposCatalogo.some((t) => t.nombre === d.tipoDocumento) && <option value="">{d.tipoDocumento}</option>}
+                        {tiposParaDoc(d).map((t) => <option key={t.nombre} value={t.nombre}>{t.nombre}</option>)}
+                      </select>
+                    </td>
                     <td><input type="checkbox" checked={d.vence} title="¿Este documento vence?" onChange={(e) => guardarCampo(d, 'vence', e.target.checked)} /></td>
                     {/* ✅ Edición DIRECTA en la tabla: se guarda al elegir la fecha */}
                     <td><input type="date" className={`rv-input-fecha${!d.fechaExpedicion ? ' rv-falta' : ''}`} value={d.fechaExpedicion} onChange={(e) => guardarCampo(d, 'fechaExpedicion', e.target.value)} /></td>
                     <td><input type="date" className={`rv-input-fecha${!d.fechaVencimiento ? ' rv-falta' : ''}`} value={d.fechaVencimiento} disabled={!d.vence} title={d.vence ? '' : 'Marca "Vence" para capturar el vencimiento'} onChange={(e) => guardarCampo(d, 'fechaVencimiento', e.target.value)} /></td>
-                    <td className="rv-celda-ver">{guardandoId === d.id && <span className="rv-guardando">⏳</span>}{d.url && <a className="rv-ver" href={d.url} target="_blank" rel="noopener noreferrer" title="Visualizar el documento">Ver</a>}</td>
+                    <td className="rv-celda-ver">{guardandoId === d.id && <span className="rv-guardando">⏳</span>}<button type="button" className="rv-btn-editar" title="Editar este registro (tipo, vence y fechas)" onClick={() => abrirEditorDoc(d)}>✎</button>{d.url && <a className="rv-ver" href={d.url} target="_blank" rel="noopener noreferrer" title="Visualizar el documento">Ver</a>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -352,6 +430,43 @@ export const ReporteVencimientosDashboard = () => {
           )}
         </div>
       )}
+      {/* ✅ V00292: editor del registro — guarda todo junto en `documentos` */}
+      {docEditor && (
+        <div className="modal-overlay rv-editor-overlay" onClick={(e) => { if (e.target === e.currentTarget) setDocEditor(null); }}>
+          <div className="rv-editor-modal">
+            <div className="rv-editor-encabezado">
+              <h3 className="rv-editor-titulo">Editar registro del documento</h3>
+              <button type="button" className="rv-editor-cerrar" onClick={() => setDocEditor(null)}>✕</button>
+            </div>
+            <div className="rv-editor-cuerpo">
+              <label className="rv-editor-campo">
+                <span>Tipo de archivo (carpeta)</span>
+                <select className="form-control" value={tiposCatalogo.some((t) => t.nombre === docEditor.tipoDocumento) ? docEditor.tipoDocumento : ''} onChange={(e) => { const cat = tiposCatalogo.find((t) => t.nombre === e.target.value); setDocEditor((p) => (p ? { ...p, tipoDocumento: e.target.value, vence: cat ? cat.vence : p.vence } : p)); }}>
+                  {!tiposCatalogo.some((t) => t.nombre === docEditor.tipoDocumento) && <option value="">{docEditor.tipoDocumento}</option>}
+                  {tiposCatalogo.map((t) => <option key={t.nombre} value={t.nombre}>{t.nombre}{t.vence ? ' · vence' : ''}</option>)}
+                </select>
+              </label>
+              <label className="rv-editor-campo rv-editor-campo--check">
+                <input type="checkbox" checked={docEditor.vence} onChange={(e) => setDocEditor((p) => (p ? { ...p, vence: e.target.checked } : p))} />
+                <span>¿Este documento vence?</span>
+              </label>
+              <label className="rv-editor-campo">
+                <span>Fecha de expedición</span>
+                <input type="date" className="form-control" value={docEditor.fechaExpedicion} onChange={(e) => setDocEditor((p) => (p ? { ...p, fechaExpedicion: e.target.value } : p))} />
+              </label>
+              <label className="rv-editor-campo">
+                <span>Fecha de vencimiento</span>
+                <input type="date" className="form-control" value={docEditor.fechaVencimiento} disabled={!docEditor.vence} onChange={(e) => setDocEditor((p) => (p ? { ...p, fechaVencimiento: e.target.value } : p))} />
+              </label>
+            </div>
+            <div className="rv-editor-pie">
+              <button type="button" className="btn btn-outline" onClick={() => setDocEditor(null)}>Cancelar</button>
+              <button type="button" className="rv-editor-guardar" disabled={guardandoEditor} onClick={guardarEditorDoc}>{guardandoEditor ? 'Guardando…' : 'Guardar cambios'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
