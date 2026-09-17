@@ -871,9 +871,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const [searchOperadorProveedor, setSearchOperadorProveedor] = useState('');
   const [showDropdownOperadorProveedor, setShowDropdownOperadorProveedor] = useState(false);
   const [searchConvenio, setSearchConvenio] = useState('');
-  const [showDropdownConvenio, setShowDropdownConvenio] = useState(false);
+  // ✅ V00271: retirado — el convenio se elige en el modal, ya no hay dropdown de búsqueda.
   const [searchConvenioProveedor, setSearchConvenioProveedor] = useState('');
-  const [showDropdownConvenioProveedor, setShowDropdownConvenioProveedor] = useState(false);
+  // ✅ V00271: retirado — el convenio se elige en el modal, ya no hay dropdown de búsqueda.
 
 
   const [formData, setFormData] = useState({
@@ -1029,6 +1029,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   ).trim();
   const nombreEmpresaMostrar = (e: any): string =>
     nombreCortoEmpresa(e) || e?.nombre || e?.empresa || e?.razonSocial || '';
+
+  // ✅ V00271: RAZÓN SOCIAL — en Cliente (Paga) y Proveedor de Transporte se
+  //   muestra el nombre completo (razón social), no el nombre corto (relación
+  //   con Empresas: `nombre` es la razón social; nombreCorto es solo alias).
+  const razonSocialEmpresa = (e: any): string =>
+    String(e?.nombre || e?.razonSocial || e?.empresa || '').trim() || nombreCortoEmpresa(e);
 
   const labelEmpresa = (e: any) => nombreEmpresaMostrar(e);
   const labelRemolque = (r: any) => `${r?.nombre || ''} ${r?.placas || r?.placa || ''}`.trim();
@@ -2092,8 +2098,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const sOperador = (searchOperador || '').toLowerCase();
   const sUnidadProv = (searchUnidadProveedor || '').toLowerCase();
   const sOperadorProv = (searchOperadorProveedor || '').toLowerCase();
-  const sConvenio = (searchConvenio || '').toLowerCase();
-  const sConvenioProveedor = (searchConvenioProveedor || '').toLowerCase();
 
   const empresaCoincide = (e:any, q:string) =>
     nombreEmpresaMostrar(e).toLowerCase().includes(q) || (e.nombre || '').toLowerCase().includes(q);
@@ -2178,29 +2182,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
   // ✅ V00224: editor de origen/destino de las tarifas (solo fletes + permiso).
   const [editorTarifaOD, setEditorTarifaOD] = useState(false);
-  const agruparPorConcepto = (lista: any[], campo: string) => {
-    const grupos = new Map<string, { nombre: string; opciones: any[] }>();
-    (lista || []).forEach((c: any) => {
-      // ✅ V00249: cada CONVENIO es una opción; solo se agrupan los que
-      //   comparten tarifa Y consecutivo (multi-tarifa de un mismo convenio).
-      const nombre = `${consecutivoConvenio(c) ? consecutivoConvenio(c) + ' - ' : ''}${String(c[campo] || '').trim() || 'Sin nombre'}`;
-      if (!grupos.has(nombre)) grupos.set(nombre, { nombre, opciones: [] });
-      grupos.get(nombre)!.opciones.push(c);
-    });
-    return Array.from(grupos.values());
-  };
+  // ✅ V00271: retirado — el convenio se elige en el modal, ya no hay dropdown de búsqueda.
   const consecutivoDe = (c: any) => String(c?.consecutivo || (String(c?.id || '').startsWith('CONV-') ? c.id : '') || '').trim();
 
-  const resultadosConvenio = listaConveniosCliente.filter((c:any) =>
-    (c.descripcion || '').toLowerCase().includes(sConvenio) ||
-    etiquetaConvenioCliente(c).toLowerCase().includes(sConvenio) ||
-    String(c.tarifaBaseId || '').toLowerCase().includes(sConvenio)
-  );
-  const resultadosConvenioProveedor = listaConveniosProveedor.filter((c:any) =>
-    (c.tipoConvenioNombre || '').toLowerCase().includes(sConvenioProveedor) ||
-    etiquetaConvenioProveedor(c).toLowerCase().includes(sConvenioProveedor) ||
-    String(c.tarifaBaseId || '').toLowerCase().includes(sConvenioProveedor)
-  );
+  // ✅ V00271: retirado — el convenio se elige en el modal, ya no hay dropdown de búsqueda.
+  // ✅ V00271: retirado — el convenio se elige en el modal, ya no hay dropdown de búsqueda.
 
   const convClienteSel = listaConveniosCliente.find((c:any) => c.id === formData.convenio);
   const convProvSelObj = listaConveniosProveedor.find((c:any) => c.id === formData.convenioProveedor);
@@ -2925,8 +2911,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             {showDropdownClientePaga && searchClientePaga && (
                               <div className="fo-x12">
                                 {resultadosClientePaga.length === 0 ? <div className="fo-x13">Sin resultados</div> : resultadosClientePaga.map((c:any) => (
-                                  <div className="fo-x14" key={c.id} onMouseDown={(e) => { e.preventDefault(); const monedaDefault = resolverMonedaIdDeEmpresa(c); setFormData(prev => ({ ...prev, clientePaga: c.id, convenio: '', facturadoEnCobrar: monedaDefault })); setSearchClientePaga(nombreEmpresaMostrar(c)); setSearchConvenio(''); setShowDropdownClientePaga(false); }}>
-                                    <div className="fo-x15">{nombreEmpresaMostrar(c)}</div>
+                                  <div className="fo-x14" key={c.id} onMouseDown={(e) => { e.preventDefault(); const monedaDefault = resolverMonedaIdDeEmpresa(c); setFormData(prev => ({ ...prev, clientePaga: c.id, convenio: '', facturadoEnCobrar: monedaDefault })); setSearchClientePaga(razonSocialEmpresa(c)); setSearchConvenio(''); setShowDropdownClientePaga(false); }}>
+                                    <div className="fo-x15">{razonSocialEmpresa(c)}</div>{/* ✅ V00271: razón social */}
                                   </div>
                                 ))}
                               </div>
@@ -2955,35 +2941,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           )}
                         </div>
                         <div className="fo-x19">
-                          <input type="text" className={`form-control${claseSiFalta('convenio')}`} placeholder="Buscar por nombre o ID de tarifa..." required={!formData.convenio} disabled={listaConveniosCliente.length === 0} value={searchConvenio} onChange={e => { setSearchConvenio(e.target.value); setShowDropdownConvenio(true); if (formData.convenio) setFormData(prev => ({ ...prev, convenio: '' })); }} onFocus={() => setShowDropdownConvenio(true)} onBlur={() => setTimeout(() => setShowDropdownConvenio(false), 200)} />
-                          {showDropdownConvenio && (
-                            <div className="fo-x12">
-                              {resultadosConvenio.length === 0 && <div className="fo-x13">Sin resultados</div>}
-                              {/* ✅ V00214: un renglón por CONCEPTO; varias tarifas → modal */}
-                              {agruparPorConcepto(resultadosConvenio, 'descripcion').map((g:any) => {
-                                const unica = g.opciones.length === 1;
-                                const c0 = g.opciones[0];
-                                return (
-                                  <div className="fo-x14" key={g.nombre} onMouseDown={(e) => {
-                                    e.preventDefault();
-                                    if (unica) {
-                                      setFormData(prev => ({ ...prev, convenio: c0.id }));
-                                      setSearchConvenio(etiquetaConvenioCliente(c0));
-                                      setShowDropdownConvenio(false);
-                                    } else {
-                                      setShowDropdownConvenio(false);
-                                      setModalTarifas({ tipo: 'cliente', nombre: g.nombre, opciones: g.opciones });
-                                    }
-                                  }}>
-                                    <div className="fo-x15">
-                                      {g.nombre}{/* ✅ V00249: el nombre del grupo ya trae el CONV-### */}
-                                      {!unica && <span className="fo-chip-tarifas">{g.opciones.length} tarifas · elegir</span>}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
+                          {/* ✅ V00271: el convenio YA NO se busca aquí — se ELIGE en el modal
+                              "Convenios del Cliente" (clic en el campo o en Ver/editar); el
+                              campo solo muestra el convenio seleccionado. */}
+                          <input type="text" className={`form-control fo-campo-convenio${claseSiFalta('convenio')}`} placeholder={listaConveniosCliente.length === 0 ? 'Este cliente no tiene convenios' : 'Presiona aquí para elegir el convenio…'} required={!formData.convenio} disabled={listaConveniosCliente.length === 0} value={searchConvenio} readOnly onClick={() => { if (listaConveniosCliente.length > 0) setMostrarConveniosCliente(true); }} title="El convenio se elige desde la lista de convenios del cliente (clic para abrirla)" />
                         </div>
                         {listaConveniosCliente.length === 0 && searchClientePaga && <small className="fo-x21">Este cliente no tiene convenios asignados</small>}
                       </div>
@@ -3169,8 +3130,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             {showDropdownProvTransporte && searchProvTransporte && !proveedorForzado && (
                               <div className="fo-x12">
                                 {resultadosProvTransporte.length === 0 ? <div className="fo-x13">Sin resultados</div> : resultadosProvTransporte.map((c:any) => (
-                                  <div className="fo-x14" key={c.id} onMouseDown={(e) => { e.preventDefault(); const monedaDefault = resolverMonedaIdDeEmpresa(c); setFormData(prev => ({ ...prev, proveedorUnidad: c.id, convenioProveedor: '', facturadoEnUnidad: monedaDefault || prev.facturadoEnUnidad })); setSearchProvTransporte(nombreEmpresaMostrar(c)); setSearchConvenioProveedor(''); setShowDropdownProvTransporte(false); }}>
-                                    <div className="fo-x15">{nombreEmpresaMostrar(c)}</div>
+                                  <div className="fo-x14" key={c.id} onMouseDown={(e) => { e.preventDefault(); const monedaDefault = resolverMonedaIdDeEmpresa(c); setFormData(prev => ({ ...prev, proveedorUnidad: c.id, convenioProveedor: '', facturadoEnUnidad: monedaDefault || prev.facturadoEnUnidad })); setSearchProvTransporte(razonSocialEmpresa(c)); setSearchConvenioProveedor(''); setShowDropdownProvTransporte(false); }}>
+                                    <div className="fo-x15">{razonSocialEmpresa(c)}{/* ✅ V00271: razón social */}</div>
                                   </div>
                                 ))}
                               </div>
@@ -3197,35 +3158,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           {formData.convenioProveedor && <button className="fo-x18 fo-btn-actualizar" type="button" onClick={() => actualizarMontoConvenio('proveedor')} title="Traer el monto actual del convenio del proveedor">↻ Actualizar monto</button>}
                         </div>
                         <div className="fo-x19">
-                          <input type="text" className={`form-control${claseSiFalta('convenioProveedor')}`} placeholder="Buscar por nombre o ID de tarifa..." disabled={listaConveniosProveedor.length === 0} value={searchConvenioProveedor} onChange={e => { setSearchConvenioProveedor(e.target.value); setShowDropdownConvenioProveedor(true); if (formData.convenioProveedor) setFormData(prev => ({ ...prev, convenioProveedor: '' })); }} onFocus={() => setShowDropdownConvenioProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownConvenioProveedor(false), 200)} />
-                          {showDropdownConvenioProveedor && (
-                            <div className="fo-x12">
-                              {resultadosConvenioProveedor.length === 0 && <div className="fo-x13">Sin resultados</div>}
-                              {/* ✅ V00214: un renglón por CONCEPTO; varias tarifas → modal */}
-                              {agruparPorConcepto(resultadosConvenioProveedor, 'tipoConvenioNombre').map((g:any) => {
-                                const unica = g.opciones.length === 1;
-                                const c0 = g.opciones[0];
-                                return (
-                                  <div className="fo-x14" key={g.nombre} onMouseDown={(e) => {
-                                    e.preventDefault();
-                                    if (unica) {
-                                      setFormData(prev => ({ ...prev, convenioProveedor: c0.id, monedaConvenioProv: c0.monedaBase, totalAPagarProv: c0.tarifaMonto }));
-                                      setSearchConvenioProveedor(etiquetaConvenioProveedor(c0));
-                                      setShowDropdownConvenioProveedor(false);
-                                    } else {
-                                      setShowDropdownConvenioProveedor(false);
-                                      setModalTarifas({ tipo: 'proveedor', nombre: g.nombre, opciones: g.opciones });
-                                    }
-                                  }}>
-                                    <div className="fo-x15">
-                                      {g.nombre}{/* ✅ V00249: el nombre del grupo ya trae el CONV-### */}
-                                      {!unica && <span className="fo-chip-tarifas">{g.opciones.length} tarifas · elegir</span>}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
+                          {/* ✅ V00271: igual que el cliente — el convenio se ELIGE en el modal */}
+                          <input type="text" className={`form-control fo-campo-convenio${claseSiFalta('convenioProveedor')}`} placeholder={listaConveniosProveedor.length === 0 ? 'Este proveedor no tiene convenios' : 'Presiona aquí para elegir el convenio…'} disabled={listaConveniosProveedor.length === 0} value={searchConvenioProveedor} readOnly onClick={() => { if (listaConveniosProveedor.length > 0) setMostrarConveniosProveedor(true); }} title="El convenio se elige desde la lista de convenios del proveedor (clic para abrirla)" />
                         </div>
                         {listaConveniosProveedor.length === 0 && searchProvTransporte && <small className="fo-x21">Este proveedor no tiene convenios asignados</small>}
                       </div>
@@ -3759,6 +3693,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                 <table className="fo-x55">
                   <thead>
                     <tr className="fo-x56">
+                      <th className="fo-x57"># Tarifario</th>{/* ✅ V00271 */}
+                      <th className="fo-x57"># Convenio</th>{/* ✅ V00271 */}
                       <th className="fo-x57">Tarifa</th>
                       <th className="fo-x58">Monto</th>
                       <th className="fo-x58">Acciones</th>
@@ -3766,10 +3702,21 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                   </thead>
                   <tbody>
                     {listaConveniosCliente.map((c:any) => (
-                      <tr className="fo-x59" key={c.id}>
+                      <tr
+                        className={`fo-x59 fo-fila-convenio${String(formData.convenio) === String(c.id) ? ' fo-fila-convenio--elegido' : ''}`}
+                        key={c.id}
+                        title="Clic para usar este convenio en la operación"
+                        onClick={() => { /* ✅ V00271: clic en la fila = SELECCIONAR el convenio */
+                          setFormData(prev => ({ ...prev, convenio: String(c.id) }));
+                          setSearchConvenio(etiquetaConvenioCliente(c));
+                          setMostrarConveniosCliente(false);
+                        }}
+                      >
+                        <td className="fo-x60 fo-col-consec">{String(c.tarifarioId || '—')}</td>
+                        <td className="fo-x60 fo-col-consec">{String(c.consecutivo || c.id || '—')}</td>
                         <td className="fo-x60">{c.descripcion}</td>
                         <td className="fo-x61">{fmtMoney(c.tarifaMonto)}</td>
-                        <td className="fo-x62">
+                        <td className="fo-x62" onClick={(e) => e.stopPropagation()}>
                           <button className="fo-x63" type="button" onClick={() => abrirEditorConvenio(c)} title="Editar"><IconEdit size={13} /></button>
                           <button className="fo-x64" type="button" onClick={() => eliminarDetalleConvenio(c)} title="Eliminar"><IconX size={13} /></button>
                         </td>
@@ -3835,6 +3782,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                 <table className="fo-x55">
                   <thead>
                     <tr className="fo-x56">
+                      <th className="fo-x57"># Tarifario</th>{/* ✅ V00271 */}
+                      <th className="fo-x57"># Convenio</th>{/* ✅ V00271 */}
                       <th className="fo-x57">Tarifa</th>
                       <th className="fo-x58">Monto</th>
                       <th className="fo-x58">Acciones</th>
@@ -3842,10 +3791,21 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                   </thead>
                   <tbody>
                     {listaConveniosProveedor.map((c:any) => (
-                      <tr className="fo-x59" key={c.id}>
+                      <tr
+                        className={`fo-x59 fo-fila-convenio${String(formData.convenioProveedor) === String(c.id) ? ' fo-fila-convenio--elegido' : ''}`}
+                        key={c.id}
+                        title="Clic para usar este convenio en la operación"
+                        onClick={() => { /* ✅ V00271: clic en la fila = SELECCIONAR el convenio */
+                          setFormData(prev => ({ ...prev, convenioProveedor: String(c.id) }));
+                          setSearchConvenioProveedor(String(c.tipoConvenioNombre || c.descripcion || c.consecutivo || c.id));
+                          setMostrarConveniosProveedor(false);
+                        }}
+                      >
+                        <td className="fo-x60 fo-col-consec">{String(c.tarifarioId || '—')}</td>{/* ✅ V00271 */}
+                        <td className="fo-x60 fo-col-consec">{String(c.consecutivo || c.id || '—')}</td>{/* ✅ V00271 */}
                         <td className="fo-x60">{c.tipoConvenioNombre}</td>
                         <td className="fo-x61">{fmtMoney(c.tarifaMonto)}</td>
-                        <td className="fo-x62">
+                        <td className="fo-x62" onClick={(e) => e.stopPropagation()}>
                           <button className="fo-x63" type="button" onClick={() => abrirEditorConvenioProv(c)} title="Editar"><IconEdit size={13} /></button>
                           <button className="fo-x64" type="button" onClick={() => eliminarDetalleConvenioProv(c)} title="Eliminar"><IconX size={13} /></button>
                         </td>

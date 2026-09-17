@@ -142,3 +142,12 @@
    overlay (paneles, dropdowns, chips flotantes) queda oculto — antes asomaban
    fragmentos ("Flete de Importacion…", "$0.00") encima de otros módulos. */
 .modal-overlay.minimized > *:not(.fo-x45) { display: none !important; }
+
+/* ✅ V00271: el convenio se ELIGE en el modal — campo de solo lectura clicable
+   y filas del modal seleccionables (la elegida se marca). */
+.fo-campo-convenio { cursor: pointer; }
+.fo-campo-convenio:disabled { cursor: not-allowed; }
+.fo-fila-convenio { cursor: pointer; }
+.fo-fila-convenio:hover { background-color: rgba(88, 166, 255, 0.08); }
+.fo-fila-convenio--elegido { background-color: rgba(63, 185, 80, 0.10); box-shadow: inset 3px 0 0 #3fb950; }
+.fo-col-consec { font-family: Consolas, monospace; font-size: 0.78rem; color: #e07b00; white-space: nowrap; }
