@@ -561,6 +561,15 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     return String(r.nombre || op?.statusNombre || op?.status || '');
   };
   // Una operación completada es "Falso" si su status contiene la palabra "falso".
+  // ✅ V00293: FILTRO POR TARJETA — clic en una tarjeta del resumen filtra la
+  //   tabla; ctrl+clic (o "Abrir en una pestaña nueva") abre la app con el
+  //   filtro aplicado vía ?modulo=serviciosCompletados&tarjeta=…
+  type FiltroTarjeta = '' | 'total' | 'completados' | 'falsos' | 'diesel' | 'nomina' | 'factCliente' | 'pendCliente' | 'factProveedor' | 'pendProveedor';
+  const [filtroTarjeta, setFiltroTarjeta] = useState<FiltroTarjeta>(() => {
+    try { return (new URLSearchParams(window.location.search).get('tarjeta') as FiltroTarjeta) || ''; } catch { return ''; }
+  });
+  const ETQ_TARJETA: Record<Exclude<FiltroTarjeta, ''>, string> = { total: 'Servicios (rango)', completados: 'Completados', falsos: 'Falsos', diesel: 'Cargaron Diésel', nomina: 'Pagados Nómina', factCliente: 'Facturados Cliente', pendCliente: 'Pendientes Cliente', factProveedor: 'Facturados Proveedor', pendProveedor: 'Pendientes Proveedor' };
+  const urlTarjeta = (k: Exclude<FiltroTarjeta, ''>): string => `${window.location.pathname}?modulo=serviciosCompletados&tarjeta=${k}`;
   const esFalso = (op: any): boolean => nombreStatusOp(op).toLowerCase().includes('falso');
 
   const tieneDiesel = (op: any): boolean => !!(op?.referenciaDieselConsecutivo || op?.referenciaDieselId);
@@ -1683,10 +1692,30 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
   // ✅ NUEVO: lista final que ve la tabla. Sin columna de orden activa se respeta
   //   el orden original (fecha desc + consecutivo) de operacionesFiltradas.
+  // ✅ V00293: la tabla respeta el filtro de la tarjeta elegida.
+  const operacionesConTarjeta = useMemo(() => {
+    if (!filtroTarjeta || filtroTarjeta === 'total') return operacionesFiltradas;
+    const pasa = (op: Record<string, unknown>): boolean => {
+      switch (filtroTarjeta) {
+        case 'completados': return !esFalso(op);
+        case 'falsos': return esFalso(op);
+        case 'diesel': return tieneDiesel(op);
+        case 'nomina': return tieneNomina(op);
+        case 'factCliente': return facturadoCliente(op);
+        case 'pendCliente': return !facturadoCliente(op);
+        case 'factProveedor': return facturadoProveedor(op);
+        case 'pendProveedor': return !facturadoProveedor(op);
+        default: return true;
+      }
+    };
+    return operacionesFiltradas.filter(pasa);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [operacionesFiltradas, filtroTarjeta, mapaStatus]);
+
   const operacionesOrdenadas = useMemo(() => {
-    if (!ordenColumna || !ordenDireccion) return operacionesFiltradas;
+    if (!ordenColumna || !ordenDireccion) return operacionesConTarjeta;
     const dir = ordenDireccion === 'asc' ? 1 : -1;
-    return [...operacionesFiltradas].sort((a: any, b2: any) => {
+    return [...operacionesConTarjeta].sort((a: any, b2: any) => {
       const va = valorOrdenColumna(a, ordenColumna);
       const vb = valorOrdenColumna(b2, ordenColumna);
       const vaVacio = va === '';
@@ -1697,7 +1726,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       return compararValoresOrden(va, vb) * dir;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [operacionesFiltradas, ordenColumna, ordenDireccion, catalogosGlobales]);
+  }, [operacionesConTarjeta, ordenColumna, ordenDireccion, catalogosGlobales]);
 
   const resumenServicios = useMemo(() => {
     const base = operacionesFiltradas;
@@ -2515,50 +2544,56 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         {filtrosAplicados && (
           <div className="sc-x70">
             <div className="sc-x71">
-              <div style={cardResumenStyle}>
+              <a href={urlTarjeta('total')} className={`sc-tarjeta-filtro${filtroTarjeta === 'total' ? ' sc-tarjeta-filtro--activa' : ''}`} style={cardResumenStyle} title="Clic: filtrar aquí · Ctrl+clic o botón central: abrir el resultado en otra pestaña" onClick={(e) => { if (e.ctrlKey || e.metaKey || e.shiftKey) return; e.preventDefault(); setFiltroTarjeta((f) => (f === 'total' ? '' : 'total')); }}>
                 <span style={cardLabelStyle}>Servicios (rango)</span>
                 <span style={{ ...cardValueStyle, color: '#f0f6fc' }}>{resumenServicios.total}</span>
-              </div>
-              <div style={cardResumenStyle}>
+              </a>
+              <a href={urlTarjeta('completados')} className={`sc-tarjeta-filtro${filtroTarjeta === 'completados' ? ' sc-tarjeta-filtro--activa' : ''}`} style={cardResumenStyle} title="Clic: filtrar aquí · Ctrl+clic o botón central: abrir el resultado en otra pestaña" onClick={(e) => { if (e.ctrlKey || e.metaKey || e.shiftKey) return; e.preventDefault(); setFiltroTarjeta((f) => (f === 'completados' ? '' : 'completados')); }}>
                 <span style={cardLabelStyle}>Completados</span>
                 <span style={{ ...cardValueStyle, color: '#10b981' }}>{resumenServicios.completados}</span>
-              </div>
-              <div style={cardResumenStyle}>
+              </a>
+              <a href={urlTarjeta('falsos')} className={`sc-tarjeta-filtro${filtroTarjeta === 'falsos' ? ' sc-tarjeta-filtro--activa' : ''}`} style={cardResumenStyle} title="Clic: filtrar aquí · Ctrl+clic o botón central: abrir el resultado en otra pestaña" onClick={(e) => { if (e.ctrlKey || e.metaKey || e.shiftKey) return; e.preventDefault(); setFiltroTarjeta((f) => (f === 'falsos' ? '' : 'falsos')); }}>
                 <span style={cardLabelStyle}>Falsos</span>
                 <span style={{ ...cardValueStyle, color: '#f85149' }}>{resumenServicios.falsos}</span>
-              </div>
-              <div style={cardResumenStyle}>
+              </a>
+              <a href={urlTarjeta('diesel')} className={`sc-tarjeta-filtro${filtroTarjeta === 'diesel' ? ' sc-tarjeta-filtro--activa' : ''}`} style={cardResumenStyle} title="Clic: filtrar aquí · Ctrl+clic o botón central: abrir el resultado en otra pestaña" onClick={(e) => { if (e.ctrlKey || e.metaKey || e.shiftKey) return; e.preventDefault(); setFiltroTarjeta((f) => (f === 'diesel' ? '' : 'diesel')); }}>
                 <span style={cardLabelStyle}>Cargaron Diésel</span>
                 <span style={{ ...cardValueStyle, color: '#f59e0b' }}>{resumenServicios.conDiesel}</span>
-              </div>
-              <div style={cardResumenStyle}>
+              </a>
+              <a href={urlTarjeta('nomina')} className={`sc-tarjeta-filtro${filtroTarjeta === 'nomina' ? ' sc-tarjeta-filtro--activa' : ''}`} style={cardResumenStyle} title="Clic: filtrar aquí · Ctrl+clic o botón central: abrir el resultado en otra pestaña" onClick={(e) => { if (e.ctrlKey || e.metaKey || e.shiftKey) return; e.preventDefault(); setFiltroTarjeta((f) => (f === 'nomina' ? '' : 'nomina')); }}>
                 <span style={cardLabelStyle}>Pagados Nómina</span>
                 <span style={{ ...cardValueStyle, color: '#a371f7' }}>{resumenServicios.conNomina}</span>
-              </div>
+              </a>
             </div>
 
             <div className="sc-x72">
-              <div style={cardResumenStyle}>
+              <a href={urlTarjeta('factCliente')} className={`sc-tarjeta-filtro${filtroTarjeta === 'factCliente' ? ' sc-tarjeta-filtro--activa' : ''}`} style={cardResumenStyle} title="Clic: filtrar aquí · Ctrl+clic o botón central: abrir el resultado en otra pestaña" onClick={(e) => { if (e.ctrlKey || e.metaKey || e.shiftKey) return; e.preventDefault(); setFiltroTarjeta((f) => (f === 'factCliente' ? '' : 'factCliente')); }}>
                 <span style={cardLabelStyle}>Facturados Cliente</span>
                 <span style={{ ...cardValueStyle, color: '#10b981' }}>{resumenServicios.factCliente}</span>
-              </div>
-              <div style={cardResumenStyle}>
+              </a>
+              <a href={urlTarjeta('pendCliente')} className={`sc-tarjeta-filtro${filtroTarjeta === 'pendCliente' ? ' sc-tarjeta-filtro--activa' : ''}`} style={cardResumenStyle} title="Clic: filtrar aquí · Ctrl+clic o botón central: abrir el resultado en otra pestaña" onClick={(e) => { if (e.ctrlKey || e.metaKey || e.shiftKey) return; e.preventDefault(); setFiltroTarjeta((f) => (f === 'pendCliente' ? '' : 'pendCliente')); }}>
                 <span style={cardLabelStyle}>Pendientes Cliente</span>
                 <span style={{ ...cardValueStyle, color: '#f59e0b' }}>{resumenServicios.pendCliente}</span>
-              </div>
-              <div style={cardResumenStyle}>
+              </a>
+              <a href={urlTarjeta('factProveedor')} className={`sc-tarjeta-filtro${filtroTarjeta === 'factProveedor' ? ' sc-tarjeta-filtro--activa' : ''}`} style={cardResumenStyle} title="Clic: filtrar aquí · Ctrl+clic o botón central: abrir el resultado en otra pestaña" onClick={(e) => { if (e.ctrlKey || e.metaKey || e.shiftKey) return; e.preventDefault(); setFiltroTarjeta((f) => (f === 'factProveedor' ? '' : 'factProveedor')); }}>
                 <span style={cardLabelStyle}>Facturados Proveedor</span>
                 <span style={{ ...cardValueStyle, color: '#58a6ff' }}>{resumenServicios.factProveedor}</span>
-              </div>
-              <div style={cardResumenStyle}>
+              </a>
+              <a href={urlTarjeta('pendProveedor')} className={`sc-tarjeta-filtro${filtroTarjeta === 'pendProveedor' ? ' sc-tarjeta-filtro--activa' : ''}`} style={cardResumenStyle} title="Clic: filtrar aquí · Ctrl+clic o botón central: abrir el resultado en otra pestaña" onClick={(e) => { if (e.ctrlKey || e.metaKey || e.shiftKey) return; e.preventDefault(); setFiltroTarjeta((f) => (f === 'pendProveedor' ? '' : 'pendProveedor')); }}>
                 <span style={cardLabelStyle}>Pendientes Proveedor</span>
                 <span style={{ ...cardValueStyle, color: '#f59e0b' }}>{resumenServicios.pendProveedor}</span>
-              </div>
+              </a>
             </div>
 
           </div>
         )}
 
+        {filtroTarjeta && (
+          <div className="sc-chip-tarjeta">{/* ✅ V00293 */}
+            Filtro por tarjeta: <b>{ETQ_TARJETA[filtroTarjeta]}</b> · {operacionesOrdenadas.length} resultado(s)
+            <button type="button" className="sc-chip-tarjeta-quitar" title="Quitar el filtro" onClick={() => setFiltroTarjeta('')}>✕</button>
+          </div>
+        )}
         <div className="content-body sc-x73">
           <div className="table-container sc-x74">
             {cargandoOperaciones ? (

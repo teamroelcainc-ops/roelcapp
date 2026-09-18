@@ -47,9 +47,11 @@ export const prefijoTipoOperacion = (tipo: string): string => {
   if (['TR', 'LO', 'FL', 'OP'].includes(t)) return t;
 
   // Mapeo por contenido del nombre (tolera variantes y plurales).
+  // ✅ V00293: FLETE manda sobre LOGIST — "Logística Fletes" contiene ambos y
+  //   antes caía en LO-; los fletes SIEMPRE llevan FL-.
+  if (t.includes('FLETE')) return 'FL';
   if (t.includes('TRANSFER')) return 'TR';
   if (t.includes('LOGIST')) return 'LO';
-  if (t.includes('FLETE')) return 'FL';
 
   // Respaldo: primeras 2 letras del nombre.
   return t.replace(/[^A-Z0-9]/g, '').slice(0, 2) || 'OP';

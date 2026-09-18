@@ -746,8 +746,15 @@ function AppContenido() {
     // ✅ PANTALLA PERSISTENTE: al recargar se regresa al último módulo visitado.
     //   (El guard de permisos más abajo redirige si el rol ya no lo permite.)
     // Cast simple a string: cualquier valor raro lo corrige el guard de permisos.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- evita el tipado circular de typeof en su propio inicializador.
-    try { return (localStorage.getItem('persist_moduloActivo') as any) || 'operaciones'; } catch { return 'operaciones'; }
+    // ✅ V00293: DEEP-LINK — ?modulo=… en la URL manda sobre lo persistido, para
+    //   abrir un módulo (p. ej. desde una tarjeta de filtro) en otra pestaña.
+    try {
+      const porUrl = new URLSearchParams(window.location.search).get('modulo');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mismo tipado circular que abajo.
+      if (porUrl) return porUrl as any;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- evita el tipado circular de typeof en su propio inicializador.
+      return (localStorage.getItem('persist_moduloActivo') as any) || 'operaciones';
+    } catch { return 'operaciones'; }
   });
 
   // ✅ Guardar el módulo activo para restaurarlo al recargar.
