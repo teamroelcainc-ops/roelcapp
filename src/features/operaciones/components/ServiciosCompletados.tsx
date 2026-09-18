@@ -570,6 +570,14 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   });
   const ETQ_TARJETA: Record<Exclude<FiltroTarjeta, ''>, string> = { total: 'Servicios (rango)', completados: 'Completados', falsos: 'Falsos', diesel: 'Cargaron Diésel', nomina: 'Pagados Nómina', factCliente: 'Facturados Cliente', pendCliente: 'Pendientes Cliente', factProveedor: 'Facturados Proveedor', pendProveedor: 'Pendientes Proveedor' };
   const urlTarjeta = (k: Exclude<FiltroTarjeta, ''>): string => `${window.location.pathname}?modulo=serviciosCompletados&tarjeta=${k}`;
+  // ✅ V00294: URL con la BÚSQUEDA COMPLETA aplicada (filtros + tarjeta) para
+  //   abrir el mismo resultado en otra pestaña.
+  const urlBusquedaActual = (): string => {
+    const base = `${window.location.pathname}?modulo=serviciosCompletados`;
+    const f = filtrosAplicados ? `&filtros=${encodeURIComponent(JSON.stringify(filtrosAplicados))}` : '';
+    const t = filtroTarjeta ? `&tarjeta=${filtroTarjeta}` : '';
+    return `${base}${f}${t}`;
+  };
   const esFalso = (op: any): boolean => nombreStatusOp(op).toLowerCase().includes('falso');
 
   const tieneDiesel = (op: any): boolean => !!(op?.referenciaDieselConsecutivo || op?.referenciaDieselId);
@@ -828,31 +836,31 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   //   usuario y se ejecuta la búsqueda automáticamente (sin registrar log, ya
   //   que no es una búsqueda nueva sino la restauración de la anterior).
   useEffect(() => {
-    try {
-      const str = localStorage.getItem(claveFiltrosGuardados());
-      if (!str) return;
-      const f = JSON.parse(str);
-      if (!f?.fechaInicio || !f?.fechaFin) return;
-      setFilterFechaInicio(f.fechaInicio);
-      setFilterFechaFin(f.fechaFin);
+    // ✅ V00294: aplica un objeto de filtros a los INPUTS y, si se pide, ejecuta
+    //   la búsqueda (aplicados + descarga). Lo usan el deep-link y la restauración.
+    const precargarInputs = (f: Record<string, string>) => {
+      setFilterFechaInicio(f.fechaInicio || '');
+      setFilterFechaFin(f.fechaFin || '');
       setFilterCliente(f.cliente || '');
       setFilterTipoOperacion(f.tipoOperacion || '');
-      setFilterMovimiento(f.movimiento || '');   // ✅ V00256
-      setFilterCargaVacia(f.cargaVacia || '');   // ✅ V00256
-      setFilterAduana(f.aduana || '');           // ✅ V00256
+      setFilterMovimiento(f.movimiento || '');
+      setFilterCargaVacia(f.cargaVacia || '');
+      setFilterAduana(f.aduana || '');
       setFilterRemolque(f.remolque || '');
       setFilterOperador(f.operador || '');
       setFilterReferencia(f.referencia || '');
       setBusqueda(f.busqueda || '');
+    };
+    const buscarCon = (f: Record<string, string>) => {
       setFiltrosAplicados({
         fechaInicio: f.fechaInicio,
         fechaFin: f.fechaFin,
         cliente: f.cliente || '',
         clienteNombre: f.clienteNombre || '',
         tipoOperacion: f.tipoOperacion || '',
-        movimiento: f.movimiento || '',   // ✅ V00256
-        cargaVacia: f.cargaVacia || '',   // ✅ V00256
-        aduana: f.aduana || '',           // ✅ V00256
+        movimiento: f.movimiento || '',
+        cargaVacia: f.cargaVacia || '',
+        aduana: f.aduana || '',
         remolque: f.remolque || '',
         remolqueNombre: f.remolqueNombre || '',
         operador: f.operador || '',
@@ -864,7 +872,29 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         yaDescargado.current = true;
         descargarOperaciones(f.fechaInicio, f.fechaFin, f.cliente || '');
       }
-    } catch { /* filtro guardado corrupto: ignorar */ }
+    };
+    try {
+      // ✅ V00294: DEEP-LINK — ?filtros= trae la búsqueda completa serializada
+      //   (botón "Ver en nueva pestaña"): se aplica y se busca de inmediato.
+      const params = new URLSearchParams(window.location.search);
+      const filtrosUrl = params.get('filtros');
+      if (filtrosUrl) {
+        const f = JSON.parse(decodeURIComponent(filtrosUrl));
+        if (f?.fechaInicio && f?.fechaFin) { precargarInputs(f); buscarCon(f); return; }
+      }
+      const str = localStorage.getItem(claveFiltrosGuardados());
+      const f = str ? JSON.parse(str) : null;
+      if (params.get('tarjeta')) {
+        // deep-link de tarjeta (V00293) sin filtros explícitos: usa el último
+        // criterio guardado para que la tarjeta tenga datos que filtrar.
+        if (f?.fechaInicio && f?.fechaFin) { precargarInputs(f); buscarCon(f); }
+        return;
+      }
+      // ✅ V00294: SIN deep-link, los datos NO aparecen hasta presionar Buscar —
+      //   solo se PRECARGAN los inputs con el último criterio y se abre el panel.
+      if (f?.fechaInicio && f?.fechaFin) precargarInputs(f);
+      setDrawerFiltrosAbierto(true);
+    } catch { /* filtro guardado o URL corruptos: ignorar */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -2427,6 +2457,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                   Buscar
                 </button>
+                {filtrosAplicados && (
+                  <a className="sc-btn-nueva-pestana sc-btn-nueva-pestana--drawer" href={urlBusquedaActual()} target="_blank" rel="noopener noreferrer" title="Abrir esta búsqueda en una pestaña nueva">↗ Nueva pestaña</a>
+                )}
               </div>
               </aside>
             </>
@@ -2518,6 +2551,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
               {resumenFiltrosChips.map((chip, i) => (
                 <span className="sc-x66" key={`chip_${i}`}>{chip}</span>
               ))}
+              <a className="sc-btn-nueva-pestana" href={urlBusquedaActual()} target="_blank" rel="noopener noreferrer" title="Abrir ESTA búsqueda (filtros y tarjeta aplicados) en una pestaña nueva">↗ Ver en nueva pestaña</a>{/* ✅ V00294 */}
             </div>
           ) : (
             <span className="sc-x67">Presiona Filtros para definir el rango de fechas y buscar.</span>

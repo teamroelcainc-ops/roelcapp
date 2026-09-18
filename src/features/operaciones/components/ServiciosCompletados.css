@@ -354,3 +354,8 @@
 .sc-tarjeta-filtro--activa { border-color: #d84315 !important; box-shadow: 0 0 0 1px #d84315 inset; }
 .sc-chip-tarjeta { display: inline-flex; align-items: center; gap: 8px; margin: 6px 0 2px; padding: 6px 12px; border: 1px solid #d84315; border-radius: 999px; background: rgba(216, 67, 21, 0.12); color: #f0f6fc; font-size: 0.82rem; }
 .sc-chip-tarjeta-quitar { background: transparent; border: none; color: #f85149; cursor: pointer; font-size: 0.85rem; padding: 0 2px; }
+
+/* ✅ V00294: abrir la búsqueda aplicada en otra pestaña */
+.sc-btn-nueva-pestana { display: inline-flex; align-items: center; gap: 5px; border: 1px solid #1f6feb; color: #58a6ff; border-radius: 999px; padding: 4px 12px; font-size: 0.78rem; font-weight: 600; text-decoration: none; white-space: nowrap; }
+.sc-btn-nueva-pestana:hover { background: rgba(31, 111, 235, 0.15); }
+.sc-btn-nueva-pestana--drawer { border-radius: 6px; justify-content: center; }
