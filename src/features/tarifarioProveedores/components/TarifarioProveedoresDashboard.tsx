@@ -1012,14 +1012,14 @@ export function TarifarioProveedoresDashboard() {
   const [sincronizandoConv, setSincronizandoConv] = useState(false);
   const normDesc = (x: unknown): string => String(x ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
   const numConsec = (c: string): number => { const m = c.match(/(\d+)\s*$/); return m ? parseInt(m[1], 10) : Number.MAX_SAFE_INTEGER; };
-  const sincronizarConvenios = async (r: Doc) => {
+  const sincronizarConvenios = async (r: Doc, opciones?: { silencioso?: boolean }) => {
     if (sincronizandoConv) return;
     if (!aut.verificarAccion('editar', ['status'])) return;
     setSincronizandoConv(true);
     try {
       const tarifas: Doc[] = Array.isArray(r.tarifas) ? [...(r.tarifas as Doc[])] : [];
       const convId = String(r.convenioId || '');
-      if (!convId) { alert('Este tarifario aún no tiene convenio (se asigna al aprobar).'); setSincronizandoConv(false); return; }
+      if (!convId) { if (!opciones?.silencioso) alert('Este tarifario aún no tiene convenio (se asigna al aprobar).'); setSincronizandoConv(false); return { ligadas: 0, reparadas: 0, creadas: 0, huerfanos: 0 }; }
       const snapDet = await getDocs(query(collection(db, 'convenios_proveedores_detalles'), where('convenioId', '==', convId)));
       const detalles = snapDet.docs.map((d) => ({ id: d.id, ...(d.data() as Doc) }));
       const usados = new Set(tarifas.map((t) => String(t.consecutivo || '')).filter(Boolean));
@@ -1091,18 +1091,54 @@ export function TarifarioProveedoresDashboard() {
         });
         creadas += 1;
       }
-      if (ligadas + creadas + reparadas > 0) {
+      // ── FASE 3 ✅ V00295: limpiar HUÉRFANOS — detalles que ESTA sincronización
+      //   creó (tarifarioId = este tarifario), que ninguna línea usa ya y que
+      //   tienen su gemelo original (misma descripción) en el convenio. ──
+      let huerfanos = 0;
+      for (const dDet of detalles) {
+        const cc = String(dDet.consecutivo || dDet.id);
+        if (usados.has(cc)) continue;
+        if (String(dDet.tarifarioId || '') !== String(r.id)) continue;
+        const gemelo = detalles.find((o) => String(o.id) !== String(dDet.id) && normDesc(o.tipoConvenioNombre) === normDesc(dDet.tipoConvenioNombre) && usados.has(String(o.consecutivo || o.id)));
+        if (!gemelo) continue;
+        try { await deleteDoc(doc(db, 'convenios_proveedores_detalles', String(dDet.id))); huerfanos += 1; } catch { /* mejor esfuerzo */ }
+      }
+      if (ligadas + creadas + reparadas + huerfanos > 0) {
         await updateDoc(doc(db, 'tarifario_proveedores', r.id), { tarifas });
-        await registrarLog('Tarifario Proveedores', 'Edición', `Sincronizó convenios del pre convenio de "${razonSocialDe(r)}": ${ligadas} ligada(s), ${reparadas} duplicado(s) reparado(s), ${creadas} creada(s).`);
-        alert(`Sincronización completa. ✅\n\n· Líneas ligadas a su convenio original: ${ligadas}\n· Duplicados reparados (la línea volvió a su CONV original): ${reparadas}\n· Convenios creados (no existían): ${creadas}`);
-      } else {
+        await registrarLog('Tarifario Proveedores', 'Edición', `Sincronizó convenios del pre convenio de "${razonSocialDe(r)}": ${ligadas} ligada(s), ${reparadas} duplicado(s) reparado(s), ${creadas} creada(s), ${huerfanos} huérfano(s) eliminado(s).`);
+        if (!opciones?.silencioso) alert(`Sincronización completa. ✅\n\n· Líneas ligadas a su convenio original: ${ligadas}\n· Duplicados reparados (la línea volvió a su CONV original): ${reparadas}\n· Convenios creados (no existían): ${creadas}\n· Duplicados huérfanos eliminados: ${huerfanos}`);
+      } else if (!opciones?.silencioso) {
         alert('Todas las líneas ya tienen su # de convenio correcto. ✅');
       }
+      return { ligadas, reparadas, creadas, huerfanos };
     } catch (e) {
       console.error('No se pudo sincronizar:', e);
-      alert('No se pudo completar la sincronización.');
+      if (!opciones?.silencioso) alert('No se pudo completar la sincronización.');
+      return { ligadas: 0, reparadas: 0, creadas: 0, huerfanos: 0 };
+    } finally {
+      setSincronizandoConv(false);
     }
-    setSincronizandoConv(false);
+  };
+
+  // ✅ V00295: SINCRONIZACIÓN GLOBAL — acomoda TODOS los tarifarios de una vez
+  //   para que Convenios y Tarifarios digan lo mismo, sin duplicados.
+  const [sincronizandoTodo, setSincronizandoTodo] = useState(false);
+  const sincronizarTodosLosTarifarios = async () => {
+    if (sincronizandoTodo || sincronizandoConv) return;
+    const conConvenio = registros.filter((x) => String(x.convenioId || '').trim());
+    if (conConvenio.length === 0) { alert('No hay tarifarios con convenio para sincronizar.'); return; }
+    if (!window.confirm(`Se van a sincronizar ${conConvenio.length} tarifario(s) contra sus convenios:\n\n· Las líneas sin # adoptan su CONV original (por tarifa y descripción).\n· Los duplicados creados por error se reparan y eliminan.\n· Solo se crean CONV nuevos cuando de verdad no existen.\n\n¿Continuar?`)) return;
+    setSincronizandoTodo(true);
+    let L = 0, R = 0, C = 0, H = 0, conCambios = 0;
+    try {
+      for (const r of conConvenio) {
+        const res = (await sincronizarConvenios(r, { silencioso: true })) || { ligadas: 0, reparadas: 0, creadas: 0, huerfanos: 0 };
+        L += res.ligadas; R += res.reparadas; C += res.creadas; H += res.huerfanos;
+        if (res.ligadas + res.reparadas + res.creadas + res.huerfanos > 0) conCambios += 1;
+      }
+      alert(`Sincronización GLOBAL completa. ✅\n\n· Tarifarios revisados: ${conConvenio.length} (con cambios: ${conCambios})\n· Líneas ligadas a su convenio original: ${L}\n· Duplicados reparados: ${R}\n· Convenios creados: ${C}\n· Duplicados huérfanos eliminados: ${H}`);
+    } catch (e) { console.error(e); alert('La sincronización global se interrumpió; vuelve a ejecutarla para continuar.'); }
+    setSincronizandoTodo(false);
   };
 
   const eliminarLinea = async (r: Doc, idx: number) => {
@@ -1408,6 +1444,7 @@ export function TarifarioProveedoresDashboard() {
           <button type="button" className="tc-btn-importar" disabled={migrando} title="Pasa todos los convenios de Convenios de Proveedores a Tarifario Clientes en status Aprobado" onClick={importarConvenios}>
             {migrando ? 'Importando…' : '⇪ Importar Convenios'}
           </button>
+          <button type="button" className="tc-btn-importar tc-btn-sync-todo" disabled={sincronizandoTodo} title="Acomoda TODOS los tarifarios contra Convenios: liga originales, repara duplicados y elimina huérfanos" onClick={sincronizarTodosLosTarifarios}>{sincronizandoTodo ? '⏳ Sincronizando todo…' : '⟳ Sincronizar TODOS'}</button>{/* ✅ V00295 */}
           <button type="button" className="tc-btn-preconvenio" onClick={() => { limpiarCaptura(); setCapturaAbierta(true); setFecha(hoyLocalISO()); }}>
             + Nuevo Tarifario
           </button>

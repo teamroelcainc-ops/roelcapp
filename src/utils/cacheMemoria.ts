@@ -49,17 +49,21 @@ export const limpiarCachesPorPrefijo = (prefijo: string): void => {
 const espejo = new Map<string, string>();
 
 export const almacenSesion = {
+  // ✅ V00295: el respaldo pasa de sessionStorage a LOCALSTORAGE — el session
+  //   NO se comparte entre pestañas, y por eso "Ver en nueva pestaña" volvía a
+  //   descargar todo. Con localStorage la pestaña nueva pinta AL INSTANTE con
+  //   el caché (los TTL de cada módulo siguen decidiendo la frescura).
   getItem(clave: string): string | null {
     const m = espejo.get(clave);
     if (m !== undefined) return m;
-    try { return sessionStorage.getItem(clave); } catch { return null; }
+    try { return localStorage.getItem(clave); } catch { return null; }
   },
   setItem(clave: string, valor: string): void {
     espejo.set(clave, valor);
-    try { sessionStorage.setItem(clave, valor); } catch { /* cuota agotada: la memoria ya lo tiene */ }
+    try { localStorage.setItem(clave, valor); } catch { /* cuota agotada: la memoria ya lo tiene */ }
   },
   removeItem(clave: string): void {
     espejo.delete(clave);
-    try { sessionStorage.removeItem(clave); } catch { /* noop */ }
+    try { localStorage.removeItem(clave); } catch { /* noop */ }
   },
 };
