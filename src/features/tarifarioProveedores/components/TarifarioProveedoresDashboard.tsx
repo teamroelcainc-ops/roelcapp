@@ -1020,8 +1020,27 @@ export function TarifarioProveedoresDashboard() {
       const tarifas: Doc[] = Array.isArray(r.tarifas) ? [...(r.tarifas as Doc[])] : [];
       const convId = String(r.convenioId || '');
       if (!convId) { if (!opciones?.silencioso) alert('Este tarifario aún no tiene convenio (se asigna al aprobar).'); setSincronizandoConv(false); return { ligadas: 0, reparadas: 0, creadas: 0, huerfanos: 0 }; }
-      const snapDet = await getDocs(query(collection(db, 'convenios_proveedores_detalles'), where('convenioId', '==', convId)));
-      const detalles = snapDet.docs.map((d) => ({ id: d.id, ...(d.data() as Doc) }));
+      // ✅ V00296: los detalles equivalentes pueden vivir en OTRO convenio
+      //   maestro del MISMO cliente/proveedor (p. ej. CONV-489 de UnitedLink en
+      //   un convenio anterior). La búsqueda ahora abarca TODOS los convenios
+      //   de la misma empresa, no solo el ligado al tarifario.
+      const entId = String(r.proveedorId || '').trim();
+      const idsConvenios = new Set<string>([convId]);
+      if (entId) {
+        try {
+          const snapMaestros = await getDocs(query(collection(db, 'convenios_proveedores'), where('proveedorId', '==', entId)));
+          snapMaestros.docs.forEach((d) => idsConvenios.add(d.id));
+        } catch { /* sin permiso o índice: se sigue solo con el convenio del tarifario */ }
+      }
+      const listaIds = Array.from(idsConvenios);
+      const detalles: (Doc & { id: string })[] = [];
+      for (let i = 0; i < listaIds.length; i += 10) {
+        const chunk = listaIds.slice(i, i + 10);
+        const snapDet = chunk.length === 1
+          ? await getDocs(query(collection(db, 'convenios_proveedores_detalles'), where('convenioId', '==', chunk[0])))
+          : await getDocs(query(collection(db, 'convenios_proveedores_detalles'), where('convenioId', 'in', chunk)));
+        snapDet.docs.forEach((d) => detalles.push({ id: d.id, ...(d.data() as Doc) }));
+      }
       const usados = new Set(tarifas.map((t) => String(t.consecutivo || '')).filter(Boolean));
       const buscarDetalle = (t: Doc): (Doc & { id: string }) | undefined => {
         const libres = detalles.filter((d) => !usados.has(String(d.consecutivo || d.id)));
