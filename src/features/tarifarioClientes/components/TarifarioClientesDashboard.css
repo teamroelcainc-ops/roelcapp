@@ -426,3 +426,6 @@
 }
 .tc-btn-agregar-linea, .tc-btn-sincronizar-conv { margin-left: 0; }
 .tc-modal-botones { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* ✅ V00300: columna de ruta en la tabla de la ficha */
+.tc-td-ruta { font-size: 0.8rem; color: #8b949e; white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }

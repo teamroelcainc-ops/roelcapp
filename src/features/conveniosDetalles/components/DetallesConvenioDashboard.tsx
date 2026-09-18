@@ -37,7 +37,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { createPortal } from 'react-dom'; // ✅ V00237
-import { collection, getDocs, doc, updateDoc, writeBatch, setDoc, query, where } from 'firebase/firestore'; // ✅ V00215/V00231/V00232
+import { collection, getDocs, getDoc, doc, updateDoc, writeBatch, setDoc, query, where } from 'firebase/firestore'; // ✅ V00215/V00231/V00232 · ✅ V00299
 import { reservarConsecutivosDetalle, reservarConsecutivosDetalleProveedor } from '../consecutivos'; // ✅ V00231
 import { db as dbFs, eliminarRegistro } from '../../../config/firebase';
 import { db } from '../../../config/firebase';
@@ -585,11 +585,20 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
           const convId = String(x.convenioId || '').trim();
           if (convId) tarifarioResuelto = listaTar.find((t) => t.convenioId === convId)?.id || '';
         }
+        // ✅ V00299: si el detalle no trae tarifaId (creados por sincronización o
+        //   migrados), la tarifa se resuelve por su NOMBRE contra el catálogo —
+        //   así el editor nunca abre con "Tarifa (catálogo)" vacía si la fila
+        //   sí tiene tarifa.
+        const normNombre = (t: unknown) => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+        const nombreFila = normNombre(f.tarifa);
+        const listaTarifas = tarifasAlta.length > 0 ? tarifasAlta : tarifasLista;
+        const tarifaResuelta = String(x.tipoConvenioId || f.tarifaId || '') || (nombreFila ? (listaTarifas.find((t) => normNombre(t.nombre) === nombreFila)?.id || '') : '');
         setEditForm((p) => ({
           ...p,
           origen: String(x.origen || ''),
           destino: String(x.destino || ''),
           tarifarioId: tarifarioResuelto,
+          tarifaId: p.tarifaId || tarifaResuelta,
         }));
       }
     } catch (e) { console.error('No se pudieron cargar los catálogos de edición:', e); }
@@ -633,6 +642,40 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         if (tarSel.convenioId) cambiosDoc.convenioId = tarSel.convenioId;
       }
       await updateDoc(doc(dbFs, COL_DETALLES, f.id), cambiosDoc);
+      // ✅ V00299: RELACIÓN BIDIRECCIONAL — "# de tarifario" es la llave foránea:
+      //   lo editado en el CONVENIO se refleja en la LÍNEA del tarifario (por
+      //   consecutivo). Mejor esfuerzo aquí; el motor relacional v1.3 lo cubre
+      //   server-side para cualquier otra escritura.
+      try {
+        const tarId = String(tarSel?.id || editForm.tarifarioId || '').trim();
+        const consDet = String(f.consecutivo || f.id).trim();
+        if (tarId && consDet) {
+          const colTarifario = esClientes ? 'tarifario_clientes' : 'tarifario_proveedores';
+          const snapTarDoc = await getDoc(doc(dbFs, colTarifario, tarId));
+          if (snapTarDoc.exists()) {
+            const dataTar = snapTarDoc.data() as Record<string, unknown>;
+            const tarifasArr = Array.isArray(dataTar.tarifas) ? [...(dataTar.tarifas as Record<string, unknown>[])] : [];
+            const idx = tarifasArr.findIndex((t) => String(t.consecutivo || '') === consDet);
+            if (idx >= 0) {
+              const lineaAntes = tarifasArr[idx];
+              const monedaCorta = String(editForm.moneda || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes('dolar') ? 'USD' : 'MXN';
+              const lineaNueva: Record<string, unknown> = {
+                ...lineaAntes,
+                tarifa: parseFloat(editForm.costo) || 0,
+                cotizadoEn: monedaCorta,
+                status: editForm.status,
+                origen: nombreMunEd(editForm.origen) || String(lineaAntes.origen || ''),
+                destino: nombreMunEd(editForm.destino) || String(lineaAntes.destino || ''),
+              };
+              if (editForm.tarifaId) { lineaNueva.tarifaReferenciaId = editForm.tarifaId; lineaNueva.descripcion = nombreTarifa || String(lineaAntes.descripcion || ''); }
+              if (JSON.stringify(lineaNueva) !== JSON.stringify(lineaAntes)) {
+                tarifasArr[idx] = lineaNueva;
+                await updateDoc(doc(dbFs, colTarifario, tarId), { tarifas: tarifasArr });
+              }
+            }
+          }
+        }
+      } catch (ePropaga) { console.warn('No se pudo reflejar en el tarifario (lo cubre el motor):', ePropaga); }
       setFilas((prev) => (prev || []).map((x) => x.id === f.id ? {
         ...x,
         moneda: editForm.moneda,

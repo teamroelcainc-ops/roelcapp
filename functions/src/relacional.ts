@@ -40,7 +40,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 if (getApps().length === 0) initializeApp();
 const dbRel = getFirestore();
 
-const REL_VERSION = 'relacional-v1.2'; // ✅ V00282: + sync tarifario→detalles
+const REL_VERSION = 'relacional-v1.3'; // ✅ V00299: + sync INVERSA detalle→línea del tarifario
 
 /** Normaliza: sin acentos, espacios colapsados, minúsculas (misma regla del cliente V00257). */
 const normR = (t: unknown): string =>
@@ -524,5 +524,75 @@ export const tarifarioProveedorEscrito = onDocumentWritten({ document: 'tarifari
     if (n > 0) logger.info(`[${REL_VERSION}] tarifarioProveedorEscrito: ${event.params.tarId} → ${n} detalle(s) sincronizado(s)`);
   } catch (e) {
     logger.error(`[${REL_VERSION}] tarifarioProveedorEscrito: fallo en ${event.params.tarId}`, e);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 7) ✅ V00299 — SINCRONIZACIÓN INVERSA: DETALLE DE CONVENIO → LÍNEA DEL
+//    TARIFARIO. El "# de tarifario" es la llave foránea: cualquier edición del
+//    detalle (origen, destino, costo, moneda, status, tarifa del catálogo) se
+//    refleja en la línea del tarifario con el mismo consecutivo. Anti-bucle:
+//    solo escribe si algo difiere (igual que el trigger directo v1.2, así los
+//    dos convergen y se detienen).
+// ─────────────────────────────────────────────────────────────────────────────
+const monedaCortaRel = (m: unknown): string => {
+  const t = String(m ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (t.includes('dolar') || t.includes('usd') || String(m) === ID_USD_REL) return 'USD';
+  if (t.includes('peso') || t.includes('mxn') || String(m) === ID_MXN_REL) return 'MXN';
+  return '';
+};
+
+const sincronizarLineaDeDetalle = async (detalleId: string, det: Dict, coleccionTarifarios: string): Promise<boolean> => {
+  const tarId = String(det.tarifarioId || '').trim();
+  if (!tarId) return false;
+  const consec = String(det.consecutivo || detalleId).trim();
+  const ref = dbRel.collection(coleccionTarifarios).doc(tarId);
+  const snap = await ref.get();
+  if (!snap.exists) return false;
+  const data = snap.data() as Dict;
+  const tarifas = Array.isArray(data.tarifas) ? [...(data.tarifas as Dict[])] : [];
+  const idx = tarifas.findIndex((t) => String(t?.consecutivo || '').trim() === consec);
+  if (idx < 0) return false;
+  const antes = tarifas[idx];
+  const nueva: Dict = { ...antes };
+  const costo = Number(det.tarifa) || 0;
+  if (costo > 0 && difiere(Number(antes.tarifa) || 0, costo)) nueva.tarifa = costo;
+  const mon = monedaCortaRel(det.moneda);
+  if (mon && String(antes.cotizadoEn || '') !== mon) nueva.cotizadoEn = mon;
+  const st = String(det.status || '').trim();
+  if (st && String(antes.status || '') !== st) nueva.status = st;
+  const ori = String(det.origenNombre || det.origen || '').trim();
+  if (ori && String(antes.origen || '') !== ori) nueva.origen = ori;
+  const dest = String(det.destinoNombre || det.destino || '').trim();
+  if (dest && String(antes.destino || '') !== dest) nueva.destino = dest;
+  const tipoId = String(det.tipoConvenioId || '').trim();
+  if (tipoId && String(antes.tarifaReferenciaId || '') !== tipoId) nueva.tarifaReferenciaId = tipoId;
+  const tipoNom = String(det.tipoConvenioNombre || '').trim();
+  if (tipoNom && String(antes.descripcion || '') !== tipoNom) nueva.descripcion = tipoNom;
+  if (JSON.stringify(nueva) === JSON.stringify(antes)) return false;
+  tarifas[idx] = nueva;
+  await ref.update({ tarifas });
+  return true;
+};
+
+export const convenioClienteDetalleEscrito = onDocumentWritten({ document: 'convenios_clientes_detalles/{detId}', region: 'us-central1' }, async (event) => {
+  const despues = event.data?.after;
+  if (!despues || !despues.exists) return;
+  try {
+    const cambio = await sincronizarLineaDeDetalle(event.params.detId, despues.data() as Dict, 'tarifario_clientes');
+    if (cambio) logger.info(`[${REL_VERSION}] convenioClienteDetalleEscrito: ${event.params.detId} → línea del tarifario sincronizada`);
+  } catch (e) {
+    logger.error(`[${REL_VERSION}] convenioClienteDetalleEscrito: fallo en ${event.params.detId}`, e);
+  }
+});
+
+export const convenioProveedorDetalleEscrito = onDocumentWritten({ document: 'convenios_proveedores_detalles/{detId}', region: 'us-central1' }, async (event) => {
+  const despues = event.data?.after;
+  if (!despues || !despues.exists) return;
+  try {
+    const cambio = await sincronizarLineaDeDetalle(event.params.detId, despues.data() as Dict, 'tarifario_proveedores');
+    if (cambio) logger.info(`[${REL_VERSION}] convenioProveedorDetalleEscrito: ${event.params.detId} → línea del tarifario sincronizada`);
+  } catch (e) {
+    logger.error(`[${REL_VERSION}] convenioProveedorDetalleEscrito: fallo en ${event.params.detId}`, e);
   }
 });

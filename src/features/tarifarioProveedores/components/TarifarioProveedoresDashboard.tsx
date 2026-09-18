@@ -1493,7 +1493,7 @@ export function TarifarioProveedoresDashboard() {
   const tablaTarifasDe = (r: Doc, editable = false) => (
     <table className="tc-tabla-interna">
       <thead>
-        <tr><th>CONSECUTIVO</th><th>TARIFAS</th><th>TARIFAS SUGERIDAS</th><th>TARIFA</th><th>COTIZADO EN</th><th>STATUS</th>{editable && <th>ACCIONES</th>}</tr>{/* ✅ V00200 · ✅ V00283 */}
+        <tr><th>CONSECUTIVO</th><th>TARIFAS</th><th>ORIGEN — DESTINO</th><th>TARIFAS SUGERIDAS</th><th>TARIFA</th><th>COTIZADO EN</th><th>STATUS</th>{editable && <th>ACCIONES</th>}</tr>{/* ✅ V00200 · ✅ V00283 */}
       </thead>
       <tbody>
         {lineasConConsecutivo(r).map((t: Doc, i: number) => (
@@ -1505,6 +1505,7 @@ export function TarifarioProveedoresDashboard() {
                 <div className="tc-sub-linea">{[t.clave, t.origen && `${t.origen} → ${t.destino || '?'}`].filter(Boolean).join(' · ')}</div>
               )}
             </td>
+            <td className="tc-td-ruta">{(String(t.origen || '').trim() || String(t.destino || '').trim()) ? `${String(t.origen || '').trim() || '—'} — ${String(t.destino || '').trim() || '—'}` : '—'}</td>{/* ✅ V00300: la ruta que sincroniza el convenio, visible en la ficha */}
             <td className="tc-td-num">{(t.costosSugeridos || []).length > 0 ? (t.costosSugeridos as number[]).map(fmtMoney).join(' · ') : '—'}</td>
             <td className="tc-td-num">{fmtMoney(Number(t.tarifa) || (Array.isArray(t.costosSugeridos) ? Number(t.costosSugeridos[0]) : 0) || 0)}</td>
             <td>
