@@ -1146,6 +1146,97 @@ export function TarifarioClientesDashboard() {
   // ✅ V00295: SINCRONIZACIÓN GLOBAL — acomoda TODOS los tarifarios de una vez
   //   para que Convenios y Tarifarios digan lo mismo, sin duplicados.
   const [sincronizandoTodo, setSincronizandoTodo] = useState(false);
+  // ✅ V00297: FASE INVERSA — recorre TODOS los detalles de convenios y liga
+  //   cada uno a SU tarifario (tarifarioId), para que no quede un solo
+  //   convenio sin tarifario. Resolución, del criterio más fuerte al más débil:
+  //   (a) el tarifario cuya línea tiene el MISMO consecutivo (relación
+  //   directa; además alinea status/tarifa del detalle con la línea);
+  //   (b) el ÚNICO tarifario ligado al mismo convenio maestro;
+  //   (c) un tarifario de la MISMA empresa con una línea de igual descripción
+  //   (y monto si hay varias) — y si esa línea no tenía consecutivo, lo
+  //   adopta, cerrando la relación en los dos sentidos.
+  //   Lo que no se pueda resolver con certeza se reporta, no se inventa.
+  const ligarConveniosSinTarifario = async (): Promise<{ ligados: number; pendientes: number }> => {
+    const idsTarifarios = new Set(registros.map((x) => String(x.id)));
+    const tariPorConsec = new Map<string, Doc>();
+    const tarisPorConvenioId = new Map<string, Doc[]>();
+    registros.forEach((r) => {
+      const cid = String(r.convenioId || '').trim();
+      if (cid) tarisPorConvenioId.set(cid, [...(tarisPorConvenioId.get(cid) || []), r]);
+      (Array.isArray(r.tarifas) ? (r.tarifas as Doc[]) : []).forEach((t) => {
+        const cc = String(t.consecutivo || '').trim();
+        if (cc && !tariPorConsec.has(cc)) tariPorConsec.set(cc, r);
+      });
+    });
+    const snapMaestros = await getDocs(collection(db, 'convenios_clientes'));
+    const entDeConvenio = new Map<string, string>();
+    snapMaestros.docs.forEach((d) => entDeConvenio.set(d.id, String((d.data() as Doc).clienteId || '')));
+    const registrosPorEnt = new Map<string, Doc[]>();
+    registros.forEach((r) => {
+      const e = String(r.clienteId || '').trim();
+      if (e) registrosPorEnt.set(e, [...(registrosPorEnt.get(e) || []), r]);
+    });
+    const snapDetTodos = await getDocs(collection(db, 'convenios_clientes_detalles'));
+    let ligados = 0, pendientes = 0;
+    for (const dSnap of snapDetTodos.docs) {
+      const d = { id: dSnap.id, ...(dSnap.data() as Doc) };
+      const tarActual = String(d.tarifarioId || '').trim();
+      if (tarActual && idsTarifarios.has(tarActual)) continue; // ya está bien ligado
+      const cc = String(d.consecutivo || d.id).trim();
+      const descD = normDesc(d.tipoConvenioNombre);
+      const montoD = Number(d.tarifa) || 0;
+      // (a) por consecutivo — la relación directa
+      let tari = tariPorConsec.get(cc);
+      let lineaAlinear: Doc | null = null;
+      if (tari) {
+        lineaAlinear = (Array.isArray(tari.tarifas) ? (tari.tarifas as Doc[]) : []).find((t) => String(t.consecutivo || '') === cc) || null;
+      }
+      // (b) único tarifario del mismo convenio maestro
+      if (!tari) {
+        const delConvenio = tarisPorConvenioId.get(String(d.convenioId || '').trim()) || [];
+        if (delConvenio.length === 1) tari = delConvenio[0];
+      }
+      // (c) por empresa + descripción (y monto si hay varias candidatas)
+      let lineaAdoptar: { r: Doc; idx: number } | null = null;
+      if (!tari && descD) {
+        const ent = entDeConvenio.get(String(d.convenioId || '').trim()) || '';
+        const candidatos: { r: Doc; idx: number }[] = [];
+        (registrosPorEnt.get(ent) || []).forEach((r) => {
+          (Array.isArray(r.tarifas) ? (r.tarifas as Doc[]) : []).forEach((t, idx) => {
+            if (normDesc(t.descripcion) === descD) candidatos.push({ r, idx });
+          });
+        });
+        let elegido = candidatos.length === 1 ? candidatos[0] : candidatos.find((c) => Math.abs((Number((c.r.tarifas as Doc[])[c.idx].tarifa) || 0) - montoD) < 0.005);
+        if (!elegido && candidatos.length > 0) elegido = undefined;
+        if (elegido) {
+          tari = elegido.r;
+          const linea = (elegido.r.tarifas as Doc[])[elegido.idx];
+          if (!String(linea.consecutivo || '').trim()) lineaAdoptar = elegido; // la línea adopta este CONV
+          else lineaAlinear = linea;
+        }
+      }
+      if (!tari) { pendientes += 1; continue; }
+      try {
+        const cambios: Doc = { tarifarioId: String(tari.id) };
+        if (lineaAlinear) {
+          const stL = String(lineaAlinear.status || '').trim();
+          if (stL && stL !== String(d.status || '')) cambios.status = stL;
+          const tfL = Number(lineaAlinear.tarifa) || 0;
+          if (tfL > 0 && Math.abs(tfL - montoD) >= 0.005) cambios.tarifa = tfL;
+        }
+        await updateDoc(doc(db, 'convenios_clientes_detalles', d.id), cambios);
+        if (lineaAdoptar) {
+          const tarifasNuevas = [...(lineaAdoptar.r.tarifas as Doc[])];
+          tarifasNuevas[lineaAdoptar.idx] = { ...tarifasNuevas[lineaAdoptar.idx], consecutivo: cc };
+          await updateDoc(doc(db, 'tarifario_clientes', String(lineaAdoptar.r.id)), { tarifas: tarifasNuevas });
+          tariPorConsec.set(cc, lineaAdoptar.r);
+        }
+        ligados += 1;
+      } catch { pendientes += 1; }
+    }
+    return { ligados, pendientes };
+  };
+
   const sincronizarTodosLosTarifarios = async () => {
     if (sincronizandoTodo || sincronizandoConv) return;
     const conConvenio = registros.filter((x) => String(x.convenioId || '').trim());
@@ -1159,7 +1250,9 @@ export function TarifarioClientesDashboard() {
         L += res.ligadas; R += res.reparadas; C += res.creadas; H += res.huerfanos;
         if (res.ligadas + res.reparadas + res.creadas + res.huerfanos > 0) conCambios += 1;
       }
-      alert(`Sincronización GLOBAL completa. ✅\n\n· Tarifarios revisados: ${conConvenio.length} (con cambios: ${conCambios})\n· Líneas ligadas a su convenio original: ${L}\n· Duplicados reparados: ${R}\n· Convenios creados: ${C}\n· Duplicados huérfanos eliminados: ${H}`);
+      // ✅ V00297: y ahora la relación INVERSA — ningún convenio sin tarifario.
+      const inv = await ligarConveniosSinTarifario();
+      alert(`Sincronización GLOBAL completa. ✅\n\n· Tarifarios revisados: ${conConvenio.length} (con cambios: ${conCambios})\n· Líneas ligadas a su convenio original: ${L}\n· Duplicados reparados: ${R}\n· Convenios creados: ${C}\n· Duplicados huérfanos eliminados: ${H}\n\nRelación inversa (convenios → tarifario):\n· Convenios ligados a su tarifario: ${inv.ligados}\n· Sin tarifario identificable (revisar a mano): ${inv.pendientes}`);
     } catch (e) { console.error(e); alert('La sincronización global se interrumpió; vuelve a ejecutarla para continuar.'); }
     setSincronizandoTodo(false);
   };
