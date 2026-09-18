@@ -61,33 +61,43 @@ const normalizarConversionesOp = (op: any, monedasPorId: Record<string, string>)
   const esUSD = (id: any) => String(id) === ID_USD_REP || nombreMon(id).includes('USD') || nombreMon(id).includes('DOLAR');
   const esMXN = (id: any) => String(id) === ID_MXN_REP || nombreMon(id).includes('MXN') || nombreMon(id).includes('PESO');
 
-  const desglosar = (subtotal: number, monConvenio: any, monFactura: any) => {
+  // ✅ V00298: `base` viene EN LA MONEDA DEL CONVENIO (monto convenio + cargos),
+  //   IGUAL que en el formulario Por Cobrar. Antes se partía del subtotal en
+  //   moneda de la FACTURA y el caso "convenio USD + factura MXN" volvía a
+  //   multiplicar por el TC (Pesos Prov salía 30,892 en vez de 1,801).
+  //   `tf` = total en la moneda de la factura (para la columna Subtotal).
+  const desglosar = (base: number, monConvenio: any, monFactura: any) => {
     const convUSD = esUSD(monConvenio), convMXN = esMXN(monConvenio);
     const factUSD = esUSD(monFactura), factMXN = esMXN(monFactura);
     const cUSD = convUSD || (!convMXN && factUSD);
     const cMXN = convMXN || (!convUSD && factMXN);
     if (!cUSD && !cMXN) return null; // moneda no identificable: no tocar
-    if (cUSD && factMXN) return { dol: 0, pes: subtotal * tc, conv: subtotal * tc };
-    if (cUSD) return { dol: subtotal, pes: 0, conv: subtotal * tc };
-    if (cMXN && factUSD) return { dol: tc > 0 ? subtotal / tc : 0, pes: 0, conv: subtotal };
-    return { dol: 0, pes: subtotal, conv: subtotal };
+    if (cUSD && factMXN) return { dol: 0, pes: base * tc, conv: base * tc, tf: base * tc };
+    if (cUSD) return { dol: base, pes: 0, conv: base * tc, tf: base };
+    if (cMXN && factUSD) return { dol: tc > 0 ? base / tc : 0, pes: 0, conv: base, tf: tc > 0 ? base / tc : 0 };
+    return { dol: 0, pes: base, conv: base, tf: base };
   };
 
   const out: any = { ...op };
   let toco = false;
 
-  const subC = num(op.subtotalCliente) || (num(op.montoConvenioCliente) + num(op.cargosAdicionales));
-  const dC = desglosar(subC, op.monedaConvenioCliente, op.facturadoEnCobrar);
+  // ✅ V00298: la BASE es monto del convenio + cargos (moneda del convenio) —
+  //   la misma fuente que usa el formulario; el subtotal guardado queda solo
+  //   como respaldo para operaciones sin esos campos.
+  const baseC = (num(op.montoConvenioCliente) + num(op.cargosAdicionales)) || num(op.subtotalCliente);
+  const dC = desglosar(baseC, op.monedaConvenioCliente, op.facturadoEnCobrar);
   if (dC) {
-    out.subtotalCliente = subC; out.dolaresCliente = dC.dol; out.pesosCliente = dC.pes;
+    out.subtotalCliente = num(op.subtotalCliente) || dC.tf;
+    out.dolaresCliente = dC.dol; out.pesosCliente = dC.pes;
     out.conversionCliente = dC.conv > 0 ? dC.conv : num(op.conversionCliente);
     toco = true;
   }
 
-  const subP = num(op.subtotalProv) || (num(op.totalAPagarProv) + num(op.cargosAdicionalesProv));
-  const dP = desglosar(subP, op.monedaConvenioProv, op.facturadoEnUnidad);
+  const baseP = (num(op.totalAPagarProv) + num(op.cargosAdicionalesProv)) || num(op.subtotalProv);
+  const dP = desglosar(baseP, op.monedaConvenioProv, op.facturadoEnUnidad);
   if (dP) {
-    out.subtotalProv = subP; out.dolaresProv = dP.dol; out.pesosProv = dP.pes;
+    out.subtotalProv = num(op.subtotalProv) || dP.tf;
+    out.dolaresProv = dP.dol; out.pesosProv = dP.pes;
     out.conversionProv = dP.conv > 0 ? dP.conv : num(op.conversionProv);
     toco = true;
   }
