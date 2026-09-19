@@ -71,11 +71,18 @@
 .sc-x67 { color: #8b949e; font-size: 0.82rem; flex: 1; min-width: 200px; }
 .sc-x68 { display: flex; gap: 8px; margin-left: auto; flex-shrink: 0; }
 .sc-x69 { padding: 10px 12px; }
-.sc-x70 { margin-bottom: 14px; }
-.sc-x71 { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 8px; }
-.sc-x72 { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 12px; }
+/* ✅ V00310: las 9 tarjetas del resumen en UNA cuadrícula pareja — mismo ancho,
+   mismo espacio, sin filas desiguales (los dos grupos fluyen juntos). */
+.sc-x70 { margin-bottom: 14px; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.sc-x71, .sc-x72 { display: contents; }
 .sc-x73 { display: block; width: 100%; }
-.sc-x74 { border: 1px solid #30363d; border-radius: 8px; overflow-x: auto; overflow-y: auto; max-height: calc(100vh - 280px); width: 100%; }
+.sc-x74 { border: 1px solid #30363d; border-radius: 8px; overflow-x: auto; overflow-y: auto; max-height: calc(100vh - 280px); width: 100%; scrollbar-width: thin; scrollbar-color: #30363d #161b22; }
+/* ✅ V00310: barra de scroll PERMANENTE (también en Chrome/Edge de macOS, donde
+   el sistema la oculta) y visible en Firefox */
+.sc-x74::-webkit-scrollbar { height: 12px; width: 12px; }
+.sc-x74::-webkit-scrollbar-track { background: #161b22; border-radius: 0 0 8px 8px; }
+.sc-x74::-webkit-scrollbar-thumb { background: #30363d; border-radius: 6px; border: 2px solid #161b22; }
+.sc-x74::-webkit-scrollbar-thumb:hover { background: #58a6ff; }
 .sc-x75 { padding: 40px; text-align: center; color: #8b949e; }
 .sc-x76 { width: 100%; min-width: 1300px; border-collapse: collapse; text-align: left; }
 .sc-x77 { background-color: #161b22; position: sticky; top: 0; z-index: 10; }
@@ -359,3 +366,8 @@
 .sc-btn-nueva-pestana { display: inline-flex; align-items: center; gap: 5px; border: 1px solid #1f6feb; color: #58a6ff; border-radius: 999px; padding: 4px 12px; font-size: 0.78rem; font-weight: 600; text-decoration: none; white-space: nowrap; }
 .sc-btn-nueva-pestana:hover { background: rgba(31, 111, 235, 0.15); }
 .sc-btn-nueva-pestana--drawer { border-radius: 6px; justify-content: center; }
+
+/* ✅ V00310: botón "⚡ Acelerar búsquedas" (ámbar pulsante mientras no se corre) */
+.sc-btn-acelerar { padding: 10px 12px; }
+.sc-btn-acelerar--pendiente { border-color: #f59e0b; color: #f59e0b; animation: scPulsoAcelerar 1.8s ease-in-out infinite; }
+@keyframes scPulsoAcelerar { 0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.35); } 50% { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); } }

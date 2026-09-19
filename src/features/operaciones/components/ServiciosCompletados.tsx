@@ -6,7 +6,7 @@ import { db, auth } from '../../../config/firebase';
 import { direccionCompletaDeEmpresa } from '../../../utils/direccionEmpresa'; // ✅ V00281
 import { EditorTarifaOrigenDestino } from './EditorTarifaOrigenDestino'; // ✅ V00224
 import { puedeClave } from '../../../utils/permisos'; // ✅ V00224 
-import { obtenerCacheMemoria, guardarCacheMemoria, limpiarCacheMemoria } from '../../../utils/cacheMemoria';
+import { obtenerCacheMemoria, guardarCacheMemoria, limpiarCacheMemoria, limpiarCachesPorPrefijo } from '../../../utils/cacheMemoria'; // ✅ V00310
 // ✅ NUEVO: historial de actividad (colección historial_actividad)
 import { registrarLog } from '../../../utils/logger';
 import { sincronizarNombresOperaciones } from '../../../utils/sincronizarNombresOperaciones';
@@ -164,6 +164,9 @@ const CACHE_PREFIX = 'roelca_completadas_';
 //   status) una sola vez y filtramos fecha/cliente en memoria, así que la caché
 //   NO depende del rango de fechas ni del cliente.
 const CACHE_KEY_TODOS = CACHE_PREFIX + 'all_v3';
+// ✅ V00310: una vez presionado "⚡ Acelerar búsquedas" (fechaServicioISO escrita
+//   en la base), Buscar consulta SOLO el rango pedido en vez de todo el histórico.
+const CLAVE_FECHAS_INDEXADAS = CACHE_PREFIX + 'fechas_indexadas_v1';
 
 // ✅ NUEVO: clave para PERSISTIR la configuración de columnas (orden + visibles)
 //   en localStorage, para que NO se pierda al recargar la página.
@@ -640,6 +643,61 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       } catch { /* caché corrupto: ignorar */ }
     }
 
+    // ✅ V00310: RUTA RÁPIDA por rango — con las fechas indexadas (botón ⚡) se
+    //   consulta SOLO el rango pedido: fechaServicio (ISO de las operaciones
+    //   nuevas) + fechaServicioISO (escrita por ⚡ en las migradas), unidas y
+    //   filtradas a los 2 status completados. Cachea POR RANGO (dataset chico:
+    //   sí cabe en localStorage → "Ver en nueva pestaña" abre al instante).
+    let fechasListas = false;
+    try { fechasListas = localStorage.getItem(CLAVE_FECHAS_INDEXADAS) === '1'; } catch { /* sin localStorage */ }
+    if (fechasListas) {
+      const claveRango = `${CACHE_PREFIX}rango_${fechaInicio}_${fechaFin}`;
+      if (!opciones.ignorarCache) {
+        const enMem = obtenerCacheMemoria<(Record<string, unknown> & { id: string })[]>(claveRango, CACHE_TTL_MS);
+        if (enMem) { setOperacionesGlobales(enMem); return; }
+        try {
+          const str = almacenSesion.getItem(claveRango);
+          if (str) {
+            const c = JSON.parse(str);
+            if (c && Date.now() - c.ts < CACHE_TTL_MS && Array.isArray(c.ops)) {
+              guardarCacheMemoria(claveRango, c.ops);
+              setOperacionesGlobales(c.ops);
+              return;
+            }
+          }
+        } catch { /* caché corrupto: ignorar */ }
+      }
+      setCargandoOperaciones(true);
+      try {
+        const [snapA, snapB] = await Promise.all([
+          getDocs(query(collection(db, 'operaciones'), where('fechaServicio', '>=', fechaInicio), where('fechaServicio', '<=', fechaFin))),
+          getDocs(query(collection(db, 'operaciones'), where('fechaServicioISO', '>=', fechaInicio), where('fechaServicioISO', '<=', fechaFin))),
+        ]);
+        const porId = new Map<string, Record<string, unknown> & { id: string; _fechaISO: string }>();
+        [...snapA.docs, ...snapB.docs].forEach((d) => {
+          if (porId.has(d.id)) return;
+          const data = d.data();
+          if (!STATUS_COMPLETADOS_VALORES.includes(String(data.status || '').trim())) return;
+          porId.set(d.id, { id: d.id, ...data, _fechaISO: normalizarFechaServicioISO(data.fechaServicio) });
+        });
+        const lista = Array.from(porId.values()).sort((a, b) => {
+          const fa = a._fechaISO || '', fb = b._fechaISO || '';
+          if (fa !== fb) return fb.localeCompare(fa);
+          return obtenerConsecutivoRef(b) - obtenerConsecutivoRef(a);
+        });
+        setOperacionesGlobales(lista);
+        setHayMasOperaciones(false);
+        guardarCacheMemoria(claveRango, lista);
+        try { almacenSesion.setItem(claveRango, JSON.stringify({ ts: Date.now(), ops: lista })); } catch { /* cuota: la memoria ya lo tiene */ }
+        console.log(`[ServiciosCompletados v4] ruta rápida: ${lista.length} completados del rango ${fechaInicio} → ${fechaFin}.`);
+        setCargandoOperaciones(false);
+        return;
+      } catch (eRapida) {
+        console.warn('[ServiciosCompletados] La ruta rápida falló; se usa la descarga completa.', eRapida);
+        setCargandoOperaciones(false);
+      }
+    }
+
     setCargandoOperaciones(true);
 
     const todas: any[] = [];
@@ -917,6 +975,42 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     return chips;
   }, [filtrosAplicados]);
 
+  // ✅ V00310: "⚡ Acelerar búsquedas" — escribe fechaServicioISO (aaaa-mm-dd)
+  //   en TODAS las operaciones, una sola vez, por lotes de 400 y solo donde
+  //   falte o difiera (idempotente; no toca montos ni fechas originales). Con
+  //   ese campo, Buscar y "Ver en nueva pestaña" consultan SOLO el rango
+  //   pedido en vez de descargar todo el histórico.
+  const [acelerando, setAcelerando] = useState(false);
+  const [fechasIndexadas, setFechasIndexadas] = useState<boolean>(() => { try { return localStorage.getItem(CLAVE_FECHAS_INDEXADAS) === '1'; } catch { return false; } });
+  const acelerarBusquedas = async () => {
+    if (acelerando) return;
+    if (!window.confirm('⚡ ACELERAR BÚSQUEDAS (se corre una sola vez)\n\nSe escribirá la fecha normalizada (fechaServicioISO) en todas las operaciones, por lotes y sin tocar montos ni datos. Después, Buscar y "Ver en nueva pestaña" consultan SOLO el rango pedido en vez de descargar todo el histórico — de minutos a segundos.\n\n¿Continuar?')) return;
+    setAcelerando(true);
+    try {
+      const snap = await getDocs(collection(db, 'operaciones'));
+      let lote = writeBatch(db); let enLote = 0; let escritas = 0;
+      for (const d of snap.docs) {
+        const data = d.data() as Record<string, unknown>;
+        const iso = normalizarFechaServicioISO(data.fechaServicio);
+        if (!iso || String(data.fechaServicioISO || '') === iso) continue;
+        lote.update(d.ref, { fechaServicioISO: iso });
+        escritas += 1; enLote += 1;
+        if (enLote >= 400) { await lote.commit(); lote = writeBatch(db); enLote = 0; }
+      }
+      if (enLote > 0) await lote.commit();
+      try { localStorage.setItem(CLAVE_FECHAS_INDEXADAS, '1'); } catch { /* sin localStorage */ }
+      setFechasIndexadas(true);
+      limpiarCachesPorPrefijo(CACHE_PREFIX);
+      try { almacenSesion.removeItem(CACHE_KEY_TODOS); } catch { /* ignorar */ }
+      alert(`Búsquedas aceleradas. ✅\n\n· Operaciones indexadas: ${escritas} (las demás ya estaban al día)\n· Desde ahora Buscar consulta SOLO el rango pedido, en todas las pestañas y dispositivos.`);
+      if (filtrosAplicados) { yaDescargado.current = true; descargarOperaciones(filtrosAplicados.fechaInicio, filtrosAplicados.fechaFin, filtrosAplicados.cliente, { ignorarCache: true }); }
+    } catch (e) {
+      console.error('[ServiciosCompletados] No se pudieron indexar las fechas:', e);
+      alert('No se pudieron indexar las fechas. Revisa tu conexión e inténtalo de nuevo.');
+    }
+    setAcelerando(false);
+  };
+
   // ✅ NUEVO: fuerza una recarga desde Firestore (ignora caché). Para el botón "Actualizar".
   const refrescarDatos = () => {
     if (!filtrosAplicados) {
@@ -925,6 +1019,8 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     }
     limpiarCacheMemoria(CACHE_KEY_TODOS);
     try { almacenSesion.removeItem(CACHE_KEY_TODOS); } catch { /* ignorar */ }
+    limpiarCachesPorPrefijo(`${CACHE_PREFIX}rango_`); // ✅ V00310
+    try { almacenSesion.removeItem(`${CACHE_PREFIX}rango_${filtrosAplicados.fechaInicio}_${filtrosAplicados.fechaFin}`); } catch { /* ignorar */ }
     yaDescargado.current = true;
     descargarOperaciones(filtrosAplicados.fechaInicio, filtrosAplicados.fechaFin, filtrosAplicados.cliente, { ignorarCache: true });
   };
@@ -2558,6 +2654,13 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
           )}
 
           <div className="sc-x68">
+            {/* ✅ V00310: indexar fechas UNA vez → búsquedas por rango al instante */}
+            <button
+              className={`btn btn-outline sc-btn-acelerar${fechasIndexadas ? '' : ' sc-btn-acelerar--pendiente'}`}
+              onClick={acelerarBusquedas}
+              disabled={acelerando}
+              title={fechasIndexadas ? 'Fechas ya indexadas: las búsquedas consultan solo el rango pedido. Puedes volver a correrlo después de importar datos.' : 'ACELERAR BÚSQUEDAS (una sola vez): indexa las fechas para que Buscar y "Ver en nueva pestaña" consulten SOLO el rango pedido en vez de descargar todo el histórico'}
+            >{acelerando ? '⏳' : '⚡'}</button>
             <button className="btn btn-outline" onClick={refrescarDatos} disabled={cargandoOperaciones} style={{ padding: '10px 12px', cursor: cargandoOperaciones ? 'wait' : 'pointer' }} title="Actualizar (recargar desde la base de datos)">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
             </button>
