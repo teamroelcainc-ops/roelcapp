@@ -260,3 +260,21 @@
 /* ✅ V00306: encabezados ordenables con clic */
 .dcv-th-orden { cursor: pointer; user-select: none; white-space: nowrap; }
 .dcv-th-orden:hover { color: #58a6ff; }
+
+/* ✅ V00308: CHECK, ACCIONES y CONSECUTIVO fijos durante el scroll horizontal —
+   siempre puedes marcar, editar/eliminar y saber en qué convenio estás,
+   aunque estés viendo STATUS o COSTO al fondo de la tabla. */
+.dcv-x6 .dcv-fija-check,
+.dcv-x6 .dcv-fija-acciones,
+.dcv-x6 .dcv-fija-consec { position: sticky; z-index: 3; background-color: #0d1117; }
+.dcv-x6 .dcv-fija-check { left: 0; width: 44px; min-width: 44px; max-width: 44px; padding-left: 12px; padding-right: 6px; }
+.dcv-x6 .dcv-fija-acciones { left: 44px; width: 104px; min-width: 104px; }
+.dcv-x6 .dcv-fija-consec { left: 148px; min-width: 122px; box-shadow: 6px 0 8px -6px rgba(0, 0, 0, 0.65); }
+/* En el encabezado (que ya es fijo hacia abajo) las tres esquinas van encima de todo */
+.dcv-x6 thead .dcv-fija-check,
+.dcv-x6 thead .dcv-fija-acciones,
+.dcv-x6 thead .dcv-fija-consec { z-index: 8; background-color: #161b22; }
+/* El hover de la fila también pinta las celdas fijas (si no, quedan de otro color) */
+.dcv-x6 .data-table tr:hover .dcv-fija-check,
+.dcv-x6 .data-table tr:hover .dcv-fija-acciones,
+.dcv-x6 .data-table tr:hover .dcv-fija-consec { background-color: #161b22; }

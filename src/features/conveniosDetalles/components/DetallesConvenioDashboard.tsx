@@ -1320,7 +1320,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
               <tr>
                 {/* ✅ V00207: checkbox de selección + ACCIONES al inicio — ✅ V00211: ambos tipos */}
                 {(
-                  <th className="dcv-th-check">
+                  <th className="dcv-th-check dcv-fija-check">
                     <input
                       type="checkbox"
                       checked={filasVisibles.length > 0 && filasVisibles.every((f) => seleccion.has(f.id))}
@@ -1335,10 +1335,10 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                     />
                   </th>
                 )}
-                <th>Acciones</th>
+                <th className="dcv-fija-acciones">Acciones</th>
                 {/* ✅ V00196 (clientes): CONSECUTIVO reemplaza a ID y Convenio; Moneda → "Cotizado En" */}
                 {/* ✅ V00306: clic en la columna = ordenar (↑, ↓, y al tercer clic regresa al orden original) */}
-                <th className="dcv-th-orden" title="Ordenar por consecutivo" onClick={() => clicOrden('consecutivo')}>Consecutivo{flechaOrden('consecutivo')}</th>{/* ✅ V00211: también proveedores */}
+                <th className="dcv-th-orden dcv-fija-consec" title="Ordenar por consecutivo" onClick={() => clicOrden('consecutivo')}>Consecutivo{flechaOrden('consecutivo')}</th>{/* ✅ V00211: también proveedores */}
                 <th className="dcv-th-orden" title={`Ordenar por ${ETIQUETA_ENTIDAD.toLowerCase()}`} onClick={() => clicOrden('entidad')}>{ETIQUETA_ENTIDAD}{flechaOrden('entidad')}</th>
                 <th className="dcv-th-orden" title="Ordenar por tarifa" onClick={() => clicOrden('tarifa')}>Tarifa{flechaOrden('tarifa')}</th>
                 <th className="dcv-th-orden" title="Ordenar por origen" onClick={() => clicOrden('origen')}>Origen{flechaOrden('origen')}</th>{/* ✅ V00231 */}
@@ -1357,7 +1357,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                 <tr key={f.id} className={`dcv-fila-click${eliminandoIds.has(f.id) ? ' dcv-fila-eliminando' : ''}`} onClick={() => setUsoAbierto(f)}>
                   {(
                     /* ✅ V00207: checkbox de selección para borrado masivo */
-                    <td className="dcv-th-check" onClick={(e) => e.stopPropagation()}>
+                    <td className="dcv-th-check dcv-fija-check" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         checked={seleccion.has(f.id)}
@@ -1367,7 +1367,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                   )}
                   {(
                     /* ✅ V00207: editar (corrige tarifa/No identificado) y eliminar AL INICIO */
-                    <td className="dcv-td-acciones" onClick={(e) => e.stopPropagation()}>
+                    <td className="dcv-td-acciones dcv-fija-acciones" onClick={(e) => e.stopPropagation()}>
                       {eliminandoIds.has(f.id) ? (
                         <span className="dcv-eliminando-chip" title="Este convenio está viajando a la Papelera de Reciclaje">⏳ Eliminando…</span>/* ✅ V00302 */
                       ) : (<>
@@ -1376,7 +1376,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                       </>)}
                     </td>
                   )}
-                  <td className="dcv-x10" title={`Convenio ${f.numeroConvenio} · id ${f.id}`}>{f.consecutivo || '—'}</td>{/* ✅ V00211 */}
+                  <td className="dcv-x10 dcv-fija-consec" title={`Convenio ${f.numeroConvenio} · id ${f.id}`}>{f.consecutivo || '—'}</td>{/* ✅ V00211 */}
                   <td>{f.entidad}</td>
                   <td>
                     {f.tarifa}
