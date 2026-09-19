@@ -883,13 +883,13 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const etiquetaConvenioCliente = (c: any) => {
     const cons = consecutivoConvenio(c);
     const desc = sinPrefijoConsecutivo(c.descripcion, cons);
-    return `${cons ? `${cons} - ` : ''}${desc} - ${fmtMoney(c.tarifaMonto)}`;
+    return `${desc} - ${fmtMoney(c.tarifaMonto)}`; // ✅ V00314: solo el NOMBRE (sin CONV-###)
   };
   // ✅ V00211: etiqueta = Consecutivo - Convenio - Moneda de cotización - Monto
   const etiquetaConvenioProveedor = (c: any) => {
     const cons = consecutivoConvenio(c);
     const desc = sinPrefijoConsecutivo(c.tipoConvenioNombre, cons);
-    return `${cons ? `${cons} - ` : ''}${desc} - ${fmtMoney(c.tarifaMonto)}`;
+    return `${desc} - ${fmtMoney(c.tarifaMonto)}`; // ✅ V00314: solo el NOMBRE (sin CONV-###)
   };
 
   const [tipoCambioDia, setTipoCambioDia] = useState<number | null>(null);
@@ -2262,7 +2262,23 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     [...lista].sort((a: any, b: any) => nombreEmpresaMostrar(a).localeCompare(nombreEmpresaMostrar(b), 'es', { sensitivity: 'base' }));
   const resultadosOrigen = ordenaPorNombreOD(filtraPorPaisOD(filOrigenesDestinos.filter((e:any) => coincideOD(e, sOrigen)), paisRequeridoOD.origen));
   const resultadosDestino = ordenaPorNombreOD(filtraPorPaisOD(filOrigenesDestinos.filter((e:any) => coincideOD(e, sDestino)), paisRequeridoOD.destino));
-  const resultadosClientePaga = filClientesPaga.filter((e:any) => empresaCoincide(e, sClientePaga));
+  // ✅ V00314: en Cliente (Paga) SOLO se ofrecen clientes con registros en el
+  //   Tarifario de Clientes (así no salen empresas duplicadas sin tarifario).
+  const clientesConTarifario = useMemo(() => {
+    const setIds = new Set<string>();
+    (tarifariosLocal || []).forEach((t: { clienteId?: unknown }) => { const cid = String(t.clienteId || '').trim(); if (cid) setIds.add(cid); });
+    return setIds;
+  }, [tarifariosLocal]);
+  const resultadosClientePaga = filClientesPaga.filter((e:any) => {
+    if (!empresaCoincide(e, sClientePaga)) return false;
+    if (String(e.id) === String(initialData?.clientePaga || '')) return true; // el guardado siempre se ofrece
+    if (clientesConTarifario.has(String(e.id))) return true; // tiene registros en el tarifario
+    // Respaldo legacy (tarifarios que referencian por NOMBRE): solo si NINGUNA
+    // empresa homónima tiene el tarifario por id — así no salen duplicadas.
+    const nom = String(e.nombre || '').trim().toLowerCase();
+    const homonimaConTarifario = filClientesPaga.some((o: { id?: unknown; nombre?: unknown }) => String(o.id) !== String(e.id) && String(o.nombre || '').trim().toLowerCase() === nom && clientesConTarifario.has(String(o.id)));
+    return !homonimaConTarifario;
+  });
   const resultadosRemolque = remolques?.filter((e:any) => `${e.nombre || ''} ${e.placas || e.placa || ''}`.toLowerCase().trim().includes(sRemolque)) || [];
   const resultadosClienteMercancia = filClientesMercancia.filter((e:any) => empresaCoincide(e, sClienteMerc));
   const resultadosProvServicios = filProveedoresServicios.filter((e:any) => empresaCoincide(e, sProvServicios));

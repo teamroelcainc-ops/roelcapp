@@ -385,11 +385,13 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
    *  "CONV-### - Tarifa (catálogo) - Origen - Destino", todo con guiones.
    *  (Antes llevaba el nombre del cliente; ahora lleva la TARIFA, que es lo
    *  que distingue un convenio de otro dentro del mismo cliente.) */
-  const descripcionConvenio = (tarifaId: string, origenId: string, destinoId: string, consecConv?: string): string => {
+  // ✅ V00314: la descripción es SOLO el nombre (tarifa + ruta), sin CONV-### —
+  //   el consecutivo vive en su propia columna/campo.
+  const descripcionConvenio = (tarifaId: string, origenId: string, destinoId: string): string => {
     const nombreTarifa = tarifasLista.find((t) => t.id === tarifaId)?.nombre
       || tarifasAlta.find((t) => t.id === tarifaId)?.nombre || '';
     const mun = (id: string) => municipiosAlta.find((m) => m.id === id)?.nombre || '';
-    return [String(consecConv || '').trim(), nombreTarifa, mun(origenId), mun(destinoId)].filter(Boolean).join(' - ');
+    return [nombreTarifa, mun(origenId), mun(destinoId)].filter(Boolean).join(' - ');
   };
 
   /** ✅ V00231: reglas de ruta según el tipo de servicio de la tarifa.
@@ -425,7 +427,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       // ✅ V00236: el origen/destino viven SOLO en el convenio (ya no se
       //   escriben en la tarifa del catálogo).
       const nombreTarifa = tarifa.nombre;
-      const descCalculada = descripcionConvenio(alta.tarifaId, alta.origen, alta.destino, consec); // ✅ V00262: CONV + tarifa + ruta
+      const descCalculada = descripcionConvenio(alta.tarifaId, alta.origen, alta.destino); // ✅ V00314: tarifa + ruta (sin CONV)
       await setDoc(doc(dbFs, COL_DETALLES, consec), {
         descripcionConvenio: descCalculada, // ✅ V00240
         convenioId: tarifario.convenioId,
@@ -509,9 +511,10 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       for (const d of snapDet.docs) {
         const x = d.data() as Record<string, unknown>;
         const tarId = String(x.tarifarioId || convenioDeTar[String(x.convenioId || '')] || '');
-        // ✅ V00262: CONV-### + TARIFA (catálogo) + ruta (antes llevaba el cliente)
+        // ✅ V00314: TARIFA (catálogo) + ruta — sin el CONV-### (el consecutivo
+        //   tiene su propia columna; al sincronizar se LIMPIAN los guardados).
         void tarId;
-        const desc = [String(x.consecutivo || d.id), String(x.tipoConvenioNombre || ''), munNombre[String(x.origen || '')] || '', munNombre[String(x.destino || '')] || '']
+        const desc = [String(x.tipoConvenioNombre || ''), munNombre[String(x.origen || '')] || '', munNombre[String(x.destino || '')] || '']
           .filter(Boolean).join(' - ');
         if (!desc) continue;
         descPorDetalle[d.id] = desc;
@@ -719,7 +722,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       // ✅ V00236: el origen/destino viven SOLO en el convenio.
       const cambiosDoc: Record<string, unknown> = {
         // ✅ V00240: descripción calculada
-        descripcionConvenio: descripcionConvenio(editForm.tarifaId, editForm.origen, editForm.destino, f.consecutivo || f.id), // ✅ V00262: CONV + tarifa + ruta
+        descripcionConvenio: descripcionConvenio(editForm.tarifaId, editForm.origen, editForm.destino), // ✅ V00314: tarifa + ruta (sin CONV)
         moneda: editForm.moneda,
         status: editForm.status,
         tarifa: parseFloat(editForm.costo) || 0,
@@ -1527,10 +1530,9 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                   type="text"
                   className="form-control"
                   value={descripcionConvenio(
-                    (modalAgregar ? alta.tarifaId : editForm.tarifaId), // ✅ V00262
+                    (modalAgregar ? alta.tarifaId : editForm.tarifaId), // ✅ V00314: sin CONV
                     (modalAgregar ? alta.origen : editForm.origen),
                     (modalAgregar ? alta.destino : editForm.destino),
-                    (modalAgregar ? 'CONV-### (al guardar)' : (editando?.consecutivo || '')),
                   )}
                   placeholder="Se arma sola con la tarifa, el origen y el destino"
                   readOnly
@@ -1643,10 +1645,9 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                   type="text"
                   className="form-control"
                   value={descripcionConvenio(
-                    (modalAgregar ? alta.tarifaId : editForm.tarifaId), // ✅ V00262
+                    (modalAgregar ? alta.tarifaId : editForm.tarifaId), // ✅ V00314: sin CONV
                     (modalAgregar ? alta.origen : editForm.origen),
                     (modalAgregar ? alta.destino : editForm.destino),
-                    (modalAgregar ? 'CONV-### (al guardar)' : (editando?.consecutivo || '')),
                   )}
                   placeholder="Se arma sola con la tarifa, el origen y el destino"
                   readOnly

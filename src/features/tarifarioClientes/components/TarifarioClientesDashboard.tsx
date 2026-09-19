@@ -2202,7 +2202,7 @@ export function TarifarioClientesDashboard() {
         const refSel = tarifasRef.find((t) => String(t.id) === lineaEditor.tarifaRefId);
         const lineaAct = !esNueva && Array.isArray(rEd.tarifas) ? (rEd.tarifas as Doc[])[lineaEditor.idx as number] : undefined;
         const consLinea = String(lineaAct?.consecutivo || '');
-        const descripcionAuto = `${consLinea || 'CONV-### (al guardar)'} - ${String(refSel?.descripcion || lineaAct?.descripcion || '')}`.trim();
+        const descripcionAuto = String(refSel?.descripcion || lineaAct?.descripcion || '').trim(); // ✅ V00314: solo el nombre (el CONV va en el subtítulo)
         const ob = configOblig;
         const ast = (k: keyof typeof ob) => (ob[k] ? ' *' : '');
         return (
