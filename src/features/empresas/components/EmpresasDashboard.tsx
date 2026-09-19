@@ -2105,16 +2105,28 @@ const EmpresasDashboard = () => {
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {seleccionUnir.map((id) => {
-                const emp: any = empresas.find((e: any) => e.id === id);
+                /* ✅ V00315: se toma el registro ENRIQUECIDO (tipos con etiqueta y
+                   conteo de operaciones) para decidir con información completa. */
+                const emp: any = registrosListos.find((e) => e.id === id) || empresas.find((e) => e.id === id);
                 if (!emp) return null;
                 const esConservado = conservarId === id;
+                const nOps = conteoOps ? (conteoOps[id] || 0) : null;
+                const tipos: string[] = (emp._tiposEmpresaArray || []).filter(Boolean);
                 return (
                   <label key={id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: '8px', cursor: 'pointer', border: esConservado ? '1px solid #3fb950' : '1px solid #30363d', backgroundColor: esConservado ? 'rgba(63,185,80,0.08)' : '#0d1117' }}>
                     <input type="radio" name="conservar" checked={esConservado} onChange={() => setConservarId(id)} />
                     <span style={{ flex: 1, minWidth: 0 }}>
                       <span style={{ display: 'block', color: '#f0f6fc', fontWeight: 600 }}>{emp.nombre || '(sin nombre)'}</span>
-                      <span style={{ display: 'block', color: '#8b949e', fontSize: '0.72rem' }}>
-                        {emp.tipo || ''}{emp.rfc ? ` · RFC ${emp.rfc}` : ''}{emp.createdAt ? ` · creado ${String(emp.createdAt).slice(0, 10)}` : ''}
+                      {/* ✅ V00315: papeles de la empresa — Cliente (Paga), Proveedor (Servicios), etc. */}
+                      <span style={{ display: 'block', color: '#58a6ff', fontSize: '0.72rem', fontWeight: 600, marginTop: '2px' }}>
+                        {tipos.length > 0 ? tipos.join(' · ') : 'Sin tipo de empresa asignado'}
+                      </span>
+                      <span style={{ display: 'block', color: '#8b949e', fontSize: '0.72rem', marginTop: '2px' }}>
+                        {emp.numCliente ? `# ${emp.numCliente} · ` : ''}{emp.rfc ? `RFC ${emp.rfc} · ` : ''}{emp.status ? `${emp.status} · ` : ''}{emp.createdAt ? `creado ${String(emp.createdAt).slice(0, 10)}` : 'sin fecha de alta'}
+                      </span>
+                      {/* ✅ V00315: cuántas operaciones tiene registradas (en cualquier papel) */}
+                      <span style={{ display: 'block', fontSize: '0.74rem', fontWeight: 700, marginTop: '3px', color: nOps === null ? '#8b949e' : (nOps > 0 ? '#f0b72f' : '#6e7681') }}>
+                        {nOps === null ? '⏳ Contando operaciones…' : `${nOps} operación(es) registrada(s)`}
                       </span>
                     </span>
                     <span style={{ color: esConservado ? '#3fb950' : '#f85149', fontSize: '0.72rem', fontWeight: 700, flexShrink: 0 }}>
