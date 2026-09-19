@@ -118,6 +118,9 @@ interface FilaDetalle {
 
 const TTL_MS = 5 * 60 * 1000; // 5 min: suficiente para navegar sin re-leer
 
+// ✅ V00306: columnas ordenables con clic en el encabezado
+type ColOrden = 'consecutivo' | 'entidad' | 'tarifa' | 'origen' | 'destino' | 'moneda' | 'status' | 'usos' | 'costo';
+
 const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   const esClientes = tipo === 'clientes';
   const COL_CONVENIOS = esClientes ? 'convenios_clientes' : 'convenios_proveedores';
@@ -143,6 +146,11 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   const [busqueda, setBusqueda] = useState('');
   useBusquedaGlobal((t) => setBusqueda(t), 'los convenios'); // ✅ V00263: buscador global del topbar
   const [ordenAsc, setOrdenAsc] = useState(false);
+  // ✅ V00306: orden por columna — 1er clic ↑ (creciente), 2do ↓ (decreciente),
+  //   3er clic quita la flecha y regresa al orden original (último agregado primero).
+  const [ordenCol, setOrdenCol] = useState<{ col: ColOrden; asc: boolean } | null>(null);
+  const clicOrden = (col: ColOrden) => setOrdenCol((p) => (!p || p.col !== col) ? { col, asc: true } : (p.asc ? { col, asc: false } : null));
+  const flechaOrden = (col: ColOrden) => (ordenCol?.col === col ? (ordenCol.asc ? ' ▲' : ' ▼') : '');
   // ✅ V00206: operaciones que usan cada detalle (op.convenio = id del detalle)
   const [usosOps, setUsosOps] = useState<Record<string, { ref: string; fecha: string; status: string; tipo: string; entidad: string; monto: string; docId: string }[]>>({});
   const [usoAbierto, setUsoAbierto] = useState<FilaDetalle | null>(null);
@@ -929,7 +937,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         `${f.id} ${f.consecutivo} ${f.numeroConvenio} ${f.entidad} ${f.tarifa} ${f.moneda || '—'} ${f.costo ?? ''}`.toLowerCase().includes(b)
       );
     }
-    return [...lista].sort((a, b) => {
+    const ordenada = [...lista].sort((a, b) => {
       // ✅ V00196: en CLIENTES ordena por el consecutivo del detalle.
       if (esClientes) {
         const na = parseInt(a.consecutivo.replace(/\D/g, ''), 10) || 0;
@@ -941,7 +949,29 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       const base = dif !== 0 ? dif : a.numeroConvenio.localeCompare(b.numeroConvenio);
       return ordenAsc ? base : -base;
     });
-  }, [filas, busqueda, ordenAsc, esClientes, pestana, filtroEntidad]);
+    // ✅ V00306: si hay una columna elegida (flecha visible), ese orden manda;
+    //   sin flecha, se queda el orden original de arriba.
+    if (!ordenCol) return ordenada;
+    const valorDe = (f: FilaDetalle): string | number => {
+      switch (ordenCol.col) {
+        case 'consecutivo': return parseInt(f.consecutivo.replace(/\D/g, ''), 10) || 0;
+        case 'usos': return (usosOps[f.id] || []).length;
+        case 'costo': return f.costo ?? -1;
+        case 'entidad': return f.entidad;
+        case 'tarifa': return f.tarifa;
+        case 'origen': return f.origen;
+        case 'destino': return f.destino;
+        case 'moneda': return f.moneda;
+        case 'status': return f.status || 'Aprobado';
+      }
+    };
+    const dir = ordenCol.asc ? 1 : -1;
+    return ordenada.sort((a, b) => {
+      const va = valorDe(a), vb = valorDe(b);
+      const c = (typeof va === 'number' && typeof vb === 'number') ? va - vb : String(va).localeCompare(String(vb), 'es', { sensitivity: 'base' });
+      return c * dir;
+    });
+  }, [filas, busqueda, ordenAsc, esClientes, pestana, filtroEntidad, ordenCol, usosOps]);
 
   // ✅ V00218: detecta duplicados EXACTOS — mismo cliente/proveedor, misma
   //   tarifa, mismo costo y misma moneda (el caso que sí conviene unir).
@@ -1236,8 +1266,8 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         </select>
         <button
           className="btn btn-outline"
-          onClick={() => setOrdenAsc((v) => !v)}
-          title="Cambiar orden por número de convenio"
+          onClick={() => { setOrdenCol(null); setOrdenAsc((v) => !v); }}
+          title="Cambiar orden por número de convenio (quita el orden por columna)"
         >
           {esClientes ? 'Consecutivo' : 'Convenio'} {ordenAsc ? '↑' : '↓'}
         </button>
@@ -1307,15 +1337,16 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                 )}
                 <th>Acciones</th>
                 {/* ✅ V00196 (clientes): CONSECUTIVO reemplaza a ID y Convenio; Moneda → "Cotizado En" */}
-                <th>Consecutivo</th>{/* ✅ V00211: también proveedores */}
-                <th>{ETIQUETA_ENTIDAD}</th>
-                <th>Tarifa</th>
-                <th>Origen</th>{/* ✅ V00231 */}
-                <th>Destino</th>
-                <th>Cotizado En</th>
-                <th>Status</th>{/* ✅ V00199 */}
-                <th>Operaciones</th>{/* ✅ V00206: veces usado */}
-                <th className="dcv-x8">Costo de la Tarifa</th>
+                {/* ✅ V00306: clic en la columna = ordenar (↑, ↓, y al tercer clic regresa al orden original) */}
+                <th className="dcv-th-orden" title="Ordenar por consecutivo" onClick={() => clicOrden('consecutivo')}>Consecutivo{flechaOrden('consecutivo')}</th>{/* ✅ V00211: también proveedores */}
+                <th className="dcv-th-orden" title={`Ordenar por ${ETIQUETA_ENTIDAD.toLowerCase()}`} onClick={() => clicOrden('entidad')}>{ETIQUETA_ENTIDAD}{flechaOrden('entidad')}</th>
+                <th className="dcv-th-orden" title="Ordenar por tarifa" onClick={() => clicOrden('tarifa')}>Tarifa{flechaOrden('tarifa')}</th>
+                <th className="dcv-th-orden" title="Ordenar por origen" onClick={() => clicOrden('origen')}>Origen{flechaOrden('origen')}</th>{/* ✅ V00231 */}
+                <th className="dcv-th-orden" title="Ordenar por destino" onClick={() => clicOrden('destino')}>Destino{flechaOrden('destino')}</th>
+                <th className="dcv-th-orden" title="Ordenar por moneda de cotización" onClick={() => clicOrden('moneda')}>Cotizado En{flechaOrden('moneda')}</th>
+                <th className="dcv-th-orden" title="Ordenar por status" onClick={() => clicOrden('status')}>Status{flechaOrden('status')}</th>{/* ✅ V00199 */}
+                <th className="dcv-th-orden" title="Ordenar por número de operaciones" onClick={() => clicOrden('usos')}>Operaciones{flechaOrden('usos')}</th>{/* ✅ V00206: veces usado */}
+                <th className="dcv-x8 dcv-th-orden" title="Ordenar por costo" onClick={() => clicOrden('costo')}>Costo de la Tarifa{flechaOrden('costo')}</th>
 
               </tr>
             </thead>

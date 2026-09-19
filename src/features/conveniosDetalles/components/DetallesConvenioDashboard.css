@@ -239,3 +239,7 @@
 /* ✅ V00305: reparar la relación tarifario ↔ convenios */
 .dcv-btn-reparar { border-color: #3fb950; color: #3fb950; font-weight: 600; white-space: nowrap; }
 .dcv-btn-reparar:hover { background-color: rgba(63, 185, 80, 0.12); }
+
+/* ✅ V00306: encabezados ordenables con clic */
+.dcv-th-orden { cursor: pointer; user-select: none; white-space: nowrap; }
+.dcv-th-orden:hover { color: #58a6ff; }
