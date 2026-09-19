@@ -57,8 +57,32 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
   useEffect(() => {
     (async () => {
       try {
-        const snap = await getDocs(collection(db, 'empresas'));
-        setEmpresas(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        // ✅ V00319: el buscador ofrece SOLO clientes que PAGAN — por su tipo
+        //   de empresa "Cliente (Paga)" del catálogo, con respaldo para los
+        //   que aún no tienen tipo pero SÍ tienen tarifario de clientes.
+        const [snapEmp, snapTipos, snapTari] = await Promise.all([
+          getDocs(collection(db, 'empresas')),
+          getDocs(collection(db, 'catalogo_tipo_empresa')),
+          getDocs(collection(db, 'tarifario_clientes')),
+        ]);
+        const norm = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+        const idsTipoPaga = new Set(
+          snapTipos.docs
+            .filter((d) => { const n = norm((d.data() as any).nombre || (d.data() as any).tipo || (d.data() as any).descripcion); return n.includes('cliente') && n.includes('paga'); })
+            .map((d) => d.id)
+        );
+        const conTarifario = new Set(
+          snapTari.docs.map((d) => String((d.data() as any).clienteId || '').trim()).filter(Boolean)
+        );
+        const contiene = (campo: any, id: string): boolean => {
+          if (!campo) return false;
+          if (Array.isArray(campo)) return campo.map((x) => String(x)).includes(id);
+          return String(campo).includes(id);
+        };
+        const lista = snapEmp.docs.map((d) => ({ id: d.id, ...d.data() } as any));
+        setEmpresas(lista.filter((e) =>
+          [...idsTipoPaga].some((id) => contiene(e.tiposEmpresa, id)) || conTarifario.has(String(e.id))
+        ));
       } catch (e) { console.error('Auditoría: empresas', e); }
     })();
   }, []);
