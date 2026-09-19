@@ -244,7 +244,7 @@
 .tc-guardado-acciones { display: inline-flex; align-items: center; gap: 8px; }
 
 /* ✅ V00195: modal de detalle */
-.tc-modal-detalle { width: min(1000px, 96vw); }
+.tc-modal-detalle { width: min(1240px, 96vw); } /* ✅ V00304: ficha más ancha */
 .tc-detalle-datos {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -429,3 +429,6 @@
 
 /* ✅ V00300: columna de ruta en la tabla de la ficha */
 .tc-td-ruta { font-size: 0.8rem; color: #8b949e; white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+
+/* ✅ V00304: botón "+ Agregar tarifa" arriba, dentro del grid de datos */
+.tc-btn-agregar-linea--arriba { align-self: flex-start; margin-top: 2px; }

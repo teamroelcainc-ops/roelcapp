@@ -227,3 +227,11 @@
   color: #58a6ff; font-size: 0.68rem; font-weight: 700; white-space: nowrap;
 }
 .dcv-select-costo-variante { min-width: 170px; font-variant-numeric: tabular-nums; }
+
+/* ✅ V00304: unificar convenios con el mismo nombre en uno solo */
+.dcv-btn-unificar {
+  margin-left: 6px; padding: 1px 8px;
+  border: 1px solid #238636; border-radius: 999px; background: transparent;
+  color: #3fb950; font-size: 0.68rem; font-weight: 700; white-space: nowrap; cursor: pointer;
+}
+.dcv-btn-unificar:hover { background-color: rgba(35, 134, 54, 0.15); }

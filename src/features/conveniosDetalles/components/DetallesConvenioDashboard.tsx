@@ -107,6 +107,7 @@ interface FilaDetalle {
   origen: string;       // ✅ V00231: municipios del detalle
   destino: string;
   costo: number | null;
+  montos: number[]; // ✅ V00304: TODOS los costos del convenio (tarifa = el vigente)
   status: string; // ✅ V00199: status propio del detalle
   // ✅ V00197: para las pestañas (clientes)
   statusConvenio: string;
@@ -222,8 +223,10 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     // ✅ V00302: aviso visual mientras el registro viaja a la Papelera — la
     //   fila se atenúa con "⏳ Eliminando…" y desaparece sola al confirmarse.
     setEliminandoIds((p) => new Set(p).add(id));
+    const consec = consecutivoDe(id); // ✅ V00304: antes de borrar (el snapshot lo quita)
     try {
       await eliminarRegistro(COL_DETALLES, id, { modulo: 'Detalles del Convenio' });
+      await consolidarLineasTarifario(null, [consec], null); // ✅ V00304: su línea del tarifario también se quita
       setFilas((prev) => (prev || []).filter((f) => f.id !== id));
       setSeleccion((prev) => { const s = new Set(prev); s.delete(id); return s; });
     } catch { /* cancelado o error: sin cambios */ }
@@ -240,17 +243,22 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     setBorrandoSel(true);
     const ids = Array.from(seleccion);
     setEliminandoIds((p) => { const s = new Set(p); ids.forEach((id) => s.add(id)); return s; }); // ✅ V00302
+    const consecs: Record<string, string> = {}; // ✅ V00304: antes de borrar
+    ids.forEach((id) => { consecs[id] = consecutivoDe(id); });
+    const consecsBorrados: string[] = [];
     try {
       let ok = 0;
       for (const id of ids) {
         try {
           await eliminarRegistro(COL_DETALLES, id, { modulo: 'Detalles del Convenio', motivo });
           ok += 1;
+          consecsBorrados.push(consecs[id]); // ✅ V00304
           // ✅ V00302: cada fila deja de estar "eliminándose" en cuanto SU
           //   borrado se confirma (el snapshot la quita solo de la tabla).
           setEliminandoIds((p) => { const s = new Set(p); s.delete(id); return s; });
         } catch { /* continúa con el resto */ }
       }
+      if (consecsBorrados.length > 0) await consolidarLineasTarifario(null, consecsBorrados, null); // ✅ V00304
       setFilas((prev) => (prev || []).filter((f) => !seleccion.has(f.id)));
       setSeleccion(new Set());
       alert(`${ok} de ${ids.length} convenio(s) enviados a la Papelera. ✅`);
@@ -533,6 +541,17 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       }
       if (enLote > 0) await lote.commit();
 
+      // ✅ V00304: UN convenio con varios montos — ANTES de borrar (el snapshot
+      //   los quita), el conservado absorbe TODOS los costos del grupo.
+      const montosUnion = Array.from(new Set(Array.from(seleccion).flatMap((id) => {
+        const raw = (detallesDocs || []).find((d) => d.id === id);
+        const propios = Array.isArray(raw?.data?.montos) ? (raw?.data?.montos as unknown[]).map(Number) : [];
+        const fx = (filas || []).find((x) => x.id === id);
+        return [...propios, Number(fx?.costo ?? NaN)];
+      }).filter((n) => !isNaN(n) && n > 0))).sort((a, b) => a - b);
+      const consDescartados = descartados.map((id) => consecutivoDe(id));
+      const consConservado = consecutivoDe(conservarId);
+
       // 2) Los descartados se van a la Papelera con una sola nota.
       setEliminandoIds((p) => { const s = new Set(p); descartados.forEach((id) => s.add(id)); return s; }); // ✅ V00302
       let borrados = 0;
@@ -544,6 +563,10 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         } catch { /* continúa */ }
       }
 
+      // ✅ V00304: el conservado guarda TODOS los montos y el tarifario queda
+      //   con UNA sola línea (la del conservado, con esos montos).
+      if (montosUnion.length > 1) { try { await updateDoc(doc(dbFs, COL_DETALLES, conservarId), { montos: montosUnion }); } catch { /* mejor esfuerzo */ } }
+      await consolidarLineasTarifario(consConservado, consDescartados, montosUnion);
       setFilas((prev) => (prev || []).filter((f) => !descartados.includes(f.id)));
       setEliminandoIds((p) => { const s = new Set(p); descartados.forEach((id) => s.delete(id)); return s; }); // ✅ V00302
       setSeleccion(new Set());
@@ -839,6 +862,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         origen: String(x.origenNombre || ''),   // ✅ V00231
         destino: String(x.destinoNombre || ''),
         costo: costoNum !== null && !isNaN(costoNum) ? costoNum : null,
+        montos: Array.isArray(x.montos) ? (x.montos as unknown[]).map(Number).filter((n) => !isNaN(n)) : [], // ✅ V00304
         status: String(x.status || ''), // ✅ V00199
         statusConvenio: conv.status, // ✅ V00197
         vencido: conv.vencido,
@@ -908,6 +932,74 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   //   costo del convenio ver/editar/usar. Los duplicados EXACTOS (mismo costo)
   //   siguen en filas separadas para poder unirlos con ⚭.
   const fmtCosto = (n: number | null) => n === null ? 'Sin costo' : `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  // ✅ V00304: la relación línea↔convenio se mantiene también al ELIMINAR y al
+  //   UNIR — el consecutivo del detalle localiza su línea en el tarifario.
+  const COL_TARIFARIOS = esClientes ? 'tarifario_clientes' : 'tarifario_proveedores';
+  const consecutivoDe = (id: string): string => {
+    const raw = (detallesDocs || []).find((d) => d.id === id);
+    return String(raw?.data?.consecutivo || id);
+  };
+  /** Quita del tarifario las líneas de los consecutivos descartados y, si se
+   *  indica, deja los montos unificados en la línea del consecutivo conservado. */
+  const consolidarLineasTarifario = async (consConservado: string | null, consDescartados: string[], montosUnion: number[] | null) => {
+    try {
+      const snap = await getDocs(collection(db, COL_TARIFARIOS));
+      for (const d of snap.docs) {
+        const ts = (d.data() as Record<string, unknown>).tarifas;
+        if (!Array.isArray(ts)) continue;
+        let cambio = false;
+        let nuevas = (ts as Record<string, unknown>[]).filter((l) => {
+          const c = String((l as Record<string, unknown>)?.consecutivo || '');
+          if (c && consDescartados.includes(c)) { cambio = true; return false; }
+          return true;
+        });
+        if (consConservado && montosUnion && montosUnion.length > 1) {
+          nuevas = nuevas.map((l) => {
+            if (String((l as Record<string, unknown>)?.consecutivo || '') !== consConservado) return l;
+            cambio = true;
+            return { ...l, montos: montosUnion };
+          });
+        }
+        if (cambio) await updateDoc(doc(dbFs, COL_TARIFARIOS, d.id), { tarifas: nuevas });
+      }
+    } catch (e) { console.error('No se pudo actualizar la línea del tarifario:', e); }
+  };
+  /** ✅ V00304: elegir el monto VIGENTE de un convenio con varios montos —
+   *  escribe `tarifa` en el detalle y en su línea del tarifario (el motor
+   *  v1.3 también cascadea); las operaciones toman el vigente con ↻. */
+  const elegirMontoVigente = async (f: FilaDetalle, monto: number) => {
+    if (isNaN(monto)) return;
+    if (!aut.verificarAccion('editar', ['tarifa'])) return;
+    try {
+      await updateDoc(doc(dbFs, COL_DETALLES, f.id), { tarifa: monto });
+      setFilas((prev) => (prev || []).map((x) => x.id === f.id ? { ...x, costo: monto } : x));
+      try {
+        const snap = await getDocs(collection(db, COL_TARIFARIOS));
+        for (const d of snap.docs) {
+          const ts = (d.data() as Record<string, unknown>).tarifas;
+          if (!Array.isArray(ts)) continue;
+          const idx = (ts as Record<string, unknown>[]).findIndex((l) => String((l as Record<string, unknown>)?.consecutivo || '') === (f.consecutivo || f.id));
+          if (idx < 0) continue;
+          const nuevas = [...(ts as Record<string, unknown>[])];
+          nuevas[idx] = { ...nuevas[idx], tarifa: monto };
+          await updateDoc(doc(dbFs, COL_TARIFARIOS, d.id), { tarifas: nuevas });
+          break;
+        }
+      } catch { /* la línea la cubre el motor relacional */ }
+    } catch (e) { console.error('No se pudo cambiar el monto vigente:', e); alert('No se pudo cambiar el monto vigente.'); }
+  };
+  /** ✅ V00304: un clic deja el grupo con el mismo nombre listo en el modal de
+   *  Unir (que ahora además ABSORBE los montos en el convenio conservado). */
+  const prepararUnificacion = (grupo: FilaDetalle[]) => {
+    const mejor = [...grupo].sort((a, b) => {
+      const ua = (usosOps[a.id] || []).length, ub = (usosOps[b.id] || []).length;
+      if (ub !== ua) return ub - ua;
+      return a.consecutivo.localeCompare(b.consecutivo);
+    })[0];
+    setSeleccion(new Set(grupo.map((v) => v.id)));
+    setConservarId(mejor.id);
+    setModalUnir(true);
+  };
   const filasRender = useMemo(() => {
     const claveGrupo = (f: FilaDetalle) => `${f.entidad}|${f.tarifaId || f.tarifa}|${f.origen}|${f.destino}|${f.moneda}`;
     const mapa = new Map<string, FilaDetalle[]>();
@@ -917,13 +1009,14 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       if (!mapa.has(k)) { mapa.set(k, []); orden.push(k); }
       mapa.get(k)!.push(f);
     });
-    const out: { fila: FilaDetalle; grupo?: FilaDetalle[]; clave: string }[] = [];
+    const out: { fila: FilaDetalle; grupo?: FilaDetalle[]; esMontos?: boolean; clave: string }[] = [];
     orden.forEach((k) => {
       const variantes = mapa.get(k)!;
       const costosDistintos = new Set(variantes.map((v) => v.costo ?? 0)).size;
       if (variantes.length < 2 || costosDistintos < 2) {
-        // Sin variantes de costo: cada detalle es su propia fila (como siempre).
-        variantes.forEach((v) => out.push({ fila: v, clave: k }));
+        // Sin variantes de costo: cada detalle es su propia fila; si el DOC
+        // trae varios montos (✅ V00304), su costo se elige en desplegable.
+        variantes.forEach((v) => out.push({ fila: v, clave: k, esMontos: (v.montos || []).length > 1 }));
         return;
       }
       const ordenadas = [...variantes].sort((a, b) => (a.costo ?? 0) - (b.costo ?? 0));
@@ -1058,7 +1151,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
               </tr>
             </thead>
             <tbody>
-              {filasRender.map(({ fila: f, grupo, clave }) => (
+              {filasRender.map(({ fila: f, grupo, esMontos, clave }) => (
                 /* ✅ V00206: clic en la fila = ver en cuántas operaciones se usó */
                 /* ✅ V00302: la fila se atenúa mientras se elimina */
                 <tr key={f.id} className={`dcv-fila-click${eliminandoIds.has(f.id) ? ' dcv-fila-eliminando' : ''}`} onClick={() => setUsoAbierto(f)}>
@@ -1087,8 +1180,14 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                   <td>{f.entidad}</td>
                   <td>
                     {f.tarifa}
-                    {/* ✅ V00302: este nombre tiene varias tarifas con costo distinto */}
-                    {grupo && <span className="dcv-chip-variantes" title="Este convenio tiene varias tarifas con el mismo nombre y distinto costo — elígelas en el desplegable de COSTO">{grupo.length} costos</span>}
+                    {/* ✅ V00302: este nombre está repetido en VARIOS convenios con costo distinto */}
+                    {grupo && <>
+                      <span className="dcv-chip-variantes" title="Este nombre está repetido en varios convenios que solo difieren en el costo">{grupo.length} costos</span>
+                      {/* ✅ V00304: fusionarlos en UN solo convenio con todos sus montos */}
+                      <button type="button" className="dcv-btn-unificar" title="Unificar en UN solo convenio con todos sus montos (reapunta operaciones y limpia las líneas del tarifario)" onClick={(e) => { e.stopPropagation(); prepararUnificacion(grupo); }}>⇒ 1 convenio</button>
+                    </>}
+                    {/* ✅ V00304: UN convenio con varios montos */}
+                    {esMontos && <span className="dcv-chip-variantes" title="Este convenio tiene varios montos — elige el VIGENTE en el desplegable de COSTO">{f.montos.length} montos</span>}
                     {/* ✅ V00218: aviso de convenio repetido con la misma tarifa */}
                     {esDuplicado(f) && <span className="dcv-chip-dup" title="Este cliente/proveedor tiene otro convenio idéntico (misma tarifa y mismo monto) — conviene unirlos">⚠ duplicado</span>}
                   </td>
@@ -1125,6 +1224,17 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                         onChange={(e) => setVarianteSel((p) => ({ ...p, [clave]: e.target.value }))}
                       >
                         {grupo.map((v) => <option key={v.id} value={v.id}>{fmtCosto(v.costo)} · {v.consecutivo || v.id}</option>)}
+                      </select>
+                    ) : esMontos ? (
+                      /* ✅ V00304: los montos viven en el MISMO convenio (un solo
+                         CONV-###); aquí se elige cuál queda VIGENTE. */
+                      <select
+                        className="form-control dcv-select-costo-variante"
+                        value={String(f.costo ?? '')}
+                        title="Este convenio tiene varios montos: elige cuál queda VIGENTE (es el que usan las operaciones)"
+                        onChange={(e) => elegirMontoVigente(f, Number(e.target.value))}
+                      >
+                        {Array.from(new Set([...(f.costo !== null ? [f.costo] : []), ...f.montos])).sort((a, b) => a - b).map((m) => <option key={m} value={String(m)}>{fmtCosto(m)}</option>)}
                       </select>
                     ) : (
                       <input type="number" step="0.01" className="form-control dcv-input-costo" value={cambios[f.id]?.tarifa ?? (f.costo ?? 0)} onChange={(e) => marcarCambio(f.id, 'tarifa', parseFloat(e.target.value) || 0)} />

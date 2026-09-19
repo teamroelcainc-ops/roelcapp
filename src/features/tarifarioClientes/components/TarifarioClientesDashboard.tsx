@@ -1401,6 +1401,25 @@ export function TarifarioClientesDashboard() {
     }
   };
 
+  /** ✅ V00304: elegir el monto VIGENTE de una línea con varios montos —
+   *  escribe `tarifa` en la línea y en su detalle del convenio (relación por
+   *  consecutivo; el motor relacional también cascadea). */
+  const cambiarMontoVigenteLinea = async (r: Doc, idx: number, monto: number) => {
+    if (isNaN(monto)) return;
+    if (!aut.verificarAccion('editar', ['tarifa'])) return;
+    try {
+      const lineas: Doc[] = Array.isArray(r.tarifas) ? r.tarifas : [];
+      const tarifas = lineas.map((t: Doc, i: number) => (i === idx ? { ...t, tarifa: monto } : t));
+      await updateDoc(doc(db, 'tarifario_clientes', r.id), { tarifas });
+      const det = detalleDeLinea(r, lineas[idx]);
+      if (det) { try { await updateDoc(doc(db, 'convenios_clientes_detalles', String(det.id)), { tarifa: monto }); } catch { /* lo cubre el motor v1.3 */ } }
+      await registrarLog('Tarifario Clientes', 'Edición', `Cambió el monto vigente de la tarifa "${lineas[idx]?.descripcion || ''}" del pre convenio de "${r.clienteNombre}" a ${fmtMoney(monto)}.`);
+    } catch (e) {
+      console.error('No se pudo cambiar el monto vigente:', e);
+      alert('No se pudo cambiar el monto vigente.');
+    }
+  };
+
   // ── PDF con el formato del tarifario de Roelca (✅ V00192) ──
   const construirHTMLTarifario = (r: Doc): string => {
     const filas = lineasConConsecutivo(r).map((t: Doc, i: number) => {
@@ -1572,7 +1591,17 @@ export function TarifarioClientesDashboard() {
             </td>
             <td className="tc-td-ruta">{(String(t.origen || '').trim() || String(t.destino || '').trim()) ? `${String(t.origen || '').trim() || '—'} — ${String(t.destino || '').trim() || '—'}` : '—'}</td>{/* ✅ V00300: la ruta que sincroniza el convenio, visible en la ficha */}
             <td className="tc-td-num">{(t.costosSugeridos || []).length > 0 ? (t.costosSugeridos as number[]).map(fmtMoney).join(' · ') : '—'}</td>
-            <td className="tc-td-num">{fmtMoney(Number(t.tarifa) || (Array.isArray(t.costosSugeridos) ? Number(t.costosSugeridos[0]) : 0) || 0)}</td>
+            <td className="tc-td-num">{(() => { /* ✅ V00304: línea con varios montos → desplegable del VIGENTE */
+              const vig = Number(t.tarifa) || (Array.isArray(t.costosSugeridos) ? Number(t.costosSugeridos[0]) : 0) || 0;
+              const montosL = Array.isArray(t.montos) ? (t.montos as unknown[]).map(Number).filter((n) => !isNaN(n)) : [];
+              if (!editable || montosL.length < 2) return fmtMoney(vig);
+              const lista = Array.from(new Set([vig, ...montosL])).sort((a, b) => a - b);
+              return (
+                <select className="form-control tc-select-costo" value={String(vig)} title="Esta tarifa tiene varios montos: elige el VIGENTE (el que usan las operaciones)" onChange={(e) => cambiarMontoVigenteLinea(r, i, Number(e.target.value))}>
+                  {lista.map((m) => <option key={m} value={String(m)}>{fmtMoney(m)}</option>)}
+                </select>
+              );
+            })()}</td>
             <td>
               {editable ? (
                 /* ✅ V00202: Cotizado En editable por línea */
@@ -1743,6 +1772,11 @@ export function TarifarioClientesDashboard() {
                 </div>
                 <div><span className="tc-label">Creado por</span><b>{r.creadoPor || '—'}</b></div>
                 <div><span className="tc-label">{String(r.status) === 'Aprobado' ? 'Aprobado por' : 'Editado por'}</span><b>{(String(r.status) === 'Aprobado' ? r.aprobadoPor : r.editadoPor) || '—'}</b></div>
+                <div>{/* ✅ V00304: el botón vive ARRIBA, junto a los datos del tarifario */}
+                  <span className="tc-label">Tarifas</span>
+                  <button type="button" className="tc-btn-agregar-linea tc-btn-agregar-linea--arriba" title="Agregar otra tarifa a este pre convenio"
+                    onClick={() => setLineaEditor({ regId: String(r.id), idx: null, tarifaRefId: '', costo: '', cotizadoEn: '', status: 'Pendiente', origen: '', destino: '' })}>+ Agregar tarifa</button>
+                </div>
                 {String(r.docFirmadoUrl || '') !== '' && (
                   <div><span className="tc-label">Documento subido por</span><b>{r.docFirmadoPor || '—'}{r.docFirmadoFecha ? ` · ${r.docFirmadoFecha}` : ''}</b></div>
                 )}{/* ✅ V00283 */}
@@ -1754,8 +1788,6 @@ export function TarifarioClientesDashboard() {
 
               <div className="tc-modal-pie">
                 <span className="tc-conteo-sel">{Array.isArray(r.tarifas) ? r.tarifas.length : 0} tarifa(s) en este pre convenio</span>
-                <button type="button" className="tc-btn-agregar-linea" title="Agregar otra tarifa a este pre convenio"
-                  onClick={() => setLineaEditor({ regId: String(r.id), idx: null, tarifaRefId: '', costo: '', cotizadoEn: '', status: 'Pendiente', origen: '', destino: '' })}>+ Agregar tarifa</button>{/* ✅ V00283 */}
                 <button type="button" className="tc-btn-sincronizar-conv" title="Ligar las líneas sin # de convenio con su detalle en Convenios (o crearlo)" disabled={sincronizandoConv} onClick={() => sincronizarConvenios(r)}>{sincronizandoConv ? 'Sincronizando…' : '⟳ Sincronizar convenios'}</button>{/* ✅ V00289 */}
                 <div className="tc-modal-botones">
                   {/* ✅ V00199: en el detalle, los botones llevan su NOMBRE */}
