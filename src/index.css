@@ -66,3 +66,14 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+
+/* ═══════════ ✅ V00312: SCROLL SIEMPRE VISIBLE EN TODA LA APP ═══════════
+   Barras de scroll permanentes y estilizadas en TODOS los módulos y marcos
+   de tabla — también en Chrome/Edge de macOS (donde el sistema las oculta
+   al no usarlas) y delgadas pero visibles en Firefox. */
+* { scrollbar-width: thin; scrollbar-color: #30363d #161b22; }
+*::-webkit-scrollbar { height: 12px; width: 12px; }
+*::-webkit-scrollbar-track { background: #161b22; }
+*::-webkit-scrollbar-thumb { background: #30363d; border-radius: 6px; border: 2px solid #161b22; }
+*::-webkit-scrollbar-thumb:hover { background: #58a6ff; }
+*::-webkit-scrollbar-corner { background: #161b22; }

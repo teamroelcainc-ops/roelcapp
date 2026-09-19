@@ -451,3 +451,16 @@
 /* ✅ V00309: encabezados ordenables con clic */
 .tc-th-orden { cursor: pointer; user-select: none; }
 .tc-th-orden:hover { color: #58a6ff; }
+
+/* ✅ V00312: abrir la vista en otra pestaña (compartido con Proveedores) */
+.tc-btn-pestana {
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid #1f6feb; border-radius: 6px; padding: 6px 10px;
+  color: #58a6ff; font-weight: 700; text-decoration: none; white-space: nowrap;
+}
+.tc-btn-pestana:hover { background-color: rgba(31, 111, 235, 0.15); }
+
+/* ✅ V00312: "Mostrar más" del tope de 30 filas (compartido con Proveedores) */
+.tc-mostrar-mas { display: flex; align-items: center; gap: 10px; margin-top: 10px; color: #8b949e; font-size: 0.82rem; }
+.tc-btn-mas { padding: 4px 12px; border: 1px solid #1f6feb; border-radius: 999px; background: transparent; color: #58a6ff; font-size: 0.78rem; font-weight: 700; cursor: pointer; }
+.tc-btn-mas:hover { background-color: rgba(31, 111, 235, 0.15); }

@@ -278,3 +278,12 @@
 .dcv-x6 .data-table tr:hover .dcv-fija-check,
 .dcv-x6 .data-table tr:hover .dcv-fija-acciones,
 .dcv-x6 .data-table tr:hover .dcv-fija-consec { background-color: #161b22; }
+
+/* ✅ V00312: abrir la vista en otra pestaña + "Mostrar más" del tope de 30 filas */
+.dcv-btn-pestana { border-color: #1f6feb; color: #58a6ff; text-decoration: none; font-weight: 700; }
+.dcv-btn-pestana:hover { background-color: rgba(31, 111, 235, 0.15); }
+.dcv-btn-mas {
+  margin-left: 8px; padding: 3px 10px; border: 1px solid #1f6feb; border-radius: 999px;
+  background: transparent; color: #58a6ff; font-size: 0.75rem; font-weight: 700; cursor: pointer;
+}
+.dcv-btn-mas:hover { background-color: rgba(31, 111, 235, 0.15); }

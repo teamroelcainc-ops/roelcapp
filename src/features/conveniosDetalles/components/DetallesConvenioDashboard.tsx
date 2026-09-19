@@ -38,7 +38,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { createPortal } from 'react-dom'; // ✅ V00237
 import { collection, getDocs, getDoc, doc, updateDoc, writeBatch, setDoc, query, where, onSnapshot } from 'firebase/firestore';
-import { registrarLog } from '../../../utils/logger'; // ✅ V00305 // ✅ V00215/V00231/V00232 · ✅ V00299 · ✅ V00302: onSnapshot (base relacional en vivo)
+import { registrarLog } from '../../../utils/logger'; // ✅ V00305
+import { urlVerEnPestana, filtrosDeUrl } from '../../../utils/verEnPestana'; // ✅ V00312 // ✅ V00215/V00231/V00232 · ✅ V00299 · ✅ V00302: onSnapshot (base relacional en vivo)
 import { reservarConsecutivosDetalle, reservarConsecutivosDetalleProveedor } from '../consecutivos'; // ✅ V00231
 import { db as dbFs, eliminarRegistro } from '../../../config/firebase';
 import { db } from '../../../config/firebase';
@@ -128,6 +129,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   const CAMPO_ENTIDAD = esClientes ? 'clienteNombre' : 'proveedorNombre';
   const ETIQUETA_ENTIDAD = esClientes ? 'Cliente' : 'Proveedor';
   const CLAVE_CACHE = `detalles_convenio__${tipo}`;
+  const CLAVE_MODULO = esClientes ? 'detallesConvenioClientes' : 'detallesConvenioProveedores'; // ✅ V00312
 
   const [filas, setFilas] = useState<FilaDetalle[] | null>(() => obtenerCacheMemoria<FilaDetalle[]>(CLAVE_CACHE, TTL_MS));
   const [cargando, setCargando] = useState(false);
@@ -202,6 +204,19 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   // ✅ V00207: nueva pestaña "Sin cotización" (sin moneda); "Vacíos" queda solo para costo vacío/0
   const PESTANAS = ['Convenios Activos', 'Convenios Inactivos', 'No identificados', 'Vacíos', 'Sin cotización'] as const;
   const [pestana, setPestana] = useState<(typeof PESTANAS)[number]>('Convenios Activos');
+  // ✅ V00312: la tabla PINTA 30 filas de inicio; "Mostrar 30 más" agrega.
+  const [visibleN, setVisibleN] = useState(30);
+  useEffect(() => { setVisibleN(30); }, [pestana, busqueda, filtroEntidad, ordenCol]);
+  // ✅ V00312: deep-link del botón ↗ — la URL trae pestaña, búsqueda, entidad y orden.
+  useEffect(() => {
+    const f = filtrosDeUrl<{ pestana?: string; busqueda?: string; filtroEntidad?: string; ordenCol?: { col: ColOrden; asc: boolean } | null }>(CLAVE_MODULO);
+    if (!f) return;
+    if (f.pestana && (PESTANAS as readonly string[]).includes(f.pestana)) setPestana(f.pestana as (typeof PESTANAS)[number]);
+    if (typeof f.busqueda === 'string') setBusqueda(f.busqueda);
+    if (typeof f.filtroEntidad === 'string') setFiltroEntidad(f.filtroEntidad);
+    if (f.ordenCol && f.ordenCol.col) setOrdenCol({ col: f.ordenCol.col, asc: !!f.ordenCol.asc });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tipo]);
   // ✅ NUEVO (V00122): edición en línea (varios de golpe) + eliminar con papelera
   const [cambios, setCambios] = useState<Record<string, { tarifa?: number; moneda?: string; status?: string }>>({}); // ✅ V00199: + status
   const [guardando, setGuardando] = useState(false);
@@ -1279,6 +1294,8 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         >
           {cargando ? 'Actualizando…' : 'Actualizar'}
         </button>
+        {/* ✅ V00312: abrir ESTA vista (pestaña, búsqueda, entidad y orden) en otra pestaña */}
+        <a className="btn btn-outline dcv-btn-pestana" href={urlVerEnPestana(CLAVE_MODULO, { pestana, busqueda, filtroEntidad, ordenCol })} target="_blank" rel="noopener noreferrer" title="Abrir esta vista en una pestaña nueva">↗</a>
         {/* ✅ NUEVO (V00122): guarda todos los renglones editados de golpe */}
         <button className="btn" style={{ backgroundColor: '#238636', color: '#fff', border: 'none', fontWeight: 600, opacity: Object.keys(cambios).length === 0 ? 0.5 : 1 }} disabled={Object.keys(cambios).length === 0 || guardando} onClick={guardarCambios}>
           {guardando ? 'Guardando…' : `Guardar cambios (${Object.keys(cambios).length})`}
@@ -1351,7 +1368,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
               </tr>
             </thead>
             <tbody>
-              {filasRender.map(({ fila: f, grupo, esMontos, clave }) => (
+              {filasRender.slice(0, visibleN).map(({ fila: f, grupo, esMontos, clave }) => (
                 /* ✅ V00206: clic en la fila = ver en cuántas operaciones se usó */
                 /* ✅ V00302: la fila se atenúa mientras se elimina */
                 <tr key={f.id} className={`dcv-fila-click${eliminandoIds.has(f.id) ? ' dcv-fila-eliminando' : ''}`} onClick={() => setUsoAbierto(f)}>
@@ -1448,7 +1465,13 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         </div>
       )}
 
-      <div className="dcv-x11">Mostrando {filasRender.length} fila(s) · {filasVisibles.length} de {(filas || []).length} detalle(s) — la tabla se actualiza sola en tiempo real</div>{/* ✅ V00302 */}
+      <div className="dcv-x11">{/* ✅ V00302 · ✅ V00312: pinta 30 de inicio */}
+        Mostrando {Math.min(visibleN, filasRender.length)} de {filasRender.length} fila(s) · {filasVisibles.length} de {(filas || []).length} detalle(s) — la tabla se actualiza sola en tiempo real
+        {filasRender.length > visibleN && (<>
+          <button type="button" className="dcv-btn-mas" onClick={() => setVisibleN((v) => v + 30)}>Mostrar 30 más</button>
+          <button type="button" className="dcv-btn-mas" onClick={() => setVisibleN(filasRender.length)}>Mostrar todas ({filasRender.length})</button>
+        </>)}
+      </div>
 
       {/* ✅ V00231: MODAL — agregar convenio */}
       {modalAgregar && (

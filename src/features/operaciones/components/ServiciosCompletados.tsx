@@ -457,7 +457,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
   const [paginaActual, setPaginaActual] = useState(1);
   const [pestañaDetalleActiva, setPestañaDetalleActiva] = useState<string>('general');
-  const registrosPorPagina = 50;
+  const registrosPorPagina = 30; // ✅ V00312: menos filas de inicio
 
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
 

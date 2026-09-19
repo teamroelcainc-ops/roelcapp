@@ -9,6 +9,7 @@ import { obtenerCacheMemoria, guardarCacheMemoria, limpiarCacheMemoria } from '.
 import * as XLSX from 'xlsx';
 // ✅ NUEVO: historial de actividad (colección historial_actividad)
 import { registrarLog } from '../../../utils/logger';
+import { urlVerEnPestana, filtrosDeUrl } from '../../../utils/verEnPestana'; // ✅ V00312
 import { sincronizarNombresOperaciones } from '../../../utils/sincronizarNombresOperaciones';
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF, setLogoPdf } from '../../../utils/pdfGenerator';
 // ✅ NUEVO: reglas de status (botones dinámicos + cascada) — igual que Operaciones Activas
@@ -241,7 +242,7 @@ const ServiciosCancelados = () => {
 
   const [paginaActual, setPaginaActual] = useState(1);
   const [pestañaDetalleActiva, setPestañaDetalleActiva] = useState<string>('general');
-  const registrosPorPagina = 50;
+  const registrosPorPagina = 30; // ✅ V00312: menos filas de inicio
 
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
 
@@ -520,9 +521,11 @@ const ServiciosCancelados = () => {
   //   que no es una búsqueda nueva sino la restauración de la anterior).
   useEffect(() => {
     try {
-      const str = localStorage.getItem(claveFiltrosGuardados());
-      if (!str) return;
-      const f = JSON.parse(str);
+      // ✅ V00312: si la URL trae ?filtros= (botón "↗ Ver en nueva pestaña"),
+      //   ESA búsqueda manda sobre el filtro recordado del usuario.
+      const deURL = filtrosDeUrl<Record<string, string>>('serviciosCancelados');
+      const str = deURL ? null : localStorage.getItem(claveFiltrosGuardados());
+      const f = deURL || (str ? JSON.parse(str) : null);
       if (!f?.fechaInicio || !f?.fechaFin) return;
       setFilterFechaInicio(f.fechaInicio);
       setFilterFechaFin(f.fechaFin);
@@ -547,6 +550,11 @@ const ServiciosCancelados = () => {
     } catch { /* filtro guardado corrupto: ignorar */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ✅ V00312: URL con la búsqueda completa aplicada, para abrirla en otra pestaña.
+  const urlBusquedaActual = (): string => filtrosAplicados
+    ? urlVerEnPestana('serviciosCancelados', filtrosAplicados as unknown as Record<string, unknown>)
+    : `${window.location.pathname}?modulo=serviciosCancelados`;
 
   // ✅ NUEVO: cuántos filtros están definidos en el panel (para el contador del botón).
   const contadorFiltrosActivos = [filterFechaInicio || filterFechaFin, filterCliente, filterRemolque, filterReferencia.trim(), busqueda.trim()].filter(Boolean).length;
@@ -1554,6 +1562,7 @@ const ServiciosCancelados = () => {
               {resumenFiltrosChips.map((chip, i) => (
                 <span className="sc-x46" key={`chip_${i}`}>{chip}</span>
               ))}
+              <a className="sc-btn-nueva-pestana" href={urlBusquedaActual()} target="_blank" rel="noopener noreferrer" title="Abrir ESTA búsqueda en una pestaña nueva">↗ Ver en nueva pestaña</a>{/* ✅ V00312 */}
             </div>
           ) : (
             <span className="sc-x47">Presiona Filtros para definir el rango de fechas y buscar.</span>

@@ -91,6 +91,7 @@ import html2pdf from 'html2pdf.js'; // ✅ V00250: descarga directa (como Operac
 import { LOGO_CTPAT_SRC } from '../../../utils/logoCtpat'; // ✅ V00250/V00251
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import { reservarConsecutivosDetalleProveedor, reservarConsecutivosTarifarioProveedor } from '../../conveniosDetalles/consecutivos'; // ✅ V00199/V00203
+import { urlVerEnPestana, filtrosDeUrl } from '../../../utils/verEnPestana'; // ✅ V00312
 import { cargarObligatoriosTarifa, guardarObligatoriosTarifa, ETIQUETAS_CAMPOS_TARIFA, OBLIGATORIOS_TARIFA_DEFAULT, type CamposObligatoriosTarifa } from '../../../utils/camposObligatoriosTarifa'; // ✅ V00286
 import '../../tarifarioClientes/components/TarifarioClientesDashboard.css'; // ✅ V00211: mismo estilo
 
@@ -244,6 +245,19 @@ export function TarifarioProveedoresDashboard() {
   const [ordenCol, setOrdenCol] = useState<{ col: ColOrdenLista; asc: boolean } | null>(null);
   const clicOrden = (col: ColOrdenLista) => setOrdenCol((p) => (!p || p.col !== col) ? { col, asc: true } : (p.asc ? { col, asc: false } : null));
   const flechaOrden = (col: ColOrdenLista) => (ordenCol?.col === col ? (ordenCol.asc ? ' ▲' : ' ▼') : '');
+  // ✅ V00312: la tabla PINTA 30 filas de inicio; "Mostrar 30 más" agrega.
+  const [visibleN, setVisibleN] = useState(30);
+  useEffect(() => { setVisibleN(30); }, [busquedaLista, filtroEntidad, filtroStatus, filtroMoneda, ordenCol]);
+  // ✅ V00312: deep-link del botón ↗ — la URL trae búsqueda, filtros y orden.
+  useEffect(() => {
+    const f = filtrosDeUrl<{ busquedaLista?: string; filtroEntidad?: string; filtroStatus?: string; filtroMoneda?: string; ordenCol?: { col: ColOrdenLista; asc: boolean } | null }>('tarifarioProveedores');
+    if (!f) return;
+    if (typeof f.busquedaLista === 'string') setBusquedaLista(f.busquedaLista);
+    if (typeof f.filtroEntidad === 'string') setFiltroEntidad(f.filtroEntidad);
+    if (typeof f.filtroStatus === 'string') setFiltroStatus(f.filtroStatus);
+    if (typeof f.filtroMoneda === 'string') setFiltroMoneda(f.filtroMoneda);
+    if (f.ordenCol && f.ordenCol.col) setOrdenCol({ col: f.ordenCol.col, asc: !!f.ordenCol.asc });
+  }, []);
 
   // ✅ V00220: si se llegó aquí desde una referencia clicable, el buscador
   //   arranca con esa referencia.
@@ -1715,6 +1729,8 @@ export function TarifarioProveedoresDashboard() {
               ✕ Limpiar
             </button>
           )}
+          {/* ✅ V00312: abrir esta vista (búsqueda, filtros y orden) en otra pestaña */}
+          <a className="tc-btn-pestana" href={urlVerEnPestana('tarifarioProveedores', { busquedaLista, filtroEntidad, filtroStatus, filtroMoneda, ordenCol })} target="_blank" rel="noopener noreferrer" title="Abrir esta vista en una pestaña nueva">↗</a>
           <span className="tc-filtros-conteo">{registrosVisibles.length} de {registros.length}</span>
         </div>
         {registros.length === 0 ? (
@@ -1736,7 +1752,7 @@ export function TarifarioProveedoresDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {registrosVisibles.map((r) => (
+                {registrosVisibles.slice(0, visibleN).map((r) => (
                   /* ✅ V00195: clic en la fila abre el DETALLE EN MODAL; acciones al inicio */
                   <tr key={r.id} className="tc-fila-click" onClick={() => setDetalleId(r.id)}>
                     <td className="tc-td-acciones" onClick={(e) => e.stopPropagation()}>
@@ -1774,6 +1790,14 @@ export function TarifarioProveedoresDashboard() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+        {/* ✅ V00312: la tabla pinta 30 de inicio — botones para ver el resto */}
+        {registrosVisibles.length > visibleN && (
+          <div className="tc-mostrar-mas">
+            Mostrando {visibleN} de {registrosVisibles.length}
+            <button type="button" className="tc-btn-mas" onClick={() => setVisibleN((v) => v + 30)}>Mostrar 30 más</button>
+            <button type="button" className="tc-btn-mas" onClick={() => setVisibleN(registrosVisibles.length)}>Mostrar todos ({registrosVisibles.length})</button>
           </div>
         )}
       </div>
