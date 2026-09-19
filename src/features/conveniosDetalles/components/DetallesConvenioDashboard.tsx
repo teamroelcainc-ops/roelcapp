@@ -37,7 +37,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { createPortal } from 'react-dom'; // ✅ V00237
-import { collection, getDocs, getDoc, doc, updateDoc, writeBatch, setDoc, query, where } from 'firebase/firestore'; // ✅ V00215/V00231/V00232 · ✅ V00299
+import { collection, getDocs, getDoc, doc, updateDoc, writeBatch, setDoc, query, where, onSnapshot } from 'firebase/firestore'; // ✅ V00215/V00231/V00232 · ✅ V00299 · ✅ V00302: onSnapshot (base relacional en vivo)
 import { reservarConsecutivosDetalle, reservarConsecutivosDetalleProveedor } from '../consecutivos'; // ✅ V00231
 import { db as dbFs, eliminarRegistro } from '../../../config/firebase';
 import { db } from '../../../config/firebase';
@@ -126,6 +126,16 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
 
   const [filas, setFilas] = useState<FilaDetalle[] | null>(() => obtenerCacheMemoria<FilaDetalle[]>(CLAVE_CACHE, TTL_MS));
   const [cargando, setCargando] = useState(false);
+  // ✅ V00302: BASE RELACIONAL EN VIVO — los detalles y los convenios maestros
+  //   llegan por onSnapshot: agregar una tarifa desde el tarifario, editar la
+  //   moneda o eliminar un convenio se refleja AQUÍ solo, sin presionar
+  //   "Actualizar".
+  const [detallesDocs, setDetallesDocs] = useState<{ id: string; data: Record<string, unknown> }[] | null>(null);
+  const [conveniosMap, setConveniosMap] = useState<Record<string, { numero: string; entidad: string; moneda: string; status: string; vencido: boolean }> | null>(null);
+  // ✅ V00302: filas en proceso de eliminación (aviso visual mientras viajan a la Papelera)
+  const [eliminandoIds, setEliminandoIds] = useState<Set<string>>(new Set());
+  // ✅ V00302: variante (costo) elegida por grupo de convenios con el mismo nombre
+  const [varianteSel, setVarianteSel] = useState<Record<string, string>>({});
   const [busqueda, setBusqueda] = useState('');
   useBusquedaGlobal((t) => setBusqueda(t), 'los convenios'); // ✅ V00263: buscador global del topbar
   const [ordenAsc, setOrdenAsc] = useState(false);
@@ -209,11 +219,15 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   const eliminarDetalle = async (id: string) => {
     if (!aut.verificarAccion('borrar')) return; // ✅ V00198
     if (!window.confirm('¿Eliminar este detalle del convenio?\n\nSe enviará a la Papelera de Reciclaje (nota obligatoria).')) return;
+    // ✅ V00302: aviso visual mientras el registro viaja a la Papelera — la
+    //   fila se atenúa con "⏳ Eliminando…" y desaparece sola al confirmarse.
+    setEliminandoIds((p) => new Set(p).add(id));
     try {
       await eliminarRegistro(COL_DETALLES, id, { modulo: 'Detalles del Convenio' });
       setFilas((prev) => (prev || []).filter((f) => f.id !== id));
       setSeleccion((prev) => { const s = new Set(prev); s.delete(id); return s; });
     } catch { /* cancelado o error: sin cambios */ }
+    finally { setEliminandoIds((p) => { const s = new Set(p); s.delete(id); return s; }); }
   };
 
   // ✅ V00207: BORRADO MASIVO — una sola nota para todos los seleccionados.
@@ -224,13 +238,17 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     const motivo = String(window.prompt('Nota de eliminación (obligatoria) para los registros seleccionados:') || '').trim();
     if (!motivo) { alert('La nota es obligatoria. No se eliminó nada.'); return; }
     setBorrandoSel(true);
+    const ids = Array.from(seleccion);
+    setEliminandoIds((p) => { const s = new Set(p); ids.forEach((id) => s.add(id)); return s; }); // ✅ V00302
     try {
-      const ids = Array.from(seleccion);
       let ok = 0;
       for (const id of ids) {
         try {
           await eliminarRegistro(COL_DETALLES, id, { modulo: 'Detalles del Convenio', motivo });
           ok += 1;
+          // ✅ V00302: cada fila deja de estar "eliminándose" en cuanto SU
+          //   borrado se confirma (el snapshot la quita solo de la tabla).
+          setEliminandoIds((p) => { const s = new Set(p); s.delete(id); return s; });
         } catch { /* continúa con el resto */ }
       }
       setFilas((prev) => (prev || []).filter((f) => !seleccion.has(f.id)));
@@ -238,6 +256,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       alert(`${ok} de ${ids.length} convenio(s) enviados a la Papelera. ✅`);
     } finally {
       setBorrandoSel(false);
+      setEliminandoIds((p) => { const s = new Set(p); ids.forEach((id) => s.delete(id)); return s; });
     }
   };
 
@@ -390,7 +409,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       });
       setModalAgregar(false);
       setAlta({ tarifarioId: '', tarifaId: '', origen: '', destino: '', moneda: '', status: 'Aprobado', costo: '' });
-      await cargar(true);
+      // ✅ V00302: ya no se recarga todo — el onSnapshot pinta la fila nueva al instante.
       alert(`Convenio ${consec} agregado. ✅`);
     } catch (e) {
       console.error('No se pudo agregar el convenio:', e);
@@ -515,15 +534,18 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       if (enLote > 0) await lote.commit();
 
       // 2) Los descartados se van a la Papelera con una sola nota.
+      setEliminandoIds((p) => { const s = new Set(p); descartados.forEach((id) => s.add(id)); return s; }); // ✅ V00302
       let borrados = 0;
       for (const id of descartados) {
         try {
           await eliminarRegistro(COL_DETALLES, id, { modulo: 'Detalles del Convenio', motivo: `Unido con ${consConservado} (duplicado)` });
           borrados += 1;
+          setEliminandoIds((p) => { const s = new Set(p); s.delete(id); return s; }); // ✅ V00302
         } catch { /* continúa */ }
       }
 
       setFilas((prev) => (prev || []).filter((f) => !descartados.includes(f.id)));
+      setEliminandoIds((p) => { const s = new Set(p); descartados.forEach((id) => s.delete(id)); return s; }); // ✅ V00302
       setSeleccion(new Set());
       setModalUnir(false);
       alert(`Convenios unidos en ${consConservado}. ✅\n\n· Operaciones reapuntadas: ${reapuntadas}\n· Convenios enviados a la Papelera: ${borrados}`);
@@ -696,17 +718,18 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     }
   };
 
+  // ✅ V00302: cargar() ya SOLO trae los catálogos (tarifas, monedas) y los
+  //   usos en operaciones; los detalles y convenios viven en tiempo real por
+  //   onSnapshot (abajo), así que ya no se leen aquí.
   const cargar = async (forzar = false) => {
     if (cargando) return;
     if (!forzar) {
-      const enCache = obtenerCacheMemoria<FilaDetalle[]>(CLAVE_CACHE, TTL_MS);
-      if (enCache) { setFilas(enCache); return; }
+      const aux = obtenerCacheMemoria<{ monedas: string[]; tarifas: { id: string; nombre: string }[]; usos: Record<string, { ref: string; fecha: string; status: string; tipo: string; entidad: string; monto: string; docId: string }[]> }>(`${CLAVE_CACHE}_aux`, TTL_MS);
+      if (aux) { setMonedasCat(aux.monedas); setTarifasLista(aux.tarifas); setUsosOps(aux.usos); return; }
     }
     setCargando(true);
     try {
-      const [snapConv, snapDet, snapTar, snapMon] = await Promise.all([
-        getDocs(collection(db, COL_CONVENIOS)),
-        getDocs(collection(db, COL_DETALLES)),
+      const [snapTar, snapMon] = await Promise.all([
         getDocs(collection(db, 'catalogo_tarifas_referencia')),
         getDocs(collection(db, 'catalogo_moneda')), // ✅ V00123
       ]);
@@ -733,71 +756,25 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
           });
           Object.values(mapa).forEach((lista) => lista.sort((a, b) => b.fecha.localeCompare(a.fecha)));
           setUsosOps(mapa);
+          // ✅ V00302: caché auxiliar (catálogos + usos) para volver al módulo al instante
+          guardarCacheMemoria(`${CLAVE_CACHE}_aux`, {
+            monedas: snapMon.docs.map((d) => String((d.data() as { moneda?: unknown }).moneda || '')).filter(Boolean),
+            tarifas: snapTar.docs.map((d) => ({ id: d.id, nombre: String((d.data() as Record<string, unknown>).descripcion || '') })).filter((t) => t.nombre).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' })),
+            usos: mapa,
+          });
         } catch { setUsosOps({}); }
       }
       setMonedasCat(snapMon.docs.map((d) => String((d.data() as { moneda?: unknown }).moneda || '')).filter(Boolean));
 
-      const hoyISO = new Date().toISOString().slice(0, 10);
-      const convenios: Record<string, { numero: string; entidad: string; moneda: string; status: string; vencido: boolean }> = {};
-      snapConv.docs.forEach((d) => {
-        const x = d.data() as Record<string, unknown>;
-        const venc = String(x.fechaVencimiento || '');
-        convenios[d.id] = {
-          numero: String(x.numeroConvenio || ''),
-          entidad: String(x[CAMPO_ENTIDAD] || ''),
-          moneda: String(x.monedaNombre || ''), // ✅ NUEVO (V00119)
-          status: String(x.status || 'Activo'), // ✅ V00197
-          vencido: !!venc && venc < hoyISO,     // ✅ V00197
-        };
-      });
-
-      const tarifas: Record<string, string> = {};
-      snapTar.docs.forEach((d) => {
-        const x = d.data() as Record<string, unknown>;
-        tarifas[d.id] = String(x.descripcion || '');
-      });
       // ✅ V00207: lista para el selector de tarifa del modal de edición
       setTarifasLista(
         snapTar.docs.map((d) => ({ id: d.id, nombre: String((d.data() as Record<string, unknown>).descripcion || '') }))
           .filter((t) => t.nombre)
           .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }))
       );
-
-      const resultado: FilaDetalle[] = snapDet.docs.map((d) => {
-        const x = d.data() as Record<string, unknown>;
-        const conv = convenios[String(x.convenioId || '')] || { numero: '', entidad: '', moneda: '', status: 'Activo', vencido: false };
-        const idTarifa = String(x.tipoConvenioId || '');
-        const crudoCosto = (x.costo !== undefined && x.costo !== null && x.costo !== '') ? x.costo : x.tarifa; // ✅ V00122: los detalles guardan `tarifa`
-        const costoNum = (crudoCosto === undefined || crudoCosto === null || crudoCosto === '') ? null : Number(crudoCosto);
-        const nombreGuardado = String(x.tipoConvenioNombre || '').trim();
-        return {
-          id: d.id,
-          consecutivo: String(x.consecutivo || ''), // ✅ V00196
-          numeroConvenio: conv.numero || '—',
-          numeroOrden: parseInt(String(conv.numero || '').replace(/\D/g, ''), 10) || 0,
-          entidad: conv.entidad || '—',
-          // ✅ CORREGIDO (V00126): la moneda del DETALLE manda; la del maestro solo es respaldo.
-          //   Antes se mostraba siempre la del maestro, por lo que el cambio guardado parecía "revertirse".
-          moneda: String(x.moneda || ''),
-          tarifa: tarifas[idTarifa] || nombreGuardado || '—',
-          tarifaId: idTarifa, // ✅ V00207
-          origen: String(x.origenNombre || ''),   // ✅ V00231
-          destino: String(x.destinoNombre || ''),
-          costo: costoNum !== null && !isNaN(costoNum) ? costoNum : null,
-          status: String(x.status || ''), // ✅ V00199
-          // ✅ V00197: datos para las pestañas
-          statusConvenio: conv.status,
-          vencido: conv.vencido,
-          // ✅ V00207: "No identificado" literal también cuenta como no identificada
-          identificada: !!tarifas[idTarifa] || (!!nombreGuardado && !norm2(nombreGuardado).includes('no identificad')),
-        };
-      });
-
-      guardarCacheMemoria(CLAVE_CACHE, resultado);
-      setFilas(resultado);
     } catch (e) {
-      console.error('Error cargando detalles del convenio:', e);
-      alert('No se pudieron cargar los detalles del convenio. Revisa tu conexión.');
+      console.error('Error cargando catálogos de los convenios:', e);
+      alert('No se pudieron cargar los catálogos del convenio. Revisa tu conexión.');
     }
     setCargando(false);
   };
@@ -806,6 +783,73 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     cargar(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tipo]);
+
+  // ✅ V00302: ESCUCHAS EN VIVO (base relacional de verdad) — cualquier alta,
+  //   edición o eliminación en convenios_*_detalles o en los convenios
+  //   maestros (desde este módulo, desde el TARIFARIO o desde el motor
+  //   relacional del servidor) llega sola, sin presionar "Actualizar".
+  useEffect(() => {
+    setDetallesDocs(null);
+    setConveniosMap(null);
+    const offDet = onSnapshot(collection(db, COL_DETALLES), (snap) => {
+      setDetallesDocs(snap.docs.map((d) => ({ id: d.id, data: d.data() as Record<string, unknown> })));
+    }, (e) => console.error('Escucha de detalles del convenio:', e));
+    const offConv = onSnapshot(collection(db, COL_CONVENIOS), (snap) => {
+      const hoyISO = new Date().toISOString().slice(0, 10);
+      const m: Record<string, { numero: string; entidad: string; moneda: string; status: string; vencido: boolean }> = {};
+      snap.docs.forEach((d) => {
+        const x = d.data() as Record<string, unknown>;
+        const venc = String(x.fechaVencimiento || '');
+        m[d.id] = {
+          numero: String(x.numeroConvenio || ''),
+          entidad: String(x[CAMPO_ENTIDAD] || ''),
+          moneda: String(x.monedaNombre || ''), // ✅ NUEVO (V00119)
+          status: String(x.status || 'Activo'), // ✅ V00197
+          vencido: !!venc && venc < hoyISO,     // ✅ V00197
+        };
+      });
+      setConveniosMap(m);
+    }, (e) => console.error('Escucha de convenios:', e));
+    return () => { offDet(); offConv(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tipo]);
+
+  // ✅ V00302: las FILAS se reconstruyen solas con cada snapshot (misma
+  //   lógica que antes vivía dentro de cargar()).
+  useEffect(() => {
+    if (detallesDocs === null || conveniosMap === null) return;
+    const tarifas: Record<string, string> = {};
+    tarifasLista.forEach((t) => { tarifas[t.id] = t.nombre; });
+    const resultado: FilaDetalle[] = detallesDocs.map(({ id, data: x }) => {
+      const conv = conveniosMap[String(x.convenioId || '')] || { numero: '', entidad: '', moneda: '', status: 'Activo', vencido: false };
+      const idTarifa = String(x.tipoConvenioId || '');
+      const crudoCosto = (x.costo !== undefined && x.costo !== null && x.costo !== '') ? x.costo : x.tarifa; // ✅ V00122: los detalles guardan `tarifa`
+      const costoNum = (crudoCosto === undefined || crudoCosto === null || crudoCosto === '') ? null : Number(crudoCosto);
+      const nombreGuardado = String(x.tipoConvenioNombre || '').trim();
+      return {
+        id,
+        consecutivo: String(x.consecutivo || ''), // ✅ V00196
+        numeroConvenio: conv.numero || '—',
+        numeroOrden: parseInt(String(conv.numero || '').replace(/\D/g, ''), 10) || 0,
+        entidad: conv.entidad || '—',
+        // ✅ CORREGIDO (V00126): la moneda del DETALLE manda; la del maestro solo es respaldo.
+        moneda: String(x.moneda || ''),
+        tarifa: tarifas[idTarifa] || nombreGuardado || '—',
+        tarifaId: idTarifa, // ✅ V00207
+        origen: String(x.origenNombre || ''),   // ✅ V00231
+        destino: String(x.destinoNombre || ''),
+        costo: costoNum !== null && !isNaN(costoNum) ? costoNum : null,
+        status: String(x.status || ''), // ✅ V00199
+        statusConvenio: conv.status, // ✅ V00197
+        vencido: conv.vencido,
+        // ✅ V00207: "No identificado" literal también cuenta como no identificada
+        identificada: !!tarifas[idTarifa] || (!!nombreGuardado && !norm2(nombreGuardado).includes('no identificad')),
+      };
+    });
+    guardarCacheMemoria(CLAVE_CACHE, resultado);
+    setFilas(resultado);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detallesDocs, conveniosMap, tarifasLista]);
 
   const filasVisibles = useMemo(() => {
     let lista = filas || [];
@@ -858,6 +902,36 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     return new Set(Object.keys(cuenta).filter((k) => cuenta[k] > 1));
   }, [filas]);
   const esDuplicado = (f: FilaDetalle) => clavesDuplicadas.has(`${f.entidad}|${f.tarifaId || f.tarifa}|${f.costo ?? ''}|${f.moneda}`);
+
+  // ✅ V00302: MISMO NOMBRE, DISTINTO COSTO → UNA SOLA FILA con un desplegable
+  //   de costos, para que la lista no repita nombres y el usuario elija qué
+  //   costo del convenio ver/editar/usar. Los duplicados EXACTOS (mismo costo)
+  //   siguen en filas separadas para poder unirlos con ⚭.
+  const fmtCosto = (n: number | null) => n === null ? 'Sin costo' : `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const filasRender = useMemo(() => {
+    const claveGrupo = (f: FilaDetalle) => `${f.entidad}|${f.tarifaId || f.tarifa}|${f.origen}|${f.destino}|${f.moneda}`;
+    const mapa = new Map<string, FilaDetalle[]>();
+    const orden: string[] = [];
+    filasVisibles.forEach((f) => {
+      const k = claveGrupo(f);
+      if (!mapa.has(k)) { mapa.set(k, []); orden.push(k); }
+      mapa.get(k)!.push(f);
+    });
+    const out: { fila: FilaDetalle; grupo?: FilaDetalle[]; clave: string }[] = [];
+    orden.forEach((k) => {
+      const variantes = mapa.get(k)!;
+      const costosDistintos = new Set(variantes.map((v) => v.costo ?? 0)).size;
+      if (variantes.length < 2 || costosDistintos < 2) {
+        // Sin variantes de costo: cada detalle es su propia fila (como siempre).
+        variantes.forEach((v) => out.push({ fila: v, clave: k }));
+        return;
+      }
+      const ordenadas = [...variantes].sort((a, b) => (a.costo ?? 0) - (b.costo ?? 0));
+      const elegida = ordenadas.find((v) => v.id === varianteSel[k]) || ordenadas[0];
+      out.push({ fila: elegida, grupo: ordenadas, clave: k });
+    });
+    return out;
+  }, [filasVisibles, varianteSel]);
 
   // ✅ V00217: entidades presentes, para el selector
   const entidades = useMemo(
@@ -913,7 +987,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
           className="btn btn-outline"
           onClick={() => cargar(true)}
           disabled={cargando}
-          title="Volver a leer desde Firebase"
+          title="Refrescar catálogos y usos en operaciones (las filas ya se actualizan solas, en tiempo real)"
         >
           {cargando ? 'Actualizando…' : 'Actualizar'}
         </button>
@@ -984,9 +1058,10 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
               </tr>
             </thead>
             <tbody>
-              {filasVisibles.map((f) => (
+              {filasRender.map(({ fila: f, grupo, clave }) => (
                 /* ✅ V00206: clic en la fila = ver en cuántas operaciones se usó */
-                <tr key={f.id} className="dcv-fila-click" onClick={() => setUsoAbierto(f)}>
+                /* ✅ V00302: la fila se atenúa mientras se elimina */
+                <tr key={f.id} className={`dcv-fila-click${eliminandoIds.has(f.id) ? ' dcv-fila-eliminando' : ''}`} onClick={() => setUsoAbierto(f)}>
                   {(
                     /* ✅ V00207: checkbox de selección para borrado masivo */
                     <td className="dcv-th-check" onClick={(e) => e.stopPropagation()}>
@@ -1000,14 +1075,20 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                   {(
                     /* ✅ V00207: editar (corrige tarifa/No identificado) y eliminar AL INICIO */
                     <td className="dcv-td-acciones" onClick={(e) => e.stopPropagation()}>
+                      {eliminandoIds.has(f.id) ? (
+                        <span className="dcv-eliminando-chip" title="Este convenio está viajando a la Papelera de Reciclaje">⏳ Eliminando…</span>/* ✅ V00302 */
+                      ) : (<>
                       <button className="btn-small btn-edit dcv-mr6" title="Editar este detalle (tarifa, cotizado en, status y costo)" onClick={() => abrirEdicion(f)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></button>
                       <button className="btn-small btn-danger" title="Eliminar (va a la Papelera de Reciclaje)" onClick={() => eliminarDetalle(f.id)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button>
+                      </>)}
                     </td>
                   )}
                   <td className="dcv-x10" title={`Convenio ${f.numeroConvenio} · id ${f.id}`}>{f.consecutivo || '—'}</td>{/* ✅ V00211 */}
                   <td>{f.entidad}</td>
                   <td>
                     {f.tarifa}
+                    {/* ✅ V00302: este nombre tiene varias tarifas con costo distinto */}
+                    {grupo && <span className="dcv-chip-variantes" title="Este convenio tiene varias tarifas con el mismo nombre y distinto costo — elígelas en el desplegable de COSTO">{grupo.length} costos</span>}
                     {/* ✅ V00218: aviso de convenio repetido con la misma tarifa */}
                     {esDuplicado(f) && <span className="dcv-chip-dup" title="Este cliente/proveedor tiene otro convenio idéntico (misma tarifa y mismo monto) — conviene unirlos">⚠ duplicado</span>}
                   </td>
@@ -1031,7 +1112,24 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                     /* ✅ V00206: total de operaciones que usaron este convenio */
                     <td className="dcv-td-usos">{(usosOps[f.id] || []).length}</td>
                   )}
-                  <td className="dcv-x8" onClick={(e) => e.stopPropagation()}><input type="number" step="0.01" className="form-control dcv-input-costo" value={cambios[f.id]?.tarifa ?? (f.costo ?? 0)} onChange={(e) => marcarCambio(f.id, 'tarifa', parseFloat(e.target.value) || 0)} /></td>
+                  <td className="dcv-x8" onClick={(e) => e.stopPropagation()}>
+                    {grupo ? (
+                      /* ✅ V00302: DESPLEGABLE de costos — el usuario elige qué
+                         costo de este convenio ver (la fila entera cambia a esa
+                         variante: consecutivo, status y operaciones). Para
+                         cambiar el monto en sí, usa el lápiz ✏. */
+                      <select
+                        className="form-control dcv-select-costo-variante"
+                        value={f.id}
+                        title="Este convenio tiene varias tarifas con el mismo nombre: elige qué costo usar"
+                        onChange={(e) => setVarianteSel((p) => ({ ...p, [clave]: e.target.value }))}
+                      >
+                        {grupo.map((v) => <option key={v.id} value={v.id}>{fmtCosto(v.costo)} · {v.consecutivo || v.id}</option>)}
+                      </select>
+                    ) : (
+                      <input type="number" step="0.01" className="form-control dcv-input-costo" value={cambios[f.id]?.tarifa ?? (f.costo ?? 0)} onChange={(e) => marcarCambio(f.id, 'tarifa', parseFloat(e.target.value) || 0)} />
+                    )}
+                  </td>
 
                 </tr>
               ))}
@@ -1040,7 +1138,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         </div>
       )}
 
-      <div className="dcv-x11">Mostrando {filasVisibles.length} de {(filas || []).length} detalle(s)</div>
+      <div className="dcv-x11">Mostrando {filasRender.length} fila(s) · {filasVisibles.length} de {(filas || []).length} detalle(s) — la tabla se actualiza sola en tiempo real</div>{/* ✅ V00302 */}
 
       {/* ✅ V00231: MODAL — agregar convenio */}
       {modalAgregar && (

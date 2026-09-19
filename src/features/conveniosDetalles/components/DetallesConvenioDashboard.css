@@ -215,3 +215,15 @@
 /* ✅ V00240: botón de rearmado de nombres */
 .dcv-btn-rearmar { border-color: #58a6ff; color: #58a6ff; font-weight: 600; white-space: nowrap; }
 .dcv-btn-rearmar:hover { background-color: rgba(88, 166, 255, 0.12); }
+
+/* ✅ V00302: fila en proceso de eliminación (viajando a la Papelera) */
+.dcv-fila-eliminando { opacity: 0.45; pointer-events: none; }
+.dcv-eliminando-chip { color: #f0883e; font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
+
+/* ✅ V00302: convenio con varias tarifas del mismo nombre y distinto costo */
+.dcv-chip-variantes {
+  display: inline-block; margin-left: 6px; padding: 1px 7px;
+  border: 1px solid #58a6ff; border-radius: 999px;
+  color: #58a6ff; font-size: 0.68rem; font-weight: 700; white-space: nowrap;
+}
+.dcv-select-costo-variante { min-width: 170px; font-variant-numeric: tabular-nums; }

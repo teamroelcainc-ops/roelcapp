@@ -313,9 +313,13 @@ export function TarifarioClientesDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [busquedaCliente, empresas, tiposEmpresaCat]);
 
-  // Moneda y crédito — solo lectura, directo de Empresas.
+  // ✅ V00302: la MONEDA ahora es LISTA DESPLEGABLE — se propone la de
+  //   Empresas, pero puede cambiarse para este tarifario en particular
+  //   ('' = usar la de Empresas).
+  const [monedaCabecera, setMonedaCabecera] = useState<'' | 'USD' | 'MXN'>('');
   const monedaCliente = clienteSel ? (canonMoneda(clienteSel.moneda) || canonMoneda(clienteSel.monedaId) || canonMoneda(clienteSel.monedaNombre)) : '';
-  const etiquetaMoneda = monedaCliente === 'USD' ? 'USD — Dólares' : monedaCliente === 'MXN' ? 'MXN — Pesos' : '';
+  const monedaEfectiva = monedaCabecera || monedaCliente; // ✅ V00302
+  const etiquetaMoneda = monedaEfectiva === 'USD' ? 'USD — Dólares' : monedaEfectiva === 'MXN' ? 'MXN — Pesos' : '';
   const creditoDias = Number(clienteSel?.diasCredito) || 0;
   const limiteCredito = Number(clienteSel?.limiteCredito) || 0;
   const etiquetaCredito = clienteSel
@@ -343,10 +347,19 @@ export function TarifarioClientesDashboard() {
         // ✅ V00288: si se CAMBIÓ el cliente (elegido de la lista), se guarda la
         //   relación real; el nombre es siempre la razón social de Empresas.
         ...(clienteSel ? { clienteId: String(clienteSel.id), clienteNombre: String(clienteSel.nombre || '') } : {}),
+        // ✅ V00302: la MONEDA elegida en el desplegable también se guarda al editar la cabecera.
+        ...(monedaEfectiva ? { moneda: monedaEfectiva, monedaNombre: etiquetaMoneda } : {}),
         docObligatorio: docObligatorioForm, // ✅ V00277
         editadoEl: new Date().toISOString(),
         editadoPor: auth.currentUser?.email || '',
       });
+      // ✅ V00302: la moneda se propaga al CONVENIO MAESTRO (el respaldo que
+      //   muestran los Detalles del Convenio cuando el detalle no trae la suya).
+      if (monedaEfectiva) {
+        const rEd = registros.find((x: Doc) => String(x.id) === String(editandoId));
+        const convId = String(rEd?.convenioId || '');
+        if (convId) { try { await updateDoc(doc(db, 'convenios_clientes', convId), { monedaId: idMoneda(monedaEfectiva), monedaNombre: nombreMoneda(monedaEfectiva) }); } catch { /* mejor esfuerzo */ } }
+      }
       if (docNuevoFile) {
         try { await subirDocFirmadoA(editandoId, docNuevoFile, String((clienteSel)?.nombre || '')); }
         catch (eDoc: unknown) {
@@ -369,6 +382,7 @@ export function TarifarioClientesDashboard() {
   const limpiarCaptura = () => {
     setEditandoId('');
     setDocNuevoFile(null); // ✅ V00274
+    setMonedaCabecera(''); // ✅ V00302
     setDocObligatorioForm(true); // ✅ V00277: el default es obligatorio
     setFechaVencimiento(`${hoyLocalISO().slice(0, 4)}-12-31`); // ✅ V00212
     setSeleccion(new Set());
@@ -393,6 +407,7 @@ export function TarifarioClientesDashboard() {
   // ✅ V00194: abrir la captura en modo EDICIÓN con todo precargado.
   const abrirEdicion = (r: Doc) => {
     setDocObligatorioForm(esDocObligatorio(r)); // ✅ V00277
+    setMonedaCabecera(canonMoneda(r.moneda) || ''); // ✅ V00302: precarga la moneda guardada
     const emp = empresas.find((e) => String(e.id) === String(r.clienteId));
     const pseudo = emp || { id: r.clienteId, nombre: r.clienteNombre, nombreCorto: r.clienteNombreCorto, moneda: r.moneda, diasCredito: r.creditoDias, limiteCredito: r.limiteCredito };
     setClienteSel(pseudo);
@@ -526,7 +541,7 @@ export function TarifarioClientesDashboard() {
         clienteId: String(clienteSel.id),
         clienteNombre: String(clienteSel.nombre || ''),
         clienteNombreCorto: String(clienteSel.nombreCorto || ''),
-        moneda: monedaCliente,
+        moneda: monedaEfectiva, // ✅ V00302: la de Empresas o la elegida en el desplegable
         monedaNombre: etiquetaMoneda,
         creditoDias,
         limiteCredito,
@@ -1857,7 +1872,18 @@ export function TarifarioClientesDashboard() {
 
               <div className="tc-campo">
                 <label className="tc-label">Moneda del Cliente</label>
-                <input type="text" className="form-control tc-solo-lectura" value={clienteSel ? (etiquetaMoneda || 'SIN MONEDA en Empresas') : ''} placeholder="—" readOnly disabled />
+                {/* ✅ V00302: lista desplegable — se propone la de Empresas y puede cambiarse para este tarifario */}
+                <select
+                  className="form-control"
+                  value={monedaEfectiva}
+                  disabled={!clienteSel}
+                  title="Se propone la moneda registrada en Empresas; puedes cambiarla solo para este tarifario"
+                  onChange={(e) => setMonedaCabecera(e.target.value as '' | 'USD' | 'MXN')}
+                >
+                  <option value="">{clienteSel ? 'SIN MONEDA en Empresas' : '—'}</option>
+                  <option value="USD">USD — Dólares</option>
+                  <option value="MXN">MXN — Pesos</option>
+                </select>
               </div>
 
               <div className="tc-campo">
@@ -2158,8 +2184,12 @@ export function TarifarioClientesDashboard() {
                 </label>
                 <label className="tc-campo">
                   <span>Status{ast('status')}</span>
-                  <input type="text" className="form-control" list="tcListaStatusCli" placeholder="Buscar..." value={lineaEditor.status} onChange={(e) => setLineaEditor((p) => (p ? { ...p, status: e.target.value } : p))} />
-                  <datalist id="tcListaStatusCli">{STATUS_TARIFARIO.map((st) => <option key={st} value={st} />)}</datalist>
+                  {/* ✅ V00302: lista desplegable (antes era texto con sugerencias) */}
+                  <select className="form-control" value={lineaEditor.status} onChange={(e) => setLineaEditor((p) => (p ? { ...p, status: e.target.value } : p))}>
+                    <option value="">— Elegir —</option>
+                    {STATUS_TARIFARIO.map((st) => <option key={st} value={st}>{st}</option>)}
+                    {!!lineaEditor.status && !STATUS_TARIFARIO.includes(lineaEditor.status as typeof STATUS_TARIFARIO[number]) && <option value={lineaEditor.status}>{lineaEditor.status}</option>}
+                  </select>
                 </label>
               </div>
               <div className="tc-modal-pie">
