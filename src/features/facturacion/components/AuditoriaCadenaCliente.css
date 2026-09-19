@@ -53,3 +53,48 @@
   .acc-columnas { grid-template-columns: 1fr; }
   .acc-col-scroll { max-height: 30vh; }
 }
+
+/* ✅ V00321: ventana más ancha, acciones por tarjeta, problemas y monedas */
+.acc-modal { width: min(1720px, 98.5vw); }
+.acc-tarjeta--clic { cursor: pointer; }
+.acc-tarjeta--clic:hover { border-color: #8957e5; }
+.acc-tarjeta--activa { box-shadow: 0 0 0 1px #8957e5; border-color: #8957e5; }
+.acc-clic { cursor: pointer; }
+.acc-item-acciones { display: flex; gap: 6px; margin-top: 6px; }
+.acc-btn-mini { padding: 2px 10px; border: 1px solid #30363d; border-radius: 999px; background: transparent; color: #8b949e; font-size: 0.7rem; font-weight: 700; cursor: pointer; }
+.acc-btn-mini:hover { border-color: #58a6ff; color: #58a6ff; }
+.acc-chip-moneda--distinta { border-color: #f0b72f; color: #f0b72f; }
+.acc-sub-overlay { z-index: 2300; }
+.acc-sub-modal { width: min(720px, 94vw); max-height: 84vh; overflow-y: auto; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; }
+.acc-sub-modal--form { width: min(460px, 94vw); }
+.acc-marco-sub { border: 1px solid #30363d; border-radius: 8px; overflow: auto; max-height: 50vh; }
+.acc-tabla-sub { width: 100%; border-collapse: collapse; font-size: 0.78rem; white-space: nowrap; }
+.acc-tabla-sub th { position: sticky; top: 0; background: #161b22; color: #8b949e; text-transform: uppercase; font-size: 0.68rem; padding: 8px 10px; text-align: left; border-bottom: 1px solid #30363d; }
+.acc-tabla-sub td { padding: 7px 10px; border-bottom: 1px solid #21262d; color: #c9d1d9; }
+.acc-campo { display: flex; flex-direction: column; gap: 4px; color: #8b949e; font-size: 0.8rem; }
+.acc-nota { color: #8b949e; font-size: 0.74rem; margin: 2px 0 0 0; border-left: 3px solid #30363d; padding-left: 8px; }
+.acc-sub-acciones { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }
+
+/* ✅ V00321: ventana más ancha, acciones por tarjeta, problemas y monedas */
+.acc-modal { width: min(1760px, 98vw); }
+.acc-overlay-2 { z-index: 2300; }
+.acc-tarjeta--btn { cursor: pointer; text-align: left; font: inherit; }
+.acc-tarjeta--btn:disabled { cursor: default; }
+.acc-tarjeta--activa { box-shadow: 0 0 0 2px #f85149; }
+.acc-item--clic { cursor: pointer; }
+.acc-item--clic:hover { border-color: #58a6ff; }
+.acc-item--problema { border-color: #f85149; box-shadow: 0 0 0 1px #f85149; background: rgba(248, 81, 73, 0.10); }
+.acc-acciones { display: inline-flex; gap: 4px; flex-shrink: 0; }
+.acc-mini { border: 1px solid #30363d; background: #0d1117; color: #c9d1d9; border-radius: 6px; padding: 1px 6px; font-size: 0.72rem; cursor: pointer; line-height: 1.4; }
+.acc-mini:hover { border-color: #58a6ff; color: #58a6ff; }
+.acc-chip-moneda--difiere { border-color: #f0b72f; color: #f0b72f; background: rgba(240, 183, 47, 0.10); }
+.acc-detalle-modal { width: min(760px, 94vw); max-height: 88vh; display: flex; flex-direction: column; padding: 16px 18px; }
+.acc-detalle-scroll { overflow-y: auto; }
+.acc-detalle-tabla { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+.acc-detalle-tabla td { padding: 6px 10px; border-bottom: 1px solid #21262d; vertical-align: top; }
+.acc-detalle-campo { color: #8b949e; white-space: nowrap; font-weight: 600; }
+.acc-detalle-valor { color: #c9d1d9; word-break: break-word; }
+.acc-edit-modal { width: min(480px, 94vw); padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+.acc-edit-label { display: flex; flex-direction: column; gap: 4px; color: #8b949e; font-size: 0.8rem; }
+.acc-edit-nota { margin: 0; color: #8b949e; font-size: 0.76rem; line-height: 1.45; }
+.acc-edit-acciones { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
