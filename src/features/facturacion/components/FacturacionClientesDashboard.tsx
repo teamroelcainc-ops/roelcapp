@@ -10,6 +10,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { AuditoriaCadenaCliente } from './AuditoriaCadenaCliente'; // ✅ V00318
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { EditorOperacionEmbebido } from '../../operaciones/components/EditorOperacionEmbebido';
 import { HiloModal } from '../../hilo/HiloModal';
@@ -460,6 +461,7 @@ const obtenerMontoOperacion = (op: any) => {
 
 export const FacturacionClientesDashboard = () => {
   const [activeTab, setActiveTab] = useState<'operaciones' | 'historial' | 'pagadas'>('operaciones');
+  const [mostrarAuditoria, setMostrarAuditoria] = useState(false); // ✅ V00318
   // ✅ V00126: "Pagadas" reutiliza toda la vista de Historial filtrando facturas liquidadas
   const esHistorial = activeTab === 'historial' || activeTab === 'pagadas';
   // ✅ V00126: mapa facturaId → número(s) de pago (colección `pagos`, en vivo)
@@ -3164,12 +3166,17 @@ export const FacturacionClientesDashboard = () => {
         <EditorOperacionEmbebido operacionId={opEditandoId} operacion={operacionesGlobales.find((o: any) => String(o.id) === opEditandoId)} onClose={() => setOpEditandoId(null)} />
       )}
       <h1 className="fcd-x31">Facturación de Clientes</h1>
+      {mostrarAuditoria && (
+        <AuditoriaCadenaCliente onCerrar={() => setMostrarAuditoria(false)} montoOperacion={(op) => obtenerMontoOperacion(op)} totalNativo={(f) => totalNativoFactura(f)} />
+      )}{/* ✅ V00318 */}
 
       <div className="fcd-x32">
         <button onClick={() => setActiveTab('operaciones')} style={tabStyle(activeTab === 'operaciones')}>Asignar Operaciones</button>
         <button onClick={() => setActiveTab('historial')} style={tabStyle(activeTab === 'historial')}>Historial de Facturas</button>
         {/* ✅ V00126: facturas liquidadas con su # de pago */}
         <button onClick={() => setActiveTab('pagadas')} style={tabStyle(activeTab === 'pagadas')}>Pagadas</button>
+        {/* ✅ V00318: verificación de la cadena Operación → Factura → Pago */}
+        <button type="button" className="fcd-btn-auditoria" title="Verificar por cliente que cada operación esté facturada con el monto vigente y que cada factura cuadre con sus pagos" onClick={() => setMostrarAuditoria(true)}>🔍 Auditar cliente</button>
         <button onClick={recargarTodo} disabled={cargandoOperaciones || cargandoFacturas}
           title="Vuelve a leer operaciones y facturas desde la base de datos (limpia la caché)"
           style={{ marginLeft: 'auto', marginBottom: '6px', display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '8px', color: '#c9d1d9', cursor: (cargandoOperaciones || cargandoFacturas) ? 'wait' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem', opacity: (cargandoOperaciones || cargandoFacturas) ? 0.6 : 1 }}>

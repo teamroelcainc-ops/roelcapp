@@ -1,0 +1,32 @@
+/* ✅ V00318: Auditoría de la cadena Operación → Factura → Pago */
+.acc-overlay { z-index: 2200; }
+.acc-modal { width: min(1240px, 96vw); max-height: 92vh; display: flex; flex-direction: column; padding: 18px 20px; }
+.acc-encabezado { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.acc-titulo { margin: 0 0 4px 0; color: #f0f6fc; font-size: 1.02rem; }
+.acc-sub { margin: 0 0 12px 0; color: #8b949e; font-size: 0.82rem; }
+.acc-buscador { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 12px; }
+.acc-lookup { position: relative; flex: 1 1 auto; max-width: 420px; }
+.acc-lista { position: absolute; top: 100%; left: 0; right: 0; background: #161b22; border: 1px solid #30363d; border-radius: 8px; z-index: 5; max-height: 240px; overflow-y: auto; }
+.acc-opcion { padding: 8px 12px; color: #c9d1d9; cursor: pointer; font-size: 0.85rem; }
+.acc-opcion:hover { background: #1f6feb33; }
+.acc-btn-auditar { padding: 9px 20px; font-weight: 700; }
+.acc-btn-excel { border-color: #238636; color: #3fb950; font-weight: 700; }
+.acc-cuerpo { overflow-y: auto; }
+.acc-tarjetas { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.acc-tarjeta { background: #0d1117; border: 1px solid #30363d; border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 3px; }
+.acc-tarjeta--ok { border-color: #238636; }
+.acc-tarjeta--mal { border-color: #f85149; }
+.acc-tarjeta-num { color: #f0f6fc; font-weight: 800; font-size: 1.05rem; }
+.acc-tarjeta-lbl { color: #8b949e; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.4px; }
+.acc-seccion { margin: 10px 0 6px 0; color: #f0f6fc; font-size: 0.9rem; }
+.acc-marco { border: 1px solid #30363d; border-radius: 8px; overflow: auto; max-height: 34vh; margin-bottom: 8px; }
+.acc-tabla { width: 100%; border-collapse: collapse; font-size: 0.78rem; white-space: nowrap; }
+.acc-tabla th { position: sticky; top: 0; background: #161b22; color: #8b949e; text-transform: uppercase; font-size: 0.68rem; padding: 8px 10px; text-align: left; border-bottom: 1px solid #30363d; z-index: 2; }
+.acc-tabla td { padding: 7px 10px; border-bottom: 1px solid #21262d; color: #c9d1d9; }
+.acc-ref { color: #58a6ff; font-weight: 700; }
+.acc-monto { text-align: right; font-variant-numeric: tabular-nums; }
+.acc-detalle { white-space: normal; min-width: 260px; }
+.acc-ok td { background: rgba(35, 134, 54, 0.06); }
+.acc-alerta td { background: rgba(240, 183, 47, 0.08); }
+.acc-mal td { background: rgba(248, 81, 73, 0.10); }
+.acc-info td { opacity: 0.8; }

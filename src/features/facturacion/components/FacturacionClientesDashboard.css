@@ -520,3 +520,7 @@
 .fcd-docfactura-ver { background: none; border: 1px solid #238636; border-radius: 6px; color: #3fb950; padding: 4px 10px; font-size: 0.8rem; cursor: pointer; }
 .fcd-docfactura-ver:hover { background: rgba(35, 134, 54, 0.12); }
 .fcd-docfactura-btn { cursor: pointer; }
+
+/* ✅ V00318: botón de la auditoría de la cadena */
+.fcd-btn-auditoria { margin-left: 12px; margin-bottom: 6px; padding: 8px 14px; background-color: #161b22; border: 1px solid #8957e5; border-radius: 8px; color: #bc8cff; cursor: pointer; font-weight: 700; font-size: 0.85rem; }
+.fcd-btn-auditoria:hover { background-color: rgba(137, 87, 229, 0.15); }
