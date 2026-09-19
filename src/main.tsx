@@ -22,6 +22,24 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+// ✅ V00316: AUTO-REPARACIÓN de módulos "desordenados" — cada módulo carga
+//   bajo demanda (chunk JS + su CSS con hash). Si se publicó una versión
+//   mientras la app estaba abierta, al ENTRAR a un módulo la pestaña vieja
+//   pide chunks que ya no existen: si falla el CSS, el módulo se pinta solo
+//   con estilos globales y se ve DESORDENADO. Vite avisa con
+//   vite:preloadError → se recarga UNA sola vez para tomar la versión
+//   completa (candado anti-bucle en sessionStorage, que se libera a los 15 s
+//   de una carga sana para poder auto-repararse en publicaciones futuras).
+window.addEventListener('vite:preloadError', (event) => {
+  event.preventDefault(); // el error se resuelve recargando; no ensucia consola
+  try {
+    if (sessionStorage.getItem('roelca_recarga_por_chunk') === '1') return;
+    sessionStorage.setItem('roelca_recarga_por_chunk', '1');
+  } catch { /* almacenamiento bloqueado: recargar de todos modos */ }
+  window.location.reload();
+});
+try { setTimeout(() => sessionStorage.removeItem('roelca_recarga_por_chunk'), 15000); } catch { /* noop */ }
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
