@@ -461,3 +461,8 @@
 .ed-uso-rol { border: 1px solid #30363d; border-radius: 999px; padding: 4px 12px; font-size: 0.78rem; color: #c9d1d9; background: #0d1117; }
 .ed-uso-rol b { color: #58a6ff; }
 .ed-uso-rol--cero { opacity: 0.45; }
+
+/* ✅ V00317: botón del Excel combinado en la pestaña Referencias */
+.ed-refs-chip--excel { margin-left: auto; border-color: #238636; color: #3fb950; font-weight: 700; }
+.ed-refs-chip--excel:hover:not(:disabled) { background-color: rgba(35, 134, 54, 0.15); }
+.ed-refs-chip--excel:disabled { opacity: 0.55; cursor: wait; }

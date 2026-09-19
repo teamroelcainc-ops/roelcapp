@@ -704,6 +704,49 @@ const EmpresasDashboard = () => {
   };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc de factura sin tipo canónico.
   const montoFactura = (f: any): number => Number(f?.subtotalFactura) || Number(f?.total) || Number(f?.montoFactura) || 0;
+  // ✅ V00317: EXCEL de la empresa — operaciones, facturación y pagos JUNTOS
+  //   (un archivo con tres hojas), con las mismas columnas de la pestaña.
+  const descargarExcelReferencias = () => {
+    if (!empresaViendo) return;
+    if (!refsCliente || !refsFacturas || !refsPagos) { alert('Espera a que terminen de cargar las referencias.'); return; }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docs sin tipo canónico (mismo criterio del módulo).
+    const hojaOps = refsCliente.map((op: any) => ({
+      'Referencia': String(op.ref || op.id || ''),
+      'Fecha de Servicio': String(op.fechaServicio || ''),
+      'Tipo de Operación': String(op.tipoOperacionNombre || ''),
+      'Convenio': convenioDeOperacion(op),
+      'Status': String(op.statusNombre || ''),
+      'Papel de la Empresa': Array.isArray(op._roles) ? op._roles.join(', ') : '',
+      'Monto Cliente': Number(op.montoConvenioCliente) || 0,
+      'Monto Proveedor': Number(op.totalAPagarProv) || 0,
+    }));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docs sin tipo canónico.
+    const hojaFact = refsFacturas.map((f: any) => ({
+      'Invoice': invoiceDe(f) || '',
+      'Como': String(f._tipo || ''),
+      'Fecha': String(f.fecha || f.fechaFactura || ''),
+      'Total': montoFactura(f),
+      'Moneda': String(f.moneda || ''),
+      'Status': String(f.status || ''),
+      '# Operaciones': Array.isArray(f.operaciones) ? f.operaciones.length : 0,
+    }));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docs sin tipo canónico.
+    const hojaPagos = refsPagos.map((pg: any) => ({
+      '# Pago': String(pg.numeroPago || pg.id || ''),
+      'Fecha': String(pg.fecha || ''),
+      'Método': String(pg.metodoPago || ''),
+      'Monto': Number(pg.monto) || 0,
+      'Moneda': String(pg.moneda || ''),
+      '# Facturas': Array.isArray(pg.facturas) ? pg.facturas.length : 0,
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaOps.length ? hojaOps : [{ 'Sin registros': '' }]), 'Operaciones');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaFact.length ? hojaFact : [{ 'Sin registros': '' }]), 'Facturación');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaPagos.length ? hojaPagos : [{ 'Sin registros': '' }]), 'Pagos');
+    const nombreArchivo = String(empresaViendo.nombre || 'empresa').replace(/[\\/:*?"<>|]/g, '-').slice(0, 80);
+    XLSX.writeFile(wb, `${nombreArchivo} - operaciones, facturacion y pagos.xlsx`);
+  };
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc de operación sin tipo canónico.
   const convenioDeOperacion = (op: any): string => {
     const directo = op?.convenioNombre || op?.convenioTarifaNombre || op?.tarifaNombre;
@@ -1809,6 +1852,10 @@ const EmpresasDashboard = () => {
                             {etiqueta} <b>{datos ? datos.length : '…'}</b>
                           </button>
                         ))}
+                        {/* ✅ V00317: un solo Excel con operaciones + facturación + pagos */}
+                        <button type="button" className="ed-refs-chip ed-refs-chip--excel" disabled={!refsCliente || !refsFacturas || !refsPagos} title="Descargar UN Excel con tres hojas: Operaciones, Facturación y Pagos de esta empresa" onClick={descargarExcelReferencias}>
+                          ⬇ Excel (ops + facturación + pagos)
+                        </button>
                       </div>
 
                       {seccionRefs === 'operaciones' && (

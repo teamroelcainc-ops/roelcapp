@@ -482,10 +482,18 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
 
   // ✅ V00240: REARMAR NOMBRES — recalcula la descripción de todos los
   //   convenios y la propaga al nombre guardado en las operaciones.
+  // ✅ V00317: además REPARA los nombres que aún traen el # de convenio
+  //   incrustado ("CONV-077 - …"): limpia el nombre del detalle, las líneas
+  //   del tarifario y el nombre guardado en las operaciones.
+  const sinConsec = (v: string): string => {
+    let t = String(v || '').trim(); let prev = '';
+    while (t !== prev) { prev = t; t = t.replace(/^(CONV|TARI|TARP)-\d+\s*[-·—:]\s*/i, '').trim(); }
+    return t;
+  };
   const [rearmando, setRearmando] = useState(false);
   const rearmarNombres = async () => {
     if (rearmando) return;
-    if (!window.confirm('¿Rearmar la descripción de TODOS los convenios y actualizar el nombre en sus operaciones?')) return;
+    if (!window.confirm('¿Rearmar la descripción de TODOS los convenios (quitando el # CONV-### de los nombres), limpiar las líneas del tarifario y actualizar el nombre en sus operaciones?')) return;
     setRearmando(true);
     try {
       // Catálogos necesarios (tarifarios y municipios).
@@ -514,17 +522,39 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         // ✅ V00314: TARIFA (catálogo) + ruta — sin el CONV-### (el consecutivo
         //   tiene su propia columna; al sincronizar se LIMPIAN los guardados).
         void tarId;
-        const desc = [String(x.tipoConvenioNombre || ''), munNombre[String(x.origen || '')] || '', munNombre[String(x.destino || '')] || '']
+        const nombreLimpio = sinConsec(String(x.tipoConvenioNombre || '')); // ✅ V00317
+        const desc = [nombreLimpio, munNombre[String(x.origen || '')] || '', munNombre[String(x.destino || '')] || '']
           .filter(Boolean).join(' - ');
         if (!desc) continue;
         descPorDetalle[d.id] = desc;
-        if (String(x.descripcionConvenio || '') !== desc) {
-          lote.update(d.ref, { descripcionConvenio: desc });
+        const cambios: Record<string, string> = {};
+        if (String(x.descripcionConvenio || '') !== desc) cambios.descripcionConvenio = desc;
+        if (nombreLimpio && nombreLimpio !== String(x.tipoConvenioNombre || '')) cambios.tipoConvenioNombre = nombreLimpio; // ✅ V00317
+        if (Object.keys(cambios).length > 0) {
+          lote.update(d.ref, cambios);
           nDet += 1; enLote += 1;
           if (enLote >= 400) { await lote.commit(); lote = writeBatch(db); enLote = 0; }
         }
       }
       if (enLote > 0) await lote.commit();
+
+      // ✅ V00317: 1.5) Las LÍNEAS del tarifario también se limpian del # CONV.
+      let lote15 = writeBatch(db); let enLote15 = 0; let nTar = 0;
+      for (const d of snapTar.docs) {
+        const t = d.data() as Record<string, unknown>;
+        const lineas = Array.isArray(t.tarifas) ? (t.tarifas as Record<string, unknown>[]) : [];
+        let cambio = false;
+        const nuevas = lineas.map((l) => {
+          const limpia = sinConsec(String((l as Record<string, unknown>)?.descripcion || ''));
+          if (limpia && limpia !== String((l as Record<string, unknown>)?.descripcion || '')) { cambio = true; return { ...l, descripcion: limpia }; }
+          return l;
+        });
+        if (!cambio) continue;
+        lote15.update(d.ref, { tarifas: nuevas });
+        nTar += 1; enLote15 += 1;
+        if (enLote15 >= 200) { await lote15.commit(); lote15 = writeBatch(db); enLote15 = 0; }
+      }
+      if (enLote15 > 0) await lote15.commit();
 
       // 2) Nombre guardado en las operaciones.
       const campoOp = esClientes ? 'convenio' : 'convenioProveedor';
@@ -541,7 +571,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       }
       if (enLote2 > 0) await lote2.commit();
 
-      alert(`Nombres rearmados. ✅\n\n· Convenios actualizados: ${nDet}\n· Operaciones actualizadas: ${nOps}`);
+      alert(`Nombres rearmados y LIMPIOS del # de convenio. ✅\n\n· Convenios actualizados: ${nDet}\n· Tarifarios con líneas limpiadas: ${nTar}\n· Operaciones actualizadas: ${nOps}`);
       await cargar(true);
     } catch (e) {
       console.error('No se pudieron rearmar los nombres:', e);
@@ -1308,7 +1338,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         <button className="btn dcv-btn-agregar" onClick={abrirAlta}>+ Agregar</button>
         {/* ✅ V00240: rearmar descripciones y propagarlas a las operaciones */}
         <button className="btn btn-outline dcv-btn-rearmar" disabled={rearmando} onClick={rearmarNombres}>
-          {rearmando ? 'Rearmando…' : '⟳ Rearmar nombres'}
+          {rearmando ? 'Rearmando…' : '🧽 Reparar nombres (quitar # CONV)'}
         </button>
         {/* ✅ V00305: llave foránea + reconciliación línea↔convenio + verificación */}
         <button className="btn btn-outline dcv-btn-reparar" disabled={reparando} title="Escribe la llave foránea (tarifarioId) en todos los convenios y deja el detalle del tarifario IGUAL al detalle del convenio; al final reporta los que queden sin tarifa, moneda o costo" onClick={repararRelacion}>
