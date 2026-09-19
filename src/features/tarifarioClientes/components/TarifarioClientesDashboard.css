@@ -432,3 +432,22 @@
 
 /* ✅ V00304: botón "+ Agregar tarifa" arriba, dentro del grid de datos */
 .tc-btn-agregar-linea--arriba { align-self: flex-start; margin-top: 2px; }
+
+/* ✅ V00309: el LISTADO de pre convenios vive en su propio marco con scroll
+   INTERNO — el encabezado (sticky de .tc-tabla thead) queda FIJO al bajar y la
+   barra horizontal está SIEMPRE a la vista al pie del marco. Aplica también a
+   Tarifario Proveedores (comparte este CSS). */
+.tc-marco--lista {
+  max-height: calc(100vh - 320px);
+  min-height: 280px;
+  scrollbar-width: thin; scrollbar-color: #30363d #161b22; /* Firefox: barra visible */
+}
+/* Chrome/Edge (también en macOS, donde el sistema la oculta): barra permanente */
+.tc-marco--lista::-webkit-scrollbar { height: 12px; width: 12px; }
+.tc-marco--lista::-webkit-scrollbar-track { background: #161b22; border-radius: 0 0 8px 8px; }
+.tc-marco--lista::-webkit-scrollbar-thumb { background: #30363d; border-radius: 6px; border: 2px solid #161b22; }
+.tc-marco--lista::-webkit-scrollbar-thumb:hover { background: #58a6ff; }
+
+/* ✅ V00309: encabezados ordenables con clic */
+.tc-th-orden { cursor: pointer; user-select: none; }
+.tc-th-orden:hover { color: #58a6ff; }

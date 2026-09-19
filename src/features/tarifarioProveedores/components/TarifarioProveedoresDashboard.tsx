@@ -138,6 +138,9 @@ const IconoEliminar = () => (
 
 // ✅ V00198: los 4 estados y su chip.
 const STATUS_TARIFARIO = ['Pendiente', 'Aprobado', 'Inactivo', 'Cancelado'] as const;
+
+// ✅ V00309: columnas ordenables del listado de pre convenios
+type ColOrdenLista = 'consecutivo' | 'emision' | 'vence' | 'entidad' | 'moneda' | 'credito' | 'tarifas' | 'status';
 const chipStatus = (st: unknown): string => {
   const v = String(st || 'Pendiente');
   if (v === 'Aprobado') return 'tc-chip tc-chip-aprobado';
@@ -236,6 +239,11 @@ export function TarifarioProveedoresDashboard() {
   const [filtroStatus, setFiltroStatus] = useState('');
   const [filtroEntidad, setFiltroEntidad] = useState('');
   const [filtroMoneda, setFiltroMoneda] = useState('');
+  // ✅ V00309: orden por columna — 1er clic ▲ creciente, 2do ▼ decreciente,
+  //   3er clic quita la flecha y regresa al orden original (último capturado primero).
+  const [ordenCol, setOrdenCol] = useState<{ col: ColOrdenLista; asc: boolean } | null>(null);
+  const clicOrden = (col: ColOrdenLista) => setOrdenCol((p) => (!p || p.col !== col) ? { col, asc: true } : (p.asc ? { col, asc: false } : null));
+  const flechaOrden = (col: ColOrdenLista) => (ordenCol?.col === col ? (ordenCol.asc ? ' ▲' : ' ▼') : '');
 
   // ✅ V00220: si se llegó aquí desde una referencia clicable, el buscador
   //   arranca con esa referencia.
@@ -445,7 +453,7 @@ export function TarifarioProveedoresDashboard() {
   // ✅ V00219: lista filtrada (buscador de texto + proveedor + status + moneda).
   const registrosVisibles = useMemo(() => {
     const b = norm(busquedaLista);
-    return registros.filter((r) => {
+    const filtrados = registros.filter((r) => {
       if (filtroStatus && String(r.status || 'Pendiente') !== filtroStatus) return false;
       if (filtroEntidad && String(r.proveedorNombre || '') !== filtroEntidad) return false;
       if (filtroMoneda && canonMoneda(r.moneda) !== filtroMoneda) return false;
@@ -455,7 +463,29 @@ export function TarifarioProveedoresDashboard() {
       return norm(r.proveedorNombre).includes(b) || norm(r.consecutivo).includes(b) ||
         norm(r.id).includes(b) || norm(r.fecha).includes(b) || enTarifas;
     });
-  }, [registros, busquedaLista, filtroStatus, filtroEntidad, filtroMoneda]);
+    // ✅ V00309: si hay columna elegida (flecha visible), ese orden manda;
+    //   sin flecha, queda el orden original (último capturado primero).
+    if (!ordenCol) return filtrados;
+    const valorDe = (r: Doc): string | number => {
+      switch (ordenCol.col) {
+        case 'consecutivo': return parseInt(String(r.consecutivo || '').replace(/\D/g, ''), 10) || 0;
+        case 'emision': return String(r.fecha || '');
+        case 'vence': return String(r.fechaVencimiento || '').trim() || `${String(r.fecha || '').slice(0, 4)}-12-31`;
+        case 'entidad': return razonSocialDe(r);
+        case 'moneda': return canonMoneda(r.moneda);
+        case 'credito': return Number(r.creditoDias) || 0;
+        case 'tarifas': return Array.isArray(r.tarifas) ? r.tarifas.length : 0;
+        case 'status': return String(r.status || 'Pendiente');
+      }
+    };
+    const dir = ordenCol.asc ? 1 : -1;
+    return [...filtrados].sort((a, b) => {
+      const va = valorDe(a), vb = valorDe(b);
+      const c = (typeof va === 'number' && typeof vb === 'number') ? va - vb : String(va).localeCompare(String(vb), 'es', { sensitivity: 'base' });
+      return c * dir;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [registros, busquedaLista, filtroStatus, filtroEntidad, filtroMoneda, ordenCol]);
 
   const entidadesLista = useMemo(
     () => Array.from(new Set(registros.map((r) => String(r.proveedorNombre || '')).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' })),
@@ -1690,10 +1720,20 @@ export function TarifarioProveedoresDashboard() {
         {registros.length === 0 ? (
           <p className="tc-vacio">Aún no hay pre convenios capturados. Usa "+ Nuevo Tarifario" para crear el primero.</p>
         ) : (
-          <div className="tc-marco">
+          <div className="tc-marco tc-marco--lista">{/* ✅ V00309: scroll interno — encabezado fijo y barra horizontal siempre visible */}
             <table className="tc-tabla">
               <thead>
-                <tr><th>ACCIONES</th><th>CONSECUTIVO</th><th>EMISIÓN</th><th>VENCE</th>{/* ✅ V00212 */}<th>PROVEEDOR</th><th>MONEDA</th><th>CRÉDITO</th><th>TARIFAS</th><th>STATUS</th></tr>{/* ✅ V00205: acciones primero */}
+                <tr>{/* ✅ V00309: clic en la columna = ordenar (↑, ↓, tercer clic regresa al orden original) */}
+                  <th>ACCIONES</th>
+                  <th className="tc-th-orden" title="Ordenar por consecutivo" onClick={() => clicOrden('consecutivo')}>CONSECUTIVO{flechaOrden('consecutivo')}</th>
+                  <th className="tc-th-orden" title="Ordenar por fecha de emisión" onClick={() => clicOrden('emision')}>EMISIÓN{flechaOrden('emision')}</th>
+                  <th className="tc-th-orden" title="Ordenar por vencimiento" onClick={() => clicOrden('vence')}>VENCE{flechaOrden('vence')}</th>{/* ✅ V00212 */}
+                  <th className="tc-th-orden" title="Ordenar por nombre" onClick={() => clicOrden('entidad')}>PROVEEDOR{flechaOrden('entidad')}</th>
+                  <th className="tc-th-orden" title="Ordenar por moneda" onClick={() => clicOrden('moneda')}>MONEDA{flechaOrden('moneda')}</th>
+                  <th className="tc-th-orden" title="Ordenar por días de crédito" onClick={() => clicOrden('credito')}>CRÉDITO{flechaOrden('credito')}</th>
+                  <th className="tc-th-orden" title="Ordenar por número de tarifas" onClick={() => clicOrden('tarifas')}>TARIFAS{flechaOrden('tarifas')}</th>
+                  <th className="tc-th-orden" title="Ordenar por status" onClick={() => clicOrden('status')}>STATUS{flechaOrden('status')}</th>
+                </tr>
               </thead>
               <tbody>
                 {registrosVisibles.map((r) => (
