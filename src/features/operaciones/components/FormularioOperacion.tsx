@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo, useCallback, useRef, cloneElement } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, cloneElement, Fragment } from 'react';
 import { createPortal } from 'react-dom'; // ✅ V00264: el formulario vive en document.body
-import { doc, getDoc, updateDoc, collection, getDocs, setDoc, addDoc, query, where, limit } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, getDocs, setDoc, addDoc, query, where, limit, onSnapshot } from 'firebase/firestore';
 import { prefijoTipoOperacion } from '../../../utils/generarReferencia';
 import { db, storage, auth } from '../../../config/firebase';
 import { EditorTarifaOrigenDestino } from './EditorTarifaOrigenDestino'; // ✅ V00224
@@ -638,6 +638,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   useEffect(() => { setConvClientesLocal(catalogosCacheados?.catalogoConvClientes || []); }, [catalogosCacheados?.catalogoConvClientes]);
   // ✅ V00202: tarifarios de clientes — sus clientes también aparecen en la operación.
   const [tarifariosLocal, setTarifariosLocal] = useState<any[]>([]);
+  // ✅ V00313: tarifa ALTERNA elegida en el modal (convenios con varios montos).
+  //   El efecto que trae el monto vigente la respeta mientras siga elegido ese convenio.
+  const montoAltCliRef = useRef<{ id: string; monto: number } | null>(null);
+  const montoAltProvRef = useRef<{ id: string; monto: number } | null>(null);
+  const [convMontosAbierto, setConvMontosAbierto] = useState('');
   useEffect(() => { setTarifariosLocal(catalogosCacheados?.catalogoTarifarios || []); }, [catalogosCacheados?.catalogoTarifarios]);
   // ✅ V00281: RESPALDO — si el caché llegó sin tarifarios (o vacío), se cargan
   //   directo para que el # de tarifario del modal aparezca de inmediato.
@@ -680,12 +685,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       { alias: 'empleados',                coleccion: 'empleados',                      setter: setEmpleadosLocalState },
       { alias: 'tarifas',                  coleccion: 'catalogo_tarifas_referencia',    setter: setTarifasLocal },
       { alias: 'embalajes',                coleccion: 'catalogo_embalaje',              setter: setEmbalajesLocal },
-      { alias: 'catalogoConvClientes',     coleccion: 'convenios_clientes',             setter: setConvClientesLocal },
-      { alias: 'catalogoConvDetalles',     coleccion: 'convenios_clientes_detalles',    setter: setConvDetallesLocal },
-      { alias: 'catalogoTarifarios',       coleccion: 'tarifario_clientes',             setter: setTarifariosLocal }, // ✅ V00202
-      { alias: 'catalogoTarifariosProv',   coleccion: 'tarifario_proveedores',          setter: setTarifariosProvLocal }, // ✅ V00211
-      { alias: 'conveniosProv',            coleccion: 'convenios_proveedores',          setter: setConvProvLocal },
-      { alias: 'catalogoConvProvDetalles', coleccion: 'convenios_proveedores_detalles', setter: setConvProvDetallesLocal },
+      /* ✅ V00313: convenios/detalles/tarifarios pasan a onSnapshot EN VIVO (abajo) —
+         cambios en Convenio de Clientes/Proveedores o en los tarifarios se
+         reflejan AL MOMENTO en este formulario y su modal. */
       { alias: 'tarifasGastosIncluidos',   coleccion: 'tarifas_gastos_incluidos',       setter: setGastosIncluidosLocal },
       { alias: 'tarifasRendimiento',       coleccion: 'tarifas_rendimiento',            setter: setRendimientoLocal },
       { alias: 'tiposGastos',              coleccion: 'catalogo_tipos_gastos',          setter: setTiposGastosLocal },
@@ -708,6 +710,27 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     })();
     return () => { activo = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ✅ V00313: BASE RELACIONAL EN VIVO — mientras el formulario está abierto,
+  //   convenios (maestros y detalles) y tarifarios de AMBOS lados se escuchan
+  //   con onSnapshot: editar en Convenio de Clientes/Proveedores o en los
+  //   tarifarios se ve al instante aquí (tabla del modal, montos y monedas).
+  useEffect(() => {
+    const vivas = [
+      { alias: 'catalogoConvClientes',     coleccion: 'convenios_clientes',             setter: setConvClientesLocal },
+      { alias: 'catalogoConvDetalles',     coleccion: 'convenios_clientes_detalles',    setter: setConvDetallesLocal },
+      { alias: 'catalogoTarifarios',       coleccion: 'tarifario_clientes',             setter: setTarifariosLocal },
+      { alias: 'catalogoTarifariosProv',   coleccion: 'tarifario_proveedores',          setter: setTarifariosProvLocal },
+      { alias: 'conveniosProv',            coleccion: 'convenios_proveedores',          setter: setConvProvLocal },
+      { alias: 'catalogoConvProvDetalles', coleccion: 'convenios_proveedores_detalles', setter: setConvProvDetallesLocal },
+    ];
+    const bajas = vivas.map(({ alias, coleccion, setter }) => onSnapshot(collection(db, coleccion), (snap) => {
+      const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setter(docs);
+      try { if (docs.length > 0) localStorage.setItem(`cat_v2__${alias}`, JSON.stringify({ ts: Date.now(), data: docs })); } catch { /* noop */ }
+    }, (e) => console.error(`Suscripción en vivo "${coleccion}":`, e)));
+    return () => { bajas.forEach((b) => b()); };
   }, []);
 
   useEffect(() => {
@@ -1477,10 +1500,13 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     //   cliente cuando tiene uno solo.
     const tariPorConvenioId = new Map<string, string>();
     const tariPorConsecConvenio = new Map<string, string>(); // ✅ V00281: tarifas[] del tarifario → CONV
+    const consecPorTariId = new Map<string, string>(); // ✅ V00313: id del doc → TARI-###
     const tarisDelCliente: string[] = [];
     (tarifariosLocal || []).forEach((t: { consecutivo?: unknown; id?: unknown; convenioId?: unknown; clienteId?: unknown; proveedorId?: unknown; status?: unknown; tarifas?: unknown }) => {
       const consec = String(t.consecutivo || t.id || '').trim();
       if (!consec) return;
+      consecPorTariId.set(String(t.id || '').trim(), consec); // ✅ V00313
+      consecPorTariId.set(consec, consec); // ✅ V00313: si ya viene como TARI-### queda igual
       const convId = String(t.convenioId || '').trim();
       if (convId && !tariPorConvenioId.has(convId)) tariPorConvenioId.set(convId, consec);
       // ✅ V00281: la relación MÁS DIRECTA — cada tarifario guarda sus tarifas
@@ -1493,7 +1519,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     });
     const resolverTariDetalle = (d: { tarifarioId?: unknown; tarifario_id?: unknown; tarifario?: unknown; convenioId?: unknown; consecutivo?: unknown }, maestroId: unknown): string => {
       const directo = String(d?.tarifarioId || d?.tarifario_id || d?.tarifario || '').trim();
-      if (directo) return directo;
+      if (directo) return consecPorTariId.get(directo) || directo; // ✅ V00313: el FK guarda el ID del doc — se muestra su TARI-###
       const porConsec = tariPorConsecConvenio.get(String(d?.consecutivo || '').trim()); // ✅ V00281
       if (porConsec) return porConsec;
       const porMaestro = tariPorConvenioId.get(String(d?.convenioId || maestroId || '').trim());
@@ -1539,6 +1565,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         //   cliente; la descripción calculada es igual para todos y agrupaba
         //   varios convenios en una sola opción.
         id: d.id, tarifaBaseId: tarifaId, descripcion: nombreFinal,
+        // ✅ V00313: montos alternos del convenio (V00304) — habilitan el desplegable Tarifa A/B.
+        montosAlt: (Array.isArray(d.montos) ? d.montos.map((x: unknown) => Number(x)).filter((n: number) => Number.isFinite(n) && n > 0) : []),
         tarifarioConsec: resolverTariDetalle(d, maestroAsociado?.id), // ✅ V00272: # de tarifario resuelto
         statusDetalle: String(d.status || ''), // ✅ V00214
         // ✅ V00126: la moneda del DETALLE manda (se resuelve a id de catálogo aunque venga como texto "Pesos"/"Dólares")
@@ -1596,10 +1624,13 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     //   tarifario aprobado del proveedor.
     const tariPorConvenioIdProv = new Map<string, string>();
     const tariPorConsecConvenioProv = new Map<string, string>(); // ✅ V00281
+    const consecPorTariIdProv = new Map<string, string>(); // ✅ V00313: id del doc → TARP-###
     const tarisDelProveedor: string[] = [];
     (tarifariosProvLocal || []).forEach((t: { consecutivo?: unknown; id?: unknown; convenioId?: unknown; clienteId?: unknown; proveedorId?: unknown; status?: unknown; tarifas?: unknown }) => {
       const consec = String(t.consecutivo || t.id || '').trim();
       if (!consec) return;
+      consecPorTariIdProv.set(String(t.id || '').trim(), consec); // ✅ V00313
+      consecPorTariIdProv.set(consec, consec); // ✅ V00313
       const convId = String(t.convenioId || '').trim();
       if (convId && !tariPorConvenioIdProv.has(convId)) tariPorConvenioIdProv.set(convId, consec);
       (Array.isArray(t.tarifas) ? t.tarifas : []).forEach((lt) => {
@@ -1610,7 +1641,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     });
     const resolverTariDetalleProv = (d: { tarifarioId?: unknown; tarifario_id?: unknown; tarifario?: unknown; convenioId?: unknown; consecutivo?: unknown }, maestroId: unknown): string => {
       const directo = String(d?.tarifarioId || d?.tarifario_id || d?.tarifario || '').trim();
-      if (directo) return directo;
+      if (directo) return consecPorTariIdProv.get(directo) || directo; // ✅ V00313
       const porConsec = tariPorConsecConvenioProv.get(String(d?.consecutivo || '').trim()); // ✅ V00281
       if (porConsec) return porConsec;
       const porMaestro = tariPorConvenioIdProv.get(String(d?.convenioId || maestroId || '').trim());
@@ -1643,6 +1674,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         ...d,
         // ✅ V00249: manda el nombre de la TARIFA (distingue los convenios).
         id: d.id, tarifaBaseId: tarifaId, tipoConvenioNombre: nombreFinal,
+        // ✅ V00313: montos alternos del convenio (V00304) — desplegable Tarifa A/B.
+        montosAlt: (Array.isArray(d.montos) ? d.montos.map((x: unknown) => Number(x)).filter((n: number) => Number.isFinite(n) && n > 0) : []),
         tarifarioConsec: resolverTariDetalleProv(d, maestroParent?.id), // ✅ V00272: # de tarifario (TARP) resuelto
         statusDetalle: String(d.status || ''), // ✅ V00214
         // ✅ V00126: la moneda del DETALLE manda (se resuelve a id de catálogo aunque venga como texto)
@@ -1814,7 +1847,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       try {
         const detalleElegido = listaConveniosCliente.find((c: any) => c.id === formData.convenio);
         if (!detalleElegido) return;
-        setFormData(prev => ({ ...prev, monedaConvenioCliente: detalleElegido.monedaMaestro, montoConvenioCliente: detalleElegido.tarifaMonto }));
+        // ✅ V00313: si en el modal se eligió una tarifa alterna (A/B) de ESTE
+        //   convenio, se respeta; si no, manda el monto vigente del detalle.
+        const alt = montoAltCliRef.current;
+        const montoUsar = alt && alt.id === String(detalleElegido.id) && (detalleElegido.montosAlt || []).includes(alt.monto) ? alt.monto : detalleElegido.tarifaMonto;
+        setFormData(prev => ({ ...prev, monedaConvenioCliente: detalleElegido.monedaMaestro, montoConvenioCliente: montoUsar }));
         const tarifaObj = tarifas?.find((t: any) => t.id === detalleElegido.tarifaBaseId);
         if (!tarifaObj) return;
         const tipoOpId = String(tarifaObj.tipo_operacion);
@@ -2252,6 +2289,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       const actual = Number(formData.montoConvenioCliente) || 0;
       if (nuevo === actual) { alert(`El monto ya está al día: ${fmtMoney(actual)}`); return; }
       if (!window.confirm(`Actualizar el monto del cliente de ${fmtMoney(actual)} a ${fmtMoney(nuevo)}?\n\nLos totales y la facturación se recalculan solos.`)) return;
+      montoAltCliRef.current = null; // ✅ V00313: traer el vigente deshace la tarifa alterna
       setFormData(prev => ({ ...prev, montoConvenioCliente: nuevo, monedaConvenioCliente: c.monedaMaestro || prev.monedaConvenioCliente }));
     } else {
       const c = listaConveniosProveedor.find((x: any) => String(x.id) === String(formData.convenioProveedor || ''));
@@ -3750,11 +3788,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                   </thead>
                   <tbody>
                     {listaConveniosCliente.map((c:any) => (
+                      <Fragment key={c.id}>{/* ✅ V00313: fila + subfilas de tarifas alternas */}
                       <tr
                         className={`fo-x59 fo-fila-convenio${String(formData.convenio) === String(c.id) ? ' fo-fila-convenio--elegido' : ''}`}
-                        key={c.id}
                         title="Clic para usar este convenio en la operación"
                         onClick={() => { /* ✅ V00271: clic en la fila = SELECCIONAR el convenio */
+                          montoAltCliRef.current = null; /* ✅ V00313: fila principal = monto vigente */
                           setFormData(prev => ({ ...prev, convenio: String(c.id) }));
                           setSearchConvenio(etiquetaConvenioCliente(c));
                           setMostrarConveniosCliente(false);
@@ -3764,12 +3803,35 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <td className="fo-x60 fo-col-consec">{String(c.consecutivo || c.id || '—')}</td>
                         <td className="fo-x60">{c.descripcion}</td>
                         <td className="fo-x61"><span className={`fo-chip-moneda${String(c.monedaMaestro) === ID_USD ? ' fo-chip-moneda--usd' : ' fo-chip-moneda--mxn'}`}>{String(c.monedaMaestro) === ID_USD ? 'USD' : 'MXN'}</span></td>{/* ✅ V00281 */}
-                        <td className="fo-x61">{fmtMoney(c.tarifaMonto)}</td>
+                        <td className="fo-x61">
+                          {fmtMoney(c.tarifaMonto)}
+                          {(c.montosAlt || []).length > 1 && (
+                            <button type="button" className="fo-btn-montos" title="Este convenio tiene varias tarifas — desplegar para elegir cuál usar" onClick={(e) => { e.stopPropagation(); setConvMontosAbierto((prev) => prev === `cli_${c.id}` ? '' : `cli_${c.id}`); }}>
+                              {convMontosAbierto === `cli_${c.id}` ? '▾' : '▸'} {(c.montosAlt || []).length}
+                            </button>
+                          )}
+                        </td>
                         <td className="fo-x62" onClick={(e) => e.stopPropagation()}>
                           <button className="fo-x63" type="button" onClick={() => abrirEditorConvenio(c)} title="Editar"><IconEdit size={13} /></button>
                           {/* ✅ V00272: se retiró Eliminar — los convenios se administran en Convenio de Clientes */}
                         </td>
                       </tr>
+                      {convMontosAbierto === `cli_${c.id}` && (c.montosAlt || []).map((m: number, i: number) => (
+                        <tr key={`${c.id}_m${i}`} className={`fo-x59 fo-fila-monto${String(formData.convenio) === String(c.id) && Number(formData.montoConvenioCliente) === m ? ' fo-fila-convenio--elegido' : ''}`} title="Clic para usar el convenio con ESTA tarifa" onClick={() => { /* ✅ V00313 */
+                          montoAltCliRef.current = m === Number(c.tarifaMonto) ? null : { id: String(c.id), monto: m };
+                          setFormData(prev => ({ ...prev, convenio: String(c.id), monedaConvenioCliente: c.monedaMaestro, montoConvenioCliente: m }));
+                          setSearchConvenio(etiquetaConvenioCliente(c));
+                          setMostrarConveniosCliente(false);
+                        }}>
+                          <td className="fo-x60" />
+                          <td className="fo-x60 fo-col-consec fo-sub-tarifa">↳ Tarifa {String.fromCharCode(65 + i)}</td>
+                          <td className="fo-x60">{c.descripcion}</td>
+                          <td className="fo-x61"><span className={`fo-chip-moneda${String(c.monedaMaestro) === ID_USD ? ' fo-chip-moneda--usd' : ' fo-chip-moneda--mxn'}`}>{String(c.monedaMaestro) === ID_USD ? 'USD' : 'MXN'}</span></td>
+                          <td className="fo-x61">{fmtMoney(m)}{m === Number(c.tarifaMonto) ? <span className="fo-vigente-tag">vigente</span> : null}</td>
+                          <td className="fo-x62" />
+                        </tr>
+                      ))}
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>
@@ -3841,11 +3903,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                   </thead>
                   <tbody>
                     {listaConveniosProveedor.map((c:any) => (
+                      <Fragment key={c.id}>{/* ✅ V00313: fila + subfilas de tarifas alternas */}
                       <tr
                         className={`fo-x59 fo-fila-convenio${String(formData.convenioProveedor) === String(c.id) ? ' fo-fila-convenio--elegido' : ''}`}
-                        key={c.id}
                         title="Clic para usar este convenio en la operación"
                         onClick={() => { /* ✅ V00271: clic en la fila = SELECCIONAR el convenio */
+                          montoAltProvRef.current = null; /* ✅ V00313 */
                           setFormData(prev => ({ ...prev, convenioProveedor: String(c.id) }));
                           setSearchConvenioProveedor(String(c.tipoConvenioNombre || c.descripcion || c.consecutivo || c.id));
                           setMostrarConveniosProveedor(false);
@@ -3855,12 +3918,35 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <td className="fo-x60 fo-col-consec">{String(c.consecutivo || c.id || '—')}</td>{/* ✅ V00271 */}
                         <td className="fo-x60">{c.tipoConvenioNombre}</td>
                         <td className="fo-x61"><span className={`fo-chip-moneda${String(c.monedaBase) === ID_USD ? ' fo-chip-moneda--usd' : ' fo-chip-moneda--mxn'}`}>{String(c.monedaBase) === ID_USD ? 'USD' : 'MXN'}</span></td>{/* ✅ V00281 */}
-                        <td className="fo-x61">{fmtMoney(c.tarifaMonto)}</td>
+                        <td className="fo-x61">
+                          {fmtMoney(c.tarifaMonto)}
+                          {(c.montosAlt || []).length > 1 && (
+                            <button type="button" className="fo-btn-montos" title="Este convenio tiene varias tarifas — desplegar para elegir cuál usar" onClick={(e) => { e.stopPropagation(); setConvMontosAbierto((prev) => prev === `prov_${c.id}` ? '' : `prov_${c.id}`); }}>
+                              {convMontosAbierto === `prov_${c.id}` ? '▾' : '▸'} {(c.montosAlt || []).length}
+                            </button>
+                          )}
+                        </td>
                         <td className="fo-x62" onClick={(e) => e.stopPropagation()}>
                           <button className="fo-x63" type="button" onClick={() => abrirEditorConvenioProv(c)} title="Editar"><IconEdit size={13} /></button>
                           {/* ✅ V00272: se retiró Eliminar — los convenios se administran en Convenio de Proveedores */}
                         </td>
                       </tr>
+                      {convMontosAbierto === `prov_${c.id}` && (c.montosAlt || []).map((m: number, i: number) => (
+                        <tr key={`${c.id}_m${i}`} className={`fo-x59 fo-fila-monto${String(formData.convenioProveedor) === String(c.id) && Number(formData.totalAPagarProv) === m ? ' fo-fila-convenio--elegido' : ''}`} title="Clic para usar el convenio con ESTA tarifa" onClick={() => { /* ✅ V00313 */
+                          montoAltProvRef.current = m === Number(c.tarifaMonto) ? null : { id: String(c.id), monto: m };
+                          setFormData(prev => ({ ...prev, convenioProveedor: String(c.id), monedaConvenioProv: c.monedaBase, totalAPagarProv: m }));
+                          setSearchConvenioProveedor(String(c.tipoConvenioNombre || c.descripcion || c.consecutivo || c.id));
+                          setMostrarConveniosProveedor(false);
+                        }}>
+                          <td className="fo-x60" />
+                          <td className="fo-x60 fo-col-consec fo-sub-tarifa">↳ Tarifa {String.fromCharCode(65 + i)}</td>
+                          <td className="fo-x60">{c.tipoConvenioNombre}</td>
+                          <td className="fo-x61"><span className={`fo-chip-moneda${String(c.monedaBase) === ID_USD ? ' fo-chip-moneda--usd' : ' fo-chip-moneda--mxn'}`}>{String(c.monedaBase) === ID_USD ? 'USD' : 'MXN'}</span></td>
+                          <td className="fo-x61">{fmtMoney(m)}{m === Number(c.tarifaMonto) ? <span className="fo-vigente-tag">vigente</span> : null}</td>
+                          <td className="fo-x62" />
+                        </tr>
+                      ))}
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>
