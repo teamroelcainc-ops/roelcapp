@@ -37,7 +37,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { createPortal } from 'react-dom'; // ✅ V00237
-import { collection, getDocs, getDoc, doc, updateDoc, writeBatch, setDoc, query, where, onSnapshot } from 'firebase/firestore'; // ✅ V00215/V00231/V00232 · ✅ V00299 · ✅ V00302: onSnapshot (base relacional en vivo)
+import { collection, getDocs, getDoc, doc, updateDoc, writeBatch, setDoc, query, where, onSnapshot } from 'firebase/firestore';
+import { registrarLog } from '../../../utils/logger'; // ✅ V00305 // ✅ V00215/V00231/V00232 · ✅ V00299 · ✅ V00302: onSnapshot (base relacional en vivo)
 import { reservarConsecutivosDetalle, reservarConsecutivosDetalleProveedor } from '../consecutivos'; // ✅ V00231
 import { db as dbFs, eliminarRegistro } from '../../../config/firebase';
 import { db } from '../../../config/firebase';
@@ -133,6 +134,8 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   //   "Actualizar".
   const [detallesDocs, setDetallesDocs] = useState<{ id: string; data: Record<string, unknown> }[] | null>(null);
   const [conveniosMap, setConveniosMap] = useState<Record<string, { numero: string; entidad: string; moneda: string; status: string; vencido: boolean }> | null>(null);
+  // ✅ V00305: reparación de la relación tarifario ↔ convenios (llave foránea)
+  const [reparando, setReparando] = useState(false);
   // ✅ V00302: filas en proceso de eliminación (aviso visual mientras viajan a la Papelera)
   const [eliminandoIds, setEliminandoIds] = useState<Set<string>>(new Set());
   // ✅ V00302: variante (costo) elegida por grupo de convenios con el mismo nombre
@@ -415,6 +418,31 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         destino: alta.destino,
         destinoNombre: nombreMun(alta.destino),
       });
+      // ✅ V00305: el alta escribe TAMBIÉN su línea en tarifas[] del tarifario —
+      //   ambos detalles (tarifario y convenio) son LO MISMO y deben cuadrar.
+      try {
+        const tSnap = await getDoc(doc(dbFs, COL_TARIFARIOS, tarifario.id));
+        if (tSnap.exists()) {
+          const dataT = tSnap.data() as Record<string, unknown>;
+          const ts: Record<string, unknown>[] = Array.isArray(dataT.tarifas) ? [...(dataT.tarifas as Record<string, unknown>[])] : [];
+          if (!ts.some((l) => String((l as Record<string, unknown>)?.consecutivo || '') === consec)) {
+            const esUSDAlta = alta.moneda.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().includes('DOLAR') || alta.moneda.toUpperCase().includes('USD');
+            ts.push({
+              tarifaReferenciaId: String(tarifa.id),
+              descripcion: nombreTarifa,
+              clave: '',
+              origen: nombreMun(alta.origen),
+              destino: nombreMun(alta.destino),
+              costosSugeridos: [],
+              tarifa: parseFloat(alta.costo) || 0,
+              cotizadoEn: esUSDAlta ? 'USD' : 'MXN',
+              status: alta.status,
+              consecutivo: consec,
+            });
+            await updateDoc(doc(dbFs, COL_TARIFARIOS, tarifario.id), { tarifas: ts });
+          }
+        }
+      } catch { /* el botón 🔗 Reparar relación lo deja cuadrado */ }
       setModalAgregar(false);
       setAlta({ tarifarioId: '', tarifaId: '', origen: '', destino: '', moneda: '', status: 'Aprobado', costo: '' });
       // ✅ V00302: ya no se recarga todo — el onSnapshot pinta la fila nueva al instante.
@@ -964,6 +992,143 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       }
     } catch (e) { console.error('No se pudo actualizar la línea del tarifario:', e); }
   };
+  /** ✅ V00305: REPARAR RELACIÓN — como en una base relacional, TODOS los
+   *  convenios llevan su llave foránea (tarifarioId) hacia el tarifario padre,
+   *  y ambos lados (colección de detalles ↔ tarifas[] del tarifario) quedan
+   *  IDÉNTICOS: se escribe la FK faltante, se reconstruyen las líneas que el
+   *  tarifario perdió y los convenios que faltan para líneas guardadas, y al
+   *  final se VERIFICA que ninguno quede sin tarifa, moneda o costo. */
+  const repararRelacion = async () => {
+    if (reparando) return;
+    if (!aut.verificarAccion('editar', ['tarifa'])) return;
+    if (!window.confirm(`¿Reparar la relación tarifario ↔ convenios (${esClientes ? 'clientes' : 'proveedores'})?\n\n· Se escribe la LLAVE FORÁNEA (tarifarioId) en todos los convenios que no la tengan.\n· El detalle del tarifario y el detalle del convenio quedan IGUALES (se reconstruyen líneas y convenios faltantes).\n· Al final verás el reporte de convenios con datos faltantes (tarifa, moneda o costo) para corregirlos con el ✏.`)) return;
+    setReparando(true);
+    try {
+      const [snapTar, snapDet] = await Promise.all([
+        getDocs(collection(db, COL_TARIFARIOS)),
+        getDocs(collection(db, COL_DETALLES)),
+      ]);
+      const tarifarios = snapTar.docs.map((d) => ({ id: d.id, data: d.data() as Record<string, unknown> }));
+      const detalles = snapDet.docs.map((d) => ({ id: d.id, data: d.data() as Record<string, unknown> }));
+      const esUSD = (m: unknown) => { const t = String(m ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase(); return t.includes('USD') || t.includes('DOLAR'); };
+
+      // Mapas de resolución: consecutivo→tarifario (por sus líneas) y convenioId→tarifario.
+      const tariPorConsec: Record<string, string> = {};
+      const tariPorConvenio: Record<string, string> = {};
+      const idsTarifario = new Set(tarifarios.map((t) => t.id));
+      tarifarios.forEach((t) => {
+        const cid = String(t.data.convenioId || '');
+        if (cid && !tariPorConvenio[cid]) tariPorConvenio[cid] = t.id;
+        (Array.isArray(t.data.tarifas) ? (t.data.tarifas as Record<string, unknown>[]) : []).forEach((l) => {
+          const c = String((l as Record<string, unknown>)?.consecutivo || '');
+          if (c && !tariPorConsec[c]) tariPorConsec[c] = t.id;
+        });
+      });
+
+      // 1) LLAVE FORÁNEA en todos los detalles.
+      let fkEscritas = 0;
+      const sinFk: string[] = [];
+      for (const det of detalles) {
+        const consec = String(det.data.consecutivo || det.id);
+        const tid = String(det.data.tarifarioId || '');
+        if (tid && idsTarifario.has(tid)) continue; // FK válida
+        const resuelto = tariPorConsec[consec] || tariPorConvenio[String(det.data.convenioId || '')] || '';
+        if (resuelto) {
+          await updateDoc(doc(dbFs, COL_DETALLES, det.id), { tarifarioId: resuelto });
+          det.data.tarifarioId = resuelto;
+          fkEscritas += 1;
+        } else {
+          sinFk.push(consec);
+        }
+      }
+
+      // 2) Detalle CON llave pero SIN línea en el tarifario → la línea se reconstruye.
+      let lineasCreadas = 0;
+      const porTarifario = new Map<string, typeof detalles>();
+      detalles.forEach((det) => {
+        const tid = String(det.data.tarifarioId || '');
+        if (!tid) return;
+        if (!porTarifario.has(tid)) porTarifario.set(tid, []);
+        porTarifario.get(tid)!.push(det);
+      });
+      for (const t of tarifarios) {
+        const dets = porTarifario.get(t.id) || [];
+        if (dets.length === 0) continue;
+        const ts: Record<string, unknown>[] = Array.isArray(t.data.tarifas) ? [...(t.data.tarifas as Record<string, unknown>[])] : [];
+        const enLineas = new Set(ts.map((l) => String((l as Record<string, unknown>)?.consecutivo || '')).filter(Boolean));
+        let cambio = false;
+        for (const det of dets) {
+          const consec = String(det.data.consecutivo || det.id);
+          if (enLineas.has(consec)) continue;
+          const mon = det.data.moneda;
+          ts.push({
+            tarifaReferenciaId: String(det.data.tipoConvenioId || ''),
+            descripcion: String(det.data.tipoConvenioNombre || ''),
+            clave: '',
+            origen: String(det.data.origenNombre || ''),
+            destino: String(det.data.destinoNombre || ''),
+            costosSugeridos: [],
+            tarifa: Number(det.data.tarifa) || 0,
+            cotizadoEn: String(mon || '') ? (esUSD(mon) ? 'USD' : 'MXN') : '',
+            status: String(det.data.status || 'Aprobado'),
+            consecutivo: consec,
+            ...(Array.isArray(det.data.montos) && (det.data.montos as unknown[]).length > 1 ? { montos: (det.data.montos as unknown[]).map(Number) } : {}),
+          });
+          enLineas.add(consec);
+          cambio = true;
+          lineasCreadas += 1;
+        }
+        if (cambio) { await updateDoc(doc(dbFs, COL_TARIFARIOS, t.id), { tarifas: ts }); t.data.tarifas = ts; }
+      }
+
+      // 3) Línea guardada SIN detalle → el convenio se reconstruye con SU consecutivo.
+      let detallesCreados = 0;
+      const consecsDet = new Set(detalles.map((d) => String(d.data.consecutivo || d.id)));
+      for (const t of tarifarios) {
+        const ts = Array.isArray(t.data.tarifas) ? (t.data.tarifas as Record<string, unknown>[]) : [];
+        for (const l of ts) {
+          const li = l as Record<string, unknown>;
+          const consec = String(li?.consecutivo || '');
+          if (!consec || consecsDet.has(consec)) continue;
+          await setDoc(doc(dbFs, COL_DETALLES, consec), {
+            convenioId: String(t.data.convenioId || ''),
+            tarifarioId: t.id,
+            tipoConvenioId: String(li.tarifaReferenciaId || ''),
+            tipoConvenioNombre: String(li.descripcion || ''),
+            tarifa: Number(li.tarifa) || 0,
+            moneda: String(li.cotizadoEn || '') ? (esUSD(li.cotizadoEn) ? 'Dólares' : 'Pesos') : '',
+            status: String(li.status || 'Aprobado'),
+            consecutivo: consec,
+            origenNombre: String(li.origen || ''),
+            destinoNombre: String(li.destino || ''),
+            ...(Array.isArray(li.montos) && (li.montos as unknown[]).length > 1 ? { montos: (li.montos as unknown[]).map(Number) } : {}),
+          });
+          consecsDet.add(consec);
+          detallesCreados += 1;
+        }
+      }
+
+      // 4) VERIFICACIÓN de obligatorios sobre la colección YA reparada.
+      const snapFin = await getDocs(collection(db, COL_DETALLES));
+      const sinTarifa: string[] = []; const sinMoneda: string[] = []; const sinCosto: string[] = [];
+      snapFin.docs.forEach((d) => {
+        const x = d.data() as Record<string, unknown>;
+        const consec = String(x.consecutivo || d.id);
+        const nombre = String(x.tipoConvenioNombre || '').trim();
+        if (!String(x.tipoConvenioId || '') && (!nombre || norm2(nombre).includes('no identificad'))) sinTarifa.push(consec);
+        if (!String(x.moneda || '').trim()) sinMoneda.push(consec);
+        const c = Number(((x.costo !== undefined && x.costo !== null && x.costo !== '') ? x.costo : x.tarifa) ?? NaN);
+        if (isNaN(c) || c <= 0) sinCosto.push(consec);
+      });
+      const listar = (a: string[]) => a.length === 0 ? 'ninguno ✅' : `${a.length} → ${a.slice(0, 12).join(', ')}${a.length > 12 ? '…' : ''}`;
+      alert(`Relación reparada. ✅\n\n· Llaves foráneas (tarifarioId) escritas: ${fkEscritas}\n· Líneas del tarifario reconstruidas: ${lineasCreadas}\n· Convenios reconstruidos desde líneas guardadas: ${detallesCreados}\n\nVERIFICACIÓN (para corregir con el ✏):\n· Sin llave foránea (irresolubles): ${listar(sinFk)}\n· Sin tarifa del catálogo: ${listar(sinTarifa)}\n· Sin moneda de cotización: ${listar(sinMoneda)}\n· Sin costo: ${listar(sinCosto)}\n\nLas pestañas "No identificados", "Sin cotización" y "Vacíos" los listan.`);
+      await registrarLog('Detalles del Convenio', 'Edición', `Reparó la relación tarifario ↔ convenios (${esClientes ? 'clientes' : 'proveedores'}): ${fkEscritas} FK, ${lineasCreadas} líneas y ${detallesCreados} convenios reconstruidos.`);
+    } catch (e) {
+      console.error('No se pudo reparar la relación:', e);
+      alert('No se pudo reparar la relación tarifario ↔ convenios.');
+    }
+    setReparando(false);
+  };
   /** ✅ V00304: elegir el monto VIGENTE de un convenio con varios montos —
    *  escribe `tarifa` en el detalle y en su línea del tarifario (el motor
    *  v1.3 también cascadea); las operaciones toman el vigente con ↻. */
@@ -1094,6 +1259,10 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         {/* ✅ V00240: rearmar descripciones y propagarlas a las operaciones */}
         <button className="btn btn-outline dcv-btn-rearmar" disabled={rearmando} onClick={rearmarNombres}>
           {rearmando ? 'Rearmando…' : '⟳ Rearmar nombres'}
+        </button>
+        {/* ✅ V00305: llave foránea + reconciliación línea↔convenio + verificación */}
+        <button className="btn btn-outline dcv-btn-reparar" disabled={reparando} title="Escribe la llave foránea (tarifarioId) en todos los convenios y deja el detalle del tarifario IGUAL al detalle del convenio; al final reporta los que queden sin tarifa, moneda o costo" onClick={repararRelacion}>
+          {reparando ? 'Reparando…' : '🔗 Reparar relación'}
         </button>
         {/* ✅ V00215: unir duplicados */}
         {seleccion.size >= 2 && (

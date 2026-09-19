@@ -235,3 +235,7 @@
   color: #3fb950; font-size: 0.68rem; font-weight: 700; white-space: nowrap; cursor: pointer;
 }
 .dcv-btn-unificar:hover { background-color: rgba(35, 134, 54, 0.15); }
+
+/* ✅ V00305: reparar la relación tarifario ↔ convenios */
+.dcv-btn-reparar { border-color: #3fb950; color: #3fb950; font-weight: 600; white-space: nowrap; }
+.dcv-btn-reparar:hover { background-color: rgba(63, 185, 80, 0.12); }
