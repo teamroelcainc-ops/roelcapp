@@ -50,12 +50,86 @@ const ID_MXN = 'f95d8894';
 const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
 const money = (n: number) => `$${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const normTxt = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+/** Fecha a ISO aaaa-mm-dd (acepta ISO o d/m/aaaa de las migradas). */
+const fechaISO = (v: unknown): string => {
+  const t = String(v || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10);
+  const m = t.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  return '';
+};
+
 const nombreMoneda = (v: unknown): string => {
   const t = normTxt(v);
   if (!t) return '—';
   if (t === ID_USD || t === 'usd' || t === 'us$' || t === 'dls' || t.startsWith('dolar')) return 'USD';
   if (t === ID_MXN || t === 'mxn' || t === 'mn' || t.startsWith('peso')) return 'MXN';
   return String(v);
+};
+
+/** ✅ V00324: detalle LEGIBLE de la operación — los mismos datos que se ven
+ *  en el módulo de operaciones (nombres, no ids), con opción de ver todos
+ *  los campos crudos. */
+const DetalleOperacion = ({ op, onCerrar }: { op: any; onCerrar: () => void }) => {
+  const [verTodo, setVerTodo] = useState(false);
+  const fila = (etiqueta: string, valor: unknown) => {
+    const v = String(valor ?? '').trim();
+    if (!v || v === '—') return null;
+    return (<tr><td className="acc-detalle-campo">{etiqueta}</td><td className="acc-detalle-valor">{v}</td></tr>);
+  };
+  const monto = (n: unknown) => { const x = Number(n); return Number.isFinite(x) && x !== 0 ? `$${x.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : ''; };
+  return (
+    <div className="modal-overlay acc-overlay-2" onMouseDown={(e) => { if (e.target === e.currentTarget) onCerrar(); }}>
+      <div className="form-card acc-detalle-modal">
+        <div className="acc-encabezado">
+          <h3 className="acc-titulo">👁 Operación {String(op.ref || op.id)}</h3>
+          <div className="acc-acciones">
+            <button type="button" className={`acc-mini${verTodo ? ' acc-mini--revisado' : ''}`} title="Alternar entre el detalle legible y TODOS los campos" onClick={() => setVerTodo((v) => !v)}>{verTodo ? 'Ver resumen' : 'Ver todos los campos'}</button>
+            <button type="button" className="roelca-window-btn danger" title="Cerrar" onClick={onCerrar}>✕</button>
+          </div>
+        </div>
+        {verTodo ? (
+          <div className="acc-detalle-scroll">
+            <table className="acc-detalle-tabla"><tbody>
+              {Object.entries(op || {}).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => (
+                <tr key={k}><td className="acc-detalle-campo">{k}</td><td className="acc-detalle-valor">{v === null || v === undefined || v === '' ? '—' : (typeof v === 'object' ? JSON.stringify(v).slice(0, 400) : String(v))}</td></tr>
+              ))}
+            </tbody></table>
+          </div>
+        ) : (
+          <div className="acc-detalle-scroll">
+            <table className="acc-detalle-tabla"><tbody>
+              {fila('Referencia', op.ref)}
+              {fila('Fecha de servicio', op.fechaServicio)}
+              {fila('Status', op.statusNombre)}
+              {fila('Tipo de operación', op.tipoOperacionNombre)}
+              {fila('Cliente (Paga)', op.clienteNombre)}
+              {fila('Cliente (Mercancía)', op.clienteMercanciaNombre)}
+              {fila('Convenio', op.convenioNombre)}
+              {fila('Cargada / Vacía', op.carga)}
+              {fila('Impo / Expo', op.trafico)}
+              {fila('Aduana', op.aduanaNombre)}
+              {fila('Origen', op.origenNombre)}
+              {fila('Destino', op.destinoNombre)}
+              {fila('# Remolque', op.numeroRemolqueNombre || op.numeroRemolque)}
+              {fila('Operador', op.operadorNombre)}
+              {fila('Ref. Cliente', op.refCliente)}
+              {fila('Monto Cliente (convenio)', monto(op.montoConvenioCliente))}
+              {fila('Conversión Cliente (pesos)', monto(op.conversionCliente))}
+              {fila('Cargos adicionales', monto(op.cargosAdicionales))}
+              {fila('Proveedor', op.proveedorNombre)}
+              {fila('Convenio Proveedor', op.convenioProveedorNombre)}
+              {fila('Total a pagar Proveedor', monto(op.totalAPagarProv))}
+              {fila('Conversión Proveedor (pesos)', monto(op.conversionProv))}
+              {fila('Tipo de cambio', op.tipoCambio)}
+              {fila('Observaciones ejecutivo', op.observacionesEjecutivo)}
+              {fila('Creado por', op.creadoPor)}
+            </tbody></table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 };
 
 /** Detalle legible de cualquier documento (pares campo → valor). */
@@ -94,6 +168,9 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
   const [clienteId, setClienteId] = useState('');
   const [clienteNombre, setClienteNombre] = useState('');
   const [monedaCliente, setMonedaCliente] = useState('');
+  // ✅ V00324: rango de fechas — aplica a la FECHA DE SERVICIO de las operaciones.
+  const [rangoIni, setRangoIni] = useState('');
+  const [rangoFin, setRangoFin] = useState('');
   const [aud, setAud] = useState<{ id: string; nombre: string } | null>(null);
   // ✅ V00323: selección TRIDIRECCIONAL — operación, factura o pago.
   const [sel, setSel] = useState<{ tipo: 'op' | 'fact' | 'pago'; id: string } | null>(null);
@@ -105,6 +182,7 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
   const [pagosRaw, setPagosRaw] = useState<any[] | null>(null);
   // Detalle y editores.
   const [detalle, setDetalle] = useState<{ titulo: string; docu: any } | null>(null);
+  const [detalleOp, setDetalleOp] = useState<any | null>(null); // ✅ V00324: detalle legible de operación
   const [opEditandoId, setOpEditandoId] = useState('');
   const [factEdit, setFactEdit] = useState<any | null>(null);
   const [pagoEdit, setPagoEdit] = useState<any | null>(null);
@@ -165,7 +243,17 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
   // ✅ V00321: el cálculo vive en un useMemo — cada snapshot lo recalcula.
   const resultado = useMemo(() => {
     if (!aud || opsRaw === null || pagosRaw === null) return null;
-    const ops = opsRaw; const facturas = facturasRaw; const pagos = pagosRaw;
+    // ✅ V00324: el rango de fechas filtra LAS OPERACIONES (por fecha de
+    //   servicio); facturas y pagos del cliente se muestran completos.
+    const ops = opsRaw.filter((op) => {
+      if (!rangoIni && !rangoFin) return true;
+      const iso = fechaISO(op.fechaServicio);
+      if (!iso) return true; // sin fecha legible no se excluye
+      if (rangoIni && iso < rangoIni) return false;
+      if (rangoFin && iso > rangoFin) return false;
+      return true;
+    });
+    const facturas = facturasRaw; const pagos = pagosRaw;
 
     const facturasPorOp = new Map<string, any[]>();
     facturas.forEach((f) => {
@@ -272,7 +360,7 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
     filasFacturas.sort((a, b) => peso(a.revisado, facturasProblema.has(a.id)) - peso(b.revisado, facturasProblema.has(b.id)) || String(b.fecha).localeCompare(String(a.fecha)));
     filasPagos.sort((a, b) => peso(a.revisado, pagosProblema.has(a.id)) - peso(b.revisado, pagosProblema.has(b.id)) || String(b.fecha).localeCompare(String(a.fecha)));
     return { ops: filasOps, facturas: filasFacturas, pagos: filasPagos, totales, problemas, opsProblema, facturasProblema, pagosProblema };
-  }, [aud, opsRaw, facturasRaw, pagosRaw, montoOperacion, totalNativo]);
+  }, [aud, opsRaw, facturasRaw, pagosRaw, rangoIni, rangoFin, montoOperacion, totalNativo]);
 
   const clientesFiltrados = busquedaCli.trim()
     ? empresas.filter((e) => String(e.nombre || '').toLowerCase().includes(busquedaCli.trim().toLowerCase())).slice(0, 8)
@@ -404,7 +492,7 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
   );
 
   return (
-    <div className="modal-overlay acc-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onCerrar(); }}>
+    <div className={`modal-overlay acc-overlay${opEditandoId ? ' acc-overlay--detras' : ''}`} onMouseDown={(e) => { if (e.target === e.currentTarget) onCerrar(); }}>{/* ✅ V00324: el formulario de operación (portal, z 100) queda AL FRENTE */}
       <div className="form-card acc-modal">
         <div className="acc-encabezado">
           <div>
@@ -432,6 +520,12 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
             )}
           </div>
           {clienteId && <span className="acc-moneda-cliente" title="Moneda configurada en la ficha del cliente">Moneda del cliente: <b>{monedaCliente || '—'}</b></span>}
+          {/* ✅ V00324: rango de fechas (fecha de servicio de las operaciones) */}
+          <span className="acc-rango" title="El rango aplica a la FECHA DE SERVICIO de las operaciones; facturas y pagos del cliente se muestran completos">
+            Servicio de <input type="date" className="form-control acc-rango-input" value={rangoIni} onChange={(e) => setRangoIni(e.target.value)} />
+            a <input type="date" className="form-control acc-rango-input" value={rangoFin} onChange={(e) => setRangoFin(e.target.value)} />
+            {(rangoIni || rangoFin) && <button type="button" className="acc-mini" title="Quitar el rango" onClick={() => { setRangoIni(''); setRangoFin(''); }}>✕</button>}
+          </span>
           <button type="button" className="btn btn-primary acc-btn-auditar" disabled={!clienteId || cargando} onClick={auditar}>
             {cargando ? 'Auditando…' : 'Auditar'}
           </button>
@@ -478,7 +572,7 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
                         <ChipMoneda m={x.moneda} />
                         <span className="acc-monto">{money(x.montoHoy)}</span>
                         <span className="acc-acciones" onClick={(e) => e.stopPropagation()}>
-                          <button type="button" className="acc-mini" title="Ver el detalle completo de la operación" onClick={() => setDetalle({ titulo: `Operación ${x.ref}`, docu: x.raw })}>👁</button>
+                          <button type="button" className="acc-mini" title="Ver el detalle de la operación (como en el módulo de operaciones)" onClick={() => setDetalleOp(x.raw)}>👁</button>
                           <button type="button" className="acc-mini" title="Editar la operación (formulario completo)" onClick={() => setOpEditandoId(x.id)}>✎</button>
                           <BotonRevisado tipo="op" id={x.id} revisado={x.revisado} />
                         </span>
@@ -564,6 +658,7 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
 
         {/* ── Detalle genérico ── */}
         {detalle && <DetalleDoc titulo={detalle.titulo} docu={detalle.docu} onCerrar={() => setDetalle(null)} />}
+        {detalleOp && <DetalleOperacion op={detalleOp} onCerrar={() => setDetalleOp(null)} />}{/* ✅ V00324 */}
 
         {/* ── Formulario REAL de edición de la operación (los cambios llegan solos por onSnapshot) ── */}
         {opEditandoId && <EditorOperacionEmbebido operacionId={opEditandoId} onClose={() => setOpEditandoId('')} />}
