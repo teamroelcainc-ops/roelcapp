@@ -31,18 +31,18 @@ interface FilaOp {
   montoHoy: number; facturaIds: string[]; invoices: string;
   montoEnFactura: number | null; dif: number | null;
   veredicto: 'ok' | 'cambio' | 'sinFacturar' | 'varias' | 'sinDesglose' | 'cancelada';
-  detalle: string; raw: any;
+  detalle: string; raw: any; revisado: boolean;
 }
 interface FilaFactura {
   id: string; invoice: string; fecha: string; moneda: string;
   totalNativo: number; conversion: number; aplicadoPagos: number;
   montoPagado: number; saldo: number; pagoIds: string[]; pagos: string;
   veredicto: 'pagada' | 'saldo' | 'descuadre' | 'deMas';
-  detalle: string; raw: any;
+  detalle: string; raw: any; revisado: boolean;
 }
 interface FilaPago {
   id: string; numeroPago: string; fecha: string; metodo: string; moneda: string;
-  monto: number; facturaIds: string[]; invoices: string; raw: any;
+  monto: number; facturaIds: string[]; invoices: string; raw: any; revisado: boolean;
 }
 
 const ID_USD = '7dca62b3';
@@ -95,7 +95,8 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
   const [clienteNombre, setClienteNombre] = useState('');
   const [monedaCliente, setMonedaCliente] = useState('');
   const [aud, setAud] = useState<{ id: string; nombre: string } | null>(null);
-  const [opSel, setOpSel] = useState('');
+  // ✅ V00323: selección TRIDIRECCIONAL — operación, factura o pago.
+  const [sel, setSel] = useState<{ tipo: 'op' | 'fact' | 'pago'; id: string } | null>(null);
   const [modoProblemas, setModoProblemas] = useState(false);
   // Estado en vivo (onSnapshot) del cliente auditado.
   const [opsRaw, setOpsRaw] = useState<any[] | null>(null);
@@ -202,7 +203,7 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
           moneda: nombreMoneda(op.monedaConvenioCliente || op.facturadoEnCobrar),
           montoHoy: hoy, facturaIds: facs.map((f) => String(f.id)),
           invoices: facs.map((f) => String(f.invoice || f.id)).join(', '),
-          montoEnFactura: null, dif: null, raw: op,
+          montoEnFactura: null, dif: null, raw: op, revisado: !!op.auditRevisado,
         };
         if (cancelada) return { ...base, veredicto: 'cancelada' as const, detalle: facs.length > 0 ? '⚠ Cancelada pero aparece en factura' : 'Cancelada (no requiere factura)' };
         if (facs.length === 0) return { ...base, veredicto: 'sinFacturar' as const, detalle: 'Sin facturar' };
@@ -229,7 +230,7 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
           id: String(f.id), invoice: String(f.invoice || f.numeroInvoice || f.folio || f.id),
           fecha: String(f.fecha || f.fechaFactura || ''), moneda: nombreMoneda(f.monedaFacturacion || f.moneda || f.monedaId),
           totalNativo: totalN, conversion, aplicadoPagos: aplicado, montoPagado, saldo,
-          pagoIds: reg.pagoIds, pagos: reg.numeros.join(', '), raw: f,
+          pagoIds: reg.pagoIds, pagos: reg.numeros.join(', '), raw: f, revisado: !!f.auditRevisado,
         };
         if (Math.abs(aplicado - montoPagado) > 0.01) return { ...base, veredicto: 'descuadre' as const, detalle: `Los pagos aplicados (${money(aplicado)}) NO cuadran con el pagado registrado (${money(montoPagado)})` };
         if (aplicado - totalN > 0.01) return { ...base, veredicto: 'deMas' as const, detalle: `Pagada DE MÁS: aplicado ${money(aplicado)} vs total ${money(totalN)}` };
@@ -247,7 +248,7 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
           monto: r2(Number(p.monto) || 0),
           facturaIds: aplicaciones.map((fa: any) => String(fa?.facturaId || '')).filter(Boolean),
           invoices: aplicaciones.map((fa: any) => String(fa?.invoice || fa?.facturaId || '')).filter(Boolean).join(', '),
-          raw: p,
+          raw: p, revisado: !!p.auditRevisado,
         };
       });
 
@@ -265,6 +266,11 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
     // Las facturas de las operaciones con problema también son parte del problema.
     filasOps.forEach((o) => { if (opsProblema.has(o.id)) o.facturaIds.forEach((fid) => facturasProblema.add(fid)); });
     const problemas = opsProblema.size + filasFacturas.filter(esFactProblema).length;
+    // ✅ V00323: ORDEN — con errores o fallas AL INICIO, revisados AL FINAL.
+    const peso = (revisado: boolean, esProblema: boolean) => (revisado ? 2 : (esProblema ? 0 : 1));
+    filasOps.sort((a, b) => peso(a.revisado, opsProblema.has(a.id)) - peso(b.revisado, opsProblema.has(b.id)) || String(b.fecha).localeCompare(String(a.fecha)));
+    filasFacturas.sort((a, b) => peso(a.revisado, facturasProblema.has(a.id)) - peso(b.revisado, facturasProblema.has(b.id)) || String(b.fecha).localeCompare(String(a.fecha)));
+    filasPagos.sort((a, b) => peso(a.revisado, pagosProblema.has(a.id)) - peso(b.revisado, pagosProblema.has(b.id)) || String(b.fecha).localeCompare(String(a.fecha)));
     return { ops: filasOps, facturas: filasFacturas, pagos: filasPagos, totales, problemas, opsProblema, facturasProblema, pagosProblema };
   }, [aud, opsRaw, facturasRaw, pagosRaw, montoOperacion, totalNativo]);
 
@@ -274,23 +280,45 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
 
   const auditar = () => {
     if (!clienteId) { alert('Elige primero el cliente.'); return; }
-    setOpSel(''); setModoProblemas(false);
+    setSel(null); setModoProblemas(false);
     setAud({ id: clienteId, nombre: clienteNombre });
   };
 
+  // ✅ V00323: el CAMINO desde CUALQUIER pieza — operación, factura o pago.
   const camino = useMemo(() => {
-    if (!opSel || !resultado) return { facturas: new Set<string>(), pagos: new Set<string>() };
-    const op = resultado.ops.find((x) => x.id === opSel);
-    if (!op) return { facturas: new Set<string>(), pagos: new Set<string>() };
-    const facturasSet = new Set(op.facturaIds);
-    const pagosSet = new Set<string>();
-    resultado.facturas.forEach((f) => { if (facturasSet.has(f.id)) f.pagoIds.forEach((p) => pagosSet.add(p)); });
-    return { facturas: facturasSet, pagos: pagosSet };
-  }, [opSel, resultado]);
+    const vacio = { ops: new Set<string>(), facturas: new Set<string>(), pagos: new Set<string>() };
+    if (!sel || !resultado) return vacio;
+    const opsSet = new Set<string>(); const factSet = new Set<string>(); const pagosSet = new Set<string>();
+    if (sel.tipo === 'op') {
+      const op = resultado.ops.find((x) => x.id === sel.id);
+      if (!op) return vacio;
+      opsSet.add(op.id);
+      op.facturaIds.forEach((f) => factSet.add(f));
+    } else if (sel.tipo === 'fact') {
+      factSet.add(sel.id);
+    } else {
+      const pg = resultado.pagos.find((x) => x.id === sel.id);
+      if (!pg) return vacio;
+      pagosSet.add(pg.id);
+      pg.facturaIds.forEach((f) => factSet.add(f));
+    }
+    // Las facturas del camino arrastran sus operaciones y sus pagos.
+    resultado.ops.forEach((o) => { if (o.facturaIds.some((f) => factSet.has(f))) opsSet.add(o.id); });
+    resultado.facturas.forEach((f) => { if (factSet.has(f.id)) f.pagoIds.forEach((p) => pagosSet.add(p)); });
+    return { ops: opsSet, facturas: factSet, pagos: pagosSet };
+  }, [sel, resultado]);
 
   // ✅ V00321: moneda que NO concuerda con la del cliente → chip en ámbar.
   const monedaDifiere = (m: string): boolean =>
     (monedaCliente === 'USD' || monedaCliente === 'MXN') && (m === 'USD' || m === 'MXN') && m !== monedaCliente;
+
+  // ✅ V00323: marcar REVISADO (campo auditRevisado en el propio documento —
+  //   compartido entre usuarios y en vivo). Los revisados se van al final.
+  const marcarRevisado = async (tipo: 'op' | 'fact' | 'pago', id: string, actual: boolean) => {
+    const coleccion = tipo === 'op' ? 'operaciones' : tipo === 'fact' ? 'facturas_clientes' : 'pagos';
+    try { await updateDoc(doc(db, coleccion, id), { auditRevisado: !actual }); }
+    catch (e) { console.error('Marcar revisado:', e); alert('No se pudo marcar como revisado.'); }
+  };
 
   // ── Editores directos (campos seguros; lo profundo se edita en su módulo) ──
   const guardarFactura = async () => {
@@ -360,11 +388,15 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
 
   const CLASE_OP: Record<FilaOp['veredicto'], string> = { ok: 'acc-ok', cambio: 'acc-mal', sinFacturar: 'acc-alerta', varias: 'acc-mal', sinDesglose: 'acc-info', cancelada: 'acc-info' };
   const CLASE_FA: Record<FilaFactura['veredicto'], string> = { pagada: 'acc-ok', saldo: 'acc-alerta', descuadre: 'acc-mal', deMas: 'acc-mal' };
-  const claseResaltado = (enCamino: boolean, esProblema: boolean): string => {
-    if (modoProblemas) return esProblema ? ' acc-item--problema' : ' acc-item--apagado';
-    if (opSel) return enCamino ? ' acc-item--camino' : ' acc-item--apagado';
-    return '';
+  const claseResaltado = (enCamino: boolean, esProblema: boolean, revisado: boolean): string => {
+    let c = revisado ? ' acc-item--revisado' : '';
+    if (modoProblemas) c += esProblema ? ' acc-item--problema' : ' acc-item--apagado';
+    else if (sel && enCamino) c += ' acc-item--camino';
+    return c;
   };
+  const BotonRevisado = ({ tipo, id, revisado }: { tipo: 'op' | 'fact' | 'pago'; id: string; revisado: boolean }) => (
+    <button type="button" className={`acc-mini${revisado ? ' acc-mini--revisado' : ''}`} title={revisado ? 'Revisado — clic para quitar la marca' : 'Marcar como REVISADO (se va al final de la columna)'} onClick={() => marcarRevisado(tipo, id, revisado)}>✓</button>
+  );
   const ChipMoneda = ({ m }: { m: string }) => (
     <span className={`acc-chip-moneda${monedaDifiere(m) ? ' acc-chip-moneda--difiere' : ''}`} title={monedaDifiere(m) ? `⚠ No concuerda con la moneda del cliente (${monedaCliente})` : ''}>
       {monedaDifiere(m) ? '⚠ ' : ''}{m}
@@ -377,7 +409,7 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
         <div className="acc-encabezado">
           <div>
             <h3 className="acc-titulo">🔍 Auditoría de la cadena — Operación → Factura → Pago</h3>
-            <p className="acc-sub">Clic en una operación ilumina su camino · clic en la tarjeta de problemas resalta todo lo problemático · 👁 detalle · ✎ editar (en vivo).</p>
+            <p className="acc-sub">Clic en una operación, factura o pago muestra SOLO su camino (clic de nuevo para volver) · la tarjeta de problemas resalta lo problemático · ✓ revisado se va al final · 👁 detalle · ✎ editar (en vivo).</p>
           </div>
           <button type="button" className="roelca-window-btn danger" title="Cerrar" onClick={onCerrar}>✕</button>
         </div>
@@ -415,7 +447,7 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
                 type="button"
                 className={`acc-tarjeta acc-tarjeta--btn ${resultado.problemas === 0 ? 'acc-tarjeta--ok' : 'acc-tarjeta--mal'}${modoProblemas ? ' acc-tarjeta--activa' : ''}`}
                 title="Clic para resaltar en las tres columnas las operaciones, facturas y pagos con problemas"
-                onClick={() => { setModoProblemas((v) => !v); setOpSel(''); }}
+                onClick={() => { setModoProblemas((v) => !v); setSel(null); }}
                 disabled={resultado.problemas === 0}
               >
                 <span className="acc-tarjeta-num">{resultado.problemas === 0 ? '✅ 0' : `⚠ ${resultado.problemas}`}</span>
@@ -432,12 +464,14 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
                 <div className="acc-col-titulo">Operaciones ({resultado.ops.length})</div>
                 <div className="acc-col-scroll">
                   {resultado.ops.length === 0 && <p className="acc-vacio">Sin operaciones.</p>}
-                  {resultado.ops.map((x) => (
+                  {resultado.ops.map((x) => {
+                    if (sel && !camino.ops.has(x.id)) return null; {/* ✅ V00323: fuera del camino → oculto */}
+                    return (
                     <div
                       key={x.id}
-                      className={`acc-item acc-item--clic ${CLASE_OP[x.veredicto]}${opSel === x.id ? ' acc-item--sel' : ''}${claseResaltado(opSel === x.id, resultado.opsProblema.has(x.id))}`}
-                      title="Clic para iluminar el camino de esta operación (factura y pagos)"
-                      onClick={() => { setModoProblemas(false); setOpSel((prev) => prev === x.id ? '' : x.id); }}
+                      className={`acc-item acc-item--clic ${CLASE_OP[x.veredicto]}${sel?.tipo === 'op' && sel.id === x.id ? ' acc-item--sel' : ''}${claseResaltado(camino.ops.has(x.id), resultado.opsProblema.has(x.id), x.revisado)}`}
+                      title="Clic para ver SOLO el camino de esta operación (factura y pagos); clic de nuevo para volver"
+                      onClick={() => { setModoProblemas(false); setSel((prev) => prev?.tipo === 'op' && prev.id === x.id ? null : { tipo: 'op', id: x.id }); }}
                     >
                       <div className="acc-item-fila1">
                         <span className="acc-ref">{x.ref}</span>
@@ -446,6 +480,7 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
                         <span className="acc-acciones" onClick={(e) => e.stopPropagation()}>
                           <button type="button" className="acc-mini" title="Ver el detalle completo de la operación" onClick={() => setDetalle({ titulo: `Operación ${x.ref}`, docu: x.raw })}>👁</button>
                           <button type="button" className="acc-mini" title="Editar la operación (formulario completo)" onClick={() => setOpEditandoId(x.id)}>✎</button>
+                          <BotonRevisado tipo="op" id={x.id} revisado={x.revisado} />
                         </span>
                       </div>
                       <div className="acc-item-fila2">{x.fecha || '—'} · {x.status || '—'}</div>
@@ -454,7 +489,8 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
                       )}
                       <div className="acc-item-detalle">{x.detalle}</div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -463,22 +499,31 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
                 <div className="acc-col-titulo">Facturación ({resultado.facturas.length})</div>
                 <div className="acc-col-scroll">
                   {resultado.facturas.length === 0 && <p className="acc-vacio">Sin facturas.</p>}
-                  {resultado.facturas.map((x) => (
-                    <div key={x.id} className={`acc-item ${CLASE_FA[x.veredicto]}${claseResaltado(camino.facturas.has(x.id), resultado.facturasProblema.has(x.id))}`}>
+                  {resultado.facturas.map((x) => {
+                    if (sel && !camino.facturas.has(x.id)) return null; {/* ✅ V00323 */}
+                    return (
+                    <div
+                      key={x.id}
+                      className={`acc-item acc-item--clic ${CLASE_FA[x.veredicto]}${sel?.tipo === 'fact' && sel.id === x.id ? ' acc-item--sel' : ''}${claseResaltado(camino.facturas.has(x.id), resultado.facturasProblema.has(x.id), x.revisado)}`}
+                      title="Clic para ver SOLO el camino de esta factura (operaciones y pagos); clic de nuevo para volver"
+                      onClick={() => { setModoProblemas(false); setSel((prev) => prev?.tipo === 'fact' && prev.id === x.id ? null : { tipo: 'fact', id: x.id }); }}
+                    >
                       <div className="acc-item-fila1">
                         <span className="acc-ref">{x.invoice}</span>
                         <ChipMoneda m={x.moneda} />
                         <span className="acc-monto">{money(x.totalNativo)}</span>
-                        <span className="acc-acciones">
+                        <span className="acc-acciones" onClick={(e) => e.stopPropagation()}>
                           <button type="button" className="acc-mini" title="Ver el detalle completo de la factura" onClick={() => setDetalle({ titulo: `Factura ${x.invoice}`, docu: x.raw })}>👁</button>
                           <button type="button" className="acc-mini" title="Editar la factura (invoice, fecha y total; lo demás en Facturación)" onClick={() => setFactEdit({ ...x.raw, id: x.id, invoice: x.invoice, _nuevoInvoice: x.invoice, _nuevaFecha: x.fecha, _nuevoTotal: String(x.conversion) })}>✎</button>
+                          <BotonRevisado tipo="fact" id={x.id} revisado={x.revisado} />
                         </span>
                       </div>
                       <div className="acc-item-fila2">{x.fecha || '—'} · conversión {money(x.conversion)}</div>
                       <div className="acc-item-fila2">Pagado {money(x.montoPagado)} · saldo <b>{money(x.saldo)}</b>{x.pagos ? ` · pagos: ${x.pagos}` : ''}</div>
                       <div className="acc-item-detalle">{x.detalle}</div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -487,21 +532,30 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
                 <div className="acc-col-titulo">Pagos ({resultado.pagos.length})</div>
                 <div className="acc-col-scroll">
                   {resultado.pagos.length === 0 && <p className="acc-vacio">Sin pagos.</p>}
-                  {resultado.pagos.map((x) => (
-                    <div key={x.id} className={`acc-item${claseResaltado(camino.pagos.has(x.id), resultado.pagosProblema.has(x.id))}`}>
+                  {resultado.pagos.map((x) => {
+                    if (sel && !camino.pagos.has(x.id)) return null; {/* ✅ V00323 */}
+                    return (
+                    <div
+                      key={x.id}
+                      className={`acc-item acc-item--clic${sel?.tipo === 'pago' && sel.id === x.id ? ' acc-item--sel' : ''}${claseResaltado(camino.pagos.has(x.id), resultado.pagosProblema.has(x.id), x.revisado)}`}
+                      title="Clic para ver SOLO el camino de este pago (facturas y operaciones); clic de nuevo para volver"
+                      onClick={() => { setModoProblemas(false); setSel((prev) => prev?.tipo === 'pago' && prev.id === x.id ? null : { tipo: 'pago', id: x.id }); }}
+                    >
                       <div className="acc-item-fila1">
                         <span className="acc-ref">{x.numeroPago}</span>
                         <ChipMoneda m={x.moneda} />
                         <span className="acc-monto">{money(x.monto)}</span>
-                        <span className="acc-acciones">
+                        <span className="acc-acciones" onClick={(e) => e.stopPropagation()}>
                           <button type="button" className="acc-mini" title="Ver el detalle completo del pago" onClick={() => setDetalle({ titulo: `Pago ${x.numeroPago}`, docu: x.raw })}>👁</button>
                           <button type="button" className="acc-mini" title="Editar el pago (fecha, método, referencia y observaciones; el monto y las facturas se editan en Pagos)" onClick={() => setPagoEdit({ ...x.raw, id: x.id, _nuevaFecha: x.fecha, _nuevoMetodo: x.metodo, _nuevaRef: String(x.raw?.referencia || ''), _nuevasObs: String(x.raw?.observaciones || '') })}>✎</button>
+                          <BotonRevisado tipo="pago" id={x.id} revisado={x.revisado} />
                         </span>
                       </div>
                       <div className="acc-item-fila2">{x.fecha || '—'} · {x.metodo || '—'}</div>
                       <div className="acc-item-detalle">Facturas: {x.invoices || '—'}</div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>
