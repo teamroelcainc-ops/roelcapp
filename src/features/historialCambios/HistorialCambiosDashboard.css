@@ -28,3 +28,6 @@
 .hc-resumen { color: #c9d1d9; margin-top: 6px; font-size: 0.88rem; }
 .hc-detalle { color: #8b949e; margin-top: 6px; font-size: 0.8rem; }
 .hc-detalle summary { cursor: pointer; }
+
+/* ✅ V00330: entradas registradas automáticamente por la versión */
+.hc-auto { border: 1px solid #8957e5; color: #bc8cff; border-radius: 999px; padding: 1px 8px; font-size: 0.68rem; font-weight: 700; white-space: nowrap; }

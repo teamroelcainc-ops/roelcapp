@@ -6,6 +6,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, deleteDoc, doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { obtenerUsuarioAut } from '../autorizaciones/autorizaciones';
+import { CAMBIOS_APP } from '../../config/historialCambios'; // ✅ V00330: registro automático
 import './HistorialCambiosDashboard.css';
 
 interface CambioHist {
@@ -17,6 +18,7 @@ interface CambioHist {
   resumen: string;  // explicación cotidiana (para WhatsApp)
   detalle: string;  // detalle técnico opcional
   creadoPor: string;
+  origen: 'app' | 'manual'; // ✅ V00330: 'app' = registrado automáticamente por la versión
 }
 
 const hoyISO = () => new Date().toISOString().slice(0, 10);
@@ -50,6 +52,7 @@ export const HistorialCambiosDashboard: React.FC = () => {
           version: String(x.version || ''), titulo: String(x.titulo || ''),
           resumen: String(x.resumen || ''), detalle: String(x.detalle || ''),
           creadoPor: String(x.creadoPor || ''),
+          origen: 'manual' as const,
         };
       });
       filas.sort((a, b) => `${b.fecha} ${b.hora}`.localeCompare(`${a.fecha} ${a.hora}`));
@@ -58,7 +61,25 @@ export const HistorialCambiosDashboard: React.FC = () => {
     return () => unsub();
   }, []);
 
-  const visibles = useMemo(() => cambios.filter(c => {
+  // ✅ V00330: REGISTRO AUTOMÁTICO — las entradas que viajan con el código se
+  //   combinan con las manuales; si una versión también se registró a mano,
+  //   se muestra la manual.
+  const todas = useMemo(() => {
+    const versionesManuales = new Set(cambios.map(c => c.version).filter(Boolean));
+    const deApp: CambioHist[] = CAMBIOS_APP
+      .filter(a => !versionesManuales.has(a.version))
+      .map(a => ({
+        id: `app-${a.version}`, fecha: a.fecha, hora: a.hora || '',
+        version: a.version, titulo: a.titulo, resumen: a.resumen,
+        detalle: a.detalle || '', creadoPor: 'Registro automático de la versión',
+        origen: 'app' as const,
+      }));
+    const lista = [...cambios, ...deApp];
+    lista.sort((a, b) => `${b.fecha} ${b.hora}`.localeCompare(`${a.fecha} ${a.hora}`) || b.version.localeCompare(a.version));
+    return lista;
+  }, [cambios]);
+
+  const visibles = useMemo(() => todas.filter(c => {
     if (rangoIni && c.fecha < rangoIni) return false;
     if (rangoFin && c.fecha > rangoFin) return false;
     if (busqueda.trim()) {
@@ -66,7 +87,7 @@ export const HistorialCambiosDashboard: React.FC = () => {
       if (!`${c.version} ${c.titulo} ${c.resumen} ${c.detalle}`.toLowerCase().includes(t)) return false;
     }
     return true;
-  }), [cambios, rangoIni, rangoFin, busqueda]);
+  }), [todas, rangoIni, rangoFin, busqueda]);
 
   const guardar = async () => {
     if (!form.fecha || !form.titulo.trim()) { alert('La fecha y el título son obligatorios.'); return; }
@@ -135,7 +156,7 @@ export const HistorialCambiosDashboard: React.FC = () => {
   return (
     <div className="dashboard-container hc-cont">
       <h2 className="hc-titulo">🕘 Historial de Cambios</h2>
-      <p className="hc-sub">Informe de todas las actualizaciones del sistema — con fecha y hora — para que la gerencia sepa qué se ha hecho.</p>
+      <p className="hc-sub">Informe de todas las actualizaciones del sistema — con fecha y hora — para que la gerencia sepa qué se ha hecho. Las versiones de la app se registran SOLAS al publicarse (⚙ auto); también puedes registrar cambios a mano.</p>
 
       <div className="hc-barra">
         <input type="text" className="form-control hc-buscar" placeholder="Buscar por versión, título o descripción..." value={busqueda} onChange={e => setBusqueda(e.target.value)} />
@@ -190,8 +211,9 @@ export const HistorialCambiosDashboard: React.FC = () => {
             <div className="hc-item-enc">
               <span className="hc-fecha">📅 {ddmm(c.fecha)}{c.hora ? ` · ${c.hora}` : ''}</span>
               {c.version && <span className="hc-version">{c.version}</span>}
+              {c.origen === 'app' && <span className="hc-auto" title="Registrado automáticamente al publicarse esta versión de la app">⚙ auto</span>}
               <span className="hc-item-titulo">{c.titulo}</span>
-              {esAdmin && (
+              {esAdmin && c.origen !== 'app' && (
                 <span className="hc-item-acciones">
                   <button type="button" className="hc-mini" title="Editar" onClick={() => editar(c)}>✎</button>
                   <button type="button" className="hc-mini hc-mini--rojo" title="Borrar" onClick={() => borrar(c)}>🗑</button>
