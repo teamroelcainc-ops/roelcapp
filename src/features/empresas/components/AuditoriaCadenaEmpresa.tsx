@@ -8,7 +8,7 @@
 //   Clic en una operación, factura o pago muestra SOLO su camino (clic de
 //   nuevo para volver). Se abre desde el botón 🔍 de la ficha de la empresa.
 import React, { useEffect, useMemo, useState } from 'react';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import './AuditoriaCadenaEmpresa.css';
 
@@ -26,6 +26,14 @@ const nombreMoneda = (v: unknown): string => {
   return t.length > 12 ? '' : t.toUpperCase();
 };
 const num = (v: unknown): number => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+/** ✅ V00335: fecha a ISO aaaa-mm-dd (acepta ISO o d/m/aaaa de las migradas). */
+const fechaISO = (v: unknown): string => {
+  const t = String(v || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10);
+  const m = t.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  return '';
+};
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const mapear = (s: any): any[] => s.docs.map((d: any) => ({ id: d.id, ...d.data() }));
@@ -48,9 +56,17 @@ export const AuditoriaCadenaEmpresa: React.FC<Props> = ({ empresaId, empresaNomb
   const [pagosCli, setPagosCli] = useState<any[] | null>(null);
   const [pagosProv, setPagosProv] = useState<any[] | null>(null);
   const [sel, setSel] = useState<{ tipo: 'op' | 'fact' | 'pago'; id: string } | null>(null);
+  // ✅ V00335: rango de fechas (fecha de servicio de las operaciones) y la
+  //   MONEDA configurada en la ficha de la empresa.
+  const [rangoIni, setRangoIni] = useState('');
+  const [rangoFin, setRangoFin] = useState('');
+  const [monedaEmpresa, setMonedaEmpresa] = useState('');
 
   useEffect(() => {
     if (!empresaId) return;
+    getDoc(doc(db, 'empresas', empresaId))
+      .then((d) => setMonedaEmpresa(nombreMoneda((d.data() as Record<string, unknown> | undefined)?.moneda || (d.data() as Record<string, unknown> | undefined)?.monedaId)))
+      .catch((e) => console.error('ACE moneda empresa:', e)); // ✅ V00335
     const subs = [
       onSnapshot(query(collection(db, 'operaciones'), where('clientePaga', '==', empresaId)), (s) => setOpsPaga(mapear(s)), (e) => console.error('ACE ops paga:', e)),
       onSnapshot(query(collection(db, 'operaciones'), where('clienteMercancia', '==', empresaId)), (s) => setOpsMerc(mapear(s)), (e) => console.error('ACE ops mercancía:', e)),
@@ -114,10 +130,24 @@ export const AuditoriaCadenaEmpresa: React.FC<Props> = ({ empresaId, empresaNomb
   };
 
   const lado = useMemo(() => {
-    if (papel === 'paga') return armarLado(opsPaga, factCli, pagosCli, (op) => num(op.conversionCliente) || num(op.montoConvenioCliente), (op) => nombreMoneda(op.monedaConvenioCliente || op.facturadoEnCobrar));
-    if (papel === 'proveedor') return armarLado(opsProv, factProv, pagosProv, (op) => num(op.conversionProv) || num(op.totalAPagarProv), (op) => nombreMoneda(op.monedaConvenioProveedor || op.facturadoEnUnidad));
-    return armarLado(opsMerc, [], [], (op) => num(op.conversionCliente) || num(op.montoConvenioCliente), (op) => nombreMoneda(op.monedaConvenioCliente));
-  }, [papel, opsPaga, opsMerc, opsProv, factCli, factProv, pagosCli, pagosProv]);
+    // ✅ V00335: el rango filtra LAS OPERACIONES por su fecha de servicio;
+    //   la facturación y los pagos de la empresa se muestran completos.
+    const enRango = (ops: any[] | null): any[] | null => {
+      if (ops === null) return null;
+      if (!rangoIni && !rangoFin) return ops;
+      return ops.filter((op) => {
+        const iso = fechaISO(op.fechaServicio);
+        if (!iso) return true;
+        if (rangoIni && iso < rangoIni) return false;
+        if (rangoFin && iso > rangoFin) return false;
+        return true;
+      });
+    };
+    const opsPagaR = enRango(opsPaga); const opsMercR = enRango(opsMerc); const opsProvR = enRango(opsProv);
+    if (papel === 'paga') return armarLado(opsPagaR, factCli, pagosCli, (op) => num(op.conversionCliente) || num(op.montoConvenioCliente), (op) => nombreMoneda(op.monedaConvenioCliente || op.facturadoEnCobrar));
+    if (papel === 'proveedor') return armarLado(opsProvR, factProv, pagosProv, (op) => num(op.conversionProv) || num(op.totalAPagarProv), (op) => nombreMoneda(op.monedaConvenioProveedor || op.facturadoEnUnidad));
+    return armarLado(opsMercR, [], [], (op) => num(op.conversionCliente) || num(op.montoConvenioCliente), (op) => nombreMoneda(op.monedaConvenioCliente));
+  }, [papel, opsPaga, opsMerc, opsProv, factCli, factProv, pagosCli, pagosProv, rangoIni, rangoFin]);
 
   // Camino de la selección (las facturas arrastran sus ops y pagos).
   const camino = useMemo(() => {
@@ -159,6 +189,16 @@ export const AuditoriaCadenaEmpresa: React.FC<Props> = ({ empresaId, empresaNomb
           <button type="button" className={`ace-tab${papel === 'paga' ? ' ace-tab--activa' : ''}`} onClick={() => { setPapel('paga'); setSel(null); }}>Cliente (Paga) <span className="ace-tab-n">{conteo(opsPaga)}</span></button>
           <button type="button" className={`ace-tab${papel === 'mercancia' ? ' ace-tab--activa' : ''}`} onClick={() => { setPapel('mercancia'); setSel(null); }}>Cliente (Mercancía) <span className="ace-tab-n">{conteo(opsMerc)}</span></button>
           <button type="button" className={`ace-tab${papel === 'proveedor' ? ' ace-tab--activa' : ''}`} onClick={() => { setPapel('proveedor'); setSel(null); }}>Proveedor (transporte y servicios) <span className="ace-tab-n">{conteo(opsProv)}</span></button>
+        </div>
+
+        {/* ✅ V00335: rango de fechas + moneda de la empresa */}
+        <div className="ace-barra">
+          <span className="ace-rango" title="El rango aplica a la FECHA DE SERVICIO de las operaciones; la facturación y los pagos se muestran completos">
+            Servicio de <input type="date" className="form-control ace-rango-input" value={rangoIni} onChange={(e) => setRangoIni(e.target.value)} />
+            a <input type="date" className="form-control ace-rango-input" value={rangoFin} onChange={(e) => setRangoFin(e.target.value)} />
+            {(rangoIni || rangoFin) && <button type="button" className="ace-mini" title="Quitar el rango" onClick={() => { setRangoIni(''); setRangoFin(''); }}>✕</button>}
+          </span>
+          <span className="ace-moneda" title="Moneda configurada en la ficha de la empresa">Moneda de la empresa: <b>{monedaEmpresa || '—'}</b></span>
         </div>
 
         {cargando ? <div className="ace-cargando">Cargando la cadena de la empresa…</div> : (

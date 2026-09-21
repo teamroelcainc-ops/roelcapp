@@ -38,3 +38,12 @@
   .ace-columnas { grid-template-columns: 1fr; overflow-y: auto; }
   .ace-col { min-height: 220px; }
 }
+
+/* ✅ V00335: rango de fechas y moneda de la empresa */
+.ace-barra { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 8px 0 4px; }
+.ace-rango { display: inline-flex; align-items: center; gap: 6px; color: #8b949e; font-size: 0.8rem; border: 1px solid #30363d; border-radius: 999px; padding: 4px 10px; }
+.ace-rango-input { width: 140px; padding: 5px 8px; font-size: 0.8rem; }
+.ace-moneda { color: #8b949e; font-size: 0.8rem; border: 1px solid #30363d; border-radius: 999px; padding: 5px 12px; }
+.ace-moneda b { color: #58a6ff; }
+.ace-mini { border: 1px solid #30363d; background: transparent; color: #8b949e; border-radius: 6px; padding: 2px 7px; cursor: pointer; font-size: 0.75rem; }
+.ace-mini:hover { border-color: #58a6ff; color: #58a6ff; }
