@@ -254,6 +254,15 @@ export const MODULOS_AUTORIZABLES: ModuloAutorizable[] = [
       { key: 'proveedorId', label: 'Proveedor' },
       { key: 'activo', label: 'Activo' },
     ], integrado: true },
+  // ✅ V00325: el Reporte de Vencimiento queda BAJO Autorizaciones — quién
+  //   puede cambiar el tipo de documento y las fechas se configura aquí.
+  { clave: 'reporteVencimientos', label: 'Reporte de Vencimiento', coleccion: 'documentos', integrado: true, campos: [
+    { key: 'tipoDocumento', label: 'Tipo de documento' },
+    { key: 'subcarpeta', label: 'Carpeta / clasificación' },
+    { key: 'fechaExpedicion', label: 'Fecha de expedición' },
+    { key: 'fechaVencimiento', label: 'Fecha de vencimiento' },
+    { key: 'vence', label: 'Control de vencimiento (sí/no)' },
+  ] },
   { clave: 'combustible', label: 'Combustible', coleccion: 'combustible', campos: [], integrado: false },
   { clave: 'catalogos', label: 'Catálogos', coleccion: 'catalogos', campos: [], integrado: false },
 ];

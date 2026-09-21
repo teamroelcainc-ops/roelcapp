@@ -10,6 +10,8 @@
 // ---------------------------------------------------------------------------
 import { useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, doc, getDocs, onSnapshot, updateDoc } from 'firebase/firestore';
+import { obtenerUsuarioAut, cargarConfigModulo, evaluarAutorizacion, crearSolicitudAutorizacion } from '../autorizaciones/autorizaciones'; // ✅ V00325
+import type { ConfigModuloAut } from '../autorizaciones/autorizaciones'; // ✅ V00325
 import * as XLSX from 'xlsx';
 import { db } from '../../config/firebase';
 import { EditorEncabezados } from '../../components/EditorEncabezados';
@@ -75,13 +77,52 @@ export const ReporteVencimientosDashboard = () => {
     if (!cat || reubicandoId) return;
     setReubicandoId(d.id);
     try {
-      await updateDoc(doc(db, 'documentos', d.id), {
-        tipoDocumento: cat.nombre, subcarpeta: cat.nombre, porClasificar: false, vence: cat.vence,
-      });
+      await guardarConAutorizacion(d, { tipoDocumento: cat.nombre, subcarpeta: cat.nombre, vence: cat.vence }, { porClasificar: false }); // ✅ V00325
     } catch (e: any) { alert(`No se pudo reubicar: ${e?.message || e}`); }
     finally { setReubicandoId(''); }
   };
   const [filtroOrigen, setFiltroOrigen] = useState<string>('todos');
+  // ✅ V00325: AUTORIZACIONES — no todos pueden cambiar documentos o fechas.
+  //   Las reglas (por rol y por campo) se configuran en el módulo de
+  //   Autorizaciones (módulo "Reporte de Vencimiento").
+  const [autUsuario, setAutUsuario] = useState<{ uid: string; nombre: string; roles: string[]; esAdmin: boolean } | null>(null);
+  const [autConfig, setAutConfig] = useState<ConfigModuloAut | null>(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const [u, c] = await Promise.all([obtenerUsuarioAut(), cargarConfigModulo('reporteVencimientos')]);
+        setAutUsuario(u); setAutConfig(c);
+      } catch (e) { console.error('Autorizaciones del reporte:', e); }
+    })();
+  }, []);
+  const ETIQUETAS_RV: Record<string, string> = {
+    tipoDocumento: 'Tipo de documento', subcarpeta: 'Carpeta / clasificación',
+    fechaExpedicion: 'Fecha de expedición', fechaVencimiento: 'Fecha de vencimiento',
+    vence: 'Control de vencimiento (sí/no)',
+  };
+  /** Escribe directo si el usuario puede; si no, crea la SOLICITUD en
+   *  Autorizaciones y el cambio se aplica cuando lo aprueben. */
+  const guardarConAutorizacion = async (d: Pick<DocVenc, 'id'> & Partial<DocVenc>, cambios: Record<string, unknown>, extraSinControl: Record<string, unknown> = {}): Promise<boolean> => {
+    const u = autUsuario;
+    const ev = evaluarAutorizacion(autConfig, 'editar', u || { roles: [], esAdmin: false }, Object.keys(cambios), ETIQUETAS_RV);
+    if (!u || !ev.requiere) {
+      await updateDoc(doc(db, 'documentos', d.id), { ...cambios, ...extraSinControl });
+      return true;
+    }
+    const anteriores: Record<string, unknown> = {};
+    Object.keys(cambios).forEach((k) => { anteriores[k] = (d as unknown as Record<string, unknown>)[k] ?? ''; });
+    await crearSolicitudAutorizacion({
+      modulo: 'reporteVencimientos', moduloLabel: 'Reporte de Vencimiento', accion: 'editar',
+      coleccion: 'documentos', docId: d.id,
+      referencia: `${d.registroNombre || ''} · ${d.tipoDocumento || d.nombreArchivo || 'documento'}`.trim(),
+      camposAfectados: Object.keys(cambios), datosPropuestos: { ...cambios, ...extraSinControl }, datosAnteriores: anteriores,
+      motivosControl: ev.motivos,
+      solicitanteUid: u.uid, solicitanteNombre: u.nombre, solicitanteRoles: u.roles,
+      tipo: 'accion', estrategiaCrear: 'directa',
+    });
+    alert(`Este cambio requiere AUTORIZACIÓN y se envió como solicitud:\n\n${ev.motivos.join('\n')}\n\nSe aplicará cuando lo aprueben en el módulo de Autorizaciones.`);
+    return false;
+  };
   // ✅ V00292: FILTRO DE DÍAS — de inicio SOLO vencidos y ≤45 días.
   const [filtroDias, setFiltroDias] = useState<'45' | '60' | 'mas60' | 'todos'>('45');
   const [busqueda, setBusqueda] = useState('');
@@ -215,7 +256,7 @@ export const ReporteVencimientosDashboard = () => {
 
   const guardarCampo = async (d: DocVenc, campo: 'fechaExpedicion' | 'fechaVencimiento' | 'vence', valor: string | boolean) => {
     setGuardandoId(d.id);
-    try { await updateDoc(doc(db, 'documentos', d.id), { [campo]: valor }); }
+    try { await guardarConAutorizacion(d, { [campo]: valor }); } // ✅ V00325
     catch (e: any) { alert(`No se pudo guardar: ${e?.message || e}`); }
     finally { setGuardandoId(''); }
   };
@@ -226,7 +267,7 @@ export const ReporteVencimientosDashboard = () => {
     const cat = tiposCatalogo.find((t) => t.nombre === tipoNombre);
     if (!cat) return;
     setGuardandoId(d.id);
-    try { await updateDoc(doc(db, 'documentos', d.id), { tipoDocumento: cat.nombre, subcarpeta: cat.nombre, vence: cat.vence, porClasificar: false }); }
+    try { await guardarConAutorizacion(d, { tipoDocumento: cat.nombre, subcarpeta: cat.nombre, vence: cat.vence }, { porClasificar: false }); } // ✅ V00325
     catch (e) { alert(`No se pudo guardar el tipo: ${(e as { message?: string })?.message || e}`); }
     finally { setGuardandoId(''); }
   };
@@ -241,12 +282,12 @@ export const ReporteVencimientosDashboard = () => {
     setGuardandoEditor(true);
     try {
       const cat = tiposCatalogo.find((t) => t.nombre === docEditor.tipoDocumento);
-      await updateDoc(doc(db, 'documentos', docEditor.id), {
-        ...(cat ? { tipoDocumento: cat.nombre, subcarpeta: cat.nombre, porClasificar: false } : {}),
+      await guardarConAutorizacion(docEditor, {
+        ...(cat ? { tipoDocumento: cat.nombre, subcarpeta: cat.nombre } : {}),
         vence: docEditor.vence,
         fechaExpedicion: docEditor.fechaExpedicion,
         fechaVencimiento: docEditor.vence ? docEditor.fechaVencimiento : '',
-      });
+      }, cat ? { porClasificar: false } : {}); // ✅ V00325
       setDocEditor(null);
     } catch (e) { alert(`No se pudo guardar: ${(e as { message?: string })?.message || e}`); }
     setGuardandoEditor(false);
@@ -289,7 +330,7 @@ export const ReporteVencimientosDashboard = () => {
       <div className="rv-encabezado">
         <div>
           <h2 className="rv-titulo">{etq('rv.titulo', 'Reporte de Vencimiento')}</h2>
-          <p className="rv-sub">Documentos de empleados, empresas y unidades con control de vencimiento.</p>
+          <p className="rv-sub">Documentos de empleados, empresas y unidades con control de vencimiento.{autConfig && !autUsuario?.esAdmin && <span className="rv-chip-aut" title="Cambiar el tipo de documento o las fechas puede requerir aprobación — las reglas viven en el módulo de Autorizaciones (Reporte de Vencimiento)"> 🔒 Ediciones controladas por Autorizaciones</span>}</p>
         </div>
         <div className="rv-encabezado-der">
           <EditorEncabezados titulo="Reporte de Vencimiento" claves={[

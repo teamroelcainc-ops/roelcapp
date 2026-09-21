@@ -62,3 +62,6 @@
 .rv-editor-pie { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .rv-editor-guardar { background: #2ea043; border: 1px solid #2ea043; color: #fff; border-radius: 6px; padding: 7px 14px; cursor: pointer; font-weight: 700; }
 .rv-editor-guardar:disabled { opacity: 0.6; cursor: wait; }
+
+/* ✅ V00325: aviso de ediciones bajo Autorizaciones */
+.rv-chip-aut { margin-left: 10px; border: 1px solid #8957e5; border-radius: 999px; padding: 2px 10px; color: #bc8cff; font-size: 0.74rem; font-weight: 700; white-space: nowrap; }
