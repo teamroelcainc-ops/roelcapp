@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react'; // ✅ V002
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { createPortal } from 'react-dom'; // ✅ V00226
 import { collection, onSnapshot, getDocs, writeBatch, doc, query, where, setDoc, getDoc, deleteDoc, getCountFromServer, limit, startAfter } from 'firebase/firestore'; // ✅ V00259: limit/startAfter para el modal de operaciones por C/V
+import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos'; // ✅ V00332
 import { db, auth, agregarRegistro, actualizarRegistro, eliminarRegistro, pedirNotaEliminacion } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger';
 import { limpiarCachesPorPrefijo } from '../../../utils/cacheMemoria'; // ✅ V00259 // ✅ Importación del logger
@@ -240,6 +241,7 @@ const CatalogosDashboard = () => {
 
   // ✅ V00221: declarados aquí porque el efecto de uso los necesita.
   const [registroActual, setRegistroActual] = useState<any | null>(null);
+  const aut = useAutorizacionesCampos('catalogos'); // ✅ V00332: crear/editar/borrar bajo Autorizaciones
   const [viendoDetalles, setViendoDetalles] = useState<boolean>(false);
 
   // ✅ V00220: detalle COMPLETO de dónde se usa una tarifa — tarifarios,
@@ -1088,6 +1090,7 @@ const CatalogosDashboard = () => {
   const guardarRegistro = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!catalogoSeleccionado) return;
+    if (!aut.verificarAccion(registroActual ? 'editar' : 'crear')) return; // ✅ V00332
 
     // ✅ V00208: campos AUTOMÁTICOS (autoDe) — se arman con las etiquetas
     //   legibles de sus campos fuente y pisan lo que hubiera en el estado.
@@ -1233,6 +1236,7 @@ const CatalogosDashboard = () => {
   //    se muestra la CAUSA real en lugar de un mensaje genérico.
   const eliminarRegistroPrincipal = async (id: string) => {
     if (!catalogoSeleccionado) return;
+    if (!aut.verificarAccion('borrar')) return; // ✅ V00332
     if (window.confirm('¿Desea eliminar este registro?\n\nSe enviará a la Papelera de Reciclaje, desde donde podrás restaurarlo. Se te pedirá una nota obligatoria.')) {
       try {
         // ✅ MODIFICADO (V00115): el helper central pide la NOTA OBLIGATORIA y
@@ -1576,6 +1580,7 @@ const CatalogosDashboard = () => {
   // ✅ NUEVO: elimina en lote TODOS los registros seleccionados (lotes de 400).
   const eliminarSeleccionados = async () => {
     if (!catalogoSeleccionado || seleccionadosIds.length === 0 || borrandoSeleccion) return;
+    if (!aut.verificarAccion('borrar')) return; // ✅ V00332
     // ✅ V00228: al terminar se invalidan las opciones dependientes.
     const confirmado = window.confirm(
       `¿Eliminar los ${seleccionadosIds.length} registro(s) seleccionados de "${catalogoSeleccionado.titulo}"?\n\nSe enviarán a la Papelera de Reciclaje, desde donde podrás restaurarlos. Se te pedirá una nota obligatoria.`

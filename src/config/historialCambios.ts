@@ -15,6 +15,7 @@ export interface CambioApp {
 }
 
 export const CAMBIOS_APP: CambioApp[] = [
+  { fecha: '2026-09-21', hora: '18:40', version: 'V00332', titulo: 'Combustible y Catálogos bajo Autorizaciones', resumen: 'Se integraron Combustible y Catálogos al módulo de Autorizaciones: en Combustible se controlan sus campos y acciones, y en Catálogos quién puede crear, editar o borrar registros de cualquier catálogo.' },
   { fecha: '2026-09-21', hora: '17:05', version: 'V00331', titulo: 'La autorización solo mira lo que tú tocas', resumen: 'Al guardar una empresa, la autorización se revisa únicamente sobre los campos que el usuario realmente modificó; lo que el formulario recalcula solo ya no dispara avisos ni afecta a los demás campos.' },
   { fecha: '2026-09-21', hora: '16:45', version: 'V00330', titulo: 'El historial de cambios se llena solo', resumen: 'Cada actualización de la app queda registrada automáticamente en el Historial de Cambios, con fecha, versión y su explicación — ya no hay que capturarla a mano.' },
   { fecha: '2026-09-21', version: 'V00329', titulo: 'Módulo Historial de Cambios + escritura corregida en Empresas', resumen: 'Se estrenó el módulo Historial de Cambios para la gerencia (con informe copiable para WhatsApp) y se corrigió que algunos campos de Empresas perdieran el cursor al escribir.' },

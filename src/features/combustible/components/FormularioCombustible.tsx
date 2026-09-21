@@ -1,6 +1,8 @@
 // src/features/combustible/components/FormularioCombustible.tsx
 
 import React, { useState, useEffect } from 'react';
+import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos'; // ✅ V00332
+import { useEffect as useEffectAut } from 'react'; // ✅ V00332
 import { collection, getDocs, query, where, limit } from 'firebase/firestore'; // ✅ Importamos utilidades de consulta
 import { db, actualizarRegistro } from '../../../config/firebase'; 
 import type { Moneda, CombustibleRecord } from '../../../types/combustible';
@@ -235,6 +237,12 @@ export const FormularioCombustible: React.FC<FormProps> = ({
   const esDolar = monedaSeleccionada?.esDolar ?? false;
   const totalPesos = esDolar ? costo * tipoCambio : 0;
 
+  const autHook = useAutorizacionesCampos('combustible'); // ✅ V00332
+  const setValoresAutC = autHook.setValoresActuales;
+  useEffectAut(() => {
+    setValoresAutC(initialData ? { ...(initialData as unknown as Record<string, unknown>) } : {});
+  }, [initialData, setValoresAutC]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!monedaSeleccionada) return;
@@ -254,6 +262,14 @@ export const FormularioCombustible: React.FC<FormProps> = ({
       costo,
       ...(esDolar && { tipoCambio, totalPesos })
     };
+
+    // ✅ V00332: Autorizaciones — solo los campos que realmente cambiaron.
+    const esEdicionAut = !!(initialData && (initialData as unknown as { id?: string }).id);
+    const camposModAut = esEdicionAut
+      ? ['fecha', 'tipoCombustible', 'monedaId', 'tipoMedida', 'proveedorId', 'costo', 'tipoCambio']
+          .filter(k => JSON.stringify((record as Record<string, unknown>)[k] ?? '') !== JSON.stringify(((initialData || {}) as unknown as Record<string, unknown>)[k] ?? ''))
+      : [];
+    if (!autHook.verificarAccion(esEdicionAut ? 'editar' : 'crear', camposModAut)) return;
 
     try {
       if (initialData && (initialData as any).id) {

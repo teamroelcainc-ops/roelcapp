@@ -267,8 +267,20 @@ export const MODULOS_AUTORIZABLES: ModuloAutorizable[] = [
     { key: 'fechaVencimiento', label: 'Fecha de vencimiento' },
     { key: 'vence', label: 'Control de vencimiento (sí/no)' },
   ] },
-  { clave: 'combustible', label: 'Combustible', coleccion: 'combustible', campos: [], integrado: false },
-  { clave: 'catalogos', label: 'Catálogos', coleccion: 'catalogos', campos: [], integrado: false },
+  // ✅ V00332: Combustible integrado — acciones y campos controlables.
+  { clave: 'combustible', label: 'Combustible', coleccion: 'combustibles', integrado: true, campos: [
+    { key: 'fecha', label: 'Fecha' },
+    { key: 'tipoCombustible', label: 'Tipo de combustible' },
+    { key: 'monedaId', label: 'Moneda' },
+    { key: 'tipoMedida', label: 'Litros / Galones' },
+    { key: 'proveedorId', label: 'Proveedor' },
+    { key: 'costo', label: 'Costo' },
+    { key: 'tipoCambio', label: 'Tipo de cambio' },
+  ] },
+  // ✅ V00332: Catálogos integrado — el control es por ACCIÓN (crear, editar y
+  //   borrar registros de cualquier catálogo), porque cada catálogo tiene sus
+  //   propios campos.
+  { clave: 'catalogos', label: 'Catálogos', coleccion: 'catalogo_*', campos: [], integrado: true },
 ];
 
 export const ACCIONES: { key: AccionAut; label: string }[] = [
