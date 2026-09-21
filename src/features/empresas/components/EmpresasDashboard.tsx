@@ -1,5 +1,6 @@
 // src/features/empresas/components/EmpresasDashboard.tsx
 import React, { useState, useEffect, useMemo } from 'react';
+import { AuditoriaCadenaEmpresa } from './AuditoriaCadenaEmpresa'; // ✅ V00333
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { propagarMonedaEmpresa } from '../services/propagarMoneda';
 import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
@@ -876,6 +877,7 @@ const EmpresasDashboard = () => {
 
   // ✅ V00147: PROPAGAR la moneda de la empresa a TODAS partes
   //   (convenios → operaciones → facturación/pagos), en cascada y de un clic.
+  const [audEmpresa, setAudEmpresa] = useState<{ id: string; nombre: string } | null>(null); // ✅ V00333
   const [propagandoMoneda, setPropagandoMoneda] = useState('');
   const propagarMoneda = async (emp: any) => {
     if (propagandoMoneda) return;
@@ -1635,6 +1637,11 @@ const EmpresasDashboard = () => {
                     📦 carpetas, 📁 carga masiva y ⬆ subir documento. */}
                 <button
                   className="btn-small ed-btn-moneda ed-detalle-accion"
+                  title="Auditoría de la cadena de ESTA empresa: sus operaciones, facturación y pagos, separados por papel (Cliente Paga / Cliente Mercancía / Proveedor)"
+                  onClick={() => setAudEmpresa({ id: String(empresaViendo.id), nombre: String(empresaViendo.nombre || '') })}
+                >🔍</button>{/* ✅ V00333 */}
+                <button
+                  className="btn-small ed-btn-moneda ed-detalle-accion"
                   title="Actualizar la moneda de esta empresa en TODAS partes: convenios, operaciones (Facturado En) y facturación/pagos"
                   disabled={propagandoMoneda === String(empresaViendo.id)}
                   onClick={() => propagarMoneda(empresaViendo)}
@@ -2353,6 +2360,7 @@ const EmpresasDashboard = () => {
           </div>
         </div>
       )}
+      {audEmpresa && <AuditoriaCadenaEmpresa empresaId={audEmpresa.id} empresaNombre={audEmpresa.nombre} onCerrar={() => setAudEmpresa(null)} />}{/* ✅ V00333 */}
     </div>
   );
 };

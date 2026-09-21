@@ -1,0 +1,40 @@
+/* ✅ V00333: Auditoría de la cadena por EMPRESA (ficha de Empresas) */
+.ace-overlay { z-index: 2200; }
+.form-card.ace-modal { width: 80vw; max-width: 80vw; height: 86vh; max-height: 86vh; display: flex; flex-direction: column; overflow: hidden; padding: 16px 18px; }
+.ace-encabezado { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.ace-titulo { margin: 0 0 4px; font-size: 1.05rem; }
+.ace-sub { margin: 0 0 10px; color: #8b949e; font-size: 0.78rem; }
+.ace-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.ace-tab { border: 1px solid #30363d; background: transparent; color: #c9d1d9; border-radius: 999px; padding: 6px 14px; cursor: pointer; font-size: 0.82rem; font-weight: 700; }
+.ace-tab--activa { border-color: #f78166; color: #f78166; background: rgba(247, 129, 102, 0.1); }
+.ace-tab-n { margin-left: 6px; border: 1px solid #30363d; border-radius: 999px; padding: 0 8px; font-size: 0.72rem; color: #8b949e; }
+.ace-cargando { padding: 30px; color: #8b949e; }
+.ace-totales { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.ace-total { border: 1px solid #30363d; border-radius: 8px; padding: 8px 14px; display: flex; flex-direction: column; }
+.ace-total b { font-size: 0.95rem; }
+.ace-total span { color: #8b949e; font-size: 0.66rem; letter-spacing: 0.4px; }
+.ace-nota { margin: 0 0 8px; color: #d29922; font-size: 0.78rem; }
+.ace-columnas { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; flex: 1; min-height: 0; }
+.ace-columnas--una { grid-template-columns: 1fr; }
+.ace-col { border: 1px solid #30363d; border-radius: 8px; display: flex; flex-direction: column; min-height: 0; }
+.ace-col-titulo { padding: 8px 10px; border-bottom: 1px solid #30363d; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.4px; }
+.ace-col-scroll { flex: 1; overflow-y: auto; padding: 8px; }
+.ace-item { border: 1px solid #30363d; border-left: 3px solid #3fb950; border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
+.ace-item--clic { cursor: pointer; }
+.ace-item--clic:hover { border-color: #8b949e; }
+.ace-item--cancelada { border-left-color: #f85149; opacity: 0.75; }
+.ace-item--saldo { border-left-color: #d29922; }
+.ace-item--camino { border-color: #8957e5; box-shadow: 0 0 0 1px #8957e5 inset; }
+.ace-item--sel { border-color: #bc8cff; box-shadow: 0 0 0 2px #8957e5 inset; }
+.ace-item-fila1 { display: flex; align-items: center; gap: 8px; }
+.ace-ref { color: #58a6ff; font-weight: 700; font-size: 0.82rem; }
+.ace-chip { border: 1px solid #30363d; border-radius: 999px; padding: 0 8px; font-size: 0.68rem; color: #8b949e; }
+.ace-monto { margin-left: auto; font-weight: 700; font-size: 0.84rem; }
+.ace-item-fila2 { color: #8b949e; font-size: 0.74rem; margin-top: 2px; }
+.ace-item-detalle { color: #c9d1d9; font-size: 0.74rem; margin-top: 2px; }
+.ace-vacio { color: #8b949e; font-size: 0.8rem; padding: 10px; }
+@media (max-width: 1100px) {
+  .form-card.ace-modal { width: 96vw; max-width: 96vw; }
+  .ace-columnas { grid-template-columns: 1fr; overflow-y: auto; }
+  .ace-col { min-height: 220px; }
+}
