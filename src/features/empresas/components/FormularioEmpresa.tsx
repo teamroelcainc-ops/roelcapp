@@ -361,6 +361,19 @@ interface FormProps {
   tipoEmpresaPreseleccionado?: string;
 }
 
+// ✅ V00329: velo de campo bloqueado por Autorizaciones — a nivel de módulo
+//   para que su identidad sea estable y React NO remonte los controles
+//   envueltos en cada render (los inputs conservan el foco al escribir).
+const BloqueoAut = ({ bloqueado, titulo, onSolicitar, children }: { bloqueado: boolean; titulo: string; onSolicitar: () => void; children: React.ReactNode }) => {
+  if (!bloqueado) return <>{children}</>;
+  return (
+    <div className="fe-aut-bloq" title={titulo} onMouseDownCapture={(e) => { e.preventDefault(); e.stopPropagation(); onSolicitar(); }}>
+      <span className="fe-aut-bloq-velo">🔒</span>
+      <div className="fe-aut-bloq-contenido">{children}</div>
+    </div>
+  );
+};
+
 export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, registros, onClose, onMinimize, onRestore, tipoEmpresaPreseleccionado }) => {
   const [cargando, setCargando] = useState(false);
   const [activeTab, setActiveTab] = useState<'general' | 'fiscal' | 'contacto'>('general');
@@ -610,23 +623,12 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
   //   deja capturar la Moneda (u otro campo) al CREAR y la bloquea al EDITAR.
   const setValoresAut = aut.setValoresActuales;
   useEffect(() => { setValoresAut(initialData ? { ...initialData } : {}); }, [initialData, setValoresAut]);
-  // ✅ V00327: los campos con regla de Autorizaciones SE VEN bloqueados — velo
-  //   con candado 🔒 y control atenuado; el clic abre "Solicitar autorización"
-  //   (acceso temporal). Con "Agregar libre" (V00326), al CREAR quedan
-  //   editables y al EDITAR bloqueados.
-  const BloqueoAut = ({ campo, children }: { campo: string; children: React.ReactNode }) => {
-    if (!aut.campoBloqueado(campo)) return <>{children}</>;
-    return (
-      <div
-        className="fe-aut-bloq"
-        title={`"${aut.etiquetas[campo] || campo}" está bloqueado por Autorizaciones para tu rol — clic para solicitar acceso temporal`}
-        onMouseDownCapture={(e) => { e.preventDefault(); e.stopPropagation(); aut.abrirSolicitudAcceso(campo, { docId: String(initialData?.id || ''), referencia: String(formData?.nombre || '') }); }}
-      >
-        <span className="fe-aut-bloq-velo">🔒</span>
-        <div className="fe-aut-bloq-contenido">{children}</div>
-      </div>
-    );
-  };
+  // ✅ V00329: helpers del velo de Autorizaciones — el componente BloqueoAut
+  //   vive FUERA (identidad estable): definido adentro (V00327) se remontaba en
+  //   cada render y los inputs envueltos perdían el foco tras cada letra.
+  const autBloq = (k: string) => aut.campoBloqueado(k);
+  const autTituloBloq = (k: string) => `"${aut.etiquetas[k] || k}" está bloqueado por Autorizaciones para tu rol — clic para solicitar acceso temporal`;
+  const autSolicitar = (k: string) => aut.abrirSolicitudAcceso(k, { docId: String(initialData?.id || ''), referencia: String(formData?.nombre || '') });
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     if (aut.campoBloqueado((e.target as any).name)) { aut.abrirSolicitudAcceso((e.target as any).name); return; }
     const { name, value } = e.target;
@@ -888,7 +890,7 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
 
                     <div className="form-group">
                       <label className="form-label fe-x38">Razón Social <span className="fe-x39">*</span></label>
-                      <BloqueoAut campo="nombre"><input type="text" name="nombre" className="form-control fe-x40" value={formData.nombre} onChange={handleChange} required /></BloqueoAut>
+                      <BloqueoAut bloqueado={autBloq('nombre')} titulo={autTituloBloq('nombre')} onSolicitar={() => autSolicitar('nombre')}><input type="text" name="nombre" className="form-control fe-x40" value={formData.nombre} onChange={handleChange} required /></BloqueoAut>
                     </div>
 
                     <div className="form-group">
@@ -898,7 +900,7 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
 
                     <div className="form-group fe-x35">
                       <label className="form-label fe-x38">Tipo(s) de Empresa <span className="fe-x39">*</span></label>
-                      <BloqueoAut campo="tiposEmpresa"><MultiSelectCheckbox 
+                      <BloqueoAut bloqueado={autBloq('tiposEmpresa')} titulo={autTituloBloq('tiposEmpresa')} onSolicitar={() => autSolicitar('tiposEmpresa')}><MultiSelectCheckbox 
                         options={catalogoTiposEmpresa} 
                         selectedValues={formData.tiposEmpresa} 
                         onChange={handleTiposEmpresaChange} 
@@ -932,12 +934,12 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
 
                     <div className="form-group">
                       <label className="form-label fe-x38">RFC / Tax ID <span className="fe-x39">*</span></label>
-                      <BloqueoAut campo="rfc"><input type="text" name="rfcTaxId" className="form-control font-mono fe-x40" value={formData.rfcTaxId} onChange={handleChange} required /></BloqueoAut>
+                      <BloqueoAut bloqueado={autBloq('rfc')} titulo={autTituloBloq('rfc')} onSolicitar={() => autSolicitar('rfc')}><input type="text" name="rfcTaxId" className="form-control font-mono fe-x40" value={formData.rfcTaxId} onChange={handleChange} required /></BloqueoAut>
                     </div>
 
                     <div className="form-group">
                       <label className="form-label fe-x38">Status</label>
-                      <BloqueoAut campo="status"><select name="status" className="form-control fe-x40" value={formData.status} onChange={handleChange}>
+                      <BloqueoAut bloqueado={autBloq('status')} titulo={autTituloBloq('status')} onSolicitar={() => autSolicitar('status')}><select name="status" className="form-control fe-x40" value={formData.status} onChange={handleChange}>
                         <option value="Activa">Activa</option>
                         <option value="Inactiva">Inactiva</option>
                         <option value="Baja">Baja</option>
@@ -965,7 +967,7 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                     
                     <div className="form-group fe-x47">
                       <label className="form-label fe-x43">Régimen Fiscal (Buscar en Catálogo)</label>
-                      <BloqueoAut campo="regimenFiscal"><div className="fe-x48">
+                      <BloqueoAut bloqueado={autBloq('regimenFiscal')} titulo={autTituloBloq('regimenFiscal')} onSolicitar={() => autSolicitar('regimenFiscal')}><div className="fe-x48">
                         <div className="fe-x49">
                           <SearchableSelect 
                             options={regimenesFiscales}
@@ -982,7 +984,7 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
 
                     <div className="form-group">
                       <label className="form-label fe-x38">Moneda</label>
-                      <BloqueoAut campo="moneda"><select name="moneda" className="form-control fe-x40" value={formData.moneda} onChange={handleChange}>
+                      <BloqueoAut bloqueado={autBloq('moneda')} titulo={autTituloBloq('moneda')} onSolicitar={() => autSolicitar('moneda')}><select name="moneda" className="form-control fe-x40" value={formData.moneda} onChange={handleChange}>
                         <option value="">Seleccione Moneda...</option>
                         {monedas.map(mon => (
                           <option key={mon.id} value={mon.id}>{mon.moneda}</option>
@@ -992,7 +994,7 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
 
                     <div className="form-group">
                       <label className="form-label fe-x38">Tipo de Factura</label>
-                      <BloqueoAut campo="tipoFactura"><select 
+                      <BloqueoAut bloqueado={autBloq('tipoFactura')} titulo={autTituloBloq('tipoFactura')} onSolicitar={() => autSolicitar('tipoFactura')}><select 
                         name="tipoFactura" 
                         className="form-control" 
                         value={formData.tipoFactura} 
@@ -1014,7 +1016,7 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
 
                     <div className="form-group">
                       <label className="form-label fe-x43">Crédito / Contado</label>
-                      <BloqueoAut campo="creditoContado"><select name="condicionPago" className="form-control fe-x40" value={formData.condicionPago} onChange={handleCondicionPagoChange}>
+                      <BloqueoAut bloqueado={autBloq('creditoContado')} titulo={autTituloBloq('creditoContado')} onSolicitar={() => autSolicitar('creditoContado')}><select name="condicionPago" className="form-control fe-x40" value={formData.condicionPago} onChange={handleCondicionPagoChange}>
                         <option value="Crédito">Crédito</option>
                         <option value="Contado">Contado</option>
                       </select></BloqueoAut>
@@ -1022,12 +1024,12 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
 
                     <div className="form-group">
                       <label className="form-label" style={{ color: formData.condicionPago === 'Contado' ? '#484f58' : '#c9d1d9', display: 'block', marginBottom: '8px' }}>Días de Crédito</label>
-                      <BloqueoAut campo="diasCredito"><input type="number" name="diasCredito" className="form-control" value={formData.diasCredito} onChange={(e) => setFormData(prev => ({ ...prev, diasCredito: parseInt(e.target.value) || 0 }))} disabled={formData.condicionPago === 'Contado'} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box', opacity: formData.condicionPago === 'Contado' ? 0.5 : 1 }} /></BloqueoAut>
+                      <BloqueoAut bloqueado={autBloq('diasCredito')} titulo={autTituloBloq('diasCredito')} onSolicitar={() => autSolicitar('diasCredito')}><input type="number" name="diasCredito" className="form-control" value={formData.diasCredito} onChange={(e) => setFormData(prev => ({ ...prev, diasCredito: parseInt(e.target.value) || 0 }))} disabled={formData.condicionPago === 'Contado'} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box', opacity: formData.condicionPago === 'Contado' ? 0.5 : 1 }} /></BloqueoAut>
                     </div>
 
                     <div className="form-group">
                       <label className="form-label" style={{ color: formData.condicionPago === 'Contado' ? '#484f58' : '#c9d1d9', display: 'block', marginBottom: '8px' }}>Límite de Crédito ($)</label>
-                      <BloqueoAut campo="limiteCredito"><input type="number" step="0.01" name="limiteCredito" className="form-control" value={formData.limiteCredito} onChange={(e) => setFormData(prev => ({ ...prev, limiteCredito: parseFloat(e.target.value) || 0 }))} disabled={formData.condicionPago === 'Contado'} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box', opacity: formData.condicionPago === 'Contado' ? 0.5 : 1 }} /></BloqueoAut>
+                      <BloqueoAut bloqueado={autBloq('limiteCredito')} titulo={autTituloBloq('limiteCredito')} onSolicitar={() => autSolicitar('limiteCredito')}><input type="number" step="0.01" name="limiteCredito" className="form-control" value={formData.limiteCredito} onChange={(e) => setFormData(prev => ({ ...prev, limiteCredito: parseFloat(e.target.value) || 0 }))} disabled={formData.condicionPago === 'Contado'} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box', opacity: formData.condicionPago === 'Contado' ? 0.5 : 1 }} /></BloqueoAut>
                     </div>
                   </div>
                 </div>

@@ -43,6 +43,8 @@ const ServiciosCancelados = lazyWithRetry(() => import('./features/operaciones/c
 const ReportesDashboard = lazyWithRetry(() => import('./features/reportes/components/ReportesDashboard'), 'ReportesDashboard');
 // ✅ V00154: Reporte de Vencimiento (documentos vencidos / por vencer / sin fechas)
 const ReporteVencimientosDashboard = lazyWithRetry(() => import('./features/vencimientos/ReporteVencimientosDashboard').then(m => ({ default: m.ReporteVencimientosDashboard })), 'ReporteVencimientosDashboard');
+// ✅ V00329: Historial de Cambios (informe de actualizaciones para la gerencia)
+const HistorialCambiosDashboard = lazyWithRetry(() => import('./features/historialCambios/HistorialCambiosDashboard').then(m => ({ default: m.HistorialCambiosDashboard })), 'HistorialCambiosDashboard');
 // ✅ V00170: Tablero (CRM) de prueba — drag & drop de status
 const TableroOperacionesDashboard = lazyWithRetry(() => import('./features/tablero/TableroOperacionesDashboard').then(m => ({ default: m.TableroOperacionesDashboard })), 'TableroOperacionesDashboard');
 // ✅ V00164: Panel de Control (metas + dashboard gráfico)
@@ -109,6 +111,7 @@ const MODULOS_A_CLAVE: Record<string, string> = {
   'Servicios Cancelados': 'serviciosCancelados',
   'Reportes': 'reportes',
   'Reporte de Vencimiento': 'reporteVencimientos',
+  'Historial de Cambios': 'historialCambios',
   'Panel de Control': 'panelControl',
   'Tablero (CRM)': 'tableroCrm',
   'MTTO': 'mtto',
@@ -200,6 +203,9 @@ const ICON: Record<string, React.ReactNode> = {
   ),
   reporteVencimientos: (
     <Ico><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15.5 14" /><path d="M5 3 2.5 5.5M19 3l2.5 2.5" /></Ico>
+  ),
+  historialCambios: (
+    <Ico><path d="M3 12a9 9 0 1 0 3-6.7" /><polyline points="3 4 3 9 8 9" /><polyline points="12 7 12 12 15.5 14" /></Ico>
   ),
   reportes: (
     <Ico><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /></Ico>
@@ -738,11 +744,30 @@ function ResumenDelDia() {
 function AppContenido() {
   const [estaAutenticado, setEstaAutenticado] = useState(false);
   const [cargandoAuth, setCargandoAuth] = useState(true); 
+  // ✅ V00303: detector de arranque lento (>12 s en el splash) + reparación
+  //   del caché del navegador (Service Workers y Cache Storage) con recarga.
+  const [arranqueLento, setArranqueLento] = useState(false);
+  useEffect(() => {
+    if (!cargandoAuth) { setArranqueLento(false); return; }
+    const t = window.setTimeout(() => setArranqueLento(true), 12000);
+    return () => window.clearTimeout(t);
+  }, [cargandoAuth]);
+  const repararCacheYRecargar = async () => {
+    try {
+      const regs = (await navigator.serviceWorker?.getRegistrations?.()) || [];
+      await Promise.all(regs.map((r) => r.unregister()));
+    } catch { /* sin SW: no pasa nada */ }
+    try {
+      const claves = await caches.keys();
+      await Promise.all(claves.map((k) => caches.delete(k)));
+    } catch { /* sin Cache Storage: no pasa nada */ }
+    window.location.reload();
+  };
   const [usuarioActualDB, setUsuarioActualDB] = useState<any>(null); 
   const [rolesCatalogo, setRolesCatalogo] = useState<any[]>([]); // catálogo de roles (para permisos)
   
   const { etq } = useEtiquetas();
-  const [moduloActivo, setModuloActivo] = useState<'tableroCrm' | 'panelControl' | 'reporteVencimientos' | 'etiquetas' | 'estadisticas' | 'pagos' | 'misOperaciones' | 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'tarifarioClientes' | 'conveniosProveedores' | 'tarifarioProveedores' | 'detallesConvenioClientes' | 'detallesConvenioProveedores' | 'papeleraReciclaje' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones'>(() => {
+  const [moduloActivo, setModuloActivo] = useState<'tableroCrm' | 'panelControl' | 'reporteVencimientos' | 'etiquetas' | 'estadisticas' | 'pagos' | 'misOperaciones' | 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'tarifarioClientes' | 'conveniosProveedores' | 'tarifarioProveedores' | 'detallesConvenioClientes' | 'detallesConvenioProveedores' | 'papeleraReciclaje' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones' | 'historialCambios'>(() => {
     // ✅ PANTALLA PERSISTENTE: al recargar se regresa al último módulo visitado.
     //   (El guard de permisos más abajo redirige si el rol ya no lo permite.)
     // Cast simple a string: cualquier valor raro lo corrige el guard de permisos.
@@ -1063,17 +1088,36 @@ function AppContenido() {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        setEstaAutenticado(true);
-        const userDoc = await getDoc(doc(db, 'usuarios', user.uid));
-        if (userDoc.exists()) {
-          setUsuarioActualDB({ id: userDoc.id, ...userDoc.data() });
+      // ✅ V00303: BLINDAJE DEL ARRANQUE — antes, si la lectura de
+      //   usuarios/{uid} fallaba (red, permisos, caché del navegador dañado),
+      //   la excepción saltaba ANTES de setCargandoAuth(false) y la app se
+      //   quedaba en "Cargando Roelca Inc..." para siempre. Ahora el splash
+      //   SIEMPRE se libera (finally) y la lectura del usuario reintenta en
+      //   segundo plano sin bloquear.
+      try {
+        if (user) {
+          setEstaAutenticado(true);
+          try {
+            const userDoc = await getDoc(doc(db, 'usuarios', user.uid));
+            if (userDoc.exists()) {
+              setUsuarioActualDB({ id: userDoc.id, ...userDoc.data() });
+            }
+          } catch (e) {
+            console.error('[arranque] No se pudo leer usuarios/{uid}; la app continúa y reintenta en segundo plano.', e);
+            setTimeout(async () => {
+              try {
+                const userDoc = await getDoc(doc(db, 'usuarios', user.uid));
+                if (userDoc.exists()) setUsuarioActualDB({ id: userDoc.id, ...userDoc.data() });
+              } catch (e2) { console.error('[arranque] Reintento de usuarios/{uid} también falló.', e2); }
+            }, 4000);
+          }
+        } else {
+          setEstaAutenticado(false);
+          setUsuarioActualDB(null);
         }
-      } else {
-        setEstaAutenticado(false);
-        setUsuarioActualDB(null);
+      } finally {
+        setCargandoAuth(false);
       }
-      setCargandoAuth(false);
     });
     return () => unsubscribe();
   }, []);
@@ -1277,7 +1321,21 @@ function AppContenido() {
   }, [clavesPermitidas, accesoTotal, moduloActivo]);
 
   if (cargandoAuth) {
-    return <div className="app-x27">Cargando Roelca Inc...</div>;
+    // ✅ V00303: si el arranque tarda más de lo normal (12 s), el splash ofrece
+    //   reparar el caché de la app (borra Service Workers y cachés del
+    //   navegador — la causa típica de "se queda cargando" tras publicar una
+    //   versión nueva) y recargar. No toca la sesión ni los datos de Firebase.
+    return (
+      <div className="app-x27 app-arranque">
+        <div>Cargando Roelca Inc...</div>
+        {arranqueLento && (
+          <div className="app-arranque-rescate">
+            <p>Está tardando más de lo normal. Verifica tu conexión a internet; si la conexión está bien, repara el caché de la app:</p>
+            <button type="button" className="btn app-btn-reparar" onClick={repararCacheYRecargar}>🧹 Reparar caché y recargar</button>
+          </div>
+        )}
+      </div>
+    );
   }
 
   if (!estaAutenticado) {
@@ -1517,6 +1575,13 @@ function AppContenido() {
           <div className={`sidebar-item ${moduloActivo === 'reporteVencimientos' ? 'active' : ''}`} title="Reporte de Vencimiento" onClick={() => navegarA('reporteVencimientos')}>
             <span className="sidebar-icon">{ICON.reporteVencimientos}</span>
             <span className="sidebar-label">{etq('menu.reporte_de_vencimiento', 'Reporte de Vencimiento')}</span>
+          </div>
+        )}
+        {/* ✅ V00329: Historial de Cambios */}
+        {puede('historialCambios') && (
+          <div className={`sidebar-item ${moduloActivo === 'historialCambios' ? 'active' : ''}`} title="Historial de Cambios" onClick={() => navegarA('historialCambios')}>
+            <span className="sidebar-icon">{ICON.historialCambios}</span>
+            <span className="sidebar-label">{etq('menu.historial_de_cambios', 'Historial de Cambios')}</span>
           </div>
         )}
         {/* ✅ V00164: Panel de Control */}
@@ -1865,6 +1930,7 @@ function AppContenido() {
             <MantenerVivo activo={moduloActivo === 'serviciosCancelados' && puede('serviciosCancelados')}><ServiciosCancelados /></MantenerVivo>{/* ✅ V00264 */}
             {moduloActivo === 'reportes' && puede('reportes') && <ReportesDashboard />}
             {moduloActivo === 'reporteVencimientos' && puede('reporteVencimientos') && <ReporteVencimientosDashboard />}
+            {moduloActivo === 'historialCambios' && puede('historialCambios') && <HistorialCambiosDashboard />}{/* ✅ V00329 */}
             {moduloActivo === 'panelControl' && puede('panelControl') && <PanelControlDashboard />}
             {moduloActivo === 'tableroCrm' && puede('tableroCrm') && <TableroOperacionesDashboard />}
             {moduloActivo === 'autorizaciones' && puede('autorizaciones') && <AutorizacionesDashboard />}

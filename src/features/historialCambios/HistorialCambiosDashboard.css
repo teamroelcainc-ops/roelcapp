@@ -1,0 +1,30 @@
+/* ✅ V00329: Historial de Cambios */
+.hc-cont { padding: 20px; }
+.hc-titulo { margin: 0 0 4px 0; }
+.hc-sub { color: #8b949e; margin: 0 0 14px 0; font-size: 0.85rem; }
+.hc-barra { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
+.hc-buscar { max-width: 320px; }
+.hc-rango { display: inline-flex; align-items: center; gap: 6px; color: #8b949e; font-size: 0.8rem; border: 1px solid #30363d; border-radius: 999px; padding: 4px 10px; }
+.hc-rango-input { width: 140px; padding: 5px 8px; font-size: 0.8rem; }
+.hc-btn-wa { white-space: nowrap; }
+.hc-btn { white-space: nowrap; }
+.hc-mini { background: transparent; border: 1px solid #30363d; border-radius: 6px; color: #8b949e; cursor: pointer; padding: 2px 8px; font-size: 0.78rem; }
+.hc-mini:hover { color: #c9d1d9; border-color: #8b949e; }
+.hc-mini--rojo:hover { color: #f85149; border-color: #f85149; }
+.hc-form { border: 1px solid #30363d; border-radius: 10px; padding: 14px; margin-bottom: 14px; background: #0d1117; display: flex; flex-direction: column; gap: 10px; }
+.hc-form-fila { display: flex; flex-wrap: wrap; gap: 10px; }
+.hc-lbl { display: flex; flex-direction: column; gap: 4px; color: #8b949e; font-size: 0.78rem; flex: 1; min-width: 140px; }
+.hc-ta { resize: vertical; }
+.hc-form-acciones { display: flex; justify-content: flex-end; gap: 8px; }
+.hc-ayuda { color: #8b949e; font-size: 0.8rem; margin: 0; }
+.hc-lista { display: flex; flex-direction: column; gap: 10px; }
+.hc-vacio { color: #8b949e; padding: 24px; text-align: center; border: 1px dashed #30363d; border-radius: 10px; }
+.hc-item { border: 1px solid #30363d; border-radius: 10px; padding: 12px 14px; background: #0d1117; }
+.hc-item-enc { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.hc-fecha { color: #8b949e; font-size: 0.8rem; white-space: nowrap; }
+.hc-version { border: 1px solid #388bfd; color: #79c0ff; border-radius: 999px; padding: 1px 10px; font-size: 0.74rem; font-weight: 700; }
+.hc-item-titulo { font-weight: 700; color: #c9d1d9; }
+.hc-item-acciones { margin-left: auto; display: inline-flex; gap: 6px; }
+.hc-resumen { color: #c9d1d9; margin-top: 6px; font-size: 0.88rem; }
+.hc-detalle { color: #8b949e; margin-top: 6px; font-size: 0.8rem; }
+.hc-detalle summary { cursor: pointer; }
