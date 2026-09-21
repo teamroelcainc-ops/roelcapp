@@ -536,6 +536,15 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [catTiposEmpresaFull, catTiposServicioFull, initialData]);
 
+  // ✅ V00328: FOTO del formulario al abrir (ya normalizado) — sirve para saber
+  //   qué campos REALMENTE cambió el usuario al guardar. Sin esto, Autorizaciones
+  //   pedía permiso por campos que nadie tocó (ej. Status).
+  const formInicialRef = React.useRef<Record<string, unknown> | null>(null);
+  useEffect(() => { formInicialRef.current = null; }, [initialData]);
+  useEffect(() => {
+    setFormData(prev => { formInicialRef.current = { ...prev }; return prev; });
+  }, [catTiposEmpresaFull, catTiposServicioFull, initialData]);
+
   // ✅ Si el formulario se abrió desde otro módulo con un tipo preseleccionado
   //   (ej. "Cliente (Mercancía)" desde Operaciones), se marca de inicio.
   useEffect(() => {
@@ -601,6 +610,23 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
   //   deja capturar la Moneda (u otro campo) al CREAR y la bloquea al EDITAR.
   const setValoresAut = aut.setValoresActuales;
   useEffect(() => { setValoresAut(initialData ? { ...initialData } : {}); }, [initialData, setValoresAut]);
+  // ✅ V00327: los campos con regla de Autorizaciones SE VEN bloqueados — velo
+  //   con candado 🔒 y control atenuado; el clic abre "Solicitar autorización"
+  //   (acceso temporal). Con "Agregar libre" (V00326), al CREAR quedan
+  //   editables y al EDITAR bloqueados.
+  const BloqueoAut = ({ campo, children }: { campo: string; children: React.ReactNode }) => {
+    if (!aut.campoBloqueado(campo)) return <>{children}</>;
+    return (
+      <div
+        className="fe-aut-bloq"
+        title={`"${aut.etiquetas[campo] || campo}" está bloqueado por Autorizaciones para tu rol — clic para solicitar acceso temporal`}
+        onMouseDownCapture={(e) => { e.preventDefault(); e.stopPropagation(); aut.abrirSolicitudAcceso(campo, { docId: String(initialData?.id || ''), referencia: String(formData?.nombre || '') }); }}
+      >
+        <span className="fe-aut-bloq-velo">🔒</span>
+        <div className="fe-aut-bloq-contenido">{children}</div>
+      </div>
+    );
+  };
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     if (aut.campoBloqueado((e.target as any).name)) { aut.abrirSolicitudAcceso((e.target as any).name); return; }
     const { name, value } = e.target;
@@ -646,7 +672,13 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
 
   const handleSubmit = async (e: React.FormEvent) => {
     // ✅ V00140: reglas de acción (crear/editar) de Autorizaciones
-    if (!aut.verificarAccion(initialData?.id ? 'editar' : 'crear', Object.keys(formData || {}))) return;
+    // ✅ V00328: solo los campos REALMENTE modificados van a la verificación —
+    //   si un campo con regla no se tocó, no pide autorización.
+    const baseAut = (formInicialRef.current || initialData || {}) as Record<string, unknown>;
+    const camposModAut = initialData?.id
+      ? Object.keys(formData || {}).filter(k => JSON.stringify((formData as Record<string, unknown>)[k] ?? '') !== JSON.stringify(baseAut[k] ?? ''))
+      : Object.keys(formData || {});
+    if (!aut.verificarAccion(initialData?.id ? 'editar' : 'crear', camposModAut)) return;
     e.preventDefault();
 
     if (!formData.nombre || !formData.rfcTaxId) {
@@ -856,7 +888,7 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
 
                     <div className="form-group">
                       <label className="form-label fe-x38">Razón Social <span className="fe-x39">*</span></label>
-                      <input type="text" name="nombre" className="form-control fe-x40" value={formData.nombre} onChange={handleChange} required />
+                      <BloqueoAut campo="nombre"><input type="text" name="nombre" className="form-control fe-x40" value={formData.nombre} onChange={handleChange} required /></BloqueoAut>
                     </div>
 
                     <div className="form-group">
@@ -866,12 +898,12 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
 
                     <div className="form-group fe-x35">
                       <label className="form-label fe-x38">Tipo(s) de Empresa <span className="fe-x39">*</span></label>
-                      <MultiSelectCheckbox 
+                      <BloqueoAut campo="tiposEmpresa"><MultiSelectCheckbox 
                         options={catalogoTiposEmpresa} 
                         selectedValues={formData.tiposEmpresa} 
                         onChange={handleTiposEmpresaChange} 
                         placeholder="Seleccionar tipos..."
-                      />
+                      /></BloqueoAut>
                     </div>
 
                     {formData.tiposEmpresa.includes('Proveedor (Servicios)') && (
@@ -900,16 +932,16 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
 
                     <div className="form-group">
                       <label className="form-label fe-x38">RFC / Tax ID <span className="fe-x39">*</span></label>
-                      <input type="text" name="rfcTaxId" className="form-control font-mono fe-x40" value={formData.rfcTaxId} onChange={handleChange} required />
+                      <BloqueoAut campo="rfc"><input type="text" name="rfcTaxId" className="form-control font-mono fe-x40" value={formData.rfcTaxId} onChange={handleChange} required /></BloqueoAut>
                     </div>
 
                     <div className="form-group">
                       <label className="form-label fe-x38">Status</label>
-                      <select name="status" className="form-control fe-x40" value={formData.status} onChange={handleChange}>
+                      <BloqueoAut campo="status"><select name="status" className="form-control fe-x40" value={formData.status} onChange={handleChange}>
                         <option value="Activa">Activa</option>
                         <option value="Inactiva">Inactiva</option>
                         <option value="Baja">Baja</option>
-                      </select>
+                      </select></BloqueoAut>
                     </div>
 
                     {formData.status === 'Baja' && (
@@ -933,7 +965,7 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                     
                     <div className="form-group fe-x47">
                       <label className="form-label fe-x43">Régimen Fiscal (Buscar en Catálogo)</label>
-                      <div className="fe-x48">
+                      <BloqueoAut campo="regimenFiscal"><div className="fe-x48">
                         <div className="fe-x49">
                           <SearchableSelect 
                             options={regimenesFiscales}
@@ -945,22 +977,22 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                         <button type="button" className="btn btn-outline fe-x50" onClick={() => setModalRegimenAbierto(true)}>
                           + Nuevo
                         </button>
-                      </div>
+                      </div></BloqueoAut>
                     </div>
 
                     <div className="form-group">
                       <label className="form-label fe-x38">Moneda</label>
-                      <select name="moneda" className="form-control fe-x40" value={formData.moneda} onChange={handleChange}>
+                      <BloqueoAut campo="moneda"><select name="moneda" className="form-control fe-x40" value={formData.moneda} onChange={handleChange}>
                         <option value="">Seleccione Moneda...</option>
                         {monedas.map(mon => (
                           <option key={mon.id} value={mon.id}>{mon.moneda}</option>
                         ))}
-                      </select>
+                      </select></BloqueoAut>
                     </div>
 
                     <div className="form-group">
                       <label className="form-label fe-x38">Tipo de Factura</label>
-                      <select 
+                      <BloqueoAut campo="tipoFactura"><select 
                         name="tipoFactura" 
                         className="form-control" 
                         value={formData.tipoFactura} 
@@ -977,25 +1009,25 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                         {tiposFacturasFiltrados.map(tf => (
                           <option key={tf.id} value={tf.id}>{tf.nombre}</option>
                         ))}
-                      </select>
+                      </select></BloqueoAut>
                     </div>
 
                     <div className="form-group">
                       <label className="form-label fe-x43">Crédito / Contado</label>
-                      <select name="condicionPago" className="form-control fe-x40" value={formData.condicionPago} onChange={handleCondicionPagoChange}>
+                      <BloqueoAut campo="creditoContado"><select name="condicionPago" className="form-control fe-x40" value={formData.condicionPago} onChange={handleCondicionPagoChange}>
                         <option value="Crédito">Crédito</option>
                         <option value="Contado">Contado</option>
-                      </select>
+                      </select></BloqueoAut>
                     </div>
 
                     <div className="form-group">
                       <label className="form-label" style={{ color: formData.condicionPago === 'Contado' ? '#484f58' : '#c9d1d9', display: 'block', marginBottom: '8px' }}>Días de Crédito</label>
-                      <input type="number" name="diasCredito" className="form-control" value={formData.diasCredito} onChange={(e) => setFormData(prev => ({ ...prev, diasCredito: parseInt(e.target.value) || 0 }))} disabled={formData.condicionPago === 'Contado'} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box', opacity: formData.condicionPago === 'Contado' ? 0.5 : 1 }} />
+                      <BloqueoAut campo="diasCredito"><input type="number" name="diasCredito" className="form-control" value={formData.diasCredito} onChange={(e) => setFormData(prev => ({ ...prev, diasCredito: parseInt(e.target.value) || 0 }))} disabled={formData.condicionPago === 'Contado'} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box', opacity: formData.condicionPago === 'Contado' ? 0.5 : 1 }} /></BloqueoAut>
                     </div>
 
                     <div className="form-group">
                       <label className="form-label" style={{ color: formData.condicionPago === 'Contado' ? '#484f58' : '#c9d1d9', display: 'block', marginBottom: '8px' }}>Límite de Crédito ($)</label>
-                      <input type="number" step="0.01" name="limiteCredito" className="form-control" value={formData.limiteCredito} onChange={(e) => setFormData(prev => ({ ...prev, limiteCredito: parseFloat(e.target.value) || 0 }))} disabled={formData.condicionPago === 'Contado'} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box', opacity: formData.condicionPago === 'Contado' ? 0.5 : 1 }} />
+                      <BloqueoAut campo="limiteCredito"><input type="number" step="0.01" name="limiteCredito" className="form-control" value={formData.limiteCredito} onChange={(e) => setFormData(prev => ({ ...prev, limiteCredito: parseFloat(e.target.value) || 0 }))} disabled={formData.condicionPago === 'Contado'} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box', opacity: formData.condicionPago === 'Contado' ? 0.5 : 1 }} /></BloqueoAut>
                     </div>
                   </div>
                 </div>
