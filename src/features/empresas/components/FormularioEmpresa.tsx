@@ -597,6 +597,10 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
 
   // ✅ V00140: este formulario respeta Autorizaciones (campos bloqueados + acciones)
   const aut = useAutorizacionesCampos('empresas');
+  // ✅ V00326: el hook conoce el registro abierto — así "Agregar libre"
+  //   deja capturar la Moneda (u otro campo) al CREAR y la bloquea al EDITAR.
+  const setValoresAut = aut.setValoresActuales;
+  useEffect(() => { setValoresAut(initialData ? { ...initialData } : {}); }, [initialData, setValoresAut]);
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     if (aut.campoBloqueado((e.target as any).name)) { aut.abrirSolicitudAcceso((e.target as any).name); return; }
     const { name, value } = e.target;

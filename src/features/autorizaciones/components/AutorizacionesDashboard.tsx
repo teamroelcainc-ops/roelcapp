@@ -313,6 +313,15 @@ export const AutorizacionesDashboard = () => {
             <input className="ad-x7" type="checkbox" checked={regla.requiere} onChange={() => setRegla(modulo, tipo, key, { requiere: !regla.requiere })} />
             <span style={{ color: regla.requiere ? '#f0f6fc' : '#8b949e', fontSize: '0.88rem', fontWeight: regla.requiere ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
           </label>
+          {regla.requiere && tipo === 'campos' && (
+            <button
+              type="button"
+              title="AGREGAR sí, EDITAR no: capturar el PRIMER valor del campo es libre; la autorización solo aplica cuando el campo ya tenía valor (ej. la Moneda se agrega al crear la empresa y ya no se cambia)"
+              onClick={() => setRegla(modulo, tipo, key, { soloEditar: !regla.soloEditar })}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 10px', borderRadius: '999px', border: `1px solid ${regla.soloEditar ? '#3fb950' : '#30363d'}`, backgroundColor: regla.soloEditar ? 'rgba(63,185,80,0.12)' : 'transparent', color: regla.soloEditar ? '#3fb950' : '#8b949e', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 700, flexShrink: 0 }}>
+              {regla.soloEditar ? '✓ ' : ''}Agregar libre
+            </button>
+          )}{/* ✅ V00326 */}
           {regla.requiere && (
             <button type="button" onClick={() => setReglaExpandida(expandida ? '' : idRegla)}
               title="Elegir a qué roles aplica esta regla"

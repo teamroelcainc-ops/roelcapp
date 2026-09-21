@@ -104,13 +104,13 @@ export const ReporteVencimientosDashboard = () => {
    *  Autorizaciones y el cambio se aplica cuando lo aprueben. */
   const guardarConAutorizacion = async (d: Pick<DocVenc, 'id'> & Partial<DocVenc>, cambios: Record<string, unknown>, extraSinControl: Record<string, unknown> = {}): Promise<boolean> => {
     const u = autUsuario;
-    const ev = evaluarAutorizacion(autConfig, 'editar', u || { roles: [], esAdmin: false }, Object.keys(cambios), ETIQUETAS_RV);
+    const anteriores: Record<string, unknown> = {};
+    Object.keys(cambios).forEach((k) => { anteriores[k] = (d as unknown as Record<string, unknown>)[k] ?? ''; });
+    const ev = evaluarAutorizacion(autConfig, 'editar', u || { roles: [], esAdmin: false }, Object.keys(cambios), ETIQUETAS_RV, anteriores); // ✅ V00326: soloEditar — llenar una fecha vacía puede quedar libre
     if (!u || !ev.requiere) {
       await updateDoc(doc(db, 'documentos', d.id), { ...cambios, ...extraSinControl });
       return true;
     }
-    const anteriores: Record<string, unknown> = {};
-    Object.keys(cambios).forEach((k) => { anteriores[k] = (d as unknown as Record<string, unknown>)[k] ?? ''; });
     await crearSolicitudAutorizacion({
       modulo: 'reporteVencimientos', moduloLabel: 'Reporte de Vencimiento', accion: 'editar',
       coleccion: 'documentos', docId: d.id,

@@ -22,6 +22,10 @@ export const useAutorizacionesCampos = (moduloClave: string) => {
   const [solicitudEnviando, setSolicitudEnviando] = useState(false);
   const [solicitudEnviada, setSolicitudEnviada] = useState(false);
   const [contextoRegistro, setContextoRegistro] = useState<{ docId?: string; referencia?: string }>({});
+  // ✅ V00326: valores ACTUALES del registro abierto — habilitan el matiz
+  //   soloEditar ("agregar sí, editar no"). Al CREAR pásale {} (todo vacío →
+  //   los campos soloEditar quedan libres); al EDITAR pásale el registro.
+  const [valoresActuales, setValoresActuales] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
     let activo = true;
@@ -54,10 +58,10 @@ export const useAutorizacionesCampos = (moduloClave: string) => {
     //   o con un acceso temporal aprobado. (Las ACCIONES y la administración
     //   del módulo siguen siendo libres para Admin.)
     const claves = Object.keys(config.campos || {});
-    const r = evaluarAutorizacion(config, 'editar', { ...usuario, esAdmin: false }, claves, etiquetas);
+    const r = evaluarAutorizacion(config, 'editar', { ...usuario, esAdmin: false }, claves, etiquetas, valoresActuales); // ✅ V00326
     // ✅ V00141: un acceso aprobado y vigente destapa el campo para este usuario
     return new Set(r.camposControlados.filter((k) => !accesosVigentes.has(k)));
-  }, [config, usuario, etiquetas, accesosVigentes]);
+  }, [config, usuario, etiquetas, accesosVigentes, valoresActuales]);
 
   const campoBloqueado = (k: string) => camposBloqueados.has(k);
   const propsBloqueo = (k: string) => campoBloqueado(k)
@@ -67,7 +71,7 @@ export const useAutorizacionesCampos = (moduloClave: string) => {
   /** Evalúa una acción al guardar. Si requiere autorización, muestra el motivo y regresa false. */
   const verificarAccion = (accion: AccionAut, camposModificados: string[] = []): boolean => {
     if (!usuario) return true; // sin sesión resuelta aún: no bloquear
-    const r = evaluarAutorizacion(config ?? null, accion, usuario, camposModificados, etiquetas);
+    const r = evaluarAutorizacion(config ?? null, accion, usuario, camposModificados, etiquetas, valoresActuales); // ✅ V00326
     if (!r.requiere) return true;
     alert(`⛔ Esta acción requiere autorización de un Administrador:\n\n· ${r.motivos.join('\n· ')}\n\nPídele a un Admin que realice el cambio o ajuste las reglas en Configuración → Autorizaciones.`);
     return false;
@@ -103,6 +107,7 @@ export const useAutorizacionesCampos = (moduloClave: string) => {
     campoBloqueado, propsBloqueo, verificarAccion, camposBloqueados,
     etiquetas, abrirSolicitudAcceso, cerrarSolicitudAcceso, enviarSolicitudAcceso,
     solicitudCampo, solicitudEnviando, solicitudEnviada, setContextoRegistro,
+    setValoresActuales, // ✅ V00326
   };
 };
 

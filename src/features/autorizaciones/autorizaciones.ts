@@ -21,6 +21,10 @@ export type AccionAut = 'crear' | 'editar' | 'borrar';
 export interface ReglaAut {
   requiere: boolean;
   roles: string[]; // vacío = aplica a todos los roles (excepto Admin)
+  // ✅ V00326: "AGREGAR sí, EDITAR no" — la regla del CAMPO solo bloquea
+  //   cuando el campo YA TENÍA valor; capturar el primer valor es libre
+  //   (ej. la Moneda de una empresa: se agrega al crear, no se cambia después).
+  soloEditar?: boolean;
 }
 
 export interface ConfigModuloAut {
@@ -362,6 +366,10 @@ export const evaluarAutorizacion = (
   usuario: { roles: string[]; esAdmin: boolean },
   camposModificados: string[] = [],
   etiquetasCampos: Record<string, string> = {},
+  // ✅ V00326: valores ANTERIORES del registro — permiten el matiz
+  //   soloEditar (agregar el primer valor es libre). null = sin información:
+  //   una regla soloEditar se aplica como regla normal (conservador).
+  valoresAnteriores: Record<string, unknown> | null = null,
 ): { requiere: boolean; motivos: string[]; camposControlados: string[] } => {
   if (!config || usuario.esAdmin) return { requiere: false, motivos: [], camposControlados: [] };
   const motivos: string[] = [];
@@ -372,11 +380,14 @@ export const evaluarAutorizacion = (
     motivos.push(`La acción "${nombreAccion}" requiere autorización.`);
   }
   if (accion === 'editar') {
+    const estaVacio = (v: unknown): boolean => v === undefined || v === null || String(v).trim() === '' || (Array.isArray(v) && v.length === 0) || v === 0;
     camposModificados.forEach(campo => {
-      if (reglaAplica(config.campos?.[campo], usuario.roles)) {
-        camposControlados.push(campo);
-        motivos.push(`El campo "${etiquetasCampos[campo] || campo}" requiere autorización para editarse.`);
-      }
+      const regla = config.campos?.[campo];
+      if (!reglaAplica(regla, usuario.roles)) return;
+      // ✅ V00326: con soloEditar, AGREGAR el primer valor no requiere autorización.
+      if (regla?.soloEditar && valoresAnteriores !== null && estaVacio(valoresAnteriores[campo])) return;
+      camposControlados.push(campo);
+      motivos.push(`El campo "${etiquetasCampos[campo] || campo}" requiere autorización para editarse.`);
     });
   }
   return { requiere: motivos.length > 0, motivos, camposControlados };
