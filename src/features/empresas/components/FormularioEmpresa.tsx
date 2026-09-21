@@ -364,6 +364,13 @@ interface FormProps {
 // ✅ V00329: velo de campo bloqueado por Autorizaciones — a nivel de módulo
 //   para que su identidad sea estable y React NO remonte los controles
 //   envueltos en cada render (los inputs conservan el foco al escribir).
+// ✅ V00331: algunos controles usan un name distinto a la clave registrada en
+//   Autorizaciones — este mapa los traduce.
+const NAME_A_CLAVE_AUT: Record<string, string> = { rfcTaxId: 'rfc', condicionPago: 'creditoContado' };
+// Y cada clave del registro corresponde a estos campos del formulario (para
+//   saber si su valor realmente cambió).
+const CAMPOS_FORM_DE_CLAVE_AUT: Record<string, string[]> = { rfc: ['rfcTaxId'], creditoContado: ['condicionPago'], regimenFiscal: ['regimenFiscalId', 'regimenFiscalLabel'] };
+
 const BloqueoAut = ({ bloqueado, titulo, onSolicitar, children }: { bloqueado: boolean; titulo: string; onSolicitar: () => void; children: React.ReactNode }) => {
   if (!bloqueado) return <>{children}</>;
   return (
@@ -623,6 +630,11 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
   //   deja capturar la Moneda (u otro campo) al CREAR y la bloquea al EDITAR.
   const setValoresAut = aut.setValoresActuales;
   useEffect(() => { setValoresAut(initialData ? { ...initialData } : {}); }, [initialData, setValoresAut]);
+  // ✅ V00331: la autorización SOLO mira los campos que el USUARIO tocó — lo
+  //   que el formulario recalcula solo (catálogos, normalizaciones) no cuenta.
+  const camposTocadosRef = React.useRef<Set<string>>(new Set());
+  useEffect(() => { camposTocadosRef.current = new Set(); }, [initialData]);
+  const tocarCampoAut = (clave: string) => { camposTocadosRef.current.add(clave); };
   // ✅ V00329: helpers del velo de Autorizaciones — el componente BloqueoAut
   //   vive FUERA (identidad estable): definido adentro (V00327) se remontaba en
   //   cada render y los inputs envueltos perdían el foco tras cada letra.
@@ -630,7 +642,9 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
   const autTituloBloq = (k: string) => `"${aut.etiquetas[k] || k}" está bloqueado por Autorizaciones para tu rol — clic para solicitar acceso temporal`;
   const autSolicitar = (k: string) => aut.abrirSolicitudAcceso(k, { docId: String(initialData?.id || ''), referencia: String(formData?.nombre || '') });
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    if (aut.campoBloqueado((e.target as any).name)) { aut.abrirSolicitudAcceso((e.target as any).name); return; }
+    const claveAut = NAME_A_CLAVE_AUT[(e.target as any).name] || (e.target as any).name; // ✅ V00331
+    if (aut.campoBloqueado(claveAut)) { aut.abrirSolicitudAcceso(claveAut); return; }
+    tocarCampoAut(claveAut); // ✅ V00331
     const { name, value } = e.target;
     
     setFormData(prev => {
@@ -663,6 +677,7 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
   };
 
   const handleCondicionPagoChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    tocarCampoAut('creditoContado'); // ✅ V00331
     const value = e.target.value;
     setFormData(prev => ({
       ...prev,
@@ -674,11 +689,15 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
 
   const handleSubmit = async (e: React.FormEvent) => {
     // ✅ V00140: reglas de acción (crear/editar) de Autorizaciones
-    // ✅ V00328: solo los campos REALMENTE modificados van a la verificación —
-    //   si un campo con regla no se tocó, no pide autorización.
+    // ✅ V00331: a la verificación de Autorizaciones van SOLO los campos que el
+    //   USUARIO tocó Y cuyo valor realmente cambió respecto del inicial. Lo que
+    //   el formulario recalcula por su cuenta jamás dispara autorización.
     const baseAut = (formInicialRef.current || initialData || {}) as Record<string, unknown>;
     const camposModAut = initialData?.id
-      ? Object.keys(formData || {}).filter(k => JSON.stringify((formData as Record<string, unknown>)[k] ?? '') !== JSON.stringify(baseAut[k] ?? ''))
+      ? [...camposTocadosRef.current].filter(k => {
+          const camposForm = CAMPOS_FORM_DE_CLAVE_AUT[k] || [k];
+          return camposForm.some(c => JSON.stringify((formData as Record<string, unknown>)[c] ?? '') !== JSON.stringify(baseAut[c] ?? ''));
+        })
       : Object.keys(formData || {});
     if (!aut.verificarAccion(initialData?.id ? 'editar' : 'crear', camposModAut)) return;
     e.preventDefault();
@@ -903,7 +922,7 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                       <BloqueoAut bloqueado={autBloq('tiposEmpresa')} titulo={autTituloBloq('tiposEmpresa')} onSolicitar={() => autSolicitar('tiposEmpresa')}><MultiSelectCheckbox 
                         options={catalogoTiposEmpresa} 
                         selectedValues={formData.tiposEmpresa} 
-                        onChange={handleTiposEmpresaChange} 
+                        onChange={(vals: string[]) => { tocarCampoAut('tiposEmpresa'); handleTiposEmpresaChange(vals); }} 
                         placeholder="Seleccionar tipos..."
                       /></BloqueoAut>
                     </div>
@@ -972,7 +991,7 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                           <SearchableSelect 
                             options={regimenesFiscales}
                             value={formData.regimenFiscalId}
-                            onChange={(id, label) => setFormData(prev => ({ ...prev, regimenFiscalId: id, regimenFiscalLabel: label }))}
+                            onChange={(id, label) => { tocarCampoAut('regimenFiscal'); setFormData(prev => ({ ...prev, regimenFiscalId: id, regimenFiscalLabel: label })); }}
                             placeholder="Buscar Régimen Fiscal..."
                           />
                         </div>
@@ -1024,12 +1043,12 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
 
                     <div className="form-group">
                       <label className="form-label" style={{ color: formData.condicionPago === 'Contado' ? '#484f58' : '#c9d1d9', display: 'block', marginBottom: '8px' }}>Días de Crédito</label>
-                      <BloqueoAut bloqueado={autBloq('diasCredito')} titulo={autTituloBloq('diasCredito')} onSolicitar={() => autSolicitar('diasCredito')}><input type="number" name="diasCredito" className="form-control" value={formData.diasCredito} onChange={(e) => setFormData(prev => ({ ...prev, diasCredito: parseInt(e.target.value) || 0 }))} disabled={formData.condicionPago === 'Contado'} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box', opacity: formData.condicionPago === 'Contado' ? 0.5 : 1 }} /></BloqueoAut>
+                      <BloqueoAut bloqueado={autBloq('diasCredito')} titulo={autTituloBloq('diasCredito')} onSolicitar={() => autSolicitar('diasCredito')}><input type="number" name="diasCredito" className="form-control" value={formData.diasCredito} onChange={(e) => { tocarCampoAut('diasCredito'); setFormData(prev => ({ ...prev, diasCredito: parseInt(e.target.value) || 0 })); }} disabled={formData.condicionPago === 'Contado'} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box', opacity: formData.condicionPago === 'Contado' ? 0.5 : 1 }} /></BloqueoAut>
                     </div>
 
                     <div className="form-group">
                       <label className="form-label" style={{ color: formData.condicionPago === 'Contado' ? '#484f58' : '#c9d1d9', display: 'block', marginBottom: '8px' }}>Límite de Crédito ($)</label>
-                      <BloqueoAut bloqueado={autBloq('limiteCredito')} titulo={autTituloBloq('limiteCredito')} onSolicitar={() => autSolicitar('limiteCredito')}><input type="number" step="0.01" name="limiteCredito" className="form-control" value={formData.limiteCredito} onChange={(e) => setFormData(prev => ({ ...prev, limiteCredito: parseFloat(e.target.value) || 0 }))} disabled={formData.condicionPago === 'Contado'} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box', opacity: formData.condicionPago === 'Contado' ? 0.5 : 1 }} /></BloqueoAut>
+                      <BloqueoAut bloqueado={autBloq('limiteCredito')} titulo={autTituloBloq('limiteCredito')} onSolicitar={() => autSolicitar('limiteCredito')}><input type="number" step="0.01" name="limiteCredito" className="form-control" value={formData.limiteCredito} onChange={(e) => { tocarCampoAut('limiteCredito'); setFormData(prev => ({ ...prev, limiteCredito: parseFloat(e.target.value) || 0 })); }} disabled={formData.condicionPago === 'Contado'} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box', opacity: formData.condicionPago === 'Contado' ? 0.5 : 1 }} /></BloqueoAut>
                     </div>
                   </div>
                 </div>
