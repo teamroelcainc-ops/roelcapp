@@ -15,9 +15,9 @@
 // respaldo en la Confirmación de Tarifa guardada).
 // Exportación: Excel (XLSX) y PDF horizontal con el logo de la empresa.
 // ---------------------------------------------------------------------------
-import { useState, useMemo, useEffect } from 'react';
+import { useRef, useState, useMemo, useEffect } from 'react';
 import { obtenerUsuarioAut } from '../../autorizaciones/autorizaciones';
-import { collection, query, where, getDocs, documentId } from 'firebase/firestore';
+import { collection, query, where, getDocs, onSnapshot } from 'firebase/firestore'; // ✅ V00339: EN VIVO (documentId ya no se usa: el join se suscribe completo)
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
 import html2pdf from 'html2pdf.js';
@@ -431,27 +431,36 @@ export function EstadisticasDashboard() {
     }
   };
 
-  const buscar = async () => {
+  // ✅ V00339: EN VIVO — Buscar ya no descarga una vez: se SUSCRIBE al rango.
+  //   Cualquier cambio en Operaciones (crear, editar, completar, cancelar)
+  //   recalcula TODAS las estadísticas al momento, sin volver a presionar Buscar.
+  const subOpsRef = useRef<null | (() => void)>(null);
+  useEffect(() => () => { if (subOpsRef.current) subOpsRef.current(); }, []);
+  const buscar = () => {
     if (!fechaDesde || !fechaHasta) { alert('Captura la fecha Desde y Hasta.'); return; }
     if (fechaHasta < fechaDesde) { alert('La fecha Hasta no puede ser menor que la fecha Desde.'); return; }
     setCargando(true);
-    try {
-      const snap = await getDocs(query(
+    if (subOpsRef.current) { subOpsRef.current(); subOpsRef.current = null; }
+    subOpsRef.current = onSnapshot(
+      query(
         collection(db, 'operaciones'),
         where('fechaServicio', '>=', fechaDesde),
         where('fechaServicio', '<=', fechaHasta)
-      ));
-      const lista = snap.docs
-        .map((d) => ({ id: d.id, ...d.data() } as Op))
-        .filter((op) => String(op.status || '') !== STATUS_CANCELADO_ID);
-      setOps(lista);
-      setBusquedaHecha(true);
-    } catch (e) {
-      console.error('No se pudieron cargar las operaciones del rango:', e);
-      alert('No se pudieron cargar las operaciones del rango.');
-    } finally {
-      setCargando(false);
-    }
+      ),
+      (snap) => {
+        const lista = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() } as Op))
+          .filter((op) => String(op.status || '') !== STATUS_CANCELADO_ID);
+        setOps(lista);
+        setBusquedaHecha(true);
+        setCargando(false);
+      },
+      (e) => {
+        console.error('No se pudieron cargar las operaciones del rango:', e);
+        alert('No se pudieron cargar las operaciones del rango.');
+        setCargando(false);
+      }
+    );
   };
 
   // Filtro de línea para las pestañas que lo usan
@@ -883,74 +892,48 @@ export function EstadisticasDashboard() {
   const [cargandoJoin, setCargandoJoin] = useState(false);
 
   useEffect(() => {
-    // ✅ El join corre cuando la tabla está en formato Transfer O cuando la
-    //   pestaña Transfer está activa en el desglose (para exportar desde ahí).
+    // ✅ V00339: el join de FACTURAS y PAGOS ahora es EN VIVO — se suscribe a
+    //   las colecciones mientras el formato Transfer/Cruces/Fletes está activo:
+    //   editar una factura o aplicar un pago se refleja al momento.
     const fmtTabla = refsFiltro?.formato as FormatoExcel | undefined;
     const fmtDetalle = detalleSel !== null ? formatoDeLinea(tabLineaDet) : undefined;
     const fmt = fmtTabla || fmtDetalle;
     if (!fmt) return;
-    const opsBase: Op[] = fmtTabla ? refsFiltro!.ops : (detalleSel?.ops || []);
     const necesitaProv = fmt === 'cruces' || fmt === 'fletes';
-    let cancelado = false;
-    (async () => {
-      setCargandoJoin(true);
-      try {
-        // 1) Facturas de las operaciones visibles que aún no estén en caché.
-        const idsFact = Array.from(new Set(
-          opsBase.map((op: Op) => String(op.facturaClienteId || '')).filter((id) => id && !(id in joinFacturas))
-        ));
-        const nuevas: Record<string, any> = {};
-        for (let i = 0; i < idsFact.length; i += 10) {
-          const lote = idsFact.slice(i, i + 10);
-          const snap = await getDocs(query(collection(db, 'facturas_clientes'), where(documentId(), 'in', lote)));
-          snap.docs.forEach((d) => { nuevas[d.id] = { id: d.id, ...(d.data() as any) }; });
-        }
-        if (Object.keys(nuevas).length > 0 && !cancelado) setJoinFacturas((prev) => ({ ...prev, ...nuevas }));
-        // 1b) ✅ Facturas de PROVEEDOR (Cruces/Fletes).
-        if (necesitaProv) {
-          const idsProv = Array.from(new Set(
-            opsBase.map((op: Op) => String(op.facturaProveedorId || '')).filter((id) => id && !(id in joinFacturasProv))
-          ));
-          const nuevasProv: Record<string, any> = {};
-          for (let i = 0; i < idsProv.length; i += 10) {
-            const lote = idsProv.slice(i, i + 10);
-            const snap = await getDocs(query(collection(db, 'facturas_proveedores'), where(documentId(), 'in', lote)));
-            snap.docs.forEach((d) => { nuevasProv[d.id] = { id: d.id, ...(d.data() as any) }; });
-          }
-          if (Object.keys(nuevasProv).length > 0 && !cancelado) setJoinFacturasProv((prev) => ({ ...prev, ...nuevasProv }));
-        }
-        // 2) Pagos de clientes (una sola vez): mapa facturaId -> último pago.
-        if (joinPagos === null) {
-          const snapP = await getDocs(query(collection(db, 'pagos'), where('tipo', '==', 'cliente')));
-          const mapa: Record<string, { fecha: string; metodo: string; obs: string }> = {};
-          snapP.docs
-            .map((d) => d.data() as any)
-            .sort((a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')))
-            .forEach((p) => {
-              (Array.isArray(p.facturas) ? p.facturas : []).forEach((fa: any) => {
-                if (Number(fa.aplicado) > 0) mapa[String(fa.facturaId)] = { fecha: String(p.fecha || ''), metodo: String(p.metodoPago || ''), obs: String(p.observaciones || '') };
-              });
-            });
-          if (!cancelado) setJoinPagos(mapa);
-        }
-        // 2b) ✅ Pagos a PROVEEDORES (Cruces/Fletes), una sola vez.
-        if (necesitaProv && joinPagosProv === null) {
-          const snapPP = await getDocs(query(collection(db, 'pagos'), where('tipo', '==', 'proveedor')));
-          const mapaP: Record<string, { fecha: string; metodo: string; obs: string }> = {};
-          snapPP.docs
-            .map((d) => d.data() as any)
-            .sort((a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')))
-            .forEach((p) => {
-              (Array.isArray(p.facturas) ? p.facturas : []).forEach((fa: any) => {
-                if (Number(fa.aplicado) > 0) mapaP[String(fa.facturaId)] = { fecha: String(p.fecha || ''), metodo: String(p.metodoPago || ''), obs: String(p.observaciones || '') };
-              });
-            });
-          if (!cancelado) setJoinPagosProv(mapaP);
-        }
-      } catch (e) { console.warn('No se pudo cargar el join de facturación/pagos:', e); }
-      if (!cancelado) setCargandoJoin(false);
-    })();
-    return () => { cancelado = true; };
+    const armaMapaPagos = (docs: { data: () => unknown }[]) => {
+      const mapa: Record<string, { fecha: string; metodo: string; obs: string }> = {};
+      docs
+        .map((d) => d.data() as Record<string, unknown>)
+        .sort((a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')))
+        .forEach((pg) => {
+          (Array.isArray(pg.facturas) ? pg.facturas : []).forEach((fa: Record<string, unknown>) => {
+            if (Number(fa.aplicado) > 0) mapa[String(fa.facturaId)] = { fecha: String(pg.fecha || ''), metodo: String(pg.metodoPago || ''), obs: String(pg.observaciones || '') };
+          });
+        });
+      return mapa;
+    };
+    const subs: (() => void)[] = [
+      onSnapshot(collection(db, 'facturas_clientes'), (snap) => {
+        const m: Record<string, unknown> = {};
+        snap.docs.forEach((d) => { m[d.id] = { id: d.id, ...(d.data() as Record<string, unknown>) }; });
+        setJoinFacturas(m as Record<string, any>);
+        setCargandoJoin(false);
+      }, (e) => { console.warn('Join de facturas:', e); setCargandoJoin(false); }),
+      onSnapshot(query(collection(db, 'pagos'), where('tipo', '==', 'cliente')), (snap) => {
+        setJoinPagos(armaMapaPagos(snap.docs));
+      }, (e) => console.warn('Join de pagos:', e)),
+    ];
+    if (necesitaProv) {
+      subs.push(onSnapshot(collection(db, 'facturas_proveedores'), (snap) => {
+        const m: Record<string, unknown> = {};
+        snap.docs.forEach((d) => { m[d.id] = { id: d.id, ...(d.data() as Record<string, unknown>) }; });
+        setJoinFacturasProv(m as Record<string, any>);
+      }, (e) => console.warn('Join de facturas proveedor:', e)));
+      subs.push(onSnapshot(query(collection(db, 'pagos'), where('tipo', '==', 'proveedor')), (snap) => {
+        setJoinPagosProv(armaMapaPagos(snap.docs));
+      }, (e) => console.warn('Join de pagos proveedor:', e)));
+    }
+    return () => subs.forEach((u) => u());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refsFiltro, detalleSel, tabLineaDet]);
 
@@ -1457,7 +1440,7 @@ export function EstadisticasDashboard() {
       </div>
 
       {busquedaHecha && (
-        <p className="est-subtitulo">{ops.length} operaciones del {etiquetaRango} (excluye canceladas) · montos con el mismo criterio de Facturación</p>
+        <p className="est-subtitulo">{ops.length} operaciones del {etiquetaRango} (excluye canceladas) · montos con el mismo criterio de Facturación{busquedaHecha && <span className="est-vivo" title="Las estadísticas están SUSCRITAS a la base: cualquier cambio en Operaciones, Facturación o Pagos se refleja aquí al momento, sin volver a presionar Buscar">🟢 EN VIVO</span>}</p>
       )}
 
       {/* ✅ V00126: separación clara OPERATIVA vs MONETARIA */}

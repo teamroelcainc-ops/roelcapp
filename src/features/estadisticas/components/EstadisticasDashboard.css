@@ -599,3 +599,6 @@ button.est-detalle-item {
 .est-chip-moneda { display: inline-block; margin-left: 6px; border-radius: 999px; padding: 0 7px; font-size: 0.64rem; font-weight: 800; vertical-align: middle; }
 .est-mon-usd { color: #3fb950; border: 1px solid #3fb950; }
 .est-mon-mxn { color: #58a6ff; border: 1px solid #58a6ff; }
+
+/* ✅ V00339: estadísticas en vivo */
+.est-vivo { margin-left: 10px; border: 1px solid #238636; border-radius: 999px; padding: 2px 10px; color: #3fb950; font-size: 0.74rem; font-weight: 700; white-space: nowrap; }
