@@ -11,7 +11,7 @@ import './RolesDashboard.css';
 // que se muestran en el sidebar (para que el filtrado por permisos coincida).
 // ============================================================================
 const GRUPOS_MODULOS: { grupo: string; modulos: string[] }[] = [
-  { grupo: 'General', modulos: ['Mis Operaciones', 'Operaciones Activas', 'Pagos', 'Estadísticas', 'Servicios Completados', 'Servicios Cancelados', 'Reportes', 'Reporte de Vencimiento', 'Panel de Control', 'Tablero (CRM)', 'Catálogos'] },
+  { grupo: 'General', modulos: ['Mis Operaciones', 'Operaciones Activas', 'Pagos', 'Estadísticas', 'Servicios Completados', 'Servicios Cancelados', 'Reportes', 'Reporte de Vencimiento', 'Historial de Cambios', 'Panel de Control', 'Tablero (CRM)', 'Catálogos'] },
   { grupo: 'Gastos', modulos: ['MTTO', 'Referencias del Diesel', 'Referencias de Puentes', 'Costos Adicionales'] },
   { grupo: 'Clientes', modulos: ['Convenio de Clientes', 'Tarifario Clientes', 'Detalles del Convenio', 'Facturación de Clientes'] }, // ✅ V00198
   { grupo: 'Proveedores', modulos: ['Convenio de Proveedores', 'Facturación de Proveedores', 'Tarifario Proveedores', 'Detalles del Convenio (Proveedores)'] },
@@ -30,6 +30,17 @@ const GRUPOS_MODULOS: { grupo: string; modulos: string[] }[] = [
 
 // Lista plana con todos los módulos (útil para "Seleccionar todo").
 const TODOS_LOS_MODULOS = GRUPOS_MODULOS.flatMap(g => g.modulos);
+
+// ✅ V00336: nombre VISIBLE de cada permiso. Los roles guardan el nombre
+//   interno (no se migra nada y nadie gana ni pierde acceso); aquí solo se
+//   traduce lo que se muestra:
+//   · 'Historial de Cambios'   (versiones de la app) → "Historial de Versiones"
+//   · 'Historial de Actividad' (bitácora de acciones) → "Historial de Cambios"
+const ETIQUETA_PERMISO: Record<string, string> = {
+  'Historial de Cambios': 'Historial de Versiones',
+  'Historial de Actividad': 'Historial de Cambios',
+};
+const etiquetaPermiso = (modulo: string): string => ETIQUETA_PERMISO[modulo] ?? modulo;
 
 export const RolesDashboard: React.FC = () => {
   const [roles, setRoles] = useState<any[]>([]);
@@ -238,7 +249,7 @@ export const RolesDashboard: React.FC = () => {
                   <div className="rd-x24">
                     {rol.modulosPermitidos?.map((mod: string) => (
                       <span className="rd-x25" key={mod}>
-                        {mod}
+                        {etiquetaPermiso(mod)}
                       </span>
                     ))}
                   </div>
@@ -295,7 +306,7 @@ export const RolesDashboard: React.FC = () => {
                         return (
                           <label key={m} className={`rd-vistas-item${delRol ? ' rd-vistas-rol' : ''}`} title={delRol ? 'Incluido por su rol' : 'Vista adicional solo para este usuario'}>
                             <input type="checkbox" checked={delRol || extrasSel.includes(m)} disabled={delRol} onChange={() => toggleExtra(m)} />
-                            <span>{m}</span>{delRol && <em className="rd-vistas-tag">por rol</em>}
+                            <span>{etiquetaPermiso(m)}</span>{delRol && <em className="rd-vistas-tag">por rol</em>}
                           </label>
                         );
                       })}
@@ -372,7 +383,7 @@ export const RolesDashboard: React.FC = () => {
                                 checked={modulos.includes(mod)} 
                                 onChange={() => toggleModulo(mod)}
                               />
-                              {mod}
+                              {etiquetaPermiso(mod)}
                             </label>
                           ))}
                         </div>

@@ -12,15 +12,29 @@ import { CargaMasivaDocumentosModal } from '../../documentos/CargaMasivaDocument
 import { exportarEstructuraCarpetas } from '../../documentos/exportarEstructuraCarpetas';
 import { DocumentosLista } from '../../documentos/DocumentosLista';
 import { registrarLog } from '../../../utils/logger';
+import { puedeClave } from '../../../utils/permisos';
+import { aplicarUnificarBodegas, planUnificarBodegas } from '../services/unificarBodegas';
 import * as XLSX from 'xlsx';
 import './EmpresasDashboard.css';
 import { almacenSesion, obtenerCacheMemoria, guardarCacheMemoria } from '../../../utils/cacheMemoria';
 import { hoyLocalISO, fechaLocalISO } from '../../../utils/fechaHoraLocal';
 
+// ✅ V00336: 'Bodega' → 'Bódega' (Origen / Destino se unificó en Bódega).
 const opcionesFiltro = [
   'Todo', 'Proveedor (Servicios)', 'Empresa Inactiva', 'Baja', 'Cliente (Mercancía)', 
-  'Propietario (Remolques)', 'Bodega', 'Cliente (Paga)', 'Proveedor (Transporte)', 'Empresas Roelca'
+  'Propietario (Remolques)', 'Bódega', 'Cliente (Paga)', 'Proveedor (Transporte)', 'Empresas Roelca'
 ];
+
+// ✅ V00336: normaliza un nombre de moneda (sin acentos, mayúsculas) y lo
+//   agrupa en su moneda canónica, para que "Dólares", "USD" o "Dolares"
+//   cuenten como la misma, igual que "Pesos", "MXN" o "M.N.".
+const normMoneda = (v: unknown): string =>
+  String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+const grupoMoneda = (nombre: string): string => {
+  if (/DOLAR|USD|US\$/.test(nombre)) return 'USD';
+  if (/PESO|MXN|M\.?N\.?/.test(nombre)) return 'MXN';
+  return nombre;
+};
 
 const opcionesColumnasExcel = [
   { key: 'numCliente', label: '# de Cliente' },
@@ -372,6 +386,8 @@ const EmpresasDashboard = () => {
   const [filtroActivo, setFiltroActivo] = useState('Todo');
   // ✅ V00186: filtro por MONEDA + autocompletado del buscador
   const [filtroMoneda, setFiltroMoneda] = useState('Todas');
+  // ✅ V00336: unificación de tipos Origen/Destino + Bodega → Bódega.
+  const [unificandoBodegas, setUnificandoBodegas] = useState(false);
   const [sugerenciasAbiertas, setSugerenciasAbiertas] = useState(false);
   const [busqueda, setBusqueda] = useState('');
   useBusquedaGlobal((t) => setBusqueda(t), 'empresas'); // ✅ V00263: buscador global del topbar
@@ -1097,12 +1113,17 @@ const EmpresasDashboard = () => {
       }
       if (!pasaFiltro) return false;
 
-      // ✅ V00186: filtro por moneda de la empresa (canon USD/MXN o sin moneda)
+      // ✅ V00336: filtro por moneda con las opciones del CATÁLOGO (Dólares / Pesos).
+      //   filtroMoneda guarda el ID del catalogo_moneda; la empresa coincide por
+      //   ID (moneda / monedaId) o, en registros migrados, por el texto del nombre.
       if (filtroMoneda !== 'Todas') {
-        const monTxt = String(emp.monedaNombre || emp.moneda || '').toUpperCase();
-        const tiene = Boolean(String(emp.monedaId || '').trim() || monTxt.trim());
-        if (filtroMoneda === 'Sin moneda') { if (tiene) return false; }
-        else if (!(monTxt.includes(filtroMoneda) || (filtroMoneda === 'MXN' && (monTxt.includes('PESO') || monTxt.includes('MN'))) || (filtroMoneda === 'USD' && monTxt.includes('DOLAR')))) return false;
+        const idsEmp = [emp.moneda, emp.monedaId].map((v) => String(v || '').trim());
+        // Valor legado ('USD'/'MXN' de vistas guardadas): se usa como texto.
+        const nombreCat = normMoneda(diccionarios.monedas?.[filtroMoneda] || filtroMoneda);
+        const nombreEmp = normMoneda(emp.monedaNombre || emp._monedaLabel || emp.moneda || '');
+        const coincide = idsEmp.includes(filtroMoneda)
+          || (nombreCat !== '' && nombreEmp !== '' && grupoMoneda(nombreEmp) === grupoMoneda(nombreCat));
+        if (!coincide) return false;
       }
 
       if (!busqueda.trim()) return true;
@@ -1115,7 +1136,7 @@ const EmpresasDashboard = () => {
         String(emp._clienteRelLabel || '').toLowerCase().includes(term)
       );
     });
-  }, [registrosListos, filtroActivo, busqueda, verSinMoneda, empresasSinMoneda, filtroMoneda, empresaExactaId]);
+  }, [registrosListos, filtroActivo, busqueda, verSinMoneda, empresasSinMoneda, filtroMoneda, empresaExactaId, diccionarios]);
 
   // ✅ NUEVO — ORDEN POR COLUMNA (clic en el encabezado: asc/desc), mismo
   //   patrón que Operaciones Activas.
@@ -1364,6 +1385,42 @@ const EmpresasDashboard = () => {
                 }}>
                 ↻ Recargar catálogos
               </button>
+              {/* ✅ V00336: une "Origen / Destino" y "Bodega" en el tipo "Bódega" (una sola vez). */}
+              {puedeClave('catalogos') && (
+                <button className="btn btn-outline" disabled={unificandoBodegas}
+                  title="Unifica los tipos Origen / Destino y Bodega en uno solo: Bódega. Primero muestra cuántas empresas va a actualizar."
+                  onClick={async () => {
+                    setUnificandoBodegas(true);
+                    try {
+                      const plan = await planUnificarBodegas();
+                      if (!plan.hayCambios) {
+                        alert('Los tipos ya están unificados en "Bódega". ✅\n\nNo hay nada que cambiar.');
+                        return;
+                      }
+                      const absorbidos = plan.tiposAbsorbidos.map((t) => `"${t.nombre}"`).join(', ') || 'ninguno';
+                      const confirmar = window.confirm(
+                        'Unificar tipos de empresa en "Bódega":\n\n'
+                        + `· El tipo "${plan.tipoConservado.nombreActual}" pasa a llamarse "Bódega".\n`
+                        + `· Tipos que se absorben y se dan de baja del catálogo: ${absorbidos}.\n`
+                        + `· Empresas que se actualizan: ${plan.empresas.length}.\n\n`
+                        + 'Las operaciones siguen funcionando igual. ¿Continuar?',
+                      );
+                      if (!confirmar) return;
+                      const r = await aplicarUnificarBodegas(plan);
+                      await registrarLog('Empresas', 'Edición', `Unificó Origen / Destino y Bodega en "Bódega": ${r.empresas} empresas actualizadas, ${r.tiposBaja} tipos dados de baja.`);
+                      alert(`Listo. ✅\n\n· Empresas actualizadas: ${r.empresas}\n· Tipos dados de baja: ${r.tiposBaja}\n\nLa página se recargará para mostrar los nombres nuevos.`);
+                      almacenSesion.removeItem('roelca_empresas_dict_v2');
+                      window.location.reload();
+                    } catch (error) {
+                      console.error('Unificar Bódegas:', error);
+                      alert(`No se pudo completar la unificación: ${error instanceof Error ? error.message : String(error)}\n\nNo se perdió información; puedes volver a intentarlo.`);
+                    } finally {
+                      setUnificandoBodegas(false);
+                    }
+                  }}>
+                  {unificandoBodegas ? '⏳ Unificando…' : '🏷 Unificar Bódegas'}
+                </button>
+              )}
             {filtroActivo !== 'Todo' && (
               <span className="ed-x12">
                 {filtroActivo}
@@ -2263,7 +2320,12 @@ const EmpresasDashboard = () => {
               <label className="ed-x126">MONEDA</label>
               <select value={filtroMoneda} onChange={(e) => setFiltroMoneda(e.target.value)}
                 style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: `1px solid ${filtroMoneda !== 'Todas' ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#f0f6fc', fontSize: '0.85rem' }}>
-                {['Todas', 'USD', 'MXN', 'Sin moneda'].map((op) => <option key={op} value={op}>{op}</option>)}
+                {/* ✅ V00336: solo las monedas del catálogo (Dólares / Pesos); "Todas" = sin filtro.
+                    Las empresas sin moneda se consultan con el botón "Sin moneda" de la barra. */}
+                <option value="Todas">Todas</option>
+                {Object.entries(diccionarios.monedas || {})
+                  .sort(([, a], [, b]) => String(a).localeCompare(String(b), 'es'))
+                  .map(([id, nombre]) => <option key={id} value={id}>{String(nombre)}</option>)}
               </select>
             </div>
 

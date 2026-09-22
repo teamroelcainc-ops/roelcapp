@@ -155,7 +155,7 @@ export const HistorialCambiosDashboard: React.FC = () => {
 
   return (
     <div className="dashboard-container hc-cont">
-      <h2 className="hc-titulo">🕘 Historial de Cambios</h2>
+      <h2 className="hc-titulo">🕘 Historial de Versiones</h2>{/* ✅ V00336 */}
       <p className="hc-sub">Informe de todas las actualizaciones del sistema — con fecha y hora — para que la gerencia sepa qué se ha hecho. Las versiones de la app se registran SOLAS al publicarse (⚙ auto); también puedes registrar cambios a mano.</p>
 
       <div className="hc-barra">

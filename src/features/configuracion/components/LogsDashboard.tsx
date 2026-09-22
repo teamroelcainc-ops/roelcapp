@@ -84,7 +84,7 @@ export const LogsDashboard = () => {
       {/* CABECERA */}
       <div className="ld-x2">
         <h2 className="ld-x3">
-          Configuración {'>'} <span className="ld-x4">Historial de Actividad {hayFiltrosActivos ? `(${logsFiltrados.length})` : ''}</span>
+          Configuración {'>'} <span className="ld-x4">Historial de Cambios {hayFiltrosActivos ? `(${logsFiltrados.length})` : ''}</span>{/* ✅ V00336 */}
         </h2>
       </div>
 
