@@ -17,7 +17,8 @@
 // ---------------------------------------------------------------------------
 import { useRef, useState, useMemo, useEffect } from 'react';
 import { obtenerUsuarioAut } from '../../autorizaciones/autorizaciones';
-import { collection, query, where, getDocs, onSnapshot } from 'firebase/firestore'; // ✅ V00339: EN VIVO (documentId ya no se usa: el join se suscribe completo)
+import { addDoc, collection, deleteDoc, doc, getDocs, onSnapshot, query, updateDoc, where } from 'firebase/firestore'; // ✅ V00340: configuraciones del Excel
+import { EditorOperacionEmbebido } from '../../operaciones/components/EditorOperacionEmbebido'; // ✅ V00340: auditar/editar desde Estadísticas // ✅ V00339: EN VIVO (documentId ya no se usa: el join se suscribe completo)
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
 import html2pdf from 'html2pdf.js';
@@ -254,6 +255,8 @@ export function EstadisticasDashboard() {
   const [refsFiltro, setRefsFiltro] = useState<{ etiqueta: string; ops: Op[]; formato?: 'transfer' | 'cruces' | 'fletes' } | null>(null);
   // ✅ Ficha de la operación (primero el DETALLE; Editar abre el formulario).
   const [opFicha, setOpFicha] = useState<Op | null>(null);
+  // ✅ V00340: editar la operación desde Estadísticas (mismo editor del auditor).
+  const [opEditandoId, setOpEditandoId] = useState('');
   // ✅ Tabla de referencias: columnas configurables (persisten entre sesiones)
   //   y filtros por columna.
   const [columnasRefs, setColumnasRefs] = useEstadoPersistente<string[]>('estadisticas_columnasRefs',
@@ -1084,10 +1087,58 @@ export function EstadisticasDashboard() {
   }, [columnasFormatoTabla, refsVisibles, joinFacturas, joinFacturasProv]);
 
   // ✅ EXPORTACIÓN del rubro seleccionado (Excel y PDF con membrete).
+  // ✅ V00340: el Excel de la tabla abre PRIMERO el selector de columnas con
+  //   CONFIGURACIONES GUARDADAS (colección config_export_excel, compartidas).
+  const [modalExcelCfg, setModalExcelCfg] = useState(false);
+  const [presetsExcel, setPresetsExcel] = useState<{ id: string; nombre: string; campos: string[] }[]>([]);
+  const [presetNombre, setPresetNombre] = useState('');
+  const [presetIdActual, setPresetIdActual] = useState('');
+  const [camposSel, setCamposSel] = useState<Record<string, boolean>>({});
+  const columnasContexto = () => columnasFormatoTabla || columnasActivas;
+  const moduloCfgExcel = () => `estadisticas__${formatoTabla || 'libre'}`;
+
+  const abrirExcelCfg = async () => {
+    if (!refsFiltro) return;
+    const base: Record<string, boolean> = {};
+    columnasContexto().forEach(c => { base[c.campo] = true; });
+    setCamposSel(base); setPresetNombre(''); setPresetIdActual('');
+    try {
+      const snap = await getDocs(query(collection(db, 'config_export_excel'), where('modulo', '==', moduloCfgExcel())));
+      const lista = snap.docs.map(d => { const x = d.data() as Record<string, unknown>; return { id: d.id, nombre: String(x.nombre || ''), campos: (x.campos || []) as string[] }; });
+      lista.sort((a, b) => a.nombre.localeCompare(b.nombre));
+      setPresetsExcel(lista);
+    } catch (e) { console.warn('Configuraciones de Excel:', e); setPresetsExcel([]); }
+    setModalExcelCfg(true);
+  };
+  const usarPresetExcel = (pr: { id: string; nombre: string; campos: string[] }) => {
+    const base: Record<string, boolean> = {};
+    columnasContexto().forEach(c => { base[c.campo] = pr.campos.includes(c.campo); });
+    setCamposSel(base); setPresetNombre(pr.nombre); setPresetIdActual(pr.id);
+  };
+  const guardarPresetExcel = async () => {
+    const nombre = presetNombre.trim();
+    if (!nombre) { alert('Ponle un NOMBRE a la configuración para guardarla.'); return; }
+    const campos = columnasContexto().filter(c => camposSel[c.campo] !== false).map(c => c.campo);
+    try {
+      if (presetIdActual) { await updateDoc(doc(db, 'config_export_excel', presetIdActual), { nombre, campos }); }
+      else { const ref = await addDoc(collection(db, 'config_export_excel'), { modulo: moduloCfgExcel(), nombre, campos, creadoEn: new Date().toISOString() }); setPresetIdActual(ref.id); }
+      setPresetsExcel(prev => {
+        const otras = prev.filter(x => x.id !== presetIdActual && x.nombre !== nombre);
+        return [...otras, { id: presetIdActual || 'nuevo', nombre, campos }].sort((a, b) => a.nombre.localeCompare(b.nombre));
+      });
+      alert(`Configuración "${nombre}" guardada.`);
+    } catch (e) { alert(`No se pudo guardar: ${(e as Error)?.message || e}`); }
+  };
+  const borrarPresetExcel = async (pr: { id: string; nombre: string }) => {
+    if (!window.confirm(`¿Borrar la configuración "${pr.nombre}"?`)) return;
+    try { await deleteDoc(doc(db, 'config_export_excel', pr.id)); setPresetsExcel(prev => prev.filter(x => x.id !== pr.id)); }
+    catch (e) { alert(`No se pudo borrar: ${(e as Error)?.message || e}`); }
+  };
+
   const exportarRefsExcel = () => {
     if (!refsFiltro) return;
     const wb = XLSX.utils.book_new();
-    const cols = columnasFormatoTabla || columnasActivas;
+    const cols = (columnasFormatoTabla || columnasActivas).filter(c => camposSel[c.campo] !== false); // ✅ V00340: respeta el selector
     const valor = esModoTransfer ? valorTransfer : valorColumna;
     const filas: Record<string, string>[] = refsVisibles.map(op => {
       const fila: Record<string, string> = {};
@@ -1655,7 +1706,7 @@ export function EstadisticasDashboard() {
 
       {/* ✅ DETALLE DE UN MES (Servicios) */}
       {detalleSel !== null && detalle && (
-        <div className="est-overlay" onClick={() => { setDetalleSel(null); setRefsFiltro(null); }}>
+        <div className={`est-overlay${opEditandoId ? ' est-overlay--detras' : ''}`} onClick={() => { setDetalleSel(null); setRefsFiltro(null); }}>
           <div className="est-detalle" onClick={(e) => e.stopPropagation()}>
             <div className="est-detalle-encabezado">
               <h3>{detalleSel.titulo} — {detalle.ops.length} operación(es)</h3>
@@ -1936,7 +1987,7 @@ export function EstadisticasDashboard() {
       {/* ✅ MODAL INDEPENDIENTE: tabla de referencias del rubro seleccionado
           (lo abren el detalle del mes Y las filas de todas las pestañas). */}
       {refsFiltro && (
-        <div className="est-overlay" onClick={() => { setRefsFiltro(null); setFiltrosCols({}); }}>
+        <div className={`est-overlay${opEditandoId ? ' est-overlay--detras' : ''}`} onClick={() => { setRefsFiltro(null); setFiltrosCols({}); }}>
           <div className="est-detalle" onClick={(e) => e.stopPropagation()}>
             <div className="est-detalle-encabezado">
               <h3>Reporte de operaciones</h3>
@@ -1956,9 +2007,44 @@ export function EstadisticasDashboard() {
                           <Settings2 size={14} /> Columnas
                         </button>
                       )}
-                      <button className="est-btn" onClick={exportarRefsExcel}>
+                      <button className="est-btn" onClick={abrirExcelCfg}>
                         <Download size={14} /> Excel
                       </button>
+                      {/* ✅ V00340: selector de columnas + configuraciones guardadas */}
+                      {modalExcelCfg && (
+                        <>
+                          <div className="est-cols-fondo" onClick={() => setModalExcelCfg(false)} />
+                          <div className="est-cols est-excel-cfg" onClick={(e) => e.stopPropagation()}>
+                            <div className="est-excel-cfg-titulo">📋 Excel — columnas y configuraciones</div>
+                            {presetsExcel.length > 0 && (
+                              <div className="est-excel-cfg-presets">
+                                {presetsExcel.map(pr => (
+                                  <div key={pr.id} className={`est-excel-cfg-preset${presetIdActual === pr.id ? ' est-excel-cfg-preset--activo' : ''}`}>
+                                    <button type="button" className="est-btn-liga" onClick={() => usarPresetExcel(pr)} title="Usar esta configuración">{pr.nombre} ({pr.campos.length})</button>
+                                    <button type="button" className="est-mini" onClick={() => borrarPresetExcel(pr)} title="Borrar">🗑</button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            <div className="est-excel-cfg-lista">
+                              {columnasContexto().map(c => (
+                                <label key={c.campo} className="est-excel-cfg-item">
+                                  <input type="checkbox" checked={camposSel[c.campo] !== false} onChange={(e) => setCamposSel(prev => ({ ...prev, [c.campo]: e.target.checked }))} />
+                                  <span>{c.etiqueta}</span>
+                                </label>
+                              ))}
+                            </div>
+                            <div className="est-excel-cfg-guardar">
+                              <input type="text" className="form-control est-excel-cfg-input" placeholder="Nombre de la configuración…" value={presetNombre} onChange={(e) => setPresetNombre(e.target.value)} />
+                              <button type="button" className="est-btn" onClick={guardarPresetExcel} title="Guardar esta selección con su nombre — queda disponible para todos">💾 Guardar</button>
+                            </div>
+                            <div className="est-excel-cfg-pie">
+                              <button type="button" className="est-btn" onClick={() => setModalExcelCfg(false)}>Cancelar</button>
+                              <button type="button" className="est-btn est-btn-primario" onClick={() => { setModalExcelCfg(false); exportarRefsExcel(); }}><Download size={14} /> Exportar</button>
+                            </div>
+                          </div>
+                        </>
+                      )}
                       <button className="est-btn est-btn-primario" onClick={exportarRefsPDF} disabled={exportando}>
                         <Download size={14} /> {exportando ? 'Generando…' : 'PDF'}
                       </button>
@@ -1983,13 +2069,14 @@ export function EstadisticasDashboard() {
                         <div className="est-tabla-marco est-refs-tabla-marco">
                           <table className="est-tabla">
                             <thead>
-                              <tr>{columnas.map(c => (
+                              <tr><th className="est-refs-acciones-celda">🔍</th>{columnas.map(c => (
                                 <th key={c.campo} style={{ cursor: 'pointer', whiteSpace: 'nowrap' }} title="Clic para ordenar" onClick={() => clickOrdenRefs(c.campo)}>
                                   {c.etiqueta.toUpperCase()}{ordenRefs?.col === c.campo ? (ordenRefs.dir === 1 ? ' ▲' : ' ▼') : ''}
                                 </th>
                               ))}</tr>
                               {/* ✅ Fila de FILTROS por columna */}
                               <tr className="est-fila-filtros">
+                                <th className="est-refs-acciones-celda" />
                                 {columnas.map(c => (
                                   <th key={c.campo}>
                                     <input
@@ -2012,6 +2099,11 @@ export function EstadisticasDashboard() {
                                 const valor = esModoTransfer ? valorTransfer : valorColumna;
                                 return (
                                   <tr key={op.id} className="est-fila-clicable" onClick={() => setOpFicha(op)} title={`Ver el detalle de ${op.ref || op.id}`}>
+                                    {/* ✅ V00340: auditar (👁 detalle · ✎ editar EN VIVO) */}
+                                    <td className="est-refs-acciones-celda" onClick={(e) => e.stopPropagation()}>
+                                      <button type="button" className="est-mini" title="Ver el detalle de la operación" onClick={() => setOpFicha(op)}>👁</button>
+                                      <button type="button" className="est-mini" title="Auditar / editar la operación (formulario completo; el cambio se refleja aquí al momento)" onClick={() => setOpEditandoId(String(op.id))}>✎</button>
+                                    </td>
                                     {columnas.map((c: any) => (
                                       <td key={c.campo}
                                         className={(c.campo === 'ref' || c.campo === 'refRoelca') ? `est-celda-ref est-ref-${claseLinea}` : (c.num ? 'est-celda-num' : '')}>
@@ -2024,6 +2116,7 @@ export function EstadisticasDashboard() {
                               {/* ✅ Fila TOTAL del formato Transfer (como los SUBTOTAL del Excel) */}
                               {columnasFormatoTabla && totalesTransfer && visibles.length > 0 && (
                                 <tr className="est-fila-general">
+                                  <td className="est-refs-acciones-celda" />
                                   {columnasFormatoTabla.map((c, ci) => (
                                     <td key={c.campo} className={c.num ? 'est-celda-num' : ''}>
                                       {ci === 0 ? `TOTAL (${visibles.length})` : (totalesTransfer[c.campo] !== undefined ? nummx(totalesTransfer[c.campo]) : '')}
@@ -2045,6 +2138,8 @@ export function EstadisticasDashboard() {
       )}
 
       {/* ✅ FICHA DE LA OPERACIÓN: primero el detalle, Editar abre el formulario */}
+      {/* ✅ V00340: editor embebido — al cerrar, las estadísticas EN VIVO ya traen el cambio */}
+      {opEditandoId && <EditorOperacionEmbebido operacionId={opEditandoId} onClose={() => setOpEditandoId('')} />}
       {opFicha && (() => {
         const linea = lineaDeOp(opFicha);
         const claseLinea = linea === 'Transfer' ? 'transfer' : linea === 'Logística' ? 'logistica' : linea === 'Fletes' ? 'fletes' : 'otro';
@@ -2073,7 +2168,7 @@ export function EstadisticasDashboard() {
           ]},
         ];
         return (
-          <div className="est-overlay" onClick={() => setOpFicha(null)}>
+          <div className={`est-overlay${opEditandoId ? ' est-overlay--detras' : ''}`} onClick={() => setOpFicha(null)}>
             <div className="est-detalle est-ficha-op" onClick={(e) => e.stopPropagation()}>
               <div className="est-detalle-encabezado">
                 <h3>
@@ -2109,12 +2204,12 @@ export function EstadisticasDashboard() {
 
       {/* ✅ Aviso mientras cargan los catálogos del formulario */}
       {cargandoCatalogos && (
-        <div className="est-overlay" style={{ zIndex: 2900 }}><div className="est-cargando-form">Abriendo el formulario de Operaciones…</div></div>
+        <div className={`est-overlay${opEditandoId ? ' est-overlay--detras' : ''}`} style={{ zIndex: 2900 }}><div className="est-cargando-form">Abriendo el formulario de Operaciones…</div></div>
       )}
 
       {/* ✅ MODAL: selección de columnas de la tabla de referencias */}
       {menuColumnas && (
-        <div className="est-overlay" onClick={() => setMenuColumnas(false)}>
+        <div className={`est-overlay${opEditandoId ? ' est-overlay--detras' : ''}`} onClick={() => setMenuColumnas(false)}>
           <div className="est-cols-modal" onClick={(e) => e.stopPropagation()}>
             <div className="est-detalle-encabezado">
               <h3>Columnas visibles</h3>

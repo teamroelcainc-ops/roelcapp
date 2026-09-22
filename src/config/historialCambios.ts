@@ -15,6 +15,7 @@ export interface CambioApp {
 }
 
 export const CAMBIOS_APP: CambioApp[] = [
+  { fecha: '2026-09-22', hora: '18:20', version: 'V00340', titulo: 'Auditar operaciones desde Estadísticas + Excel con configuraciones', resumen: 'En el reporte de operaciones de Estadísticas cada fila trae ver detalle y editar (el cambio se refleja al momento), y el Excel abre primero el selector de columnas con configuraciones guardadas con nombre.' },
   { fecha: '2026-09-22', hora: '17:00', version: 'V00339', titulo: 'Estadísticas EN VIVO', resumen: 'Las estadísticas quedaron suscritas a la base: cualquier cambio en operaciones, facturación o pagos se refleja al momento, sin volver a presionar Buscar — los números siempre coinciden con lo que muestra el resto de la app.' },
   { fecha: '2026-09-22', hora: '16:10', version: 'V00338', titulo: 'Configuraciones del Excel con nombre (Servicios Completados)', resumen: 'Al exportar a Excel primero se muestran las configuraciones guardadas: eliges una y arma el Excel con sus columnas, o creas una nueva, le pones nombre y queda guardada para todos.' },
   { fecha: '2026-09-22', hora: '09:30', version: 'V00337', titulo: 'Reportes "todos excepto" y minimizado informativo', resumen: 'En Reportes ya puedes incluir todos los estatus EXCEPTO los que marques; y al minimizar una operación, la pastilla muestra la referencia, el cliente, el remolque, la fecha de servicio y el tipo de operación.' },
