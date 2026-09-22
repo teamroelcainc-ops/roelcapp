@@ -287,6 +287,8 @@ export const ReportesDashboard = () => {
   // ✅ NUEVO: filtro de estatus para el reporte de ventas.
   //   'todos' | 'completados' | 's::<NombreExactoDelEstatus>'
   const [statusFiltro, setStatusFiltro] = useState('todos');
+  // ✅ V00337: modo "Todos EXCEPTO…" — estatus marcados aquí se EXCLUYEN.
+  const [statusExcluidos, setStatusExcluidos] = useState<string[]>([]);
   // ✅ NUEVO: lista de estatus disponibles (del catálogo) para el selector.
   const [statusOpciones, setStatusOpciones] = useState<string[]>([]);
   const [cargando, setCargando] = useState(false);
@@ -773,6 +775,7 @@ export const ReportesDashboard = () => {
         const n = norm(statusNombreDe(op));
         if (statusFiltro === 'completados') return KEYWORDS_COMPLETADO.some(k => n.includes(k));
         if (statusFiltro.startsWith('s::')) return n === norm(statusFiltro.slice(3));
+        if (statusFiltro === 'excepto') return !statusExcluidos.some(x => norm(x) === n); // ✅ V00337
         return true;
       };
       // ✅ Resolución de IDs → nombres (nunca devuelve un ID crudo)
@@ -1280,9 +1283,31 @@ export const ReportesDashboard = () => {
             <select value={statusFiltro} onChange={e => { setStatusFiltro(e.target.value); setResultado(null); setError(null); }} style={{ ...inputEstilo, width: '100%' }}>
               <option value="todos">Todos los estatus</option>
               <option value="completados">Solo completados</option>
+              <option value="excepto">Todos EXCEPTO los marcados…</option>{/* ✅ V00337 */}
               {statusOpciones.length > 0 && <option disabled>──────────</option>}
               {statusOpciones.map(s => (<option key={s} value={`s::${s}`}>{s}</option>))}
             </select>
+            {/* ✅ V00337: checklist de estatus a EXCLUIR */}
+            {statusFiltro === 'excepto' && (
+              <div className="rd-excepto" title="Marca los estatus que NO quieres en el reporte">
+                <div className="rd-excepto-encabezado">
+                  <span>Excluir del reporte ({statusExcluidos.length}):</span>
+                  {statusExcluidos.length > 0 && <button type="button" className="rd-excepto-limpiar" onClick={() => { setStatusExcluidos([]); setResultado(null); }}>Limpiar</button>}
+                </div>
+                <div className="rd-excepto-lista">
+                  {statusOpciones.map(sN => (
+                    <label key={sN} className={`rd-excepto-item${statusExcluidos.includes(sN) ? ' rd-excepto-item--marcado' : ''}`}>
+                      <input
+                        type="checkbox"
+                        checked={statusExcluidos.includes(sN)}
+                        onChange={(e) => { setStatusExcluidos(prev => e.target.checked ? [...prev, sN] : prev.filter(x => x !== sN)); setResultado(null); }}
+                      />
+                      <span>{sN}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
         <button onClick={generar} disabled={cargando} style={{ ...btnPrimary, opacity: cargando ? 0.6 : 1 }}>

@@ -66,3 +66,12 @@
   .rd-x46 { flex-wrap: wrap; }
   .rd-x48 { flex-wrap: wrap; }
 }
+
+/* ✅ V00337: checklist "Todos EXCEPTO los marcados…" */
+.rd-excepto { margin-top: 8px; border: 1px solid #30363d; border-radius: 8px; padding: 8px 10px; background: #0d1117; }
+.rd-excepto-encabezado { display: flex; align-items: center; justify-content: space-between; color: #8b949e; font-size: 0.76rem; margin-bottom: 6px; }
+.rd-excepto-limpiar { border: 1px solid #30363d; background: transparent; color: #58a6ff; border-radius: 6px; padding: 2px 8px; cursor: pointer; font-size: 0.72rem; }
+.rd-excepto-lista { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px 10px; max-height: 160px; overflow-y: auto; }
+.rd-excepto-item { display: flex; align-items: center; gap: 6px; color: #c9d1d9; font-size: 0.78rem; cursor: pointer; padding: 2px 4px; border-radius: 6px; }
+.rd-excepto-item--marcado { color: #f85149; text-decoration: line-through; }
+.rd-excepto-item input { accent-color: #f85149; }

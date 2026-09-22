@@ -1,6 +1,6 @@
 // ✅ V00330: REGISTRO AUTOMÁTICO del Historial de Cambios.
 //   Este archivo viaja CON el código: cada entrega de versión añade aquí su
-//   entrada, así el módulo "Historial de Versiones" se actualiza SOLO al
+//   entrada, así el módulo "Historial de Cambios" se actualiza SOLO al
 //   publicar — sin capturar nada a mano. Las entradas manuales (Firestore)
 //   se combinan con estas; si una versión se registra a mano, la manual manda.
 //   Formato de fecha: aaaa-mm-dd. La hora es opcional.
@@ -15,7 +15,7 @@ export interface CambioApp {
 }
 
 export const CAMBIOS_APP: CambioApp[] = [
-  { fecha: '2026-09-21', hora: '23:20', version: 'V00336', titulo: 'Bódegas unificadas, moneda del catálogo y nombres de historiales', resumen: 'Los tipos Origen / Destino y Bodega quedan unificados como Bódega (botón 🏷 en Empresas); las bódegas ya no piden documentos en las operaciones; el filtro de moneda de Empresas muestra solo Dólares y Pesos del catálogo; el módulo de versiones se llama ahora Historial de Versiones y el de actividad, Historial de Cambios.' },
+  { fecha: '2026-09-22', hora: '09:30', version: 'V00337', titulo: 'Reportes "todos excepto" y minimizado informativo', resumen: 'En Reportes ya puedes incluir todos los estatus EXCEPTO los que marques; y al minimizar una operación, la pastilla muestra la referencia, el cliente, el remolque, la fecha de servicio y el tipo de operación.' },
   { fecha: '2026-09-21', hora: '20:10', version: 'V00335', titulo: 'Rango de fechas y moneda en la auditoría por empresa', resumen: 'La auditoría de la empresa ahora filtra las operaciones por rango de fecha de servicio y muestra la moneda configurada en la ficha de la empresa.' },
   { fecha: '2026-09-21', hora: '19:20', version: 'V00334', titulo: 'Auditoría de la cadena por EMPRESA', resumen: 'Desde la ficha de cualquier empresa (botón 🔍) se ve toda su cadena en vivo — operaciones, facturación y pagos — separada por su papel: Cliente que Paga, Cliente de Mercancía o Proveedor de transporte y servicios.' },
   { fecha: '2026-09-21', hora: '18:40', version: 'V00332', titulo: 'Combustible y Catálogos bajo Autorizaciones', resumen: 'Se integraron Combustible y Catálogos al módulo de Autorizaciones: en Combustible se controlan sus campos y acciones, y en Catálogos quién puede crear, editar o borrar registros de cualquier catálogo.' },

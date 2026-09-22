@@ -220,21 +220,7 @@ const PUENTE_EXPORTACION_ID = '49ce0a0e'; // Caseta Puente III
 //   ('Proveedor (Transporte)') se retiraron: el buscador de la operación ya no
 //   exige el tipo de empresa — basta con estar en su tarifario o tener convenio.
 const TIPO_EMP_CLIENTE_MERCANCIA = 'Cliente (Mercancía)';
-// ✅ V00336: "Origen / Destino" se unificó en "Bódega" (mismo id 6e7af5ab en el
-//   catálogo). El nombre viejo se sigue aceptando como respaldo en el filtro.
-const TIPO_EMP_ORIGEN_DESTINO    = 'Bódega';
-const TIPO_EMP_BODEGA_ID         = '6e7af5ab';
-const TIPOS_EMP_BODEGA_LEGADO    = ['Origen / Destino', 'Bodega'];
-
-/** ✅ V00336: ¿el campo tiposEmpresa (arreglo o texto) incluye el valor? */
-const tipoIncluye = (campo: unknown, valor: string): boolean => {
-  if (!campo) return false;
-  if (Array.isArray(campo)) return campo.map((x) => String(x)).includes(valor);
-  return String(campo).includes(valor);
-};
-/** ✅ V00336: una empresa es Bódega por el id del tipo o por su nombre (actual o legado). */
-const esEmpresaBodega = (e: { tiposEmpresa?: unknown } | undefined): boolean =>
-  !!e && [TIPO_EMP_BODEGA_ID, TIPO_EMP_ORIGEN_DESTINO, ...TIPOS_EMP_BODEGA_LEGADO].some((v) => tipoIncluye(e.tiposEmpresa, v));
+const TIPO_EMP_ORIGEN_DESTINO    = 'Origen / Destino';
 const TIPO_EMP_PROV_SERVICIOS    = 'Proveedor (Servicios)';
 
 export const TIPOS_DOCUMENTO_OPERACION = [
@@ -2151,10 +2137,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   //   42afffd3 -> costo por defecto ($8.52); cualquier otro -> 0.
   const montoManifiestoDeProveedor = (emp: any): number =>
     contieneId(emp?.tiposServicio, TIPO_SERVICIO_CON_COSTO_MANIFIESTO) ? COSTO_MANIFIESTO_DEFAULT : 0;
-  const filOrigenesDestinos = useMemo(() => empresas?.filter((e:any) => esEmpresaBodega(e) && e.status === 'Activa') || [], [empresas]);
-  /** ✅ V00336: las bódegas no requieren documentos → sin alerta en Origen/Destino. */
-  const esBodegaId = (id: unknown): boolean =>
-    esEmpresaBodega((empresas || []).find((e: { id?: unknown }) => String(e.id) === String(id)));
+  const filOrigenesDestinos = useMemo(() => empresas?.filter((e:any) => (contieneId(e.tiposEmpresa, '6e7af5ab') || contieneId(e.tiposEmpresa, TIPO_EMP_ORIGEN_DESTINO)) && e.status === 'Activa') || [], [empresas]);
 
   // ✅ Catálogo de DIRECCIONES por id (las empresas guardan direccionId).
   //   Se lee UNA vez al abrir el formulario con getDocs (ya importado).
@@ -3098,7 +3081,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             <input type="text" className={`form-control${claseSiFalta('origen')}`} placeholder="Buscar origen..." value={searchOrigen} onChange={e => { setSearchOrigen(e.target.value); setShowDropdownOrigen(true); }} onFocus={() => setShowDropdownOrigen(true)} onBlur={() => setTimeout(() => setShowDropdownOrigen(false), 200)} />
                             {showDropdownOrigen && searchOrigen && (<div className="fo-x12">{resultadosOrigen.map((o:any) => (<div className="fo-x14" key={o.id} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, origen: o.id })); setSearchOrigen(nombreEmpresaMostrar(o)); setShowDropdownOrigen(false); }}><div className="fo-x23">{nombreEmpresaMostrar(o)}{paisDeEmpresaOD(o) && <span style={{ fontSize: '0.65rem', fontWeight: 'bold', padding: '1px 6px', borderRadius: '999px', border: `1px solid ${paisDeEmpresaOD(o) === 'USA' ? '#3b82f6' : '#3fb950'}`, backgroundColor: paisDeEmpresaOD(o) === 'USA' ? 'rgba(59,130,246,0.15)' : 'rgba(63,185,80,0.15)', color: paisDeEmpresaOD(o) === 'USA' ? '#3b82f6' : '#3fb950' }}>{paisDeEmpresaOD(o) === 'USA' ? 'EE.UU.' : 'MX'}</span>}</div><div style={{ fontSize: '0.8rem', fontWeight: 500, color: paisDeEmpresaOD(o) === 'USA' ? '#3b82f6' : paisDeEmpresaOD(o) === 'MX' ? '#3fb950' : '#8b949e' }}>{direccionFormateadaOD(o)}</div></div>))}</div>)}
                           </div>
-                          <BotonAgregar title="Agregar nueva Bódega" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_ORIGEN_DESTINO }, (id, reg) => { setFormData(prev => ({ ...prev, origen: id })); setSearchOrigen(labelEmpresa(reg)); })} />
+                          <BotonAgregar title="Agregar nuevo Origen/Destino" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_ORIGEN_DESTINO }, (id, reg) => { setFormData(prev => ({ ...prev, origen: id })); setSearchOrigen(labelEmpresa(reg)); })} />
                         </div>
                         {/* ✅ V00214: municipio del catálogo (no editable) */}
                         {formData.origen && (
@@ -3108,7 +3091,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           </div>
                         )}
                         {/* ✅ V00136: alerta de documentos del origen/destino */}
-                        {/* ✅ V00336: las bódegas no requieren documentos */}{formData.origen && !esBodegaId(formData.origen) && <AlertaDocumentos coleccionOrigen="empresas" registroId={String(formData.origen)} registroNombre={searchOrigen} etiqueta="Origen" />}
+                        {formData.origen && <AlertaDocumentos coleccionOrigen="empresas" registroId={String(formData.origen)} registroNombre={searchOrigen} etiqueta="Origen" />}
                       </div>
                       <div className="form-group">
                         <label className="form-label orange">Destino <span className="campo-badge">destino</span></label>
@@ -3117,7 +3100,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             <input type="text" className={`form-control${claseSiFalta('destino')}`} placeholder="Buscar destino..." value={searchDestino} onChange={e => { setSearchDestino(e.target.value); setShowDropdownDestino(true); }} onFocus={() => setShowDropdownDestino(true)} onBlur={() => setTimeout(() => setShowDropdownDestino(false), 200)} />
                             {showDropdownDestino && searchDestino && (<div className="fo-x12">{resultadosDestino.map((d:any) => (<div className="fo-x14" key={d.id} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, destino: d.id })); setSearchDestino(nombreEmpresaMostrar(d)); setShowDropdownDestino(false); }}><div className="fo-x23">{nombreEmpresaMostrar(d)}{paisDeEmpresaOD(d) && <span style={{ fontSize: '0.65rem', fontWeight: 'bold', padding: '1px 6px', borderRadius: '999px', border: `1px solid ${paisDeEmpresaOD(d) === 'USA' ? '#3b82f6' : '#3fb950'}`, backgroundColor: paisDeEmpresaOD(d) === 'USA' ? 'rgba(59,130,246,0.15)' : 'rgba(63,185,80,0.15)', color: paisDeEmpresaOD(d) === 'USA' ? '#3b82f6' : '#3fb950' }}>{paisDeEmpresaOD(d) === 'USA' ? 'EE.UU.' : 'MX'}</span>}</div><div style={{ fontSize: '0.8rem', fontWeight: 500, color: paisDeEmpresaOD(d) === 'USA' ? '#3b82f6' : paisDeEmpresaOD(d) === 'MX' ? '#3fb950' : '#8b949e' }}>{direccionFormateadaOD(d)}</div></div>))}</div>)}
                           </div>
-                          <BotonAgregar title="Agregar nueva Bódega" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_ORIGEN_DESTINO }, (id, reg) => { setFormData(prev => ({ ...prev, destino: id })); setSearchDestino(labelEmpresa(reg)); })} />
+                          <BotonAgregar title="Agregar nuevo Origen/Destino" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_ORIGEN_DESTINO }, (id, reg) => { setFormData(prev => ({ ...prev, destino: id })); setSearchDestino(labelEmpresa(reg)); })} />
                         </div>
                         {/* ✅ V00136: alerta de documentos del origen/destino */}
                         {/* ✅ V00214: municipio del catálogo (no editable) */}
@@ -3127,7 +3110,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             <input type="text" className="form-control fo-municipio-input" value={municipioDeEmpresaOD(formData.destino) || '—'} readOnly disabled />
                           </div>
                         )}
-                        {/* ✅ V00336: las bódegas no requieren documentos */}{formData.destino && !esBodegaId(formData.destino) && <AlertaDocumentos coleccionOrigen="empresas" registroId={String(formData.destino)} registroNombre={searchDestino} etiqueta="Destino" />}
+                        {formData.destino && <AlertaDocumentos coleccionOrigen="empresas" registroId={String(formData.destino)} registroNombre={searchDestino} etiqueta="Destino" />}
                       </div>
                       {/* ✅ NUEVO: kilometraje estimado del viaje (junto a Destino) */}
                       <div className="form-group">
@@ -3682,13 +3665,28 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         </aside>
       </div>
 
-      {estado === 'minimizado' && (
-        <div className="fo-x45" onClick={onRestore}>
-          <span className="fo-x26"><IconBriefcase size={18} /></span>
-          <div className="fo-x46">{initialData ? `Editar ${initialData.ref || initialData.id?.substring(0,6)}` : 'Nueva Operación'}</div>
-          <span className="fo-x21"><IconArrowRight size={15} /></span>
-        </div>
-      )}
+      {estado === 'minimizado' && (() => {
+        // ✅ V00337: la píldora minimizada muestra lo YA capturado — referencia,
+        //   cliente, remolque, fecha de servicio y tipo de operación.
+        const fd = formData as Record<string, unknown>;
+        const refPild = String(fd.ref || initialData?.ref || '');
+        const datos = [
+          searchClientePaga || String(fd.clientePagaNombre || initialData?.clientePagaNombre || ''),
+          String(fd.numeroRemolqueNombre || initialData?.numeroRemolqueNombre || fd.numeroRemolque || ''),
+          String(fd.fechaServicio || ''),
+          String(fd.tipoOperacionNombre || initialData?.tipoOperacionNombre || ''),
+        ].map(x => x.trim()).filter(Boolean);
+        return (
+          <div className="fo-x45" onClick={onRestore} title="Clic para restaurar la operación">
+            <span className="fo-x26"><IconBriefcase size={18} /></span>
+            <div className="fo-x46b">
+              <div className="fo-x46">{refPild ? `✎ ${refPild}` : (initialData ? `Editar ${initialData.id?.substring(0, 6) || ''}` : 'Nueva Operación')}</div>
+              {datos.length > 0 && <div className="fo-x46c">{datos.join(' · ')}</div>}
+            </div>
+            <span className="fo-x21"><IconArrowRight size={15} /></span>
+          </div>
+        );
+      })()}
 
       {modalCatalogo && modalCatalogo.catalogo.tipo === 'empresa' && (
         <FormularioEmpresa estado="abierto" registros={empresasLocal} tipoEmpresaPreseleccionado={modalCatalogo.catalogo.tipoEmpresaPreseleccionado} onClose={cerrarCreacion} onMinimize={() => {}} onRestore={() => {}} />
