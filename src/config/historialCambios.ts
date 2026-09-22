@@ -15,6 +15,7 @@ export interface CambioApp {
 }
 
 export const CAMBIOS_APP: CambioApp[] = [
+  { fecha: '2026-09-22', hora: '16:10', version: 'V00338', titulo: 'Configuraciones del Excel con nombre (Servicios Completados)', resumen: 'Al exportar a Excel primero se muestran las configuraciones guardadas: eliges una y arma el Excel con sus columnas, o creas una nueva, le pones nombre y queda guardada para todos.' },
   { fecha: '2026-09-22', hora: '09:30', version: 'V00337', titulo: 'Reportes "todos excepto" y minimizado informativo', resumen: 'En Reportes ya puedes incluir todos los estatus EXCEPTO los que marques; y al minimizar una operación, la pastilla muestra la referencia, el cliente, el remolque, la fecha de servicio y el tipo de operación.' },
   { fecha: '2026-09-21', hora: '20:10', version: 'V00335', titulo: 'Rango de fechas y moneda en la auditoría por empresa', resumen: 'La auditoría de la empresa ahora filtra las operaciones por rango de fecha de servicio y muestra la moneda configurada en la ficha de la empresa.' },
   { fecha: '2026-09-21', hora: '19:20', version: 'V00334', titulo: 'Auditoría de la cadena por EMPRESA', resumen: 'Desde la ficha de cualquier empresa (botón 🔍) se ve toda su cadena en vivo — operaciones, facturación y pagos — separada por su papel: Cliente que Paga, Cliente de Mercancía o Proveedor de transporte y servicios.' },

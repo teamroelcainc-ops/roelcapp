@@ -371,3 +371,17 @@
 .sc-btn-acelerar { padding: 10px 12px; }
 .sc-btn-acelerar--pendiente { border-color: #f59e0b; color: #f59e0b; animation: scPulsoAcelerar 1.8s ease-in-out infinite; }
 @keyframes scPulsoAcelerar { 0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.35); } 50% { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); } }
+
+/* ✅ V00338: configuraciones guardadas del Excel */
+.sc-cfg-modal { max-width: 560px; }
+.sc-cfg-sub { color: #8b949e; font-size: 0.8rem; margin: 4px 0 10px; }
+.sc-cfg-vacio { color: #8b949e; font-size: 0.85rem; border: 1px dashed #30363d; border-radius: 8px; padding: 14px; text-align: center; margin-bottom: 10px; }
+.sc-cfg-lista { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; margin-bottom: 10px; }
+.sc-cfg-item { display: flex; align-items: center; gap: 10px; border: 1px solid #30363d; border-radius: 8px; padding: 8px 12px; background: #0d1117; }
+.sc-cfg-nombre { color: #e6edf3; font-weight: 600; font-size: 0.88rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-cfg-cols { color: #8b949e; font-size: 0.75rem; white-space: nowrap; }
+.sc-cfg-usar { padding: 5px 14px; }
+.sc-cfg-borrar { padding: 5px 10px; }
+.sc-cfg-pregunta { color: #c9d1d9; font-size: 0.85rem; font-weight: 600; }
+.sc-cfg-guardar { display: flex; align-items: center; gap: 8px; margin: 10px 0 4px; }
+.sc-cfg-input { flex: 1; padding: 8px 10px; font-size: 0.85rem; }

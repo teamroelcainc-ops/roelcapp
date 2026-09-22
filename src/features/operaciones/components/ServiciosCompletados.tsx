@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
-import { collection, query, getDocs, onSnapshot, orderBy, limit, where, startAfter, documentId, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
+import { addDoc, collection, query, getDocs, onSnapshot, orderBy, limit, where, startAfter, documentId, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db, auth } from '../../../config/firebase';
 import { direccionCompletaDeEmpresa } from '../../../utils/direccionEmpresa'; // ✅ V00281
 import { EditorTarifaOrigenDestino } from './EditorTarifaOrigenDestino'; // ✅ V00224
@@ -495,6 +495,12 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
   // ✅ NUEVO: modal de exportación a Excel con columnas seleccionables y ordenables.
   const [modalExportar, setModalExportar] = useState(false);
+  // ✅ V00338: CONFIGURACIONES GUARDADAS del Excel (con nombre, en Firestore —
+  //   colección config_export_excel — compartidas entre usuarios y equipos).
+  const [modalConfigs, setModalConfigs] = useState(false);
+  const [presetsExport, setPresetsExport] = useState<{ id: string; nombre: string; columnas: { id: string; visible: boolean }[] }[]>([]);
+  const [presetNombre, setPresetNombre] = useState('');
+  const [presetIdActual, setPresetIdActual] = useState('');
   const [columnasExport, setColumnasExport] = useState<{ id: string; label: string; visible: boolean }[]>([]);
   const dragExportIdx = useRef<number | null>(null);
   // ✅ V00254: índice sobre el que se está arrastrando, para resaltar el destino.
@@ -2052,28 +2058,73 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
   // ✅ NUEVO: abre el modal restaurando la última configuración guardada del
   //   usuario (tolerante a columnas nuevas: se agregan al final desmarcadas).
-  const abrirModalExportar = () => {
+  /** ✅ V00338: aplica una lista guardada {id, visible}[] sobre las columnas
+   *  reales de la tabla (respeta el orden guardado; lo nuevo va al final). */
+  const columnasDesdeGuardadas = (guardadas: { id: string; visible: boolean }[]) => {
+    const porId = new Map(columnasTabla.map(c => [c.id, c] as const));
+    const lista: { id: string; label: string; visible: boolean }[] = [];
+    guardadas.forEach(g => {
+      const c = porId.get(g.id);
+      if (c) { lista.push({ id: c.id, label: c.label, visible: !!g.visible }); porId.delete(g.id); }
+    });
+    porId.forEach(c => lista.push({ id: c.id, label: c.label, visible: false }));
+    return lista;
+  };
+
+  /** ✅ V00338: el botón de Excel abre primero LAS CONFIGURACIONES guardadas. */
+  const abrirModalExportar = async () => {
     if (operacionesOrdenadas.length === 0) {
       alert('No hay datos para exportar. Realiza una búsqueda primero.');
       return;
     }
     try {
+      const snap = await getDocs(query(collection(db, 'config_export_excel'), where('modulo', '==', 'serviciosCompletados')));
+      const lista = snap.docs.map(d => { const x = d.data() as Record<string, unknown>; return { id: d.id, nombre: String(x.nombre || ''), columnas: (x.columnas || []) as { id: string; visible: boolean }[] }; });
+      lista.sort((a, b) => a.nombre.localeCompare(b.nombre));
+      setPresetsExport(lista);
+    } catch (e) { console.error('Configuraciones de exportación:', e); setPresetsExport([]); }
+    setModalConfigs(true);
+  };
+
+  /** ✅ V00338: usar una configuración guardada → abre el armado con ella. */
+  const usarPresetExport = (p: { id: string; nombre: string; columnas: { id: string; visible: boolean }[] }) => {
+    setColumnasExport(columnasDesdeGuardadas(p.columnas));
+    setPresetNombre(p.nombre); setPresetIdActual(p.id);
+    setModalConfigs(false); setModalExportar(true);
+  };
+
+  /** ✅ V00338: nueva configuración → parte de la última usada (o de la tabla). */
+  const nuevaConfigExport = () => {
+    try {
       const str = localStorage.getItem(claveExportGuardado());
-      if (str) {
-        const guardadas = JSON.parse(str) as { id: string; visible: boolean }[];
-        const porId = new Map(columnasTabla.map(c => [c.id, c] as const));
-        const lista: { id: string; label: string; visible: boolean }[] = [];
-        guardadas.forEach(g => {
-          const c = porId.get(g.id);
-          if (c) { lista.push({ id: c.id, label: c.label, visible: !!g.visible }); porId.delete(g.id); }
-        });
-        porId.forEach(c => lista.push({ id: c.id, label: c.label, visible: false }));
-        setColumnasExport(lista);
-      } else {
-        setColumnasExport(columnasExportPorDefecto());
-      }
+      if (str) setColumnasExport(columnasDesdeGuardadas(JSON.parse(str) as { id: string; visible: boolean }[]));
+      else setColumnasExport(columnasExportPorDefecto());
     } catch { setColumnasExport(columnasExportPorDefecto()); }
-    setModalExportar(true);
+    setPresetNombre(''); setPresetIdActual('');
+    setModalConfigs(false); setModalExportar(true);
+  };
+
+  /** ✅ V00338: guardar (o actualizar) la configuración con su nombre. */
+  const guardarPresetExport = async () => {
+    const nombre = presetNombre.trim();
+    if (!nombre) { alert('Ponle un NOMBRE a la configuración para guardarla.'); return; }
+    const columnas = columnasExport.map(c => ({ id: c.id, visible: c.visible }));
+    try {
+      if (presetIdActual) {
+        await updateDoc(doc(db, 'config_export_excel', presetIdActual), { nombre, columnas });
+      } else {
+        const ref = await addDoc(collection(db, 'config_export_excel'), { modulo: 'serviciosCompletados', nombre, columnas, creadoEn: new Date().toISOString() });
+        setPresetIdActual(ref.id);
+      }
+      alert(`Configuración "${nombre}" guardada. La encontrarás al presionar el botón de Excel.`);
+    } catch (e) { alert(`No se pudo guardar la configuración: ${(e as Error)?.message || e}`); }
+  };
+
+  /** ✅ V00338: borrar una configuración guardada. */
+  const borrarPresetExport = async (p: { id: string; nombre: string }) => {
+    if (!window.confirm(`¿Borrar la configuración "${p.nombre}"?`)) return;
+    try { await deleteDoc(doc(db, 'config_export_excel', p.id)); setPresetsExport(prev => prev.filter(x => x.id !== p.id)); }
+    catch (e) { alert(`No se pudo borrar: ${(e as Error)?.message || e}`); }
   };
 
   // ✅ NUEVO: mover una columna con las flechas ▲▼.
@@ -2564,6 +2615,40 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         {/* NUEVO: modal para ELEGIR Y ORDENAR las columnas del Excel.
             Arrastrando ⋮⋮ (o con las flechas) se cambia el orden; el checkbox
             incluye/excluye la columna. Por defecto usa las columnas de la tabla. */}
+        {/* ✅ V00338: modal de CONFIGURACIONES guardadas del Excel */}
+        {modalConfigs && (
+          <>
+            <div className="sc-x51" onClick={() => setModalConfigs(false)} />
+            <div className="sc-x52 sc-cfg-modal">
+              <div className="sc-x19">
+                <div className="sc-x20">
+                  <span className="sc-x21">📋 Configuraciones de exportación</span>
+                  <span className="sc-x53">({presetsExport.length})</span>
+                </div>
+                <button className="sc-x22" onClick={() => setModalConfigs(false)} title="Cerrar">✕</button>
+              </div>
+              <div className="sc-cfg-sub">Elige una configuración guardada para armar el Excel con ella, o crea una nueva.</div>
+              {presetsExport.length === 0 && <div className="sc-cfg-vacio">Aún no hay configuraciones guardadas.</div>}
+              <div className="sc-cfg-lista">
+                {presetsExport.map(pr => (
+                  <div key={pr.id} className="sc-cfg-item">
+                    <div className="sc-cfg-nombre">{pr.nombre}</div>
+                    <div className="sc-cfg-cols">{pr.columnas.filter(c => c.visible).length} columnas</div>
+                    <button className="sc-x62 sc-cfg-usar" onClick={() => usarPresetExport(pr)} title="Armar el Excel con esta configuración">Usar</button>
+                    <button className="sc-x61 sc-cfg-borrar" onClick={() => borrarPresetExport(pr)} title="Borrar esta configuración">🗑</button>
+                  </div>
+                ))}
+              </div>
+              <div className="sc-x58">
+                <div className="sc-cfg-pregunta">¿Quieres agregar una nueva configuración?</div>
+                <div className="sc-x60" />
+                <button className="sc-x61" onClick={() => setModalConfigs(false)}>Cancelar</button>
+                <button className="sc-x62" onClick={nuevaConfigExport}>➕ Nueva configuración</button>
+              </div>
+            </div>
+          </>
+        )}
+
         {modalExportar && (
           <>
             <div className="sc-x51" onClick={() => setModalExportar(false)} />
@@ -2606,6 +2691,17 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                 ))}
               </div>
 
+              {/* ✅ V00338: nombre de la configuración + guardar */}
+              <div className="sc-cfg-guardar">
+                <input
+                  type="text"
+                  className="form-control sc-cfg-input"
+                  placeholder="Nombre de la configuración (ej. Reporte semanal cliente)…"
+                  value={presetNombre}
+                  onChange={(e) => setPresetNombre(e.target.value)}
+                />
+                <button className="sc-x59" onClick={guardarPresetExport} title="Guardar esta selección y orden de columnas con el nombre indicado — quedará disponible para todos al presionar el botón de Excel">💾 Guardar configuración</button>
+              </div>
               <div className="sc-x58">
                 <button className="sc-x59"
                   onClick={() => setColumnasExport(columnasExportPorDefecto())}
