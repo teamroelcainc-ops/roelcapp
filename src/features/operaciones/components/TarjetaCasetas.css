@@ -1,0 +1,6 @@
+/* ✅ V00348: tarjeta CASETAS DEL DÍA (mismo look de las tarjetas del resumen) */
+.tcas-tarjeta { background: #0d1117; border: 1px solid #30363d; border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; min-width: 200px; }
+.tcas-etiqueta { display: flex; align-items: center; gap: 6px; color: #8b949e; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.tcas-linea { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.tcas-nombre { color: #8b949e; font-size: 0.8rem; }
+.tcas-monto { color: #a371f7; font-weight: 700; font-size: 1.02rem; white-space: nowrap; }
