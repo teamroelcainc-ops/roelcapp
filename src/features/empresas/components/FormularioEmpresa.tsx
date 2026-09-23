@@ -556,6 +556,30 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [catTiposEmpresaFull, catTiposServicioFull, initialData]);
 
+  // ✅ V00342: hay empresas con la MONEDA (o tipo de factura) guardada como
+  //   NOMBRE ("Dólares") y otras como ID — el select busca por id, por eso
+  //   "tenía moneda pero no aparecía" o se veía el ID pelón. En cuanto llegan
+  //   los catálogos, el valor se normaliza al ID y el select lo muestra.
+  useEffect(() => {
+    if (monedas.length === 0 && tiposFacturas.length === 0) return;
+    setFormData(prev => {
+      const monedasL = monedas as { id?: unknown; moneda?: unknown }[];
+      const tiposL = tiposFacturas as { id?: unknown; tipo?: unknown; nombre?: unknown }[];
+      let mon = String(prev.moneda || '');
+      if (mon && monedasL.length > 0 && !monedasL.some((m) => String(m.id) === mon)) {
+        const porNombre = monedasL.find((m) => String(m.moneda || '').trim().toLowerCase() === mon.trim().toLowerCase());
+        if (porNombre) mon = String(porNombre.id);
+      }
+      let tf = String(prev.tipoFactura || '');
+      if (tf && tiposL.length > 0 && !tiposL.some((t) => String(t.id) === tf)) {
+        const porNombreTf = tiposL.find((t) => String(t.tipo || t.nombre || '').trim().toLowerCase() === tf.trim().toLowerCase());
+        if (porNombreTf) tf = String(porNombreTf.id);
+      }
+      if (mon === String(prev.moneda || '') && tf === String(prev.tipoFactura || '')) return prev;
+      return { ...prev, moneda: mon, tipoFactura: tf };
+    });
+  }, [monedas, tiposFacturas, initialData]);
+
   // ✅ V00328: FOTO del formulario al abrir (ya normalizado) — sirve para saber
   //   qué campos REALMENTE cambió el usuario al guardar. Sin esto, Autorizaciones
   //   pedía permiso por campos que nadie tocó (ej. Status).

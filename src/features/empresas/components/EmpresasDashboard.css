@@ -466,3 +466,6 @@
 .ed-refs-chip--excel { margin-left: auto; border-color: #238636; color: #3fb950; font-weight: 700; }
 .ed-refs-chip--excel:hover:not(:disabled) { background-color: rgba(35, 134, 54, 0.15); }
 .ed-refs-chip--excel:disabled { opacity: 0.55; cursor: wait; }
+
+/* ✅ V00342: sincronizar razón social */
+.ed-razon-btn { white-space: nowrap; }
