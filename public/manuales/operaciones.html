@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Manual — Operaciones (Roelca)</title>
+<style>
+  :root { --fondo:#0d1117; --tarjeta:#161b22; --borde:#30363d; --texto:#e6edf3; --gris:#8b949e; --naranja:#fb923c; --azul:#58a6ff; --verde:#3fb950; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:'Segoe UI',system-ui,sans-serif; background:var(--fondo); color:var(--texto); line-height:1.65; }
+  .portada { background:linear-gradient(135deg,#161b22,#0d1117); border-bottom:2px solid var(--naranja); padding:42px 24px 30px; text-align:center; }
+  .portada h1 { margin:0 0 6px; font-size:1.9rem; } .portada p { margin:0; color:var(--gris); }
+  .contenido { max-width:960px; margin:0 auto; padding:26px 20px 70px; }
+  h2 { color:var(--naranja); border-bottom:1px solid var(--borde); padding-bottom:8px; margin-top:38px; font-size:1.25rem; }
+  h3 { color:var(--azul); margin:22px 0 6px; font-size:1.02rem; }
+  .tarjeta { background:var(--tarjeta); border:1px solid var(--borde); border-radius:12px; padding:16px 20px; margin:14px 0; }
+  .pill { display:inline-block; border:1px solid var(--borde); border-radius:999px; padding:2px 12px; margin:2px 4px 2px 0; font-size:.8rem; color:var(--gris); }
+  table { width:100%; border-collapse:collapse; margin:10px 0; font-size:.88rem; }
+  th,td { border:1px solid var(--borde); padding:8px 10px; text-align:left; vertical-align:top; }
+  th { background:#161b22; color:var(--naranja); }
+  .ok { color:var(--verde); font-weight:600; } .nota { color:var(--gris); font-size:.85rem; }
+  code { background:#161b22; border:1px solid var(--borde); border-radius:6px; padding:1px 7px; font-size:.85rem; }
+  .indice a { color:var(--azul); text-decoration:none; display:block; padding:3px 0; } .indice a:hover { text-decoration:underline; }
+</style>
+</head>
+<body>
+<div class="portada">
+  <h1>📖 Manual del módulo de Operaciones</h1>
+  <p>Roelca Inc · Operaciones Activas y Mis Operaciones · Guía de uso</p>
+</div>
+<div class="contenido">
+
+<div class="tarjeta indice">
+  <b>Índice</b>
+  <a href="#resumen">1. Resumen del día</a>
+  <a href="#botones">2. Botones del módulo</a>
+  <a href="#tabla">3. La tabla de operaciones</a>
+  <a href="#nueva">4. Crear y editar una operación</a>
+  <a href="#ficha">5. La ficha (Detalle de Operación)</a>
+  <a href="#documentos">6. Documentos de la operación</a>
+  <a href="#estatus">7. Estatus y su avance</a>
+  <a href="#vista">8. Personalizar la vista</a>
+</div>
+
+<h2 id="resumen">1. Resumen del día</h2>
+<div class="tarjeta">
+Las tarjetas superiores muestran, EN VIVO, el día en curso:
+<span class="pill">Operaciones del día (con la meta 0/60 y "Metas por día")</span>
+<span class="pill">Completadas hoy</span>
+<span class="pill">Canceladas hoy</span>
+<span class="pill">Tipo de cambio (DOF; botón "+ Capturar el de hoy")</span>
+<span class="pill">Diésel del día (por galón USA y su equivalencia MXN/L)</span>
+<p class="nota">El tipo de cambio y el diésel capturados aquí son los que usan los cálculos de las operaciones del día.</p>
+</div>
+
+<h2 id="botones">2. Botones del módulo</h2>
+<div class="tarjeta">
+<table>
+<tr><th>Botón</th><th>Qué hace</th></tr>
+<tr><td>⟳ Actualizar</td><td>Vuelve a leer las operaciones desde la base.</td></tr>
+<tr><td>Sincronizar nombres</td><td>Repara, registro por registro, los nombres que quedaron viejos tras renombrar en Catálogos (tipo de operación, status, empresas, carga). No toca montos.</td></tr>
+<tr><td>⟳ Actualizar monedas</td><td>Coloca en TODAS las operaciones (cliente y proveedor) la moneda que cada empresa tiene guardada en Empresas.</td></tr>
+<tr><td>🔢 Reparar consecutivos</td><td>Renumera los folios de un día en 1..N por orden de creación: cierra brincos y duplicados y re-sincroniza los contadores.</td></tr>
+<tr><td>📖 Manual</td><td>Abre esta guía en otra pestaña.</td></tr>
+<tr><td>✎ Vista</td><td>(Con permiso) Oculta o muestra los botones agregados del módulo; lo que marques aplica para todos. Ver la sección 8.</td></tr>
+<tr><td>≣ / ⬇ / Resúmenes</td><td>Configurar columnas de la tabla, exportar y abrir los resúmenes del día.</td></tr>
+<tr><td>➕ (Nueva Operación)</td><td>Abre el formulario para registrar una operación. Puede minimizarse: la pastilla muestra referencia, cliente, remolque, fecha y tipo.</td></tr>
+</table>
+</div>
+
+<h2 id="tabla">3. La tabla de operaciones</h2>
+<div class="tarjeta">
+<p>Cada fila es una operación con sus <b>Acciones</b> (✎ editar · 🗑 eliminar), referencia, fecha de servicio, tipo, status, remolque, unidad, tráfico y convenio.</p>
+<p><b>Buscar en todas las columnas</b> filtra al escribir; el botón <b>Filtros</b> agrega filtros por campo. El orden se cambia con clic en el encabezado. Las columnas visibles se configuran con el botón de columnas.</p>
+<p class="nota">Clic en la referencia o en la fila abre la ficha de la operación (sección 5).</p>
+</div>
+
+<h2 id="nueva">4. Crear y editar una operación</h2>
+<div class="tarjeta">
+<p>El formulario tiene pestañas: <b>Información General</b> (cliente que paga, convenio/tarifa, origen, destino, remolque, fechas), <b>Pedimento y CT</b> (cliente de la mercancía, descripción, DODA, Carta Porte y los <b>documentos guardados</b>), <b>Entry's y Manifiestos</b>, <b>Unidad y Operador</b> y <b>Por Cobrar</b>.</p>
+<p>El panel derecho calcula el <b>estatus</b>, la <b>tarifa del convenio</b>, el <b>tipo de cambio</b> y el <b>financiero</b> en vivo. Si un campo está protegido, aparece 🔒 y el botón <b>Solicitar autorización</b> envía la solicitud al Admin.</p>
+</div>
+
+<h2 id="ficha">5. La ficha (Detalle de Operación)</h2>
+<div class="tarjeta">
+<p>Muestra la operación en pestañas de solo lectura, con:</p>
+<table>
+<tr><th>Elemento</th><th>Qué hace</th></tr>
+<tr><td>≣ Bitácora</td><td>El historial de la operación: quién cambió qué y cuándo.</td></tr>
+<tr><td>📄 Ver documentos</td><td class="ok">TODOS los documentos guardados de la operación (Carta Porte, DODA, Entry's, Manifiesto y los subidos con el botón Documentos), para abrirlos ahí mismo.</td></tr>
+<tr><td>➕ Registrar Status</td><td>Avanza el estatus manualmente cuando no hay transición automática.</td></tr>
+<tr><td>Generar documentos</td><td>Check List, Solicitud de Retiro, Instrucciones de Servicio, Carta Instrucciones o Prueba de Entrega según el tipo de operación.</td></tr>
+<tr><td>Ver auditoría</td><td>Los cambios registrados sobre la operación.</td></tr>
+</table>
+</div>
+
+<h2 id="documentos">6. Documentos de la operación</h2>
+<div class="tarjeta">
+<p>Los PDF capturados en el formulario (Carta Porte, DODA, Entry's, Manifiesto) se suben <b>al guardar la operación</b> a la carpeta de su referencia, y también puedes adjuntar más con el botón <b>Documentos</b> del formulario.</p>
+<p>Se consultan en tres lugares: la pestaña <b>Pedimento y CT</b> del formulario, el botón <b>📄 Ver documentos</b> de la ficha, y el detalle 👁 de la Auditoría.</p>
+<p class="nota">Si el guardado se convirtió en una solicitud de autorización, adjunta los archivos con el botón Documentos una vez aprobada.</p>
+</div>
+
+<h2 id="estatus">7. Estatus y su avance</h2>
+<div class="tarjeta">
+<p>El estatus se <b>calcula</b> con la información capturada (1. Pre-Documentado → 3. Documentado (Asignado) → … → 14. Servicio Completado). Completar los campos correctos lo avanza solo; "Registrar Status" permite avanzarlo a mano cuando aplica. Las operaciones completadas pasan a <b>Servicios Completados</b> y las canceladas a <b>Servicios Cancelados</b>.</p>
+</div>
+
+<h2 id="vista">8. Personalizar la vista</h2>
+<div class="tarjeta">
+<p>Con el permiso activo, el botón <b>✎ Vista</b> abre el panel de edición: marca los botones que quieres <b>ocultar</b> (quedan en rojo tachado) y presiona <b>Listo</b>. La elección se guarda en la base y aplica para <b>todos los usuarios</b>; para recuperar un botón, vuelve a entrar a ✎ Vista y desmárcalo.</p>
+<p class="nota">El permiso lo controla el Administrador desde Roles.</p>
+</div>
+
+<p class="nota" style="text-align:center; margin-top:40px;">Roelca Inc · Manual del módulo de Operaciones · Hecho por Jesús Molero</p>
+</div>
+</body>
+</html>

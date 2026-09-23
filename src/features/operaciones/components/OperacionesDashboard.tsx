@@ -4,7 +4,9 @@ import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
 import { FormularioOperacion } from './FormularioOperacion';
 // ✅ NUEVO: Resúmenes Diarios (Transfer / Logística / Fletes) en PDF.
 import { ResumenDiarioOperaciones } from '../../reportes/components/ResumenDiarioOperaciones';
-import { collection, doc, writeBatch, query, getDocs, limit, where, startAfter, orderBy } from 'firebase/firestore';
+import { collection, doc, writeBatch, query, getDocs, limit, where, startAfter, orderBy, onSnapshot, setDoc } from 'firebase/firestore';
+import { DocumentosLista } from '../../documentos/DocumentosLista'; // ✅ V00344
+import { obtenerUsuarioAut } from '../../autorizaciones/autorizaciones'; // ✅ V00344
 import { db, eliminarRegistro } from '../../../config/firebase'; 
 import { registrarLog } from '../../../utils/logger';
 import { sincronizarNombresOperaciones as sincronizarNombresUtil } from '../../../utils/sincronizarNombresOperaciones';
@@ -217,6 +219,34 @@ const OperacionesDashboard = () => {
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
   const [cargandoOperaciones, setCargandoOperaciones] = useState(true);
   const [operacionViendo, setOperacionViendo] = useState<any | null>(null);
+  // ✅ V00344: (1) documentos de la operación en la ficha; (2) personalizar la
+  //   vista (ocultar/mostrar los botones agregados; guardado GLOBAL en Firestore
+  //   config_vista/operacionesActivas — el permiso llega desde Roles/Admin);
+  //   (3) botón Manual del módulo.
+  const [verDocsOp, setVerDocsOp] = useState(false);
+  const [editandoVista, setEditandoVista] = useState(false);
+  const [botonesOcultos, setBotonesOcultos] = useState<string[]>([]);
+  const [puedePersonalizarVista, setPuedePersonalizarVista] = useState(false);
+  useEffect(() => {
+    obtenerUsuarioAut().then((u) => setPuedePersonalizarVista(!!u.esAdmin || (u.roles || []).some((r) => String(r).toLowerCase().includes('personalizarvista')))).catch(() => {});
+    const unsub = onSnapshot(doc(db, 'config_vista', 'operacionesActivas'), (d) => {
+      const x = d.data() as Record<string, unknown> | undefined;
+      setBotonesOcultos(Array.isArray(x?.botonesOcultos) ? (x!.botonesOcultos as string[]) : []);
+    }, () => {});
+    return () => unsub();
+  }, []);
+  const btnOculto = (clave: string) => !editandoVista && botonesOcultos.includes(clave);
+  const alternarBtnVista = async (clave: string) => {
+    const lista = botonesOcultos.includes(clave) ? botonesOcultos.filter((x) => x !== clave) : [...botonesOcultos, clave];
+    setBotonesOcultos(lista);
+    try { await setDoc(doc(db, 'config_vista', 'operacionesActivas'), { botonesOcultos: lista }, { merge: true }); }
+    catch (e) { console.error('Vista del módulo:', e); }
+  };
+  const BOTONES_VISTA: { clave: string; nombre: string }[] = [
+    { clave: 'sincronizarNombres', nombre: 'Sincronizar nombres' },
+    { clave: 'actualizarMonedas', nombre: 'Actualizar monedas' },
+    { clave: 'repararConsecutivos', nombre: 'Reparar consecutivos' },
+  ];
   // ✅ NUEVO: modal de auditoría de la referencia (solo lectura).
   const [mostrarAuditoria, setMostrarAuditoria] = useState(false);
   // ✅ NUEVO: mapa uid → nombre para mostrar SIEMPRE el nombre del usuario en la
@@ -1821,18 +1851,35 @@ const OperacionesDashboard = () => {
             </button>
             {/* ✅ NUEVO (V00113): re-resuelve los nombres guardados en cada
                 operación contra los catálogos actuales (repara renombres) */}
-            <button className="btn btn-outline" onClick={sincronizarNombresOperaciones} disabled={sincronizandoNombres || cargandoOperaciones} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px', cursor: sincronizandoNombres ? 'wait' : 'pointer' }} title="Sincronizar nombres: actualiza registro por registro los nombres (tipo de operación, status, empresas, carga) que quedaron viejos tras renombrar en Catálogos">
+            {!btnOculto('sincronizarNombres') && <button className="btn btn-outline" onClick={sincronizarNombresOperaciones} disabled={sincronizandoNombres || cargandoOperaciones} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px', cursor: sincronizandoNombres ? 'wait' : 'pointer' }} title="Sincronizar nombres: actualiza registro por registro los nombres (tipo de operación, status, empresas, carga) que quedaron viejos tras renombrar en Catálogos">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
               <span>{sincronizandoNombres ? 'Sincronizando...' : 'Sincronizar nombres'}</span>
-            </button>
+            </button>}
             {/* ✅ V00132: forzar la moneda de Empresas en TODAS las operaciones */}
-            <button className="btn btn-outline od-btn-monedas" onClick={sincronizarMonedasOperaciones} disabled={sincronizandoMonedas || cargandoOperaciones} title="Coloca en TODAS las operaciones (cliente y proveedor) la moneda que cada empresa tiene guardada en la tabla Empresas">
+            {!btnOculto('actualizarMonedas') && <button className="btn btn-outline od-btn-monedas" onClick={sincronizarMonedasOperaciones} disabled={sincronizandoMonedas || cargandoOperaciones} title="Coloca en TODAS las operaciones (cliente y proveedor) la moneda que cada empresa tiene guardada en la tabla Empresas">
               <span>{sincronizandoMonedas ? '⏳ Actualizando monedas…' : '⟳ Actualizar monedas'}</span>
-            </button>
+            </button>}
             {/* ✅ V00162: cierra brincos/duplicados de folios ya guardados */}
-            <button type="button" className="btn btn-outline od-btn-reparar" disabled={reparandoConsec} onClick={repararConsecutivos} title="Renumera los folios de un día en 1..N por orden de creación: cierra brincos (006 → 024) y duplicados que dejó la numeración vieja, y re-sincroniza los contadores">
+            {!btnOculto('repararConsecutivos') && <button type="button" className="btn btn-outline od-btn-reparar" disabled={reparandoConsec} onClick={repararConsecutivos} title="Renumera los folios de un día en 1..N por orden de creación: cierra brincos (006 → 024) y duplicados que dejó la numeración vieja, y re-sincroniza los contadores">
               <span>{reparandoConsec ? '⏳ Reparando…' : '🔢 Reparar consecutivos'}</span>
-            </button>
+            </button>}
+            {/* ✅ V00344: manual del módulo (HTML en otra pestaña) */}
+            <button className="btn btn-outline od-btn-manual" onClick={() => window.open('/manuales/operaciones.html', '_blank')} title="Abrir el manual del módulo en otra pestaña">📖 Manual</button>
+            {/* ✅ V00344: personalizar la vista (ocultar/mostrar los botones agregados) */}
+            {puedePersonalizarVista && (
+              <button className={`btn btn-outline od-btn-vista${editandoVista ? ' od-btn-vista--activo' : ''}`} onClick={() => setEditandoVista(v => !v)} title="Editar la vista: ocultar o mostrar los botones agregados de este módulo (aplica para todos)">✎ Vista</button>
+            )}
+            {editandoVista && (
+              <div className="od-vista-panel" title="Marca los botones que quieres OCULTAR de la vista (se guarda para todos los usuarios)">
+                {BOTONES_VISTA.map(b => (
+                  <label key={b.clave} className={`od-vista-item${botonesOcultos.includes(b.clave) ? ' od-vista-item--oculto' : ''}`}>
+                    <input type="checkbox" checked={botonesOcultos.includes(b.clave)} onChange={() => alternarBtnVista(b.clave)} />
+                    <span>{b.nombre}</span>
+                  </label>
+                ))}
+                <button type="button" className="od-vista-listo" onClick={() => setEditandoVista(false)}>Listo</button>
+              </div>
+            )}
             <button className="btn btn-outline od-x23" onClick={() => setModalColumnas(true)} title="Configurar Columnas">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg></button>
             <button className="btn btn-outline od-x24" onClick={exportarExcel} title="Exportar a Excel">
@@ -2026,6 +2073,11 @@ const OperacionesDashboard = () => {
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
                     Bitácora
                   </button>
+                  {/* ✅ V00344: TODOS los documentos subidos de la operación */}
+                  <button onClick={() => setVerDocsOp(v => !v)} title="Ver TODOS los documentos guardados de esta operación (Carta Porte, DODA, Entry's, Manifiesto y los subidos con el botón Documentos)" style={btnSecondaryActionStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#30363d'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#21262d'}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                    {verDocsOp ? 'Ocultar documentos' : 'Ver documentos'}
+                  </button>
                   <div className="od-x73"></div>
                   <button className="od-x74" onClick={() => setOperacionViendo(null)} onMouseEnter={(e) => e.currentTarget.style.color = '#f0f6fc'} onMouseLeave={(e) => e.currentTarget.style.color = '#8b949e'}>
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
@@ -2092,6 +2144,13 @@ const OperacionesDashboard = () => {
                 )}
               </div>
 
+              {/* ✅ V00344: lista completa de documentos guardados de la operación */}
+              {verDocsOp && (
+                <div className="od-docs-op">
+                  <div className="od-docs-op-titulo">📎 Documentos guardados de esta operación</div>
+                  <DocumentosLista coleccionOrigen="operaciones" registroId={String(operacionViendo.id)} />
+                </div>
+              )}
               <div className="od-x84">
                 <span className="od-x85">GENERAR DOCUMENTOS:</span>
                 {(docsPermitidos ? puedeMostrarDoc('carta') : evalIsFletes) && (

@@ -361,3 +361,15 @@
 /* ✅ V00162: botón reparar consecutivos */
 .od-btn-reparar { border-color: #f59e0b !important; color: #fbbf24 !important; }
 .od-btn-reparar:hover { background-color: rgba(245, 158, 11, 0.12) !important; }
+
+/* ✅ V00344: documentos de la operación, editar vista y manual */
+.od-docs-op { border: 1px solid #30363d; border-radius: 10px; padding: 12px 14px; margin: 10px 0; background: #0d1117; }
+.od-docs-op-titulo { color: #e6edf3; font-weight: 700; font-size: 0.88rem; margin-bottom: 8px; }
+.od-btn-manual { white-space: nowrap; }
+.od-btn-vista { white-space: nowrap; }
+.od-btn-vista--activo { border-color: #d29922; color: #d29922; }
+.od-vista-panel { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border: 1px dashed #d29922; border-radius: 8px; padding: 6px 10px; background: rgba(210, 153, 34, 0.06); }
+.od-vista-item { display: flex; align-items: center; gap: 5px; color: #c9d1d9; font-size: 0.78rem; cursor: pointer; }
+.od-vista-item--oculto { color: #f85149; text-decoration: line-through; }
+.od-vista-item input { accent-color: #f85149; }
+.od-vista-listo { border: 1px solid #d29922; background: transparent; color: #d29922; border-radius: 6px; padding: 3px 10px; cursor: pointer; font-size: 0.76rem; }
