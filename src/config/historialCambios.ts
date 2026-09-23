@@ -15,6 +15,7 @@ export interface CambioApp {
 }
 
 export const CAMBIOS_APP: CambioApp[] = [
+  { fecha: '2026-09-23', hora: '15:00', version: 'V00345', titulo: 'Los documentos de la operación abren en su modal', resumen: 'El botón Ver documentos de la ficha abre ahora un modal centrado con todos los documentos de la operación, cada uno con su botón Ver/Descargar.' },
   { fecha: '2026-09-23', hora: '14:30', version: 'V00344', titulo: 'Ver documentos en la ficha, editar la vista y Manual del módulo', resumen: 'La ficha de la operación tiene el botón Ver documentos con TODO lo subido (Carta Porte, DODA, Entry\'s, Manifiesto y más); el botón ✎ Vista permite ocultar/mostrar los botones agregados (guardado para todos); y el botón 📖 Manual abre la guía del módulo en otra pestaña.' },
   { fecha: '2026-09-23', hora: '13:20', version: 'V00343', titulo: 'Razón Social de la empresa en toda la cadena', resumen: 'La empresa tiene ahora el campo Razón Social: captúralo (ej. en Caro-Kar Pesos pon Caro-Kar Transportes), presiona el botón Razón social de Empresas y todas las operaciones, facturas y pagos mostrarán ese nombre.' },
   { fecha: '2026-09-23', hora: '12:30', version: 'V00342', titulo: 'Moneda visible al editar la empresa + razón social en toda la cadena', resumen: 'La moneda y el tipo de factura de la empresa aparecen de inmediato al editar (aunque estén guardados con el nombre viejo), y el nuevo botón Razón social escribe el nombre actual de todas las empresas en operaciones, facturación y pagos.' },

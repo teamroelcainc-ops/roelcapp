@@ -2144,12 +2144,20 @@ const OperacionesDashboard = () => {
                 )}
               </div>
 
-              {/* ✅ V00344: lista completa de documentos guardados de la operación */}
+              {/* ✅ V00344/V00345: los documentos guardados de la operación, en su MODAL */}
               {verDocsOp && (
-                <div className="od-docs-op">
-                  <div className="od-docs-op-titulo">📎 Documentos guardados de esta operación</div>
-                  <DocumentosLista coleccionOrigen="operaciones" registroId={String(operacionViendo.id)} />
-                </div>
+                <>
+                  <div className="od-docs-overlay" onClick={() => setVerDocsOp(false)} />
+                  <div className="od-docs-modal" role="dialog" aria-label="Documentos de la operación">
+                    <div className="od-docs-modal-enc">
+                      <span className="od-docs-modal-titulo">📎 Documentos de {operacionViendo.ref || operacionViendo.id?.substring(0, 6)}</span>
+                      <button type="button" className="od-docs-modal-cerrar" onClick={() => setVerDocsOp(false)} title="Cerrar">✕</button>
+                    </div>
+                    <div className="od-docs-modal-cuerpo">
+                      <DocumentosLista coleccionOrigen="operaciones" registroId={String(operacionViendo.id)} />
+                    </div>
+                  </div>
+                </>
               )}
               <div className="od-x84">
                 <span className="od-x85">GENERAR DOCUMENTOS:</span>
