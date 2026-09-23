@@ -4,7 +4,7 @@
 //   al momento. Autocontenida: se monta con <TarjetaCasetas /> junto a las
 //   demás tarjetas (tipo de cambio, diésel) en App.tsx.
 import React, { useEffect, useState } from 'react';
-import { collection, doc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { addDoc, collection, doc, getDocs, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import './TarjetaCasetas.css';
 
@@ -46,8 +46,19 @@ export const TarjetaCasetas: React.FC = () => {
     if (p3 && (!Number.isFinite(nP3) || nP3 < 0)) { alert('Captura un monto válido para el Puente III.'); return; }
     setGuardando(true);
     try {
-      if (avi) await updateDoc(doc(db, 'catalogo_tipos_gastos', avi.id), { importe: nAvi });
-      if (p3) await updateDoc(doc(db, 'catalogo_tipos_gastos', p3.id), { importe: nP3 });
+      // ✅ V00350: además del catálogo, la captura REGISTRA EL DÍA en la tabla
+      //   saldos_puentes (módulo Saldos de Puentes) — un registro por puente y
+      //   fecha (si el de hoy ya existe, se actualiza).
+      const hoy = new Date().toISOString().slice(0, 10);
+      const registrarDia = async (c: Caseta, monto: number) => {
+        await updateDoc(doc(db, 'catalogo_tipos_gastos', c.id), { importe: monto });
+        const previo = await getDocs(query(collection(db, 'saldos_puentes'), where('puenteId', '==', c.id), where('fecha', '==', hoy)));
+        const datos = { fecha: hoy, puenteId: c.id, puenteNombre: c.nombre, moneda: c.moneda, saldo: monto };
+        if (!previo.empty) await updateDoc(doc(db, 'saldos_puentes', previo.docs[0].id), datos);
+        else await addDoc(collection(db, 'saldos_puentes'), { ...datos, creadoEn: new Date().toISOString() });
+      };
+      if (avi) await registrarDia(avi, nAvi);
+      if (p3) await registrarDia(p3, nP3);
       setModalAbierto(false);
     } catch (e) { alert(`No se pudo guardar el saldo: ${(e as Error)?.message || e}`); }
     finally { setGuardando(false); }

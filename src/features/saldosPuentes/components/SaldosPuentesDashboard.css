@@ -1,0 +1,27 @@
+/* ✅ V00350: Saldos de Puentes */
+.sp-modulo { padding: 20px 24px; color: #e6edf3; }
+.sp-titulo { margin: 0 0 4px; font-size: 1.3rem; }
+.sp-sub { margin: 0 0 16px; color: #8b949e; font-size: 0.85rem; max-width: 860px; }
+.sp-form { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; border: 1px solid #30363d; border-radius: 12px; padding: 14px 16px; background: #0d1117; margin-bottom: 14px; }
+.sp-campo { display: flex; flex-direction: column; gap: 5px; color: #8b949e; font-size: 0.78rem; }
+.sp-campo input, .sp-campo select { padding: 8px 10px; min-width: 160px; }
+.sp-campo--puente select { min-width: 280px; }
+.sp-form-botones { display: flex; gap: 8px; margin-left: auto; }
+.sp-btn { border: 1px solid #30363d; background: transparent; color: #c9d1d9; border-radius: 8px; padding: 8px 14px; cursor: pointer; font-size: 0.84rem; }
+.sp-btn--primario { border-color: #a371f7; background: #a371f7; color: #0d1117; font-weight: 700; }
+.sp-btn:disabled { opacity: 0.6; cursor: wait; }
+.sp-barra { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.sp-buscar { max-width: 340px; padding: 8px 10px; }
+.sp-conteo { color: #8b949e; font-size: 0.8rem; }
+.sp-tabla-marco { border: 1px solid #30363d; border-radius: 12px; overflow: auto; max-height: calc(100vh - 360px); }
+.sp-tabla { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+.sp-tabla th { position: sticky; top: 0; background: #161b22; color: #8b949e; text-align: left; padding: 10px 12px; border-bottom: 1px solid #30363d; z-index: 2; }
+.sp-tabla td { padding: 9px 12px; border-bottom: 1px solid #21262d; }
+.sp-num { text-align: right; }
+.sp-monto { color: #a371f7; font-weight: 700; }
+.sp-vacio { text-align: center; color: #8b949e; padding: 18px; }
+.sp-fila--editando { outline: 1px solid #a371f7; }
+.sp-acciones { white-space: nowrap; }
+.sp-mini { border: 1px solid #30363d; background: transparent; color: #8b949e; border-radius: 6px; padding: 2px 8px; cursor: pointer; margin-right: 4px; }
+.sp-mini:hover { border-color: #58a6ff; color: #58a6ff; }
+.sp-mini--rojo:hover { border-color: #f85149; color: #f85149; }

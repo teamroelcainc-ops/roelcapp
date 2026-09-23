@@ -53,6 +53,7 @@ const PanelControlDashboard = lazyWithRetry(() => import('./features/panelContro
 const EmpresasDashboard = lazyWithRetry(() => import('./features/empresas/components/EmpresasDashboard'), 'EmpresasDashboard');
 const ContactosDashboard = lazyWithRetry(() => import('./features/contactos/components/ContactosDashboard').then(m => ({ default: m.ContactosDashboard })), 'ContactosDashboard');
 const TipoCambioDashboard = lazyWithRetry(() => import('./features/tipoCambio/components/TipoCambioDashboard').then(m => ({ default: m.TipoCambioDashboard })), 'TipoCambioDashboard');
+const SaldosPuentesDashboard = lazyWithRetry(() => import('./features/saldosPuentes/components/SaldosPuentesDashboard').then(m => ({ default: m.SaldosPuentesDashboard })), 'SaldosPuentesDashboard'); // ✅ V00350
 const CatalogosDashboard = lazyWithRetry(() => import('./features/catalogos/components/CatalogosDashboard'), 'CatalogosDashboard');
 const CombustibleDashboard = lazyWithRetry(() => import('./features/combustible/components/CombustibleDashboard').then(m => ({ default: m.CombustibleDashboard })), 'CombustibleDashboard');
 const ProveedoresUnidadDashboard = lazyWithRetry(() => import('./features/proveedoresUnidad/components/ProveedoresUnidadDashboard'), 'ProveedoresUnidadDashboard');
@@ -139,6 +140,7 @@ const MODULOS_A_CLAVE: Record<string, string> = {
   'Contactos': 'contactos',
   'Direcciones': 'direcciones',
   'Tipo de Cambio': 'tipoCambio',
+  'Saldos de Puentes': 'saldosPuentes', // ✅ V00350
   'Combustible': 'combustible',
   'Unidades Propias': 'unidades',
   'Remolques': 'remolques',
@@ -258,6 +260,9 @@ const ICON: Record<string, React.ReactNode> = {
   ),
   direcciones: (
     <Ico><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></Ico>
+  ),
+  saldosPuentes: ( // ✅ V00350
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 21V8l8-5 8 5v13"></path><path d="M4 11h16"></path><path d="M9 21v-6h6v6"></path></svg>
   ),
   tipoCambio: (
     <Ico><polyline points="17 1 21 5 17 9" /><path d="M3 11V9a4 4 0 0 1 4-4h14" /><polyline points="7 23 3 19 7 15" /><path d="M21 13v2a4 4 0 0 1-4 4H3" /></Ico>
@@ -771,7 +776,7 @@ function AppContenido() {
   const [rolesCatalogo, setRolesCatalogo] = useState<any[]>([]); // catálogo de roles (para permisos)
   
   const { etq } = useEtiquetas();
-  const [moduloActivo, setModuloActivo] = useState<'tableroCrm' | 'panelControl' | 'reporteVencimientos' | 'etiquetas' | 'estadisticas' | 'pagos' | 'misOperaciones' | 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'tarifarioClientes' | 'conveniosProveedores' | 'tarifarioProveedores' | 'detallesConvenioClientes' | 'detallesConvenioProveedores' | 'papeleraReciclaje' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones' | 'historialCambios'>(() => {
+  const [moduloActivo, setModuloActivo] = useState<'tableroCrm' | 'panelControl' | 'reporteVencimientos' | 'etiquetas' | 'estadisticas' | 'pagos' | 'misOperaciones' | 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'saldosPuentes' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'tarifarioClientes' | 'conveniosProveedores' | 'tarifarioProveedores' | 'detallesConvenioClientes' | 'detallesConvenioProveedores' | 'papeleraReciclaje' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones' | 'historialCambios'>(() => {
     // ✅ PANTALLA PERSISTENTE: al recargar se regresa al último módulo visitado.
     //   (El guard de permisos más abajo redirige si el rol ya no lo permite.)
     // Cast simple a string: cualquier valor raro lo corrige el guard de permisos.
@@ -1346,7 +1351,7 @@ function AppContenido() {
     return <Login onLoginSuccess={() => setEstaAutenticado(true)} />;
   }
 
-  const esBaseDeDatosActiva = moduloActivo === 'empresas' || moduloActivo === 'contactos' || moduloActivo === 'tipoCambio' || moduloActivo === 'combustible' || moduloActivo === 'proveedoresUnidad' || moduloActivo === 'unidadesProveedor' || moduloActivo === 'unidades' || moduloActivo === 'remolques' || moduloActivo === 'direcciones';
+  const esBaseDeDatosActiva = moduloActivo === 'empresas' || moduloActivo === 'contactos' || moduloActivo === 'tipoCambio' || moduloActivo === 'saldosPuentes' || moduloActivo === 'combustible' || moduloActivo === 'proveedoresUnidad' || moduloActivo === 'unidadesProveedor' || moduloActivo === 'unidades' || moduloActivo === 'remolques' || moduloActivo === 'direcciones';
   const esClientesActivo = moduloActivo === 'conveniosClientes' || moduloActivo === 'tarifarioClientes' || moduloActivo === 'facturacionClientes' || moduloActivo === 'detallesConvenioClientes';
   const esProveedoresActivo = moduloActivo === 'conveniosProveedores' || moduloActivo === 'facturacionProveedores' || moduloActivo === 'detallesConvenioProveedores' || moduloActivo === 'tarifarioProveedores'; // ✅ V00211
   const esEmpleadosActivo = moduloActivo === 'colaboradores' || moduloActivo === 'historialAsistencia' || moduloActivo === 'referenciasNomina' || moduloActivo === 'deducciones';
@@ -1358,7 +1363,7 @@ function AppContenido() {
   const verClientes = puede('conveniosClientes') || puede('tarifarioClientes') || puede('facturacionClientes');
   const verProveedores = puede('conveniosProveedores') || puede('facturacionProveedores') || puede('tarifarioProveedores') || puede('detallesConvenioProveedores'); // ✅ V00211
   const verEmpleados = puede('colaboradores') || puede('historialAsistencia') || puede('referenciasNomina') || puede('deducciones');
-  const verBasesDatos = puede('empresas') || puede('contactos') || puede('direcciones') || puede('tipoCambio') || puede('combustible') || puede('unidades') || puede('remolques') || puede('proveedoresUnidad') || puede('unidadesProveedor');
+  const verBasesDatos = puede('empresas') || puede('contactos') || puede('direcciones') || puede('tipoCambio') || puede('saldosPuentes') || puede('combustible') || puede('unidades') || puede('remolques') || puede('proveedoresUnidad') || puede('unidadesProveedor');
   const verConfiguracion = puede('usuarios') || puede('roles') || puede('logs') || puede('flujosOperacion') || puede('datosEmpresa') || puede('autorizaciones');
 
   const sinModulos = !accesoTotal && clavesPermitidas.size === 0;
@@ -1705,6 +1710,7 @@ function AppContenido() {
                 {puede('contactos') && <div className={`sidebar-subitem ${moduloActivo === 'contactos' ? 'active' : ''}`} onClick={() => navegarA('contactos')}><span className="sidebar-icon">{ICON.contactos}</span><span className="sidebar-label">{etq('menu.contactos', 'Contactos')}</span></div>}
                 {puede('direcciones') && <div className={`sidebar-subitem ${moduloActivo === 'direcciones' ? 'active' : ''}`} onClick={() => navegarA('direcciones')}><span className="sidebar-icon">{ICON.direcciones}</span><span className="sidebar-label">{etq('menu.direcciones', 'Direcciones')}</span></div>}
                 {puede('tipoCambio') && <div className={`sidebar-subitem ${moduloActivo === 'tipoCambio' ? 'active' : ''}`} onClick={() => navegarA('tipoCambio')}><span className="sidebar-icon">{ICON.tipoCambio}</span><span className="sidebar-label">{etq('menu.tipo_de_cambio', 'Tipo de Cambio')}</span></div>}
+                {puede('saldosPuentes') && <div className={`sidebar-subitem ${moduloActivo === 'saldosPuentes' ? 'active' : ''}`} onClick={() => navegarA('saldosPuentes')}><span className="sidebar-icon">{ICON.saldosPuentes}</span><span className="sidebar-label">{etq('menu.saldos_de_puentes', 'Saldos de Puentes')}</span></div>}{/* ✅ V00350 */}
                 {puede('combustible') && <div className={`sidebar-subitem ${moduloActivo === 'combustible' ? 'active' : ''}`} onClick={() => navegarA('combustible')}><span className="sidebar-icon">{ICON.combustible}</span><span className="sidebar-label">{etq('menu.combustible', 'Combustible')}</span></div>}
                 {puede('unidades') && <div className={`sidebar-subitem ${moduloActivo === 'unidades' ? 'active' : ''}`} onClick={() => navegarA('unidades')}><span className="sidebar-icon">{ICON.unidades}</span><span className="sidebar-label">{etq('menu.unidades_propias', 'Unidades Propias')}</span></div>}
                 {puede('remolques') && <div className={`sidebar-subitem ${moduloActivo === 'remolques' ? 'active' : ''}`} onClick={() => navegarA('remolques')}><span className="sidebar-icon">{ICON.remolques}</span><span className="sidebar-label">{etq('menu.remolques', 'Remolques')}</span></div>}
@@ -1949,6 +1955,7 @@ function AppContenido() {
             {moduloActivo === 'contactos' && puede('contactos') && <ContactosDashboard />}
             {moduloActivo === 'direcciones' && puede('direcciones') && <DireccionesDashboard />}
             {moduloActivo === 'tipoCambio' && puede('tipoCambio') && <TipoCambioDashboard />}
+            {moduloActivo === 'saldosPuentes' && puede('saldosPuentes') && <SaldosPuentesDashboard />}{/* ✅ V00350 */}
             {moduloActivo === 'combustible' && puede('combustible') && <CombustibleDashboard />}
             {moduloActivo === 'unidades' && puede('unidades') && <UnidadesDashboard />} 
             {moduloActivo === 'remolques' && puede('remolques') && <RemolquesDashboard />} 
