@@ -4,7 +4,7 @@
 //   al momento. Autocontenida: se monta con <TarjetaCasetas /> junto a las
 //   demás tarjetas (tipo de cambio, diésel) en App.tsx.
 import React, { useEffect, useState } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import './TarjetaCasetas.css';
 
@@ -25,18 +25,40 @@ const fmtMonto = (v: unknown): string => {
   return Number.isFinite(n) ? `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
 };
 
-interface Caseta { nombre: string; importe: unknown; moneda: string; }
+interface Caseta { id: string; nombre: string; importe: unknown; moneda: string; }
 
 export const TarjetaCasetas: React.FC = () => {
   const [avi, setAvi] = useState<Caseta | null>(null);
   const [p3, setP3] = useState<Caseta | null>(null);
+  // ✅ V00349: captura del saldo de los puentes (como el tipo de cambio).
+  const [modalAbierto, setModalAbierto] = useState(false);
+  const [montoAvi, setMontoAvi] = useState('');
+  const [montoP3, setMontoP3] = useState('');
+  const [guardando, setGuardando] = useState(false);
+  const abrirCaptura = () => {
+    setMontoAvi(avi && Number.isFinite(Number(avi.importe)) ? String(avi.importe) : '');
+    setMontoP3(p3 && Number.isFinite(Number(p3.importe)) ? String(p3.importe) : '');
+    setModalAbierto(true);
+  };
+  const guardarSaldos = async () => {
+    const nAvi = Number(montoAvi); const nP3 = Number(montoP3);
+    if (avi && (!Number.isFinite(nAvi) || nAvi < 0)) { alert('Captura un monto válido para el Puente AVI.'); return; }
+    if (p3 && (!Number.isFinite(nP3) || nP3 < 0)) { alert('Captura un monto válido para el Puente III.'); return; }
+    setGuardando(true);
+    try {
+      if (avi) await updateDoc(doc(db, 'catalogo_tipos_gastos', avi.id), { importe: nAvi });
+      if (p3) await updateDoc(doc(db, 'catalogo_tipos_gastos', p3.id), { importe: nP3 });
+      setModalAbierto(false);
+    } catch (e) { alert(`No se pudo guardar el saldo: ${(e as Error)?.message || e}`); }
+    finally { setGuardando(false); }
+  };
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'catalogo_tipos_gastos'), (snap) => {
       let a: Caseta | null = null; let p: Caseta | null = null;
       snap.docs.forEach((d) => {
         const x = d.data() as Record<string, unknown>;
         const n = norm(x.nombre_gasto);
-        const c: Caseta = { nombre: String(x.nombre_gasto || ''), importe: x.importe, moneda: nombreMoneda(x.moneda) };
+        const c: Caseta = { id: d.id, nombre: String(x.nombre_gasto || ''), importe: x.importe, moneda: nombreMoneda(x.moneda) };
         if (n === 'caseta avi') a = c;
         if (n === 'caseta puente iii' || n === 'caseta puente 3') p = c;
       });
@@ -52,6 +74,32 @@ export const TarjetaCasetas: React.FC = () => {
       </span>
       <div className="tcas-linea"><span className="tcas-nombre">Puente AVI</span><span className="tcas-monto">{avi ? `${fmtMonto(avi.importe)} ${avi.moneda}` : '—'}</span></div>
       <div className="tcas-linea"><span className="tcas-nombre">Puente III</span><span className="tcas-monto">{p3 ? `${fmtMonto(p3.importe)} ${p3.moneda}` : '—'}</span></div>
+      <button type="button" className="tcas-capturar" onClick={abrirCaptura} title="Actualizar el saldo de los puentes — se guarda en el catálogo Tipos de Gastos y se refleja en toda la app">+ Actualizar saldos</button>
+      {/* ✅ V00349: modal de captura (como el del tipo de cambio) */}
+      {modalAbierto && (
+        <div className="tcas-modal-fondo" onClick={() => !guardando && setModalAbierto(false)}>
+          <div className="tcas-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="tcas-modal-titulo">🌉 Actualizar saldo de los puentes</div>
+            <div className="tcas-modal-sub">El saldo se guarda en Catálogos → Tipos de Gastos y se usa en toda la app al momento.</div>
+            {avi ? (
+              <label className="tcas-modal-campo">
+                <span>Puente AVI ({avi.moneda})</span>
+                <input type="number" step="0.01" min="0" className="form-control" value={montoAvi} onChange={(e) => setMontoAvi(e.target.value)} />
+              </label>
+            ) : <div className="tcas-modal-aviso">⚠ No encontré el registro "Caseta AVI" en Tipos de Gastos.</div>}
+            {p3 ? (
+              <label className="tcas-modal-campo">
+                <span>Puente III ({p3.moneda})</span>
+                <input type="number" step="0.01" min="0" className="form-control" value={montoP3} onChange={(e) => setMontoP3(e.target.value)} />
+              </label>
+            ) : <div className="tcas-modal-aviso">⚠ No encontré el registro "Caseta Puente III" en Tipos de Gastos.</div>}
+            <div className="tcas-modal-pie">
+              <button type="button" className="tcas-btn" disabled={guardando} onClick={() => setModalAbierto(false)}>Cancelar</button>
+              <button type="button" className="tcas-btn tcas-btn--primario" disabled={guardando || (!avi && !p3)} onClick={guardarSaldos}>{guardando ? 'Guardando…' : 'Guardar'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

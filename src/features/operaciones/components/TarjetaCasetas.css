@@ -4,3 +4,16 @@
 .tcas-linea { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .tcas-nombre { color: #8b949e; font-size: 0.8rem; }
 .tcas-monto { color: #a371f7; font-weight: 700; font-size: 1.02rem; white-space: nowrap; }
+.tcas-capturar { border: 1px solid #a371f7; background: transparent; color: #a371f7; border-radius: 8px; padding: 4px 10px; cursor: pointer; font-size: 0.74rem; font-weight: 600; align-self: flex-start; margin-top: 2px; }
+.tcas-capturar:hover { background: rgba(163, 113, 247, 0.12); }
+.tcas-modal-fondo { position: fixed; inset: 0; background: rgba(1, 4, 9, 0.72); backdrop-filter: blur(2px); z-index: 3000; display: flex; align-items: center; justify-content: center; }
+.tcas-modal { width: min(420px, 92vw); background: #161b22; border: 1px solid #30363d; border-radius: 14px; padding: 18px 20px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6); display: flex; flex-direction: column; gap: 12px; }
+.tcas-modal-titulo { color: #e6edf3; font-weight: 700; font-size: 1rem; }
+.tcas-modal-sub { color: #8b949e; font-size: 0.8rem; }
+.tcas-modal-campo { display: flex; flex-direction: column; gap: 5px; color: #c9d1d9; font-size: 0.82rem; }
+.tcas-modal-campo input { padding: 8px 10px; }
+.tcas-modal-aviso { color: #d29922; font-size: 0.8rem; border: 1px dashed #d29922; border-radius: 8px; padding: 8px 10px; }
+.tcas-modal-pie { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.tcas-btn { border: 1px solid #30363d; background: transparent; color: #c9d1d9; border-radius: 8px; padding: 7px 14px; cursor: pointer; font-size: 0.82rem; }
+.tcas-btn--primario { border-color: #a371f7; background: #a371f7; color: #0d1117; font-weight: 700; }
+.tcas-btn:disabled { opacity: 0.6; cursor: wait; }

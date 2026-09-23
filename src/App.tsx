@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, Suspense, useRef } from 'react';
+import { TarjetaCasetas } from './features/operaciones/components/TarjetaCasetas'; // ✅ V00349
 import { DocumentosLista } from './features/documentos/DocumentosLista';
 import { APP_VERSION, APP_AUTOR } from './config/version';
 import { emitirBusquedaGlobal, hayReceptorBusqueda, etiquetaReceptorBusqueda, suscribirReceptorBusqueda } from './utils/busquedaGlobal'; // ✅ V00263
@@ -111,8 +112,6 @@ const MODULOS_A_CLAVE: Record<string, string> = {
   'Servicios Cancelados': 'serviciosCancelados',
   'Reportes': 'reportes',
   'Reporte de Vencimiento': 'reporteVencimientos',
-  // ✅ V00336: en pantalla se llama "Historial de Versiones"; el nombre del
-  //   PERMISO se conserva para no romper los roles ya guardados.
   'Historial de Cambios': 'historialCambios',
   'Panel de Control': 'panelControl',
   'Tablero (CRM)': 'tableroCrm',
@@ -148,8 +147,6 @@ const MODULOS_A_CLAVE: Record<string, string> = {
   'Catálogos': 'catalogos',
   'Usuarios': 'usuarios',
   'Roles y Permisos': 'roles',
-  // ✅ V00336: en pantalla se llama "Historial de Cambios"; el nombre del
-  //   PERMISO se conserva (ver ETIQUETA_PERMISO en RolesDashboard).
   'Historial de Actividad': 'logs',
   'Reglas de Estatus': 'flujosOperacion',
   'Datos de la Empresa': 'datosEmpresa',
@@ -657,6 +654,9 @@ function ResumenDelDia() {
             </button>
           )}
         </div>
+
+        {/* ✅ V00349: saldo EN VIVO de las casetas (Puente AVI y Puente III) con su captura */}
+        <TarjetaCasetas />
       </div>
 
       {/* Modal: capturar TIPO DE CAMBIO de hoy */}
@@ -1583,9 +1583,9 @@ function AppContenido() {
         )}
         {/* ✅ V00329: Historial de Cambios */}
         {puede('historialCambios') && (
-          <div className={`sidebar-item ${moduloActivo === 'historialCambios' ? 'active' : ''}`} title="Historial de Versiones" onClick={() => navegarA('historialCambios')}>
+          <div className={`sidebar-item ${moduloActivo === 'historialCambios' ? 'active' : ''}`} title="Historial de Cambios" onClick={() => navegarA('historialCambios')}>
             <span className="sidebar-icon">{ICON.historialCambios}</span>
-            <span className="sidebar-label">{etq('menu.historial_de_cambios', 'Historial de Versiones')}</span>
+            <span className="sidebar-label">{etq('menu.historial_de_cambios', 'Historial de Versiones')}</span>{/* ✅ V00336 (reconstruido V00349) */}
           </div>
         )}
         {/* ✅ V00164: Panel de Control */}
@@ -1733,7 +1733,7 @@ function AppContenido() {
               <div className="sidebar-submenu">
                 {puede('usuarios') && <div className={`sidebar-subitem ${moduloActivo === 'usuarios' ? 'active' : ''}`} onClick={() => navegarA('usuarios')}><span className="sidebar-icon">{ICON.usuarios}</span><span className="sidebar-label">{etq('menu.usuarios', 'Usuarios')}</span></div>}
                 {puede('roles') && <div className={`sidebar-subitem ${moduloActivo === 'roles' ? 'active' : ''}`} onClick={() => navegarA('roles')}><span className="sidebar-icon">{ICON.roles}</span><span className="sidebar-label">{etq('menu.roles_y_permisos', 'Roles y Permisos')}</span></div>}
-                {puede('logs') && <div className={`sidebar-subitem ${moduloActivo === 'logs' ? 'active' : ''}`} onClick={() => navegarA('logs')}><span className="sidebar-icon">{ICON.logs}</span><span className="sidebar-label">{etq('menu.historial_de_actividad', 'Historial de Cambios')}</span></div>}
+                {puede('logs') && <div className={`sidebar-subitem ${moduloActivo === 'logs' ? 'active' : ''}`} onClick={() => navegarA('logs')}><span className="sidebar-icon">{ICON.logs}</span><span className="sidebar-label">{etq('menu.historial_de_actividad', 'Historial de Cambios')}</span>{/* ✅ V00336 (reconstruido V00349) */}</div>}
                 {/* ✅ NUEVO (V00115): Papelera de Reciclaje global (mismo permiso que Historial) */}
                 {puede('logs') && <div className={`sidebar-subitem ${moduloActivo === 'papeleraReciclaje' ? 'active' : ''}`} onClick={() => navegarA('papeleraReciclaje')}><span className="sidebar-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><polyline points="9 14 12 11 15 14"></polyline><line x1="12" y1="11" x2="12" y2="18"></line></svg></span><span className="sidebar-label">{etq('menu.papelera_de_reciclaje', 'Papelera de Reciclaje')}</span></div>}
                 {puede('flujosOperacion') && <div className={`sidebar-subitem ${moduloActivo === 'flujosOperacion' ? 'active' : ''}`} onClick={() => navegarA('flujosOperacion')}><span className="sidebar-icon">{ICON.flujosOperacion}</span><span className="sidebar-label">{etq('menu.reglas_de_estatus', 'Reglas de Estatus')}</span></div>}
