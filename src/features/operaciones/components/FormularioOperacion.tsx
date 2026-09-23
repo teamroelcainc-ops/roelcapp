@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'; // ✅ V00264: el formulario vive en d
 import { doc, getDoc, updateDoc, collection, getDocs, setDoc, addDoc, query, where, limit, onSnapshot } from 'firebase/firestore';
 import { prefijoTipoOperacion } from '../../../utils/generarReferencia';
 import { db, storage, auth } from '../../../config/firebase';
+import { DocumentosLista } from '../../documentos/DocumentosLista'; // ✅ V00341: consultar los documentos guardados
 import { EditorTarifaOrigenDestino } from './EditorTarifaOrigenDestino'; // ✅ V00224
 import { puedeClave } from '../../../utils/permisos'; // ✅ V00224
 import { useUsuarioStore } from '../../../stores/useUsuarioStore';
@@ -3162,6 +3163,15 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       <CampoArchivo label="PDF DODA" file={formData.pdfDoda} resaltar={camposObligatoriosFaltantesSet.has('pdfDoda')} onChange={(e) => handleFileChange(e, 'pdfDoda')} />
                     </div>
                   </div>
+                  {/* ✅ V00341: los documentos YA GUARDADOS de esta operación —
+                      aquí mismo se consultan, abren y administran. Los PDF de
+                      arriba se suben AL GUARDAR la operación. */}
+                  {idOperacion && (
+                    <div className="roelca-card">
+                      <div className="roelca-card-header"><div className="roelca-card-icon"><IconFileText /></div><h3 className="roelca-card-title">Documentos guardados de esta operación</h3></div>
+                      <DocumentosLista coleccionOrigen="operaciones" registroId={idOperacion} />
+                    </div>
+                  )}
                 </>
               )}
 

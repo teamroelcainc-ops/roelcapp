@@ -11,6 +11,7 @@
 // ---------------------------------------------------------------------------
 import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, getDocs, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
+import { DocumentosLista } from '../../documentos/DocumentosLista'; // ✅ V00341
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
 import { EditorOperacionEmbebido } from '../../operaciones/components/EditorOperacionEmbebido';
@@ -125,6 +126,11 @@ const DetalleOperacion = ({ op, onCerrar }: { op: any; onCerrar: () => void }) =
               {fila('Observaciones ejecutivo', op.observacionesEjecutivo)}
               {fila('Creado por', op.creadoPor)}
             </tbody></table>
+            {/* ✅ V00341: documentos guardados de la operación (Carta Porte, DODA, Entry's…) */}
+            <div className="acc-detalle-docs">
+              <div className="acc-detalle-docs-titulo">📎 Documentos de la operación</div>
+              <DocumentosLista coleccionOrigen="operaciones" registroId={String(op.id)} permitirEliminar={false} />
+            </div>
           </div>
         )}
       </div>

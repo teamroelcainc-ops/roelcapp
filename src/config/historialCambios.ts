@@ -15,6 +15,7 @@ export interface CambioApp {
 }
 
 export const CAMBIOS_APP: CambioApp[] = [
+  { fecha: '2026-09-23', hora: '10:00', version: 'V00341', titulo: 'Los documentos de la operación ya se consultan', resumen: 'Los PDF que subes a una operación (Carta Porte, DODA, Entry\'s, etc.) ahora se ven donde los necesitas: en la pestaña Pedimento del formulario aparece la lista de documentos guardados, y el detalle de la operación en la auditoría también los muestra.' },
   { fecha: '2026-09-22', hora: '18:20', version: 'V00340', titulo: 'Auditar operaciones desde Estadísticas + Excel con configuraciones', resumen: 'En el reporte de operaciones de Estadísticas cada fila trae ver detalle y editar (el cambio se refleja al momento), y el Excel abre primero el selector de columnas con configuraciones guardadas con nombre.' },
   { fecha: '2026-09-22', hora: '17:00', version: 'V00339', titulo: 'Estadísticas EN VIVO', resumen: 'Las estadísticas quedaron suscritas a la base: cualquier cambio en operaciones, facturación o pagos se refleja al momento, sin volver a presionar Buscar — los números siempre coinciden con lo que muestra el resto de la app.' },
   { fecha: '2026-09-22', hora: '16:10', version: 'V00338', titulo: 'Configuraciones del Excel con nombre (Servicios Completados)', resumen: 'Al exportar a Excel primero se muestran las configuraciones guardadas: eliges una y arma el Excel con sus columnas, o creas una nueva, le pones nombre y queda guardada para todos.' },

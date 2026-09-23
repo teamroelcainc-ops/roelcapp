@@ -114,3 +114,7 @@
 .acc-rango { display: inline-flex; align-items: center; gap: 6px; color: #8b949e; font-size: 0.8rem; border: 1px solid #30363d; border-radius: 999px; padding: 4px 10px; }
 .acc-rango-input { width: 140px; padding: 5px 8px; font-size: 0.8rem; }
 .acc-overlay--detras { z-index: 90; } /* debajo del modal-overlay (100) del formulario de operación; la auditoría queda intacta detrás y regresa al frente al cerrar */
+
+/* ✅ V00341: documentos en el detalle de la operación */
+.acc-detalle-docs { margin-top: 14px; border-top: 1px solid #30363d; padding-top: 10px; }
+.acc-detalle-docs-titulo { color: #e6edf3; font-weight: 700; font-size: 0.85rem; margin-bottom: 8px; }
