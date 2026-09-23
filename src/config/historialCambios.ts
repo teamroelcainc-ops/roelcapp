@@ -15,6 +15,7 @@ export interface CambioApp {
 }
 
 export const CAMBIOS_APP: CambioApp[] = [
+  { fecha: '2026-09-23', hora: '21:40', version: 'V00354', titulo: 'Cliente (Mercancía) con razón social', resumen: 'El buscador de Cliente (Mercancía) del formulario muestra y guarda la razón social de la empresa (no el nombre corto), y con ello la razón social aparece en la operación y en todos los documentos.' },
   { fecha: '2026-09-23', hora: '21:00', version: 'V00353', titulo: 'Razón social en los documentos generados', resumen: 'Los documentos de la operación (Solicitud de Retiro, Check List, Instrucciones de Servicio y demás) muestran ahora la RAZÓN SOCIAL de los clientes y proveedores — el cliente de la mercancía incluido — tomada de la ficha de la empresa.' },
   { fecha: '2026-09-23', hora: '20:00', version: 'V00352', titulo: 'Saldo precargado al elegir el puente y captura una vez al día', resumen: 'Al elegir el puente en Saldos de Puentes, el saldo se precarga con el monto del catálogo; y la captura desde la tarjeta de Operaciones guarda en la tabla con la fecha del momento y el botón se oculta cuando el día ya quedó registrado.' },
   { fecha: '2026-09-23', hora: '19:30', version: 'V00351', titulo: 'El registro de saldos de puentes abre en modal', resumen: 'En Saldos de Puentes, el botón Registrar saldo (y el editar de cada fila) abre ahora un modal con la fecha, el puente y el saldo, en vez del formulario en el encabezado.' },

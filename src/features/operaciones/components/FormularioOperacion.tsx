@@ -1083,7 +1083,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   //   muestra el nombre completo (razón social), no el nombre corto (relación
   //   con Empresas: `nombre` es la razón social; nombreCorto es solo alias).
   const razonSocialEmpresa = (e: any): string =>
-    String(e?.nombre || e?.razonSocial || e?.empresa || '').trim() || nombreCortoEmpresa(e);
+    // ✅ V00354: el campo razonSocial capturado en la ficha (V00343) tiene
+    //   prioridad sobre el nombre — así "Global Textile" sale con su razón social.
+    String(e?.razonSocial || e?.nombre || e?.empresa || '').trim() || nombreCortoEmpresa(e);
 
   const labelEmpresa = (e: any) => nombreEmpresaMostrar(e);
   const labelRemolque = (r: any) => `${r?.nombre || ''} ${r?.placas || r?.placa || ''}`.trim();
@@ -1372,6 +1374,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         const item = empresas.find((e: any) => e.id === id);
         return item ? (nombreEmpresaMostrar(item) || id) : id;
       };
+      // ✅ V00354: razón social por id (para Cliente Mercancía y afines).
+      const getRazonSocialEmpresa = (id: string) => {
+        if (!id) return '';
+        const item = empresas.find((e: { id?: string }) => e.id === id);
+        return item ? razonSocialEmpresa(item) : '';
+      };
       const getNombreRemolque = (id: string) => {
         if (!id) return '';
         const item = remolques.find((r: any) => r.id === id);
@@ -1395,7 +1403,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       setSearchClientePaga(initialData.clienteNombre || getNombreEmpresa(initialData.clientePaga));
       setSearchOrigen(initialData.origenNombre || getNombreEmpresa(initialData.origen));
       setSearchDestino(initialData.destinoNombre || getNombreEmpresa(initialData.destino));
-      setSearchClienteMercancia(initialData.clienteMercanciaNombre || getNombreEmpresa(initialData.clienteMercancia));
+      setSearchClienteMercancia(getRazonSocialEmpresa(initialData.clienteMercancia) || initialData.clienteMercanciaNombre || getNombreEmpresa(initialData.clienteMercancia)); // ✅ V00354
       setSearchProvServicios(initialData.provServiciosNombre || getNombreEmpresa(initialData.provServicios));
       setSearchProvTransporte(initialData.proveedorUnidadNombre || getNombreEmpresa(initialData.proveedorUnidad));
       setSearchRemolque(initialData.remolqueNombre || getNombreRemolque(remIdGuardado) || initialData.remolquePlaca || ''); 
@@ -2477,7 +2485,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       let resolvedRemolque = formData.numeroRemolque;
       if (!resolvedRemolque && searchRemolque) { const f = remolques.find((x:any) => `${x.nombre || ''} ${x.placas || x.placa || ''}`.trim().toLowerCase() === searchRemolque.toLowerCase()); if (f) resolvedRemolque = f.id; }
       let resolvedClienteMercancia = formData.clienteMercancia;
-      if (!resolvedClienteMercancia && searchClienteMercancia) { const f = filClientesMercancia.find((x:any) => x.nombre?.toLowerCase() === searchClienteMercancia.toLowerCase()); if (f) resolvedClienteMercancia = f.id; }
+      if (!resolvedClienteMercancia && searchClienteMercancia) { const sM = searchClienteMercancia.toLowerCase(); const f = filClientesMercancia.find((x:any) => x.nombre?.toLowerCase() === sM || String(x.razonSocial || '').toLowerCase() === sM); if (f) resolvedClienteMercancia = f.id; } // ✅ V00354
       let resolvedProvServicios = formData.provServicios;
       if (!resolvedProvServicios && searchProvServicios) { const f = filProveedoresServicios.find((x:any) => x.nombre?.toLowerCase() === searchProvServicios.toLowerCase()); if (f) resolvedProvServicios = f.id; }
       let resolvedProvTransporte = formData.proveedorUnidad;
@@ -3137,14 +3145,14 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             {showDropdownClienteMercancia && searchClienteMercancia && (
                               <div className="fo-x12">
                                 {resultadosClienteMercancia.length === 0 ? <div className="fo-x13">Sin resultados</div> : resultadosClienteMercancia.map((c:any) => (
-                                  <div className="fo-x14" key={c.id} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, clienteMercancia: c.id })); setSearchClienteMercancia(nombreEmpresaMostrar(c)); setShowDropdownClienteMercancia(false); }}>
-                                    <div className="fo-x15">{nombreEmpresaMostrar(c)}</div>
+                                  <div className="fo-x14" key={c.id} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, clienteMercancia: c.id })); setSearchClienteMercancia(razonSocialEmpresa(c)); setShowDropdownClienteMercancia(false); }}>{/* ✅ V00354: razón social */}
+                                    <div className="fo-x15">{razonSocialEmpresa(c)}</div>
                                   </div>
                                 ))}
                               </div>
                             )}
                           </div>
-                          <BotonAgregar title="Agregar nuevo Cliente (Mercancía)" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_CLIENTE_MERCANCIA }, (id, reg) => { setFormData(prev => ({ ...prev, clienteMercancia: id })); setSearchClienteMercancia(labelEmpresa(reg)); })} />{/* ✅ V00282: alta rápida de vuelta SOLO en Cliente (Mercancía) */}
+                          <BotonAgregar title="Agregar nuevo Cliente (Mercancía)" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_CLIENTE_MERCANCIA }, (id, reg) => { setFormData(prev => ({ ...prev, clienteMercancia: id })); setSearchClienteMercancia(razonSocialEmpresa(reg)); })} />{/* ✅ V00282: alta rápida de vuelta SOLO en Cliente (Mercancía) */}
                         </div>
                       </div>
                       <div className="form-group"><label className="form-label">Descripción de Mercancía <span className="campo-badge">descripcionMercancia</span></label><input type="text" name="descripcionMercancia" className={`form-control${claseSiFalta('descripcionMercancia')}`} value={formData.descripcionMercancia || ''} onChange={handleChange} /></div>
