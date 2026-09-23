@@ -366,9 +366,10 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
   }, [initialData?.id, tarifarios]);
 
   const generarSiguienteConvenio = () => {
-    if (registrosExistentes.length === 0) return 'CONV-001';
-    const numeros = registrosExistentes.map(reg => parseInt(reg.numeroConvenio.replace('CONV-', ''), 10) || 0);
-    return `CONV-${String(Math.max(...numeros) + 1).padStart(3, '0')}`;
+    // ✅ V00346: los convenios nacen SIN el prefijo CONV- (solo el número).
+    if (registrosExistentes.length === 0) return '001';
+    const numeros = registrosExistentes.map(reg => parseInt(String(reg.numeroConvenio || '').replace(/\D/g, ''), 10) || 0);
+    return String(Math.max(...numeros) + 1).padStart(3, '0');
   };
 
   // ✅ Ahora recibe el id directo (lo llama el SearchableSelect del detalle).

@@ -747,7 +747,7 @@ export function TarifarioClientesDashboard() {
           numeroConvenio = String((existente.data() as Doc).numeroConvenio || '');
         } else {
           convenioRef = doc(collection(db, 'convenios_clientes'));
-          numeroConvenio = `CONV-${pad3(sigConvenio)}`;
+          numeroConvenio = pad3(sigConvenio); // ✅ V00346: sin el prefijo CONV-
           batch.set(convenioRef, {
             numeroConvenio,
             clienteId: String(r.clienteId || ''),

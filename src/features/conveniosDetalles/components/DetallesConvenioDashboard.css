@@ -287,3 +287,6 @@
   background: transparent; color: #58a6ff; font-size: 0.75rem; font-weight: 700; cursor: pointer;
 }
 .dcv-btn-mas:hover { background-color: rgba(31, 111, 235, 0.15); }
+
+/* ✅ V00346: quitar prefijo CONV- */
+.dcv-btn-sinconv { white-space: nowrap; }

@@ -30,9 +30,11 @@ const semillaDesdeColeccion = async (coleccion: string, prefijo: string): Promis
 };
 
 /** Reserva atómica de `cantidad` consecutivos en la colección dada. */
-const reservarConsecutivos = async (coleccion: string, prefijo: string, cantidad: number): Promise<string[]> => {
+// ✅ V00346: prefijoLegacy = el que traen los datos viejos (para la semilla);
+//   prefijoNuevo = con el que NACEN los consecutivos (los convenios ya sin CONV-).
+const reservarConsecutivos = async (coleccion: string, prefijoLegacy: string, prefijoNuevo: string, cantidad: number): Promise<string[]> => {
   if (cantidad <= 0) return [];
-  const semilla = await semillaDesdeColeccion(coleccion, prefijo);
+  const semilla = await semillaDesdeColeccion(coleccion, prefijoLegacy);
   const contador = doc(db, 'contadores', coleccion);
   const inicio = await runTransaction(db, async (tx) => {
     const c = await tx.get(contador);
@@ -41,7 +43,7 @@ const reservarConsecutivos = async (coleccion: string, prefijo: string, cantidad
     tx.set(contador, { ultimo: ultimo + cantidad, actualizadoEl: new Date().toISOString() }, { merge: true });
     return ultimo + 1;
   });
-  return Array.from({ length: cantidad }, (_, i) => `${prefijo}${pad3(inicio + i)}`);
+  return Array.from({ length: cantidad }, (_, i) => `${prefijoNuevo}${pad3(inicio + i)}`);
 };
 
 /**
@@ -49,15 +51,15 @@ const reservarConsecutivos = async (coleccion: string, prefijo: string, cantidad
  * atómica y los regresa en orden. Nunca repite ni brinca números.
  */
 export const reservarConsecutivosDetalle = (cantidad: number): Promise<string[]> =>
-  reservarConsecutivos('convenios_clientes_detalles', 'CONV-', cantidad);
+  reservarConsecutivos('convenios_clientes_detalles', 'CONV-', '', cantidad); // ✅ V00346: sin prefijo
 
 /** ✅ V00205: consecutivo TARI-### del TARIFARIO — único, irrepetible, +1. */
 export const reservarConsecutivosTarifario = (cantidad: number): Promise<string[]> =>
-  reservarConsecutivos('tarifario_clientes', 'TARI-', cantidad);
+  reservarConsecutivos('tarifario_clientes', 'TARI-', 'TARI-', cantidad);
 
 /** ✅ V00211: consecutivos del lado PROVEEDOR (mismo mecanismo transaccional). */
 export const reservarConsecutivosDetalleProveedor = (cantidad: number): Promise<string[]> =>
-  reservarConsecutivos('convenios_proveedores_detalles', 'CONV-', cantidad);
+  reservarConsecutivos('convenios_proveedores_detalles', 'CONV-', '', cantidad); // ✅ V00346: sin prefijo
 
 export const reservarConsecutivosTarifarioProveedor = (cantidad: number): Promise<string[]> =>
-  reservarConsecutivos('tarifario_proveedores', 'TARP-', cantidad);
+  reservarConsecutivos('tarifario_proveedores', 'TARP-', 'TARP-', cantidad);

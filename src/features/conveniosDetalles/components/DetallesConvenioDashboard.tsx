@@ -1334,6 +1334,17 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
           {guardando ? 'Guardando…' : `Guardar cambios (${Object.keys(cambios).length})`}
         </button>
         {/* ✅ V00207: borrado masivo de los seleccionados */}
+        {/* ✅ V00346: quitar el prefijo CONV- de todos los convenios registrados */}
+        <button
+          type="button"
+          className="btn btn-outline dcv-btn-sinconv"
+          title="Quita el prefijo CONV- de TODOS los convenios ya registrados (detalles de clientes y proveedores, convenios maestros y operaciones); los números se conservan"
+          onClick={async () => {
+            if (!window.confirm('Se quitará el prefijo CONV- de TODOS los convenios registrados (clientes, proveedores y operaciones). Los números se conservan. ¿Continuar?')) return;
+            try { const msg = await (await import('../quitarPrefijoConv')).quitarPrefijoConv(); alert(msg); }
+            catch (e) { alert(`No se pudo completar: ${(e as Error)?.message || e}`); }
+          }}
+        >🔤 Quitar CONV-</button>
         {/* ✅ V00231: alta de convenios */}
         <button className="btn dcv-btn-agregar" onClick={abrirAlta}>+ Agregar</button>
         {/* ✅ V00240: rearmar descripciones y propagarlas a las operaciones */}
