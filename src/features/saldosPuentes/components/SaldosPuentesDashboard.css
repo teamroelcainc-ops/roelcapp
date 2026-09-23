@@ -25,3 +25,11 @@
 .sp-mini { border: 1px solid #30363d; background: transparent; color: #8b949e; border-radius: 6px; padding: 2px 8px; cursor: pointer; margin-right: 4px; }
 .sp-mini:hover { border-color: #58a6ff; color: #58a6ff; }
 .sp-mini--rojo:hover { border-color: #f85149; color: #f85149; }
+
+/* ✅ V00351: formulario en modal */
+.sp-encabezado { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.sp-modal-fondo { position: fixed; inset: 0; background: rgba(1, 4, 9, 0.72); backdrop-filter: blur(2px); z-index: 3000; display: flex; align-items: center; justify-content: center; }
+.sp-modal { width: min(440px, 92vw); background: #161b22; border: 1px solid #30363d; border-radius: 14px; padding: 18px 20px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6); display: flex; flex-direction: column; gap: 12px; }
+.sp-modal-titulo { color: #e6edf3; font-weight: 700; font-size: 1rem; }
+.sp-modal .sp-campo input, .sp-modal .sp-campo select { width: 100%; min-width: 0; }
+.sp-modal-pie { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }

@@ -15,6 +15,7 @@ export interface CambioApp {
 }
 
 export const CAMBIOS_APP: CambioApp[] = [
+  { fecha: '2026-09-23', hora: '19:30', version: 'V00351', titulo: 'El registro de saldos de puentes abre en modal', resumen: 'En Saldos de Puentes, el botón Registrar saldo (y el editar de cada fila) abre ahora un modal con la fecha, el puente y el saldo, en vez del formulario en el encabezado.' },
   { fecha: '2026-09-23', hora: '19:00', version: 'V00350', titulo: 'Módulo Saldos de Puentes (Bases de Datos)', resumen: 'Nuevo módulo en Bases de Datos para registrar cada día el saldo de los puentes: fecha, puente (relacionado con el catálogo Tipos de Gastos) y saldo. La tarjeta Casetas del día también alimenta esta tabla, y el saldo más reciente actualiza el catálogo para toda la app.' },
   { fecha: '2026-09-23', hora: '18:10', version: 'V00349', titulo: 'Casetas del día en el resumen, con captura de saldos', resumen: 'La tarjeta Casetas del día ya aparece en el resumen junto al diésel, con el saldo vigente del Puente AVI y del Puente III, y su botón + Actualizar saldos abre la captura (como el tipo de cambio): lo guardado va al catálogo Tipos de Gastos y se refleja en toda la app al momento.' },
   { fecha: '2026-09-23', hora: '17:30', version: 'V00348', titulo: 'Casetas del día en el resumen', resumen: 'El resumen del día muestra ahora la tarjeta Casetas del día con el saldo vigente del Puente AVI y del Puente III, tomado en vivo del catálogo Tipos de Gastos: al editar el importe ahí, la tarjeta se actualiza al momento.' },

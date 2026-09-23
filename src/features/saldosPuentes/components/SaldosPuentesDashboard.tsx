@@ -42,6 +42,7 @@ export const SaldosPuentesDashboard: React.FC = () => {
   const [puenteId, setPuenteId] = useState('');
   const [monto, setMonto] = useState('');
   const [editandoId, setEditandoId] = useState('');
+  const [modalForm, setModalForm] = useState(false); // ✅ V00351: el formulario es un MODAL
   const [guardando, setGuardando] = useState(false);
   const [busqueda, setBusqueda] = useState('');
 
@@ -81,7 +82,8 @@ export const SaldosPuentesDashboard: React.FC = () => {
     catch (e) { console.warn('No se pudo actualizar el catálogo:', e); }
   };
 
-  const limpiarForm = () => { setEditandoId(''); setFecha(hoyISO()); setPuenteId(''); setMonto(''); };
+  const limpiarForm = () => { setEditandoId(''); setFecha(hoyISO()); setPuenteId(''); setMonto(''); setModalForm(false); };
+  const abrirNuevo = () => { setEditandoId(''); setFecha(hoyISO()); setPuenteId(''); setMonto(''); setModalForm(true); };
 
   const guardar = async () => {
     const p = puentes.find((x) => x.id === puenteId);
@@ -106,7 +108,7 @@ export const SaldosPuentesDashboard: React.FC = () => {
     finally { setGuardando(false); }
   };
 
-  const editar = (s: Saldo) => { setEditandoId(s.id); setFecha(s.fecha); setPuenteId(s.puenteId); setMonto(String(s.saldo)); };
+  const editar = (s: Saldo) => { setEditandoId(s.id); setFecha(s.fecha); setPuenteId(s.puenteId); setMonto(String(s.saldo)); setModalForm(true); };
   const eliminar = async (s: Saldo) => {
     if (!window.confirm(`¿Eliminar el saldo de ${s.puenteNombre} del ${fmtDia(s.fecha)}?`)) return;
     try { await deleteDoc(doc(db, 'saldos_puentes', s.id)); } catch (e) { alert(`No se pudo eliminar: ${(e as Error)?.message || e}`); }
@@ -119,22 +121,29 @@ export const SaldosPuentesDashboard: React.FC = () => {
           <h2 className="sp-titulo">🌉 Saldos de Puentes</h2>
           <p className="sp-sub">Registro diario del saldo de cada puente (relacionado con el catálogo Tipos de Gastos). El saldo más reciente de cada puente actualiza el catálogo y se refleja en toda la app al momento.</p>
         </div>
+        <button type="button" className="sp-btn sp-btn--primario" onClick={abrirNuevo}>➕ Registrar saldo</button>
       </div>
 
-      <div className="sp-form">
-        <label className="sp-campo"><span>Fecha</span><input type="date" className="form-control" value={fecha} onChange={(e) => setFecha(e.target.value)} /></label>
-        <label className="sp-campo sp-campo--puente"><span>Puente (catálogo Tipos de Gastos)</span>
-          <select className="form-control" value={puenteId} onChange={(e) => setPuenteId(e.target.value)}>
-            <option value="">— Elegir puente —</option>
-            {puentes.map((p) => <option key={p.id} value={p.id}>{p.nombre} ({p.moneda})</option>)}
-          </select>
-        </label>
-        <label className="sp-campo"><span>Saldo{puenteId ? ` (${puentes.find(p => p.id === puenteId)?.moneda || ''})` : ''}</span><input type="number" step="0.01" min="0" className="form-control" value={monto} onChange={(e) => setMonto(e.target.value)} placeholder="0.00" /></label>
-        <div className="sp-form-botones">
-          {editandoId && <button type="button" className="sp-btn" onClick={limpiarForm}>Cancelar</button>}
-          <button type="button" className="sp-btn sp-btn--primario" disabled={guardando} onClick={guardar}>{guardando ? 'Guardando…' : editandoId ? '💾 Guardar cambios' : '➕ Registrar saldo'}</button>
+      {/* ✅ V00351: el formulario vive en su MODAL */}
+      {modalForm && (
+        <div className="sp-modal-fondo" onClick={() => !guardando && limpiarForm()}>
+          <div className="sp-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="sp-modal-titulo">{editandoId ? '✎ Editar saldo de puente' : '➕ Registrar saldo de puente'}</div>
+            <label className="sp-campo"><span>Fecha</span><input type="date" className="form-control" value={fecha} onChange={(e) => setFecha(e.target.value)} /></label>
+            <label className="sp-campo"><span>Puente (catálogo Tipos de Gastos)</span>
+              <select className="form-control" value={puenteId} onChange={(e) => setPuenteId(e.target.value)}>
+                <option value="">— Elegir puente —</option>
+                {puentes.map((p) => <option key={p.id} value={p.id}>{p.nombre} ({p.moneda})</option>)}
+              </select>
+            </label>
+            <label className="sp-campo"><span>Saldo{puenteId ? ` (${puentes.find(p => p.id === puenteId)?.moneda || ''})` : ''}</span><input type="number" step="0.01" min="0" className="form-control" value={monto} onChange={(e) => setMonto(e.target.value)} placeholder="0.00" /></label>
+            <div className="sp-modal-pie">
+              <button type="button" className="sp-btn" disabled={guardando} onClick={limpiarForm}>Cancelar</button>
+              <button type="button" className="sp-btn sp-btn--primario" disabled={guardando} onClick={guardar}>{guardando ? 'Guardando…' : editandoId ? '💾 Guardar cambios' : '➕ Registrar saldo'}</button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="sp-barra">
         <input type="text" className="form-control sp-buscar" placeholder="Buscar por puente, fecha o monto…" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
