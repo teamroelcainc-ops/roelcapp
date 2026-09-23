@@ -29,6 +29,7 @@ export const sincronizarRazonSocial = async (): Promise<string> => {
   const ops = await getDocs(collection(db, 'operaciones'));
   ops.docs.forEach((d) => revisar('operaciones', d.id, d.data() as Record<string, unknown>, [
     ['clientePaga', 'clientePagaNombre'],
+    ['clientePaga', 'clienteNombre'], // ✅ V00343: el campo que pintan Completados/Cancelados
     ['clienteMercancia', 'clienteMercanciaNombre'],
     ['proveedorUnidad', 'proveedorUnidadNombre'],
   ]));

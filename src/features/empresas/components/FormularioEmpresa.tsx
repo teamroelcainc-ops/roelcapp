@@ -434,6 +434,7 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
     
     regimenFiscalId: '',
     regimenFiscalLabel: '',
+    razonSocial: '', // ✅ V00343: razón social para documentos y listados
     moneda: '', 
     tipoFactura: '', 
     condicionPago: 'Crédito',
@@ -934,6 +935,13 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                     <div className="form-group">
                       <label className="form-label fe-x38">Razón Social <span className="fe-x39">*</span></label>
                       <BloqueoAut bloqueado={autBloq('nombre')} titulo={autTituloBloq('nombre')} onSolicitar={() => autSolicitar('nombre')}><input type="text" name="nombre" className="form-control fe-x40" value={formData.nombre} onChange={handleChange} required /></BloqueoAut>
+                    </div>
+                    {/* ✅ V00343: RAZÓN SOCIAL — el nombre que se muestra en operaciones,
+                        facturación y pagos (botón 🏷 Razón social). Si se deja vacío,
+                        se usa el nombre de arriba. */}
+                    <div className="form-group">
+                      <label className="form-label fe-x38">Razón Social (para operaciones, facturación y pagos)</label>
+                      <input type="text" name="razonSocial" className="form-control fe-x40" placeholder="Ej. Caro-Kar Transportes" value={(formData as Record<string, unknown>).razonSocial as string || ''} onChange={handleChange} />
                     </div>
 
                     <div className="form-group">

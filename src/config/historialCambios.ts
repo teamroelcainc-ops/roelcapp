@@ -15,6 +15,7 @@ export interface CambioApp {
 }
 
 export const CAMBIOS_APP: CambioApp[] = [
+  { fecha: '2026-09-23', hora: '13:20', version: 'V00343', titulo: 'Razón Social de la empresa en toda la cadena', resumen: 'La empresa tiene ahora el campo Razón Social: captúralo (ej. en Caro-Kar Pesos pon Caro-Kar Transportes), presiona el botón Razón social de Empresas y todas las operaciones, facturas y pagos mostrarán ese nombre.' },
   { fecha: '2026-09-23', hora: '12:30', version: 'V00342', titulo: 'Moneda visible al editar la empresa + razón social en toda la cadena', resumen: 'La moneda y el tipo de factura de la empresa aparecen de inmediato al editar (aunque estén guardados con el nombre viejo), y el nuevo botón Razón social escribe el nombre actual de todas las empresas en operaciones, facturación y pagos.' },
   { fecha: '2026-09-23', hora: '10:00', version: 'V00341', titulo: 'Los documentos de la operación ya se consultan', resumen: 'Los PDF que subes a una operación (Carta Porte, DODA, Entry\'s, etc.) ahora se ven donde los necesitas: en la pestaña Pedimento del formulario aparece la lista de documentos guardados, y el detalle de la operación en la auditoría también los muestra.' },
   { fecha: '2026-09-22', hora: '18:20', version: 'V00340', titulo: 'Auditar operaciones desde Estadísticas + Excel con configuraciones', resumen: 'En el reporte de operaciones de Estadísticas cada fila trae ver detalle y editar (el cambio se refleja al momento), y el Excel abre primero el selector de columnas con configuraciones guardadas con nombre.' },
