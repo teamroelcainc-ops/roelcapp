@@ -632,6 +632,21 @@ const ServiciosCancelados = () => {
     return '-';
   };
 
+  // ✅ V00353: RAZÓN SOCIAL para los DOCUMENTOS — resuelve la empresa por su ID
+  //   en el catálogo y prefiere razonSocial; si no hay, cae al nombre
+  //   desnormalizado y al nombre de la empresa. Así todos los documentos
+  //   (Solicitud de Retiro, Check List, Instrucciones, etc.) muestran la razón
+  //   social de clientes y proveedores.
+  const razonSocialEmpresa = (id?: string | null, fallback?: string) => {
+    const e = catalogosGlobales.empresas?.find((x: { id?: string }) => x.id === String(id || '')) as { razonSocial?: string; nombre?: string } | undefined;
+    const rs = String(e?.razonSocial || '').trim();
+    if (rs) return rs;
+    const f = String(fallback || '').trim();
+    if (f && f !== '-') return f;
+    const n = String(e?.nombre || '').trim();
+    return n || '-';
+  };
+
   // ✅ Solo nombre desnormalizado (convenioNombre). Sin lecturas de catálogos.
   const obtenerNombreConvenioCliente = (id: string, valorDesnormalizado?: string) => {
     const v = valorDesnormalizado != null ? String(valorDesnormalizado).trim() : '';
@@ -819,7 +834,7 @@ const ServiciosCancelados = () => {
       tipoMovimiento: operacionViendo.trafico || 'N/A',
       remolqueNombre: operacionViendo.remolquePlaca || operacionViendo.remolqueNombre || (remolqueObj ? (remolqueObj.placa || remolqueObj.nombre) : 'N/A'),
       remolquePlacas: operacionViendo.remolquePlaca || (remolqueObj ? remolqueObj.placa : 'N/A'),
-      clienteMercancia: operacionViendo.clienteMercanciaNombre || mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas'),
+      clienteMercancia: razonSocialEmpresa(operacionViendo.clienteMercancia, operacionViendo.clienteMercanciaNombre),
       unidadNombre: operacionViendo.unidadNombre || (unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal),
       unidadPlacas: unidadObj ? (unidadObj.placa || 'N/A') : 'N/A',
       empleadoNombre: operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal),
@@ -852,7 +867,7 @@ const ServiciosCancelados = () => {
       tipoOperacion: operacionViendo.tipoOperacionNombre || mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion'),
       origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
       origenDireccion: direccionCompletaDeEmpresa(origenObj, dirsDoc),
-      clienteMercancia: operacionViendo.clienteMercanciaNombre || mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas'),
+      clienteMercancia: razonSocialEmpresa(operacionViendo.clienteMercancia, operacionViendo.clienteMercanciaNombre),
       destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
       destinoDireccion: direccionCompletaDeEmpresa(destinoObj, dirsDoc),
     });
@@ -881,7 +896,7 @@ const ServiciosCancelados = () => {
       fecha: operacionViendo.fechaServicio || '',
       cliente: operacionViendo.clienteNombre || mostrarDatoMapeado(operacionViendo.clientePaga, 'empresas'),
       remolque: operacionViendo.remolqueNombre || (remolqueObj ? (remolqueObj.placa || remolqueObj.nombre) : 'N/A'),
-      proveedor: operacionViendo.proveedorUnidadNombre || mostrarDatoMapeado(operacionViendo.proveedorUnidad, 'empresas'),
+      proveedor: razonSocialEmpresa(operacionViendo.proveedorUnidad, operacionViendo.proveedorUnidadNombre),
       tractorInfo: `${uniNombre} / ${uniPlacas} / ${empNombre}`,
       numeroPedimento: operacionViendo.numDoda || 'N/A',
       prefileEntrys: String(operacionViendo.cantEntrys || '0'),

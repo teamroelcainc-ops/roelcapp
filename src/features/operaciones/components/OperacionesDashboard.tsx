@@ -825,6 +825,21 @@ const OperacionesDashboard = () => {
     return '-';
   };
 
+  // ✅ V00353: RAZÓN SOCIAL para los DOCUMENTOS — resuelve la empresa por su ID
+  //   en el catálogo y prefiere razonSocial; si no hay, cae al nombre
+  //   desnormalizado y al nombre de la empresa. Así todos los documentos
+  //   (Solicitud de Retiro, Check List, Instrucciones, etc.) muestran la razón
+  //   social de clientes y proveedores.
+  const razonSocialEmpresa = (id?: string | null, fallback?: string) => {
+    const e = catalogosGlobales.empresas?.find((x: { id?: string }) => x.id === String(id || '')) as { razonSocial?: string; nombre?: string } | undefined;
+    const rs = String(e?.razonSocial || '').trim();
+    if (rs) return rs;
+    const f = String(fallback || '').trim();
+    if (f && f !== '-') return f;
+    const n = String(e?.nombre || '').trim();
+    return n || '-';
+  };
+
   // ✅ V00214: pinta la palabra clave del tipo de operación dentro de la
   //   leyenda del convenio: Importación azul · Exportación verde ·
   //   Movimiento amarillo · Flete naranja.
@@ -1174,7 +1189,7 @@ const OperacionesDashboard = () => {
       tipoMovimiento: operacionViendo.trafico || 'N/A',
       remolqueNombre: remolqueRes.nombre,
       remolquePlacas: remolqueRes.placa,
-      clienteMercancia: operacionViendo.clienteMercanciaNombre || mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas'),
+      clienteMercancia: razonSocialEmpresa(operacionViendo.clienteMercancia, operacionViendo.clienteMercanciaNombre),
       unidadNombre: unidadRes.nombre,
       unidadPlacas: unidadRes.placa,
       empleadoNombre: operadorRes,
@@ -1210,7 +1225,7 @@ const OperacionesDashboard = () => {
       tipoOperacion: (convenioCliente && convenioCliente !== '-') ? convenioCliente : '',
       origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
       origenDireccion: origenObj ? origenObj.direccion : 'N/A',
-      clienteMercancia: operacionViendo.clienteMercanciaNombre || mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas'),
+      clienteMercancia: razonSocialEmpresa(operacionViendo.clienteMercancia, operacionViendo.clienteMercanciaNombre),
       destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
       destinoDireccion: destinoObj ? destinoObj.direccion : 'N/A',
     });
@@ -1230,9 +1245,9 @@ const OperacionesDashboard = () => {
     generarCheckListPDF({
       consecutivo: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'S/R',
       fecha: operacionViendo.fechaServicio || '',
-      cliente: operacionViendo.clienteMercanciaNombre || mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas'),
+      cliente: razonSocialEmpresa(operacionViendo.clienteMercancia, operacionViendo.clienteMercanciaNombre),
       remolque: operacionViendo.remolqueNombre || (remolqueObj ? (remolqueObj.placa || remolqueObj.nombre) : 'N/A'),
-      proveedor: operacionViendo.proveedorUnidadNombre || mostrarDatoMapeado(operacionViendo.proveedorUnidad, 'empresas'),
+      proveedor: razonSocialEmpresa(operacionViendo.proveedorUnidad, operacionViendo.proveedorUnidadNombre),
       tractorInfo: `${uniNombre} / ${uniPlacas} / ${empNombre}`,
       numeroPedimento: operacionViendo.numDoda || 'N/A',
       prefileEntrys: String(operacionViendo.cantEntrys || '0'),
