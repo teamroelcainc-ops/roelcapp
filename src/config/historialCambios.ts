@@ -15,6 +15,7 @@ export interface CambioApp {
 }
 
 export const CAMBIOS_APP: CambioApp[] = [
+  { fecha: '2026-09-23', hora: '16:45', version: 'V00347', titulo: 'Convenios sin prefijo de ningún tipo', resumen: 'El botón Quitar CONV- ahora también elimina el número inicial que quedaba en algunos nombres de convenio ("285 - Cruce…" queda "Cruce…"), en operaciones y en los detalles de convenios de clientes y proveedores. Vuelve a presionarlo una vez.' },
   { fecha: '2026-09-23', hora: '16:00', version: 'V00346', titulo: 'Convenios sin el prefijo CONV-', resumen: 'Los convenios de clientes y proveedores ya no llevan el prefijo CONV-: los nuevos nacen solo con su número, y el botón Quitar CONV- de Detalles del Convenio se lo quita a todos los registrados (convenios y operaciones), conservando los números.' },
   { fecha: '2026-09-23', hora: '15:00', version: 'V00345', titulo: 'Los documentos de la operación abren en su modal', resumen: 'El botón Ver documentos de la ficha abre ahora un modal centrado con todos los documentos de la operación, cada uno con su botón Ver/Descargar.' },
   { fecha: '2026-09-23', hora: '14:30', version: 'V00344', titulo: 'Ver documentos en la ficha, editar la vista y Manual del módulo', resumen: 'La ficha de la operación tiene el botón Ver documentos con TODO lo subido (Carta Porte, DODA, Entry\'s, Manifiesto y más); el botón ✎ Vista permite ocultar/mostrar los botones agregados (guardado para todos); y el botón 📖 Manual abre la guía del módulo en otra pestaña.' },
