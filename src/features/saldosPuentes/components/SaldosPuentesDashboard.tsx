@@ -4,7 +4,7 @@
 //   saldo más reciente de un puente, el importe del catálogo se actualiza —
 //   la tarjeta "Casetas del día" y toda la app quedan al momento.
 import React, { useEffect, useMemo, useState } from 'react';
-import { addDoc, collection, deleteDoc, doc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDocs, onSnapshot, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import './SaldosPuentesDashboard.css';
 
@@ -108,6 +108,52 @@ export const SaldosPuentesDashboard: React.FC = () => {
     finally { setGuardando(false); }
   };
 
+  // ✅ V00356: colocar el saldo del puente a TODAS las operaciones completadas
+  //   que aún no lo tengan: Importación → Caseta AVI · Exportación → Caseta
+  //   Puente III. Usa el saldo REGISTRADO en esta tabla con fecha más cercana
+  //   (≤) a la fecha de servicio de cada operación; si no hay histórico, el
+  //   saldo vigente del catálogo. No pisa las que ya lo tienen.
+  const [aplicando, setAplicando] = useState(false);
+  const STATUS_COMPLETADOS_IDS = ['c2d57403', 'f557b751'];
+  const aplicarAOperaciones = async () => {
+    const buscarPuente = (clave: 'avi' | 'p3'): Puente | undefined =>
+      puentes.find((p) => clave === 'avi' ? norm(p.nombre) === 'caseta avi' : (norm(p.nombre) === 'caseta puente iii' || norm(p.nombre) === 'caseta puente 3'));
+    const avi = buscarPuente('avi');
+    const p3 = buscarPuente('p3');
+    if (!avi && !p3) { alert('No encontré "Caseta AVI" ni "Caseta Puente III" en el catálogo Tipos de Gastos.'); return; }
+    if (!window.confirm('Se colocará el SALDO DEL PUENTE a todas las operaciones COMPLETADAS que no lo tengan:\n\n· Importación → Caseta AVI\n· Exportación → Caseta Puente III\n\nSe usa el saldo registrado con fecha más cercana a la fecha de servicio (o el vigente del catálogo). Las que ya lo tienen NO se tocan. ¿Continuar?')) return;
+    setAplicando(true);
+    try {
+      const saldoPara = (p: Puente, fechaServicio: string): { saldo: number; fecha: string } => {
+        const hist = saldos.filter((x) => x.puenteId === p.id && (!fechaServicio || x.fecha <= fechaServicio)).sort((a, b) => b.fecha.localeCompare(a.fecha))[0];
+        if (hist) return { saldo: hist.saldo, fecha: hist.fecha };
+        return { saldo: Number(p.importe) || 0, fecha: hoyISO() };
+      };
+      const snap = await getDocs(collection(db, 'operaciones'));
+      let pendientes: { id: string; data: Record<string, unknown> }[] = [];
+      snap.docs.forEach((d) => {
+        const x = d.data() as Record<string, unknown>;
+        if (!STATUS_COMPLETADOS_IDS.includes(String(x.status || '').trim())) return;
+        if (Number.isFinite(Number(x.saldoPuente))) return; // ya lo tiene
+        const traf = norm(x.trafico);
+        const p = traf.includes('import') ? avi : traf.includes('export') ? p3 : undefined;
+        if (!p) return;
+        const res = saldoPara(p, String(x.fechaServicio || ''));
+        pendientes.push({ id: d.id, data: { saldoPuente: res.saldo, saldoPuentePuente: p.nombre, saldoPuenteMoneda: p.moneda, saldoPuenteFecha: res.fecha } });
+      });
+      const total = pendientes.length;
+      while (pendientes.length > 0) {
+        const lote = pendientes.slice(0, 450);
+        pendientes = pendientes.slice(450);
+        const batch = writeBatch(db);
+        lote.forEach((c) => batch.update(doc(db, 'operaciones', c.id), c.data));
+        await batch.commit();
+      }
+      alert(`Saldo del puente colocado en ${total} operación(es) completada(s). Las que ya lo tenían no se tocaron.`);
+    } catch (e) { alert(`No se pudo completar: ${(e as Error)?.message || e}`); }
+    finally { setAplicando(false); }
+  };
+
   const editar = (s: Saldo) => { setEditandoId(s.id); setFecha(s.fecha); setPuenteId(s.puenteId); setMonto(String(s.saldo)); setModalForm(true); };
   const eliminar = async (s: Saldo) => {
     if (!window.confirm(`¿Eliminar el saldo de ${s.puenteNombre} del ${fmtDia(s.fecha)}?`)) return;
@@ -121,7 +167,10 @@ export const SaldosPuentesDashboard: React.FC = () => {
           <h2 className="sp-titulo">🌉 Saldos de Puentes</h2>
           <p className="sp-sub">Registro diario del saldo de cada puente (relacionado con el catálogo Tipos de Gastos). El saldo más reciente de cada puente actualiza el catálogo y se refleja en toda la app al momento.</p>
         </div>
-        <button type="button" className="sp-btn sp-btn--primario" onClick={abrirNuevo}>➕ Registrar saldo</button>
+        <div className="sp-enc-botones">
+          <button type="button" className="sp-btn" disabled={aplicando} title="Coloca el saldo del puente (AVI en importación, Puente III en exportación) a todas las operaciones completadas que no lo tengan" onClick={aplicarAOperaciones}>{aplicando ? 'Aplicando…' : '🧮 Aplicar a operaciones'}</button>
+          <button type="button" className="sp-btn sp-btn--primario" onClick={abrirNuevo}>➕ Registrar saldo</button>
+        </div>
       </div>
 
       {/* ✅ V00351: el formulario vive en su MODAL */}

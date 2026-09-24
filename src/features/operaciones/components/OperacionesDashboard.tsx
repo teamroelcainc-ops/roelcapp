@@ -852,6 +852,39 @@ const OperacionesDashboard = () => {
     } catch (e) { console.warn('Saldo de puente al completar:', e); return {}; }
   };
 
+  // ✅ V00356: utilidad de la operación TRANSFER = lo generado (tarifa cliente
+  //   + cargos adicionales al cliente) − saldo del puente − gastos adicionales
+  //   (proveedor) − sueldo del proveedor (monto base). Pesos → dólares con el
+  //   TC aprobado de la operación (o sin convertir, con aviso, si no hay TC).
+  const utilidadTransfer = (op: Record<string, unknown>): { lineas: { etiqueta: string; texto: string; negativo?: boolean }[]; total: number; aviso: string } | null => {
+    const tipo = String(op?.tipoOperacionNombre || mostrarDatoMapeado(String(op?.tipoOperacionId || ''), 'tiposOperacion', 'tipo_operacion', String(op?.tipoOperacionNombre || '')) || '').toLowerCase();
+    if (!tipo.includes('transfer')) return null;
+    const tc = Number(op?.tipoCambioAprobado) || 0;
+    let sinTC = false;
+    const aUSD = (monto: number, moneda: unknown): { usd: number; nota: string } => {
+      const m = String(moneda || '').toUpperCase();
+      const esPesos = m === ID_MXN || m.includes('MXN') || m.includes('PESO');
+      if (!esPesos) return { usd: monto, nota: '' };
+      if (tc > 0) return { usd: monto / tc, nota: ` (MX$${monto.toLocaleString('en-US', { minimumFractionDigits: 2 })} ÷ ${tc})` };
+      sinTC = true; return { usd: monto, nota: ' (MX$ sin convertir)' };
+    };
+    const fmtU = (v: number) => `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const generado = aUSD(Number(op?.montoConvenioCliente) || 0, op?.monedaConvenioCliente);
+    const cargosCli = aUSD(Number(op?.cargosAdicionales) || 0, op?.monedaConvenioCliente);
+    const puente = aUSD(Number(op?.saldoPuente) || 0, op?.saldoPuenteMoneda);
+    const cargosProv = aUSD(Number(op?.cargosAdicionalesProv) || 0, op?.monedaConvenioProv || op?.monedaConvenioCliente);
+    const sueldoProv = aUSD(Number(op?.totalAPagarProv) || 0, op?.monedaConvenioProv);
+    const total = generado.usd + cargosCli.usd - puente.usd - cargosProv.usd - sueldoProv.usd;
+    const lineas = [
+      { etiqueta: 'Generado (tarifa cliente)', texto: fmtU(generado.usd) + generado.nota },
+      ...(cargosCli.usd ? [{ etiqueta: '+ Cargos adic. (cliente)', texto: fmtU(cargosCli.usd) + cargosCli.nota }] : []),
+      { etiqueta: '− Saldo del puente', texto: fmtU(puente.usd) + puente.nota, negativo: true },
+      ...(cargosProv.usd ? [{ etiqueta: '− Gastos adicionales', texto: fmtU(cargosProv.usd) + cargosProv.nota, negativo: true }] : []),
+      { etiqueta: '− Sueldo del proveedor', texto: fmtU(sueldoProv.usd) + sueldoProv.nota, negativo: true },
+    ];
+    return { lineas, total, aviso: sinTC ? 'Hay montos en pesos sin TC aprobado en la operación: se restaron sin convertir.' : '' };
+  };
+
   const razonSocialEmpresa = (id?: string | null, fallback?: string) => {
     const e = catalogosGlobales.empresas?.find((x: { id?: string }) => x.id === String(id || '')) as { razonSocial?: string; nombre?: string } | undefined;
     const rs = String(e?.razonSocial || '').trim();
@@ -2481,6 +2514,31 @@ const OperacionesDashboard = () => {
                       <div className="od-x121">{formatoMoneda(operacionViendo.totalGastos)}</div>
                     </div>
                   </div>
+
+                  {/* ✅ V00356: UTILIDAD de la operación cuando es TRANSFER —
+                        lo generado − saldo del puente − gastos adicionales −
+                        sueldo del proveedor. Pesos convertidos a dólares con el
+                        TC aprobado de la operación cuando existe. */}
+                  {(() => {
+                    const u = utilidadTransfer(operacionViendo);
+                    if (!u) return null;
+                    return (
+                      <div className="od-util">
+                        <div className="od-util-titulo">💰 Utilidad (Transfer)</div>
+                        {u.lineas.map((l) => (
+                          <div key={l.etiqueta} className="od-util-linea">
+                            <span className="od-util-etq">{l.etiqueta}</span>
+                            <span className={`od-util-monto${l.negativo ? ' od-util-monto--resta' : ''}`}>{l.texto}</span>
+                          </div>
+                        ))}
+                        <div className="od-util-linea od-util-linea--total">
+                          <span className="od-util-etq">Utilidad</span>
+                          <span className={`od-util-total ${u.total >= 0 ? 'od-util-total--pos' : 'od-util-total--neg'}`}>{`$${u.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Dólares`}</span>
+                        </div>
+                        {u.aviso && <div className="od-util-aviso">⚠ {u.aviso}</div>}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
