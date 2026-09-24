@@ -131,7 +131,13 @@ export const SaldosPuentesDashboard: React.FC = () => {
             <div className="sp-modal-titulo">{editandoId ? '✎ Editar saldo de puente' : '➕ Registrar saldo de puente'}</div>
             <label className="sp-campo"><span>Fecha</span><input type="date" className="form-control" value={fecha} onChange={(e) => setFecha(e.target.value)} /></label>
             <label className="sp-campo"><span>Puente (catálogo Tipos de Gastos)</span>
-              <select className="form-control" value={puenteId} onChange={(e) => setPuenteId(e.target.value)}>
+              <select className="form-control" value={puenteId} onChange={(e) => {
+                const id = e.target.value;
+                setPuenteId(id);
+                // ✅ V00352: al elegir el puente se precarga su saldo ACTUAL del catálogo.
+                const pSel = puentes.find((x) => x.id === id);
+                if (pSel && Number.isFinite(Number(pSel.importe))) setMonto(String(pSel.importe));
+              }}>
                 <option value="">— Elegir puente —</option>
                 {puentes.map((p) => <option key={p.id} value={p.id}>{p.nombre} ({p.moneda})</option>)}
               </select>
@@ -161,7 +167,7 @@ export const SaldosPuentesDashboard: React.FC = () => {
                 <td>{fmtDia(s.fecha)}</td>
                 <td>{s.puenteNombre}</td>
                 <td className="sp-num sp-monto">{fmtMonto(s.saldo)}</td>
-                <td>{s.moneda}</td>
+                <td><span className={`sp-moneda${norm(s.moneda).includes('dolar') ? ' sp-moneda--usd' : norm(s.moneda).includes('peso') ? ' sp-moneda--mxn' : ''}`}>{s.moneda}</span></td>{/* ✅ V00355 */}
                 <td className="sp-acciones">
                   <button type="button" className="sp-mini" title="Editar" onClick={() => editar(s)}>✎</button>
                   <button type="button" className="sp-mini sp-mini--rojo" title="Eliminar" onClick={() => eliminar(s)}>🗑</button>

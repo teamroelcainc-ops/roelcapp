@@ -1092,6 +1092,36 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const labelUnidad = (u: any) => u?.unidad || u?.nombre || '';
   const labelEmpleado = (o: any) => `${o?.firstName || ''} ${o?.lastNamePaternal || ''}`.trim();
 
+  // ✅ V00355: al marcar SERVICIO COMPLETADO, la operación guarda la TARIFA del
+  //   puente del día: Importación → saldo de Caseta AVI · Exportación → saldo
+  //   de Caseta Puente III (del catálogo Tipos de Gastos, que Saldos de
+  //   Puentes mantiene al día). Solo se coloca una vez (no se pisa).
+  const STATUS_COMPLETADOS_IDS_SP = ['c2d57403', 'f557b751'];
+  const camposSaldoPuente = async (statusFinal: string): Promise<Record<string, unknown>> => {
+    try {
+      if (!STATUS_COMPLETADOS_IDS_SP.includes(String(statusFinal || '').trim())) return {};
+      if (initialData && Number.isFinite(Number((initialData as Record<string, unknown>).saldoPuente))) return {};
+      const traf = String(formData.trafico || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      const objetivo = traf.includes('import') ? 'caseta avi' : traf.includes('export') ? 'caseta puente' : '';
+      if (!objetivo) return {};
+      const snap = await getDocs(collection(db, 'catalogo_tipos_gastos'));
+      const normSP = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+      const d = snap.docs.find((x) => {
+        const n = normSP((x.data() as Record<string, unknown>).nombre_gasto);
+        return objetivo === 'caseta avi' ? n === 'caseta avi' : (n === 'caseta puente iii' || n === 'caseta puente 3');
+      });
+      if (!d) return {};
+      const x = d.data() as Record<string, unknown>;
+      const monedaSP = String(x.moneda || '') === '7dca62b3' ? 'Dólares' : String(x.moneda || '') === 'f95d8894' ? 'Pesos' : String(x.moneda || '');
+      return {
+        saldoPuente: Number(x.importe) || 0,
+        saldoPuentePuente: String(x.nombre_gasto || ''),
+        saldoPuenteMoneda: monedaSP,
+        saldoPuenteFecha: new Date().toISOString().slice(0, 10),
+      };
+    } catch (e) { console.warn('Saldo de puente al completar:', e); return {}; }
+  };
+
   useEffect(() => {
     let activo = true;
     (async () => {
@@ -2507,7 +2537,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         unidad: resolvedUnidad, operador: resolvedOperador,
         unidadProveedor: resolvedUnidadProv, operadorProveedor: resolvedOperadorProv,
         convenioNombre: detalleDoc?.descripcion || formData.convenioNombre || 'Sin descripción', 
-        status: statusCalculado || 'Pendiente', 
+        status: statusCalculado || 'Pendiente', ...(await camposSaldoPuente(statusCalculado)), // ✅ V00355: saldo del puente al completar
         // ✅ FIX: se guarda el NOMBRE del status (la descripción larga del catálogo
         //    solo es texto de ayuda y estaba filtrándose a la tabla del dashboard)
         statusNombre: statusObj?.nombre || statusObj?.descripcion || statusCalculado || 'Pendiente',

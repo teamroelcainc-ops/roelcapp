@@ -830,6 +830,28 @@ const OperacionesDashboard = () => {
   //   desnormalizado y al nombre de la empresa. Así todos los documentos
   //   (Solicitud de Retiro, Check List, Instrucciones, etc.) muestran la razón
   //   social de clientes y proveedores.
+  // ✅ V00355: tarifa del puente al marcar SERVICIO COMPLETADO.
+  const STATUS_COMPLETADOS_IDS_SP = ['c2d57403', 'f557b751'];
+  const camposSaldoPuenteAlCompletar = async (statusId: string, op: { saldoPuente?: unknown; trafico?: unknown }): Promise<Record<string, unknown>> => {
+    try {
+      if (!STATUS_COMPLETADOS_IDS_SP.includes(String(statusId || '').trim())) return {};
+      if (Number.isFinite(Number(op?.saldoPuente))) return {};
+      const traf = String(op?.trafico || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      const objetivo = traf.includes('import') ? 'avi' : traf.includes('export') ? 'p3' : '';
+      if (!objetivo) return {};
+      const snap = await getDocs(collection(db, 'catalogo_tipos_gastos'));
+      const normSP = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+      const d = snap.docs.find((x) => {
+        const n = normSP((x.data() as Record<string, unknown>).nombre_gasto);
+        return objetivo === 'avi' ? n === 'caseta avi' : (n === 'caseta puente iii' || n === 'caseta puente 3');
+      });
+      if (!d) return {};
+      const x = d.data() as Record<string, unknown>;
+      const monedaSP = String(x.moneda || '') === '7dca62b3' ? 'Dólares' : String(x.moneda || '') === 'f95d8894' ? 'Pesos' : String(x.moneda || '');
+      return { saldoPuente: Number(x.importe) || 0, saldoPuentePuente: String(x.nombre_gasto || ''), saldoPuenteMoneda: monedaSP, saldoPuenteFecha: new Date().toISOString().slice(0, 10) };
+    } catch (e) { console.warn('Saldo de puente al completar:', e); return {}; }
+  };
+
   const razonSocialEmpresa = (id?: string | null, fallback?: string) => {
     const e = catalogosGlobales.empresas?.find((x: { id?: string }) => x.id === String(id || '')) as { razonSocial?: string; nombre?: string } | undefined;
     const rs = String(e?.razonSocial || '').trim();
@@ -1103,9 +1125,13 @@ const OperacionesDashboard = () => {
           });
 
           const opRef = doc(db, 'operaciones', String(operacionViendo._docId || operacionViendo.id));
+          // ✅ V00355: al COMPLETAR, colocar la tarifa del puente del día
+          //   (Importación → Caseta AVI · Exportación → Caseta Puente III).
+          const extraSaldoPuente = await camposSaldoPuenteAlCompletar(statusFinal.id, operacionViendo);
           batch.update(opRef, limpiarUndefined({
             status: statusFinal.id,
-            statusNombre: statusFinal.nombre
+            statusNombre: statusFinal.nombre,
+            ...extraSaldoPuente
           }));
 
           await batch.commit();

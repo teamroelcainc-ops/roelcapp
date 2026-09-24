@@ -17,3 +17,4 @@
 .tcas-btn { border: 1px solid #30363d; background: transparent; color: #c9d1d9; border-radius: 8px; padding: 7px 14px; cursor: pointer; font-size: 0.82rem; }
 .tcas-btn--primario { border-color: #a371f7; background: #a371f7; color: #0d1117; font-weight: 700; }
 .tcas-btn:disabled { opacity: 0.6; cursor: wait; }
+.tcas-viejo { color: #d29922; font-size: 0.68rem; font-style: normal; margin-left: 6px; }

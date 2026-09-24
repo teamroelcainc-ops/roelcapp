@@ -35,6 +35,18 @@ export const TarjetaCasetas: React.FC = () => {
   const [montoAvi, setMontoAvi] = useState('');
   const [montoP3, setMontoP3] = useState('');
   const [guardando, setGuardando] = useState(false);
+  // ✅ V00352: puentes con saldo YA registrado HOY (tabla saldos_puentes) —
+  //   cuando ambos están al día, el botón "+ Actualizar saldos" se quita
+  //   (como el del tipo de cambio).
+  const [capturadosHoy, setCapturadosHoy] = useState<string[]>([]);
+  useEffect(() => {
+    const hoy = new Date().toISOString().slice(0, 10);
+    const unsub = onSnapshot(query(collection(db, 'saldos_puentes'), where('fecha', '==', hoy)), (snap) => {
+      setCapturadosHoy(snap.docs.map((d) => String((d.data() as Record<string, unknown>).puenteId || '')));
+    }, () => {});
+    return () => unsub();
+  }, []);
+  const faltaCapturarHoy = (avi ? !capturadosHoy.includes(avi.id) : false) || (p3 ? !capturadosHoy.includes(p3.id) : false);
   const abrirCaptura = () => {
     setMontoAvi(avi && Number.isFinite(Number(avi.importe)) ? String(avi.importe) : '');
     setMontoP3(p3 && Number.isFinite(Number(p3.importe)) ? String(p3.importe) : '');
@@ -83,9 +95,9 @@ export const TarjetaCasetas: React.FC = () => {
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#a371f7" strokeWidth="2.2"><path d="M4 21V8l8-5 8 5v13"></path><path d="M4 11h16"></path><path d="M9 21v-6h6v6"></path></svg>
         Casetas del día
       </span>
-      <div className="tcas-linea"><span className="tcas-nombre">Puente AVI</span><span className="tcas-monto">{avi ? `${fmtMonto(avi.importe)} ${avi.moneda}` : '—'}</span></div>
-      <div className="tcas-linea"><span className="tcas-nombre">Puente III</span><span className="tcas-monto">{p3 ? `${fmtMonto(p3.importe)} ${p3.moneda}` : '—'}</span></div>
-      <button type="button" className="tcas-capturar" onClick={abrirCaptura} title="Actualizar el saldo de los puentes — se guarda en el catálogo Tipos de Gastos y se refleja en toda la app">+ Actualizar saldos</button>
+      <div className="tcas-linea"><span className="tcas-nombre">Puente AVI{avi && !capturadosHoy.includes(avi.id) && <em className="tcas-viejo" title="Todavía sin captura HOY — presiona + Actualizar saldos">· sin captura hoy</em>}</span><span className="tcas-monto">{avi ? `${fmtMonto(avi.importe)} ${avi.moneda}` : '—'}</span></div>
+      <div className="tcas-linea"><span className="tcas-nombre">Puente III{p3 && !capturadosHoy.includes(p3.id) && <em className="tcas-viejo" title="Todavía sin captura HOY — presiona + Actualizar saldos">· sin captura hoy</em>}</span><span className="tcas-monto">{p3 ? `${fmtMonto(p3.importe)} ${p3.moneda}` : '—'}</span></div>
+      {faltaCapturarHoy && <button type="button" className="tcas-capturar" onClick={abrirCaptura} title="Actualizar el saldo de los puentes — se guarda en el catálogo, en la tabla Saldos de Puentes con la fecha de hoy, y se refleja en toda la app">+ Actualizar saldos</button>}
       {/* ✅ V00349: modal de captura (como el del tipo de cambio) */}
       {modalAbierto && (
         <div className="tcas-modal-fondo" onClick={() => !guardando && setModalAbierto(false)}>

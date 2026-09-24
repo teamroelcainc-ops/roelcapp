@@ -97,6 +97,7 @@ const COLUMNAS_BASE = [
   { id: 'invoiceProveedor', label: 'Invoice Proveedor', visible: true },
   { id: 'trafico', label: 'Tráfico', visible: false },
   { id: 'cliente', label: 'Cliente (Paga)', visible: true },
+  { id: 'saldoPuente', label: 'Saldo Puente', visible: false }, // ✅ V00355
   { id: 'convenioTarifa', label: 'Convenio Cliente (Tarifa)', visible: true },
   { id: 'refCliente', label: 'Ref. Cliente', visible: false },
   { id: 'facturadoEnCobrar', label: 'Moneda Cobro', visible: false },
@@ -151,6 +152,9 @@ const COLUMNAS_BASE = [
 
 // ✅ Status que se muestran en esta vista — SOLO estos 2 IDs hex.
 const STATUS_COMPLETADOS_VALORES = ['c2d57403', 'f557b751'];
+// ✅ V00355: saldo del puente colocado al completar (AVI import / Puente III export)
+const fmtSaldoPuente = (op: { saldoPuente?: unknown; saldoPuenteMoneda?: unknown }): string => { const n = Number(op?.saldoPuente); if (!Number.isFinite(n)) return '-'; return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${String(op?.saldoPuenteMoneda || '')}`.trim(); };
+
 // ID del tipo de empresa "Cliente (Paga)" para el buscador
 const ID_TIPO_CLIENTE_PAGA = '7eec9cbb';
 // ✅ NUEVO: tamaño de página para descarga incremental
@@ -1745,6 +1749,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       case 'invoiceProveedor': return limpiar((op.facturaProveedorFolio || op.facturadoProveedor) ? (op.facturaProveedorFolio || 'Facturada') : '');
       case 'trafico': return limpiar(op.trafico);
       case 'cliente': return limpiar(mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente));
+      case 'saldoPuente': return fmtSaldoPuente(op); // ✅ V00355
       case 'convenioTarifa': return limpiar(obtenerNombreConvenioCliente(op.convenio, op.convenioNombre));
       case 'refCliente': return limpiar(op.refCliente);
       case 'facturadoEnCobrar': return limpiar(mostrarDatoMapeado(op.facturadoEnCobrar, 'catalogoMoneda', 'moneda', op.monedaCobroNombre));
@@ -1994,6 +1999,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       case 'invoiceProveedor': return (op.facturaProveedorFolio || op.facturadoProveedor) ? chipConexion(op.facturaProveedorFolio || 'Facturada', '#58a6ff') : <span className="sc-x3">-</span>;
       case 'trafico': return <span className="sc-x1">{mostrarDato(op.trafico)}</span>;
       case 'cliente': return <span className="sc-x4">{mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente)}</span>;
+      case 'saldoPuente': return <span title={op.saldoPuentePuente ? `${op.saldoPuentePuente} · al ${op.saldoPuenteFecha || ''}` : ''}>{fmtSaldoPuente(op)}</span>; // ✅ V00355
       case 'convenioTarifa': return <span className="sc-x5" title={obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}>{obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}</span>;
       case 'refCliente': return <span className="sc-x1">{mostrarDato(op.refCliente)}</span>;
       case 'facturadoEnCobrar': return <span className="sc-x1">{mostrarDatoMapeado(op.facturadoEnCobrar, 'catalogoMoneda', 'moneda', op.monedaCobroNombre)}</span>;
@@ -2169,6 +2175,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
           case 'invoiceProveedor': val = op.facturaProveedorFolio || (op.facturadoProveedor ? 'Facturada' : ''); break;
           case 'trafico': val = op.trafico || ''; break;
           case 'cliente': val = mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente); break;
+          case 'saldoPuente': val = fmtSaldoPuente(op); break; // ✅ V00355
           case 'convenioTarifa': val = obtenerNombreConvenioCliente(op.convenio, op.convenioNombre); break;
           case 'refCliente': val = op.refCliente || ''; break;
           case 'facturadoEnCobrar': val = normalizarMoneda(mostrarDatoMapeado(op.facturadoEnCobrar, 'catalogoMoneda', 'moneda', op.monedaCobroNombre)); break;
