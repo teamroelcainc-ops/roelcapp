@@ -18,3 +18,11 @@
 .tcas-btn--primario { border-color: #a371f7; background: #a371f7; color: #0d1117; font-weight: 700; }
 .tcas-btn:disabled { opacity: 0.6; cursor: wait; }
 .tcas-viejo { color: #d29922; font-size: 0.68rem; font-style: normal; margin-left: 6px; }
+
+/* ✅ V00358: semáforo del saldo y totales del modal */
+.tcas-monto--amarillo { color: #d29922; }
+.tcas-monto--rojo { color: #f85149; }
+.tcas-nivel { font-size: 0.66rem; font-style: normal; margin-left: 5px; }
+.tcas-nivel--amarillo { color: #d29922; }
+.tcas-nivel--rojo { color: #f85149; }
+.tcas-modal-total { display: block; color: #8b949e; font-size: 0.74rem; font-style: normal; margin-top: 3px; }

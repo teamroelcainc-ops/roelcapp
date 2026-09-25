@@ -1,10 +1,9 @@
-// ✅ V00348: tarjeta "CASETAS DEL DÍA" para el resumen del día — muestra EN
-//   VIVO el saldo (importe vigente) de Caseta AVI y Caseta Puente III desde el
-//   catálogo Tipos de Gastos. Editar el importe en Catálogos lo actualiza aquí
-//   al momento. Autocontenida: se monta con <TarjetaCasetas /> junto a las
-//   demás tarjetas (tipo de cambio, diésel) en App.tsx.
+// ✅ V00358: tarjeta "CASETAS DEL DÍA" — muestra el SALDO ACTUAL de la cuenta
+//   de cada puente (recargas − cruces completados), con semáforo, y permite
+//   AGREGAR SALDO (recarga del día en la tabla saldos_puentes). La tarifa por
+//   cruce vive en el catálogo Tipos de Gastos y ya no se modifica desde aquí.
 import React, { useEffect, useState } from 'react';
-import { addDoc, collection, doc, getDocs, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
+import { addDoc, collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import './TarjetaCasetas.css';
 
@@ -24,101 +23,117 @@ const fmtMonto = (v: unknown): string => {
   const n = Number(v);
   return Number.isFinite(n) ? `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
 };
+const hoyISO = () => new Date().toISOString().slice(0, 10);
 
-interface Caseta { id: string; nombre: string; importe: unknown; moneda: string; }
+interface Caseta { id: string; nombre: string; moneda: string; tarifa: number; umbralAmarillo: number; umbralRojo: number; }
+interface RecargaMin { puenteId: string; fecha: string; saldo: number; }
+interface CruceMin { puenteNombre: string; fecha: string; monto: number; }
 
 export const TarjetaCasetas: React.FC = () => {
   const [avi, setAvi] = useState<Caseta | null>(null);
   const [p3, setP3] = useState<Caseta | null>(null);
-  // ✅ V00349: captura del saldo de los puentes (como el tipo de cambio).
+  const [recargas, setRecargas] = useState<RecargaMin[]>([]);
+  const [cruces, setCruces] = useState<CruceMin[]>([]);
   const [modalAbierto, setModalAbierto] = useState(false);
   const [montoAvi, setMontoAvi] = useState('');
   const [montoP3, setMontoP3] = useState('');
   const [guardando, setGuardando] = useState(false);
-  // ✅ V00352: puentes con saldo YA registrado HOY (tabla saldos_puentes) —
-  //   cuando ambos están al día, el botón "+ Actualizar saldos" se quita
-  //   (como el del tipo de cambio).
-  const [capturadosHoy, setCapturadosHoy] = useState<string[]>([]);
+
   useEffect(() => {
-    const hoy = new Date().toISOString().slice(0, 10);
-    const unsub = onSnapshot(query(collection(db, 'saldos_puentes'), where('fecha', '==', hoy)), (snap) => {
-      setCapturadosHoy(snap.docs.map((d) => String((d.data() as Record<string, unknown>).puenteId || '')));
-    }, () => {});
-    return () => unsub();
-  }, []);
-  const faltaCapturarHoy = (avi ? !capturadosHoy.includes(avi.id) : false) || (p3 ? !capturadosHoy.includes(p3.id) : false);
-  const abrirCaptura = () => {
-    setMontoAvi(avi && Number.isFinite(Number(avi.importe)) ? String(avi.importe) : '');
-    setMontoP3(p3 && Number.isFinite(Number(p3.importe)) ? String(p3.importe) : '');
-    setModalAbierto(true);
-  };
-  const guardarSaldos = async () => {
-    const nAvi = Number(montoAvi); const nP3 = Number(montoP3);
-    if (avi && (!Number.isFinite(nAvi) || nAvi < 0)) { alert('Captura un monto válido para el Puente AVI.'); return; }
-    if (p3 && (!Number.isFinite(nP3) || nP3 < 0)) { alert('Captura un monto válido para el Puente III.'); return; }
-    setGuardando(true);
-    try {
-      // ✅ V00350: además del catálogo, la captura REGISTRA EL DÍA en la tabla
-      //   saldos_puentes (módulo Saldos de Puentes) — un registro por puente y
-      //   fecha (si el de hoy ya existe, se actualiza).
-      const hoy = new Date().toISOString().slice(0, 10);
-      const registrarDia = async (c: Caseta, monto: number) => {
-        await updateDoc(doc(db, 'catalogo_tipos_gastos', c.id), { importe: monto });
-        const previo = await getDocs(query(collection(db, 'saldos_puentes'), where('puenteId', '==', c.id), where('fecha', '==', hoy)));
-        const datos = { fecha: hoy, puenteId: c.id, puenteNombre: c.nombre, moneda: c.moneda, saldo: monto };
-        if (!previo.empty) await updateDoc(doc(db, 'saldos_puentes', previo.docs[0].id), datos);
-        else await addDoc(collection(db, 'saldos_puentes'), { ...datos, creadoEn: new Date().toISOString() });
-      };
-      if (avi) await registrarDia(avi, nAvi);
-      if (p3) await registrarDia(p3, nP3);
-      setModalAbierto(false);
-    } catch (e) { alert(`No se pudo guardar el saldo: ${(e as Error)?.message || e}`); }
-    finally { setGuardando(false); }
-  };
-  useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'catalogo_tipos_gastos'), (snap) => {
+    const u1 = onSnapshot(collection(db, 'catalogo_tipos_gastos'), (snap) => {
       let a: Caseta | null = null; let p: Caseta | null = null;
       snap.docs.forEach((d) => {
         const x = d.data() as Record<string, unknown>;
         const n = norm(x.nombre_gasto);
-        const c: Caseta = { id: d.id, nombre: String(x.nombre_gasto || ''), importe: x.importe, moneda: nombreMoneda(x.moneda) };
+        const tarifa = Number(x.importe) || 0;
+        const c: Caseta = { id: d.id, nombre: String(x.nombre_gasto || ''), moneda: nombreMoneda(x.moneda), tarifa, umbralAmarillo: Number(x.umbralAmarillo) || tarifa * 20, umbralRojo: Number(x.umbralRojo) || tarifa * 10 };
         if (n === 'caseta avi') a = c;
         if (n === 'caseta puente iii' || n === 'caseta puente 3') p = c;
       });
       setAvi(a); setP3(p);
     }, (e) => console.warn('Casetas del día:', e));
-    return () => unsub();
+    const u2 = onSnapshot(collection(db, 'saldos_puentes'), (snap) => {
+      setRecargas(snap.docs.map((d) => {
+        const x = d.data() as Record<string, unknown>;
+        return { puenteId: String(x.puenteId || ''), fecha: String(x.fecha || ''), saldo: Number(x.saldo) || 0 };
+      }));
+    }, () => {});
+    const u3 = onSnapshot(query(collection(db, 'operaciones'), where('saldoPuente', '>', 0)), (snap) => {
+      setCruces(snap.docs.map((d) => {
+        const x = d.data() as Record<string, unknown>;
+        return { puenteNombre: String(x.saldoPuentePuente || ''), fecha: String(x.saldoPuenteFecha || ''), monto: Number(x.saldoPuente) || 0 };
+      }));
+    }, () => {});
+    return () => { u1(); u2(); u3(); };
   }, []);
+
+  const cuentaDe = (c: Caseta | null) => {
+    if (!c) return null;
+    const recs = recargas.filter((r) => r.puenteId === c.id).sort((a, b) => a.fecha.localeCompare(b.fecha));
+    const primera = recs[0]?.fecha || '';
+    const inicial = recs.reduce((acc, r) => acc + r.saldo, 0);
+    const consumo = cruces.filter((x) => norm(x.puenteNombre) === norm(c.nombre) && (!primera || x.fecha >= primera)).reduce((acc, x) => acc + x.monto, 0);
+    const actual = inicial - consumo;
+    const nivel = actual < c.umbralRojo ? 'rojo' : actual < c.umbralAmarillo ? 'amarillo' : 'ok';
+    return { actual, nivel };
+  };
+  const cAvi = cuentaDe(avi);
+  const cP3 = cuentaDe(p3);
+
+  const abrirCaptura = () => { setMontoAvi(''); setMontoP3(''); setModalAbierto(true); };
+  const guardarSaldos = async () => {
+    const nAvi = Number(montoAvi) || 0; const nP3 = Number(montoP3) || 0;
+    if (nAvi <= 0 && nP3 <= 0) { alert('Captura el saldo a agregar en al menos un puente.'); return; }
+    setGuardando(true);
+    try {
+      const registrar = async (c: Caseta, monto: number) => {
+        await addDoc(collection(db, 'saldos_puentes'), { fecha: hoyISO(), puenteId: c.id, puenteNombre: c.nombre, moneda: c.moneda, saldo: monto, creadoEn: new Date().toISOString() });
+      };
+      if (avi && nAvi > 0) await registrar(avi, nAvi);
+      if (p3 && nP3 > 0) await registrar(p3, nP3);
+      setModalAbierto(false);
+    } catch (e) { alert(`No se pudo agregar el saldo: ${(e as Error)?.message || e}`); }
+    finally { setGuardando(false); }
+  };
+
+  const lineaPuente = (etiqueta: string, c: Caseta | null, cta: { actual: number; nivel: string } | null) => (
+    <div className="tcas-linea">
+      <span className="tcas-nombre">{etiqueta}{cta && cta.nivel !== 'ok' && <em className={`tcas-nivel tcas-nivel--${cta.nivel}`}>{cta.nivel === 'rojo' ? '· crítico' : '· bajo'}</em>}</span>
+      <span className={`tcas-monto${cta ? ` tcas-monto--${cta.nivel}` : ''}`}>{c && cta ? `${fmtMonto(cta.actual)} ${c.moneda}` : '—'}</span>
+    </div>
+  );
+
   return (
-    <div className="tcas-tarjeta" title="Saldo vigente de las casetas — se edita en Catálogos → Tipos de Gastos y aquí se actualiza al momento">
+    <div className="tcas-tarjeta" title="Saldo ACTUAL de la cuenta de cada puente (recargas − cruces completados). La tarifa por cruce se edita en Catálogos → Tipos de Gastos">
       <span className="tcas-etiqueta">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#a371f7" strokeWidth="2.2"><path d="M4 21V8l8-5 8 5v13"></path><path d="M4 11h16"></path><path d="M9 21v-6h6v6"></path></svg>
         Casetas del día
       </span>
-      <div className="tcas-linea"><span className="tcas-nombre">Puente AVI{avi && !capturadosHoy.includes(avi.id) && <em className="tcas-viejo" title="Todavía sin captura HOY — presiona + Actualizar saldos">· sin captura hoy</em>}</span><span className="tcas-monto">{avi ? `${fmtMonto(avi.importe)} ${avi.moneda}` : '—'}</span></div>
-      <div className="tcas-linea"><span className="tcas-nombre">Puente III{p3 && !capturadosHoy.includes(p3.id) && <em className="tcas-viejo" title="Todavía sin captura HOY — presiona + Actualizar saldos">· sin captura hoy</em>}</span><span className="tcas-monto">{p3 ? `${fmtMonto(p3.importe)} ${p3.moneda}` : '—'}</span></div>
-      {faltaCapturarHoy && <button type="button" className="tcas-capturar" onClick={abrirCaptura} title="Actualizar el saldo de los puentes — se guarda en el catálogo, en la tabla Saldos de Puentes con la fecha de hoy, y se refleja en toda la app">+ Actualizar saldos</button>}
-      {/* ✅ V00349: modal de captura (como el del tipo de cambio) */}
+      {lineaPuente('Puente AVI', avi, cAvi)}
+      {lineaPuente('Puente III', p3, cP3)}
+      <button type="button" className="tcas-capturar" onClick={abrirCaptura} title="Agregar saldo a la cuenta de los puentes (recarga de hoy — queda en Saldos de Puentes)">➕ Agregar saldo</button>
       {modalAbierto && (
         <div className="tcas-modal-fondo" onClick={() => !guardando && setModalAbierto(false)}>
           <div className="tcas-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="tcas-modal-titulo">🌉 Actualizar saldo de los puentes</div>
-            <div className="tcas-modal-sub">El saldo se guarda en Catálogos → Tipos de Gastos y se usa en toda la app al momento.</div>
+            <div className="tcas-modal-titulo">➕ Agregar saldo a los puentes</div>
+            <div className="tcas-modal-sub">Fecha: hoy ({hoyISO().split('-').reverse().join('/')}) · la recarga queda registrada en Saldos de Puentes y el saldo se consume con cada cruce completado.</div>
             {avi ? (
               <label className="tcas-modal-campo">
-                <span>Puente AVI ({avi.moneda})</span>
-                <input type="number" step="0.01" min="0" className="form-control" value={montoAvi} onChange={(e) => setMontoAvi(e.target.value)} />
+                <span>Puente AVI ({avi.moneda}) — restante {cAvi ? fmtMonto(cAvi.actual) : '—'}</span>
+                <input type="number" step="0.01" min="0" className="form-control" value={montoAvi} onChange={(e) => setMontoAvi(e.target.value)} placeholder="0.00" />
+                <em className="tcas-modal-total">Total: {fmtMonto((cAvi?.actual || 0) + (Number(montoAvi) || 0))} {avi.moneda}</em>
               </label>
             ) : <div className="tcas-modal-aviso">⚠ No encontré el registro "Caseta AVI" en Tipos de Gastos.</div>}
             {p3 ? (
               <label className="tcas-modal-campo">
-                <span>Puente III ({p3.moneda})</span>
-                <input type="number" step="0.01" min="0" className="form-control" value={montoP3} onChange={(e) => setMontoP3(e.target.value)} />
+                <span>Puente III ({p3.moneda}) — restante {cP3 ? fmtMonto(cP3.actual) : '—'}</span>
+                <input type="number" step="0.01" min="0" className="form-control" value={montoP3} onChange={(e) => setMontoP3(e.target.value)} placeholder="0.00" />
+                <em className="tcas-modal-total">Total: {fmtMonto((cP3?.actual || 0) + (Number(montoP3) || 0))} {p3.moneda}</em>
               </label>
             ) : <div className="tcas-modal-aviso">⚠ No encontré el registro "Caseta Puente III" en Tipos de Gastos.</div>}
             <div className="tcas-modal-pie">
               <button type="button" className="tcas-btn" disabled={guardando} onClick={() => setModalAbierto(false)}>Cancelar</button>
-              <button type="button" className="tcas-btn tcas-btn--primario" disabled={guardando || (!avi && !p3)} onClick={guardarSaldos}>{guardando ? 'Guardando…' : 'Guardar'}</button>
+              <button type="button" className="tcas-btn tcas-btn--primario" disabled={guardando || (!avi && !p3)} onClick={guardarSaldos}>{guardando ? 'Guardando…' : '➕ Agregar'}</button>
             </div>
           </div>
         </div>

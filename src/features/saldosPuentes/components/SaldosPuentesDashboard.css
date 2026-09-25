@@ -39,3 +39,25 @@
 .sp-moneda--usd { color: #58a6ff; border-color: #58a6ff; }
 .sp-moneda--mxn { color: #fb923c; border-color: #fb923c; }
 .sp-enc-botones { display: flex; gap: 8px; align-items: center; }
+
+/* ✅ V00358: cuentas por puente con semáforo */
+.sp-cuentas { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; margin-bottom: 18px; }
+.sp-cuenta { border: 1px solid #30363d; border-radius: 12px; padding: 14px 16px; background: #0d1117; display: flex; flex-direction: column; gap: 6px; }
+.sp-cuenta--amarillo { border-color: #d29922; }
+.sp-cuenta--rojo { border-color: #f85149; box-shadow: 0 0 0 1px rgba(248, 81, 73, 0.35); }
+.sp-cuenta-enc { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sp-cuenta-nombre { color: #e6edf3; font-weight: 700; font-size: 0.92rem; }
+.sp-cuenta-linea { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; color: #8b949e; font-size: 0.82rem; }
+.sp-cuenta-linea b { color: #c9d1d9; font-weight: 600; }
+.sp-cuenta-actual { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; border-top: 1px solid #30363d; margin-top: 4px; padding-top: 8px; color: #8b949e; font-size: 0.85rem; }
+.sp-cuenta-actual b { font-size: 1.05rem; font-weight: 800; color: #3fb950; }
+.sp-cuenta-actual--amarillo b { color: #d29922; }
+.sp-cuenta-actual--rojo b { color: #f85149; }
+.sp-cuenta-alerta { border-radius: 8px; padding: 6px 10px; font-size: 0.76rem; }
+.sp-cuenta-alerta--amarillo { color: #d29922; border: 1px dashed #d29922; }
+.sp-cuenta-alerta--rojo { color: #f85149; border: 1px dashed #f85149; }
+.sp-cuenta-btn { margin-top: 4px; }
+.sp-cuenta-tarifa { color: #6e7681; font-size: 0.7rem; }
+.sp-modal-resumen { border: 1px solid #30363d; border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.sp-modal-total b { color: #a371f7; font-size: 0.95rem; }
+.sp-edit-input { max-width: 120px; padding: 4px 8px; text-align: right; }
