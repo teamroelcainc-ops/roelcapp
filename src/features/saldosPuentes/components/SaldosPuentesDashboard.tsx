@@ -4,8 +4,8 @@
 //   recargas − cruces, con semáforo (amarillo/rojo por umbral). El importe del
 //   catálogo Tipos de Gastos es la TARIFA por cruce (ya no se pisa con saldos).
 //   Recargas en la colección saldos_puentes (varias por día permitidas).
-import React, { useEffect, useMemo, useState } from 'react';
-import { addDoc, collection, deleteDoc, doc, getDocs, onSnapshot, query, updateDoc, where, writeBatch } from 'firebase/firestore';
+import React, { useEffect, useState } from 'react';
+import { addDoc, collection, deleteDoc, doc, getDocs, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import './SaldosPuentesDashboard.css';
 
@@ -46,9 +46,8 @@ export const SaldosPuentesDashboard: React.FC = () => {
   const [monto, setMonto] = useState('');
   const [guardando, setGuardando] = useState(false);
   // edición del historial
-  const [editandoId, setEditandoId] = useState('');
-  const [montoEdit, setMontoEdit] = useState('');
-  const [busqueda, setBusqueda] = useState('');
+  // ✅ V00368: libro contable — puente seleccionado
+  const [libroPuenteId, setLibroPuenteId] = useState('');
   // ✅ V00359: historial de movimientos (deducciones y recargas con saldo corrido)
   //   por MONEDA (desde las tarjetas de saldo disponible) o por PUENTE.
   const [historial, setHistorial] = useState<{ titulo: string; puenteIds: string[]; nombres: string[] } | null>(null);
@@ -164,13 +163,12 @@ export const SaldosPuentesDashboard: React.FC = () => {
     const lista = puentes.filter((p) => p.moneda === moneda);
     setHistorial({ titulo: `Saldo disponible en ${moneda}`, puenteIds: lista.map((x) => x.id), nombres: lista.map((x) => norm(x.nombre)) });
   };
-  const abrirHistorialPuente = (p: Puente) => setHistorial({ titulo: p.nombre, puenteIds: [p.id], nombres: [norm(p.nombre)] });
 
   /** Movimientos (recargas + y cruces −) ordenados por fecha, con saldo corrido. */
   const movimientosDe = (puenteIds: string[], nombres: string[]) => {
-    type Mov = { fecha: string; orden: number; concepto: string; monto: number; };
+    type Mov = { fecha: string; orden: number; concepto: string; monto: number; recarga?: Recarga };
     const movs: Mov[] = [];
-    recargas.filter((r) => puenteIds.includes(r.puenteId)).forEach((r) => movs.push({ fecha: r.fecha, orden: 0, concepto: `➕ Recarga — ${r.puenteNombre}`, monto: r.saldo }));
+    recargas.filter((r) => puenteIds.includes(r.puenteId)).forEach((r) => movs.push({ fecha: r.fecha, orden: 0, concepto: `➕ Recarga — ${r.puenteNombre}`, monto: r.saldo, recarga: r }));
     const primeras = puenteIds.map((id) => { const recs = recargas.filter((r) => r.puenteId === id).map((r) => r.fecha).sort(); return { id, primera: recs[0] || '' }; });
     cruces.forEach((c) => {
       const idx = nombres.indexOf(norm(c.puenteNombre));
@@ -203,22 +201,10 @@ export const SaldosPuentesDashboard: React.FC = () => {
     finally { setGuardando(false); }
   };
 
-  const guardarEdicion = async (r: Recarga) => {
-    const n = Number(montoEdit);
-    if (!Number.isFinite(n) || n < 0) { alert('Monto inválido.'); return; }
-    try { await updateDoc(doc(db, 'saldos_puentes', r.id), { saldo: n }); setEditandoId(''); }
-    catch (e) { alert(`No se pudo guardar: ${(e as Error)?.message || e}`); }
-  };
   const eliminar = async (r: Recarga) => {
     if (!window.confirm(`¿Eliminar la recarga de ${r.puenteNombre} del ${fmtDia(r.fecha)} por ${fmtMonto(r.saldo)}?`)) return;
     try { await deleteDoc(doc(db, 'saldos_puentes', r.id)); } catch (e) { alert(`No se pudo eliminar: ${(e as Error)?.message || e}`); }
   };
-
-  const recargasFiltradas = useMemo(() => {
-    const q = norm(busqueda);
-    if (!q) return recargas;
-    return recargas.filter((r) => norm(`${r.puenteNombre} ${r.fecha} ${r.saldo} ${r.moneda}`).includes(q));
-  }, [recargas, busqueda]);
 
   const montoNum = Number(monto) || 0;
 
@@ -249,38 +235,63 @@ export const SaldosPuentesDashboard: React.FC = () => {
         })}
       </div>
 
-      {/* ✅ Cuentas por puente */}
-      <div className="sp-cuentas">
+      {/* ✅ V00368: LIBRO CONTABLE — chips con el disponible de cada puente y
+          asientos del puente elegido: las recargas ABONAN (+) y los cruces
+          CARGAN (−); la columna Saldo siempre dice cuánto queda disponible. */}
+      <div className="sp-chips">
         {puentes.map((p) => {
           const c = cuentaDe(p);
-          const sinRecargas = c.saldoInicial === 0 && c.misCruces.length === 0;
+          const activo = (libroPuenteId || puentes[0]?.id) === p.id;
           return (
-            <div key={p.id} className={`sp-cuenta sp-cuenta--${c.nivel}`}>
-              <div className="sp-cuenta-enc">
-                <span className="sp-cuenta-nombre">{p.nombre}</span>
-                <span className={`sp-moneda${p.moneda.includes('Dólar') ? ' sp-moneda--usd' : p.moneda.includes('Peso') ? ' sp-moneda--mxn' : ''}`}>{p.moneda}</span>
-              </div>
-              <div className="sp-cuenta-linea"><span>Saldo Inicial</span><b>{fmtMonto(c.saldoInicial)}</b></div>
-              <div className="sp-cuenta-linea" title={c.crucesHoy.map((x) => x.ref).join(' · ') || 'Sin cruces hoy'}>
-                <span>Cruces hoy: {c.crucesHoy.length}</span><b>−{fmtMonto(c.consumoHoy)}</b>
-              </div>
-              <div className="sp-cuenta-linea"><span>Cruces totales: {c.misCruces.length}</span><b>−{fmtMonto(c.consumo)}</b></div>
-              <div className={`sp-cuenta-actual sp-cuenta-actual--${c.nivel}`}>
-                <span>Saldo Actual</span>
-                <b>{fmtMonto(c.saldoActual)} {p.moneda}</b>
-              </div>
-              {c.nivel !== 'ok' && !sinRecargas && (
-                <div className={`sp-cuenta-alerta sp-cuenta-alerta--${c.nivel}`}>
-                  {c.nivel === 'rojo' ? '🔴 Saldo crítico — agrega saldo YA' : '🟡 Saldo bajo — programa una recarga'}
-                </div>
-              )}
-              <button type="button" className="sp-btn sp-cuenta-btn" title="Historial de deducciones y saldos de este puente" onClick={() => abrirHistorialPuente(p)}>📜 Ver historial</button>
-              <div className="sp-cuenta-tarifa">Tarifa por cruce: {fmtMonto(p.tarifa)} · Amarillo &lt; {fmtMonto(p.umbralAmarillo)} · Rojo &lt; {fmtMonto(p.umbralRojo)}</div>
-            </div>
+            <button key={p.id} type="button" className={`sp-chip sp-chip--${c.nivel}${activo ? ' sp-chip--activo' : ''}`} onClick={() => setLibroPuenteId(p.id)} title={`Ver el libro de ${p.nombre}`}>
+              <span className="sp-chip-nombre">{p.nombre}</span>
+              <b className="sp-chip-saldo">{fmtMonto(c.saldoActual)}</b>
+            </button>
           );
         })}
         {puentes.length === 0 && <div className="sp-vacio">No hay puentes (categoría "Puente") en el catálogo Tipos de Gastos.</div>}
       </div>
+      {(() => {
+        const p = puentes.find((x) => x.id === (libroPuenteId || puentes[0]?.id));
+        if (!p) return null;
+        const c = cuentaDe(p);
+        const movs = movimientosDe([p.id], [norm(p.nombre)]);
+        return (
+          <div className={`sp-libro sp-libro--${c.nivel}`}>
+            <div className="sp-libro-enc">
+              <div>
+                <span className="sp-libro-nombre">📒 Libro de {p.nombre}</span>
+                <span className={`sp-moneda${p.moneda.includes('Dólar') ? ' sp-moneda--usd' : ' sp-moneda--mxn'}`}>{p.moneda}</span>
+                <div className="sp-cuenta-tarifa">Tarifa por cruce: {fmtMonto(p.tarifa)} · Amarillo &lt; {fmtMonto(p.umbralAmarillo)} · Rojo &lt; {fmtMonto(p.umbralRojo)}</div>
+              </div>
+              <div className={`sp-libro-disp sp-cuenta-actual--${c.nivel}`}>
+                <span>Disponible</span>
+                <b>{fmtMonto(c.saldoActual)} {p.moneda}</b>
+                {c.nivel !== 'ok' && <em className="sp-libro-alerta">{c.nivel === 'rojo' ? '🔴 Saldo crítico — agrega saldo YA' : '🟡 Saldo bajo — programa una recarga'}</em>}
+              </div>
+            </div>
+            <div className="sp-libro-marco">
+              <table className="sp-tabla sp-tabla--libro">
+                <thead><tr><th>Fecha</th><th>Movimiento</th><th className="sp-num">Cargo (−)</th><th className="sp-num">Abono (+)</th><th className="sp-num">Saldo</th><th></th></tr></thead>
+                <tbody>
+                  {cargando && <tr><td colSpan={6} className="sp-vacio">Cargando…</td></tr>}
+                  {!cargando && movs.length === 0 && <tr><td colSpan={6} className="sp-vacio">Sin movimientos. Usa "➕ Agregar saldo" para abonar la cuenta.</td></tr>}
+                  {movs.map((m, i) => (
+                    <tr key={i}>
+                      <td>{fmtDia(m.fecha)}</td>
+                      <td>{m.concepto}</td>
+                      <td className="sp-num sp-hist-resta">{m.monto < 0 ? `−${fmtMonto(-m.monto)}` : ''}</td>
+                      <td className="sp-num sp-hist-suma">{m.monto > 0 ? `+${fmtMonto(m.monto)}` : ''}</td>
+                      <td className={`sp-num sp-monto${(m as { saldo?: number }).saldo !== undefined && (m as { saldo?: number }).saldo! < 0 ? ' sp-hist-resta' : ''}`}>{fmtMonto((m as { saldo?: number }).saldo ?? 0)}</td>
+                      <td className="sp-acciones">{m.recarga && <button type="button" className="sp-mini sp-mini--rojo" title="Eliminar esta recarga" onClick={() => eliminar(m.recarga!)}>🗑</button>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ✅ Modal AGREGAR SALDO — fecha de hoy fija, moneda del catálogo */}
       {modalRecarga && (() => {
@@ -340,45 +351,6 @@ export const SaldosPuentesDashboard: React.FC = () => {
         );
       })()}
 
-      {/* ✅ Historial de recargas */}
-      <div className="sp-barra">
-        <input type="text" className="form-control sp-buscar" placeholder="Buscar recargas por puente, fecha o monto…" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
-        <span className="sp-conteo">{recargasFiltradas.length} recarga(s)</span>
-      </div>
-      <div className="sp-tabla-marco">
-        <table className="sp-tabla">
-          <thead><tr><th>Fecha</th><th>Puente</th><th className="sp-num">Saldo agregado</th><th>Moneda</th><th>Acciones</th></tr></thead>
-          <tbody>
-            {cargando && <tr><td colSpan={5} className="sp-vacio">Cargando…</td></tr>}
-            {!cargando && recargasFiltradas.length === 0 && <tr><td colSpan={5} className="sp-vacio">Sin recargas. Usa "➕ Agregar saldo" en la tarjeta del puente.</td></tr>}
-            {recargasFiltradas.map((r) => (
-              <tr key={r.id} className={editandoId === r.id ? 'sp-fila--editando' : ''}>
-                <td>{fmtDia(r.fecha)}</td>
-                <td>{r.puenteNombre}</td>
-                <td className="sp-num sp-monto">
-                  {editandoId === r.id
-                    ? <input type="number" step="0.01" min="0" className="form-control sp-edit-input" value={montoEdit} onChange={(e) => setMontoEdit(e.target.value)} />
-                    : fmtMonto(r.saldo)}
-                </td>
-                <td><span className={`sp-moneda${norm(r.moneda).includes('dolar') ? ' sp-moneda--usd' : norm(r.moneda).includes('peso') ? ' sp-moneda--mxn' : ''}`}>{r.moneda}</span></td>
-                <td className="sp-acciones">
-                  {editandoId === r.id ? (
-                    <>
-                      <button type="button" className="sp-mini" title="Guardar" onClick={() => guardarEdicion(r)}>💾</button>
-                      <button type="button" className="sp-mini" title="Cancelar" onClick={() => setEditandoId('')}>✕</button>
-                    </>
-                  ) : (
-                    <>
-                      <button type="button" className="sp-mini" title="Editar monto" onClick={() => { setEditandoId(r.id); setMontoEdit(String(r.saldo)); }}>✎</button>
-                      <button type="button" className="sp-mini sp-mini--rojo" title="Eliminar" onClick={() => eliminar(r)}>🗑</button>
-                    </>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
     </div>
   );
 };

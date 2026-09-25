@@ -77,3 +77,26 @@
 .sp-hist-marco { overflow: auto; border: 1px solid #30363d; border-radius: 10px; max-height: 55vh; }
 .sp-hist-suma { color: #3fb950; }
 .sp-hist-resta { color: #f85149; }
+
+/* ✅ V00368: libro contable por puente */
+.sp-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 10px; }
+.sp-chip { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 8px 12px; cursor: pointer; color: #c9d1d9; font: inherit; }
+.sp-chip:hover { border-color: #a371f7; }
+.sp-chip--activo { border-color: #a371f7; box-shadow: 0 0 0 1px #a371f7; }
+.sp-chip--amarillo { border-color: #d29922; }
+.sp-chip--rojo { border-color: #f85149; }
+.sp-chip-nombre { font-size: 0.74rem; color: #8b949e; }
+.sp-chip-saldo { font-size: 0.92rem; }
+.sp-chip--rojo .sp-chip-saldo { color: #f85149; }
+.sp-chip--amarillo .sp-chip-saldo { color: #d29922; }
+.sp-libro { border: 1px solid #30363d; border-radius: 12px; background: #0d1117; padding: 14px; margin-bottom: 16px; }
+.sp-libro--amarillo { border-color: #d29922; }
+.sp-libro--rojo { border-color: #f85149; }
+.sp-libro-enc { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.sp-libro-nombre { font-weight: 700; color: #e6edf3; margin-right: 8px; }
+.sp-libro-disp { text-align: right; display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; }
+.sp-libro-disp > span { font-size: 0.72rem; color: #8b949e; }
+.sp-libro-disp > b { font-size: 1.15rem; }
+.sp-libro-alerta { font-style: normal; font-size: 0.72rem; }
+.sp-libro-marco { overflow: auto; max-height: 56vh; border: 1px solid #21262d; border-radius: 10px; }
+.sp-tabla--libro th { position: sticky; top: 0; background: #161b22; z-index: 1; }
