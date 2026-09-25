@@ -26,3 +26,12 @@
 .tcas-nivel--amarillo { color: #d29922; }
 .tcas-nivel--rojo { color: #f85149; }
 .tcas-modal-total { display: block; color: #8b949e; font-size: 0.74rem; font-style: normal; margin-top: 3px; }
+
+/* ✅ V00359: modal con fecha/moneda/restante/total por puente */
+.tcas-modal-fila2 { display: flex; gap: 10px; }
+.tcas-modal-puente { border: 1px solid #30363d; border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.tcas-modal-puente-titulo { color: #e6edf3; font-weight: 700; font-size: 0.88rem; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.tcas-modal-moneda { color: #a371f7; font-size: 0.74rem; font-weight: 600; }
+.tcas-modal-linea { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; color: #8b949e; font-size: 0.78rem; }
+.tcas-modal-linea b { color: #c9d1d9; }
+.tcas-modal-linea--total b { color: #a371f7; font-size: 0.9rem; }

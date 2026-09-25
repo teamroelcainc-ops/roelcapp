@@ -48,6 +48,9 @@ export const SaldosPuentesDashboard: React.FC = () => {
   const [editandoId, setEditandoId] = useState('');
   const [montoEdit, setMontoEdit] = useState('');
   const [busqueda, setBusqueda] = useState('');
+  // ✅ V00359: historial de movimientos (deducciones y recargas con saldo corrido)
+  //   por MONEDA (desde las tarjetas de saldo disponible) o por PUENTE.
+  const [historial, setHistorial] = useState<{ titulo: string; puenteIds: string[]; nombres: string[] } | null>(null);
 
   useEffect(() => {
     const u1 = onSnapshot(collection(db, 'catalogo_tipos_gastos'), (snap) => {
@@ -140,6 +143,36 @@ export const SaldosPuentesDashboard: React.FC = () => {
     finally { setAplicando(false); }
   };
 
+  // ✅ V00359: saldo disponible por moneda = Σ del saldo actual de las cuentas.
+  const disponiblePor = (moneda: 'Dólares' | 'Pesos') => {
+    const lista = puentes.filter((p) => p.moneda === moneda);
+    return lista.reduce((acc, p) => acc + cuentaDe(p).saldoActual, 0);
+  };
+  const abrirHistorialMoneda = (moneda: 'Dólares' | 'Pesos') => {
+    const lista = puentes.filter((p) => p.moneda === moneda);
+    setHistorial({ titulo: `Saldo disponible en ${moneda}`, puenteIds: lista.map((x) => x.id), nombres: lista.map((x) => norm(x.nombre)) });
+  };
+  const abrirHistorialPuente = (p: Puente) => setHistorial({ titulo: p.nombre, puenteIds: [p.id], nombres: [norm(p.nombre)] });
+
+  /** Movimientos (recargas + y cruces −) ordenados por fecha, con saldo corrido. */
+  const movimientosDe = (puenteIds: string[], nombres: string[]) => {
+    type Mov = { fecha: string; orden: number; concepto: string; monto: number; };
+    const movs: Mov[] = [];
+    recargas.filter((r) => puenteIds.includes(r.puenteId)).forEach((r) => movs.push({ fecha: r.fecha, orden: 0, concepto: `➕ Recarga — ${r.puenteNombre}`, monto: r.saldo }));
+    const primeras = puenteIds.map((id) => { const recs = recargas.filter((r) => r.puenteId === id).map((r) => r.fecha).sort(); return { id, primera: recs[0] || '' }; });
+    cruces.forEach((c) => {
+      const idx = nombres.indexOf(norm(c.puenteNombre));
+      if (idx === -1) return;
+      const primera = primeras.find((x) => x.id === puenteIds[idx])?.primera || '';
+      if (primera && c.fecha < primera) return;
+      movs.push({ fecha: c.fecha, orden: 1, concepto: `➖ Cruce ${c.ref} — ${c.puenteNombre}`, monto: -c.monto });
+    });
+    movs.sort((a, b) => a.fecha.localeCompare(b.fecha) || a.orden - b.orden);
+    let corrido = 0;
+    const conSaldo = movs.map((m) => { corrido += m.monto; return { ...m, saldo: corrido }; });
+    return conSaldo.reverse(); // más reciente arriba
+  };
+
   const abrirRecarga = (p: Puente) => { setModalPuente(p); setMonto(''); };
   const cerrarRecarga = () => { if (!guardando) { setModalPuente(null); setMonto(''); } };
   const guardarRecarga = async () => {
@@ -187,6 +220,20 @@ export const SaldosPuentesDashboard: React.FC = () => {
         <button type="button" className="sp-btn" disabled={aplicando} title="Coloca la tarifa del puente a las operaciones completadas que no la tengan, para que sus cruces descuenten de la cuenta" onClick={aplicarAOperaciones}>{aplicando ? 'Aplicando…' : '🧮 Aplicar a operaciones'}</button>
       </div>
 
+      {/* ✅ V00359: saldo disponible por MONEDA — clic = historial de movimientos */}
+      <div className="sp-monedas">
+        {(['Dólares', 'Pesos'] as const).map((m) => {
+          const disp = disponiblePor(m);
+          return (
+            <button key={m} type="button" className={`sp-moneda-card${disp < 0 ? ' sp-moneda-card--neg' : ''}`} onClick={() => abrirHistorialMoneda(m)} title="Ver el historial de deducciones y saldos">
+              <span className="sp-moneda-card-etq">Saldo disponible en {m}</span>
+              <b className="sp-moneda-card-monto">{fmtMonto(disp)}</b>
+              <span className="sp-moneda-card-ver">📜 Ver historial</span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* ✅ Cuentas por puente */}
       <div className="sp-cuentas">
         {puentes.map((p) => {
@@ -212,7 +259,10 @@ export const SaldosPuentesDashboard: React.FC = () => {
                   {c.nivel === 'rojo' ? '🔴 Saldo crítico — agrega saldo YA' : '🟡 Saldo bajo — programa una recarga'}
                 </div>
               )}
-              <button type="button" className="sp-btn sp-btn--primario sp-cuenta-btn" onClick={() => abrirRecarga(p)}>➕ Agregar saldo</button>
+              <div className="sp-cuenta-acciones">
+                <button type="button" className="sp-btn sp-btn--primario sp-cuenta-btn" onClick={() => abrirRecarga(p)}>➕ Agregar saldo</button>
+                <button type="button" className="sp-btn sp-cuenta-btn" title="Historial de deducciones y saldos de este puente" onClick={() => abrirHistorialPuente(p)}>📜</button>
+              </div>
               <div className="sp-cuenta-tarifa">Tarifa por cruce: {fmtMonto(p.tarifa)} · Amarillo &lt; {fmtMonto(p.umbralAmarillo)} · Rojo &lt; {fmtMonto(p.umbralRojo)}</div>
             </div>
           );
@@ -239,6 +289,35 @@ export const SaldosPuentesDashboard: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ✅ V00359: modal HISTORIAL de deducciones y saldos */}
+      {historial && (() => {
+        const movs = movimientosDe(historial.puenteIds, historial.nombres);
+        return (
+          <div className="sp-modal-fondo" onClick={() => setHistorial(null)}>
+            <div className="sp-modal sp-modal--historial" onClick={(e) => e.stopPropagation()}>
+              <div className="sp-modal-titulo">📜 Historial — {historial.titulo}</div>
+              <div className="sp-hist-marco">
+                <table className="sp-tabla">
+                  <thead><tr><th>Fecha</th><th>Movimiento</th><th className="sp-num">Monto</th><th className="sp-num">Saldo</th></tr></thead>
+                  <tbody>
+                    {movs.length === 0 && <tr><td colSpan={4} className="sp-vacio">Sin movimientos todavía.</td></tr>}
+                    {movs.map((m, i) => (
+                      <tr key={i}>
+                        <td>{fmtDia(m.fecha)}</td>
+                        <td>{m.concepto}</td>
+                        <td className={`sp-num ${m.monto < 0 ? 'sp-hist-resta' : 'sp-hist-suma'}`}>{m.monto < 0 ? `−${fmtMonto(-m.monto)}` : `+${fmtMonto(m.monto)}`}</td>
+                        <td className={`sp-num sp-monto${m.saldo < 0 ? ' sp-hist-resta' : ''}`}>{fmtMonto(m.saldo)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="sp-modal-pie"><button type="button" className="sp-btn" onClick={() => setHistorial(null)}>Cerrar</button></div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ✅ Historial de recargas */}
       <div className="sp-barra">

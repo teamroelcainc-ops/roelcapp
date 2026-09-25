@@ -61,3 +61,19 @@
 .sp-modal-resumen { border: 1px solid #30363d; border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
 .sp-modal-total b { color: #a371f7; font-size: 0.95rem; }
 .sp-edit-input { max-width: 120px; padding: 4px 8px; text-align: right; }
+
+/* ✅ V00359: saldo disponible por moneda + historial */
+.sp-monedas { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-bottom: 16px; }
+.sp-moneda-card { border: 1px solid #30363d; border-radius: 12px; background: #161b22; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; cursor: pointer; text-align: left; }
+.sp-moneda-card:hover { border-color: #a371f7; }
+.sp-moneda-card--neg { border-color: #f85149; }
+.sp-moneda-card-etq { color: #8b949e; font-size: 0.76rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; }
+.sp-moneda-card-monto { color: #3fb950; font-size: 1.35rem; font-weight: 800; }
+.sp-moneda-card--neg .sp-moneda-card-monto { color: #f85149; }
+.sp-moneda-card-ver { color: #a371f7; font-size: 0.74rem; }
+.sp-cuenta-acciones { display: flex; gap: 6px; margin-top: 4px; }
+.sp-cuenta-acciones .sp-cuenta-btn:first-child { flex: 1; }
+.sp-modal--historial { width: min(680px, 94vw); max-height: 80vh; }
+.sp-hist-marco { overflow: auto; border: 1px solid #30363d; border-radius: 10px; max-height: 55vh; }
+.sp-hist-suma { color: #3fb950; }
+.sp-hist-resta { color: #f85149; }

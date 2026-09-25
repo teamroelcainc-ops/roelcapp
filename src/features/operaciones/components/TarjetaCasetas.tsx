@@ -116,20 +116,28 @@ export const TarjetaCasetas: React.FC = () => {
         <div className="tcas-modal-fondo" onClick={() => !guardando && setModalAbierto(false)}>
           <div className="tcas-modal" onClick={(e) => e.stopPropagation()}>
             <div className="tcas-modal-titulo">➕ Agregar saldo a los puentes</div>
-            <div className="tcas-modal-sub">Fecha: hoy ({hoyISO().split('-').reverse().join('/')}) · la recarga queda registrada en Saldos de Puentes y el saldo se consume con cada cruce completado.</div>
+            <div className="tcas-modal-fila2">
+              <label className="tcas-modal-campo"><span>Fecha (hoy)</span><input type="date" className="form-control" value={hoyISO()} disabled readOnly /></label>
+            </div>
             {avi ? (
-              <label className="tcas-modal-campo">
-                <span>Puente AVI ({avi.moneda}) — restante {cAvi ? fmtMonto(cAvi.actual) : '—'}</span>
-                <input type="number" step="0.01" min="0" className="form-control" value={montoAvi} onChange={(e) => setMontoAvi(e.target.value)} placeholder="0.00" />
-                <em className="tcas-modal-total">Total: {fmtMonto((cAvi?.actual || 0) + (Number(montoAvi) || 0))} {avi.moneda}</em>
-              </label>
+              <div className="tcas-modal-puente">
+                <div className="tcas-modal-puente-titulo">Puente AVI <span className="tcas-modal-moneda">Moneda: {avi.moneda}</span></div>
+                <label className="tcas-modal-campo"><span>Saldo a agregar</span>
+                  <input type="number" step="0.01" min="0" className="form-control" value={montoAvi} onChange={(e) => setMontoAvi(e.target.value)} placeholder="0.00" />
+                </label>
+                <div className="tcas-modal-linea"><span>Saldo restante</span><b>{cAvi ? fmtMonto(cAvi.actual) : '—'}</b></div>
+                <div className="tcas-modal-linea tcas-modal-linea--total"><span>Total (restante + agregado)</span><b>{fmtMonto((cAvi?.actual || 0) + (Number(montoAvi) || 0))} {avi.moneda}</b></div>
+              </div>
             ) : <div className="tcas-modal-aviso">⚠ No encontré el registro "Caseta AVI" en Tipos de Gastos.</div>}
             {p3 ? (
-              <label className="tcas-modal-campo">
-                <span>Puente III ({p3.moneda}) — restante {cP3 ? fmtMonto(cP3.actual) : '—'}</span>
-                <input type="number" step="0.01" min="0" className="form-control" value={montoP3} onChange={(e) => setMontoP3(e.target.value)} placeholder="0.00" />
-                <em className="tcas-modal-total">Total: {fmtMonto((cP3?.actual || 0) + (Number(montoP3) || 0))} {p3.moneda}</em>
-              </label>
+              <div className="tcas-modal-puente">
+                <div className="tcas-modal-puente-titulo">Puente III <span className="tcas-modal-moneda">Moneda: {p3.moneda}</span></div>
+                <label className="tcas-modal-campo"><span>Saldo a agregar</span>
+                  <input type="number" step="0.01" min="0" className="form-control" value={montoP3} onChange={(e) => setMontoP3(e.target.value)} placeholder="0.00" />
+                </label>
+                <div className="tcas-modal-linea"><span>Saldo restante</span><b>{cP3 ? fmtMonto(cP3.actual) : '—'}</b></div>
+                <div className="tcas-modal-linea tcas-modal-linea--total"><span>Total (restante + agregado)</span><b>{fmtMonto((cP3?.actual || 0) + (Number(montoP3) || 0))} {p3.moneda}</b></div>
+              </div>
             ) : <div className="tcas-modal-aviso">⚠ No encontré el registro "Caseta Puente III" en Tipos de Gastos.</div>}
             <div className="tcas-modal-pie">
               <button type="button" className="tcas-btn" disabled={guardando} onClick={() => setModalAbierto(false)}>Cancelar</button>
