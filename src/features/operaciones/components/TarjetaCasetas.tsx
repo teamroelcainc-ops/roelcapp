@@ -29,7 +29,7 @@ const hoyISO = () => new Date().toISOString().slice(0, 10);
 
 interface Puente { id: string; nombre: string; moneda: string; }
 interface RecargaMin { puenteId: string; fecha: string; saldo: number; }
-interface CruceMin { puenteNombre: string; fecha: string; monto: number; moneda: string; ref: string; }
+interface CruceMin { puenteNombre: string; fecha: string; monto: number; moneda: string; ref: string; statusNombre: string; evento: string; }
 
 export const TarjetaCasetas: React.FC = () => {
   const [puentes, setPuentes] = useState<Puente[]>([]);
@@ -62,7 +62,7 @@ export const TarjetaCasetas: React.FC = () => {
     const u3 = onSnapshot(query(collection(db, 'operaciones'), where('saldoPuente', '>', 0)), (snap) => {
       setCruces(snap.docs.map((d) => {
         const x = d.data() as Record<string, unknown>;
-        return { puenteNombre: String(x.saldoPuentePuente || ''), fecha: String(x.saldoPuenteFecha || ''), monto: Number(x.saldoPuente) || 0, moneda: nombreMoneda(x.saldoPuenteMoneda), ref: String(x.ref || d.id) };
+        return { puenteNombre: String(x.saldoPuentePuente || ''), fecha: String(x.saldoPuenteFecha || ''), monto: Number(x.saldoPuente) || 0, moneda: nombreMoneda(x.saldoPuenteMoneda), ref: String(x.ref || d.id), statusNombre: String(x.statusNombre || ''), evento: String(x.saldoPuenteEvento || '') };
       }));
     }, () => {});
     return () => { u1(); u2(); u3(); };
@@ -116,14 +116,19 @@ export const TarjetaCasetas: React.FC = () => {
               <div className="tcas-modal-titulo">🌉 Cruces de hoy — {verGasto}</div>
               <div className="tcas-gasto-marco">
                 <table className="tcas-gasto-tabla">
-                  <thead><tr><th># Referencia</th><th>Puente</th><th className="tcas-gasto-num">Peaje</th></tr></thead>
+                  <thead><tr><th># Referencia</th><th>Status</th><th>Puente</th><th className="tcas-gasto-num">Peaje</th></tr></thead>
                   <tbody>
-                    {lista.length === 0 && <tr><td colSpan={3} className="tcas-gasto-vacio">Sin cruces de hoy en {verGasto}.</td></tr>}
+                    {lista.length === 0 && <tr><td colSpan={4} className="tcas-gasto-vacio">Sin cruces de hoy en {verGasto} — el peaje solo se descuenta al marcar Verde MX o Verde USA.</td></tr>}
                     {lista.map((c, i) => (
-                      <tr key={i}><td className="tcas-gasto-ref">{c.ref}</td><td>{c.puenteNombre}</td><td className="tcas-gasto-num">−{fmtMonto(c.monto)}</td></tr>
+                      <tr key={i}>
+                        <td className="tcas-gasto-ref">{c.ref}</td>
+                        <td className="tcas-gasto-status" title={c.evento ? `Peaje cobrado al marcar: ${c.evento}` : ''}>{c.statusNombre || '—'}{c.evento && <em className="tcas-gasto-evento">✓ {c.evento}</em>}</td>
+                        <td>{c.puenteNombre}</td>
+                        <td className="tcas-gasto-num">−{fmtMonto(c.monto)}</td>
+                      </tr>
                     ))}
                   </tbody>
-                  {lista.length > 0 && <tfoot><tr><td colSpan={2}>Total gastado hoy ({lista.length} cruce{lista.length === 1 ? '' : 's'})</td><td className="tcas-gasto-num tcas-gasto-total">−{fmtMonto(total)} {verGasto}</td></tr></tfoot>}
+                  {lista.length > 0 && <tfoot><tr><td colSpan={3}>Total gastado hoy ({lista.length} cruce{lista.length === 1 ? '' : 's'})</td><td className="tcas-gasto-num tcas-gasto-total">−{fmtMonto(total)} {verGasto}</td></tr></tfoot>}
                 </table>
               </div>
               <div className="tcas-modal-pie"><button type="button" className="tcas-btn" onClick={() => setVerGasto(null)}>Cerrar</button></div>

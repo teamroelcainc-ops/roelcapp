@@ -855,7 +855,9 @@ const OperacionesDashboard = () => {
       if (!d) return {};
       const x = d.data() as Record<string, unknown>;
       const monedaSP = String(x.moneda || '') === '7dca62b3' ? 'Dólares' : String(x.moneda || '') === 'f95d8894' ? 'Pesos' : String(x.moneda || '');
-      return { saldoPuente: Number(x.importe) || 0, saldoPuentePuente: String(x.nombre_gasto || ''), saldoPuenteMoneda: monedaSP, saldoPuenteFecha: new Date().toISOString().slice(0, 10) };
+      // ✅ V00363: se registra QUÉ evento cobró el peaje (trazable en la tarjeta)
+      const eventoSP = esVerdeUSA ? 'Verde USA' : esVerdeMX ? 'Verde MX' : 'Completado';
+      return { saldoPuente: Number(x.importe) || 0, saldoPuentePuente: String(x.nombre_gasto || ''), saldoPuenteMoneda: monedaSP, saldoPuenteFecha: new Date().toISOString().slice(0, 10), saldoPuenteEvento: eventoSP };
     } catch (e) { console.warn('Saldo de puente al completar:', e); return {}; }
   };
 

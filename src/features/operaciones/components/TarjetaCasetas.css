@@ -52,3 +52,7 @@
 .tcas-gasto-vacio { text-align: center; color: #8b949e; padding: 16px; }
 .tcas-gasto-tabla tfoot td { font-weight: 700; color: #e6edf3; border-top: 1px solid #30363d; }
 .tcas-gasto-total { font-size: 0.92rem; }
+
+/* ✅ V00363: status y evento del cruce en el modal */
+.tcas-gasto-status { color: #3fb950; font-size: 0.8rem; }
+.tcas-gasto-evento { display: block; color: #8b949e; font-size: 0.68rem; font-style: normal; }
