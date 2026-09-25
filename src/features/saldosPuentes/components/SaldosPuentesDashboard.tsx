@@ -113,8 +113,8 @@ export const SaldosPuentesDashboard: React.FC = () => {
   //   con proveedor Roelca; Logística de Fletes NUNCA.
   const aplicaPeajeSP = (x: Record<string, unknown>): boolean => {
     const tipo = norm(x.tipoOperacionNombre);
+    if (tipo.includes('flete') || tipo.includes('movimiento')) return false; // ✅ V00371: Fletes y Movimientos exentos
     if (tipo.includes('transfer')) return true;
-    if (tipo.includes('flete')) return false;
     if (!tipo.includes('logistica')) return false;
     return norm(x.proveedorUnidadNombre).includes('roelca');
   };

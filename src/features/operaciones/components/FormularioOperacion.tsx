@@ -2428,7 +2428,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   // ✅ Puente: se muestra SOLO en Transfer, o en Logística de CRUCES cuando el
   //    Proveedor de Transporte es Roelca. En Fletes (aunque sea Roelca) o en
   //    Logística con proveedor externo NO. (Regla V00369)
-  const mostrarPuente = isTransfer || (isLogistica && !isFletes && isRoelca);
+  const isMovimientos = tipoOpTextNormalizado.includes('movimiento'); // ✅ V00371: Movimientos exento
+  const mostrarPuente = (isTransfer || (isLogistica && !isFletes && isRoelca)) && !isMovimientos;
   // ✅ V00364: la TARJETA Caseta/Puente solo se enseña cuando la operación ya
   //   marcó Verde MX o Verde USA (o el peaje ya se cobró) — antes de eso no hay
   //   cruce que mostrar. La lógica interna (mostrarPuente) no cambia: el puente
@@ -2550,6 +2551,18 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       if (!resolvedUnidadProv && searchUnidadProveedor) { const f = listaUniProvLocal.find((x:any) => String(x.numeroUnidad || x.numero_unidad || x.unidad || x.placas || x.placa || '').toLowerCase() === searchUnidadProveedor.toLowerCase()); if (f) resolvedUnidadProv = f.id; }
       let resolvedOperadorProv = formData.operadorProveedor;
       if (!resolvedOperadorProv && searchOperadorProveedor) { const f = listaOpeProvLocal.find((x:any) => String(x.nombre || x.nombres || x.nombreCompleto || '').toLowerCase() === searchOperadorProveedor.toLowerCase()); if (f) resolvedOperadorProv = f.id; }
+      // ✅ V00371: una operación que cruza puente NO se guarda como SERVICIO
+      //   COMPLETADO sin haber marcado antes Verde MX / Verde USA (el peaje ya
+      //   cobrado la deja pasar). Fletes y Movimientos quedan exentos.
+      if (STATUS_COMPLETADOS_IDS_SP.includes(String(statusCalculado || '').trim()) && mostrarPuente) {
+        const evtSP = String((initialData as Record<string, unknown> | undefined)?.saldoPuenteEvento || '').toLowerCase();
+        const cobradoSP = Number((initialData as Record<string, unknown> | undefined)?.saldoPuente) > 0;
+        if (!cobradoSP && !evtSP.includes('verde')) {
+          alert('⛔ Esta operación cruza puente y aún NO ha marcado Verde MX / Verde USA.\n\nNo se puede guardar como SERVICIO COMPLETADO hasta registrar el verde en los estatus (ahí se descuenta el peaje del puente).');
+          return;
+        }
+      }
+
 
       const operacionData: any = { 
         ...datosLimpios, 
