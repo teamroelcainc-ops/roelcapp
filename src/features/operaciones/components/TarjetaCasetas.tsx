@@ -29,7 +29,7 @@ const hoyISO = () => new Date().toISOString().slice(0, 10);
 
 interface Puente { id: string; nombre: string; moneda: string; }
 interface RecargaMin { puenteId: string; fecha: string; saldo: number; }
-interface CruceMin { puenteNombre: string; fecha: string; monto: number; moneda: string; }
+interface CruceMin { puenteNombre: string; fecha: string; monto: number; moneda: string; ref: string; }
 
 export const TarjetaCasetas: React.FC = () => {
   const [puentes, setPuentes] = useState<Puente[]>([]);
@@ -39,6 +39,8 @@ export const TarjetaCasetas: React.FC = () => {
   const [puenteId, setPuenteId] = useState('');
   const [monto, setMonto] = useState('');
   const [guardando, setGuardando] = useState(false);
+  // ✅ V00362: clic en el gasto del día → operaciones que suman al saldo
+  const [verGasto, setVerGasto] = useState<'Dólares' | 'Pesos' | null>(null);
 
   useEffect(() => {
     const u1 = onSnapshot(collection(db, 'catalogo_tipos_gastos'), (snap) => {
@@ -60,7 +62,7 @@ export const TarjetaCasetas: React.FC = () => {
     const u3 = onSnapshot(query(collection(db, 'operaciones'), where('saldoPuente', '>', 0)), (snap) => {
       setCruces(snap.docs.map((d) => {
         const x = d.data() as Record<string, unknown>;
-        return { puenteNombre: String(x.saldoPuentePuente || ''), fecha: String(x.saldoPuenteFecha || ''), monto: Number(x.saldoPuente) || 0, moneda: nombreMoneda(x.saldoPuenteMoneda) };
+        return { puenteNombre: String(x.saldoPuentePuente || ''), fecha: String(x.saldoPuenteFecha || ''), monto: Number(x.saldoPuente) || 0, moneda: nombreMoneda(x.saldoPuenteMoneda), ref: String(x.ref || d.id) };
       }));
     }, () => {});
     return () => { u1(); u2(); u3(); };
@@ -101,9 +103,34 @@ export const TarjetaCasetas: React.FC = () => {
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#a371f7" strokeWidth="2.2"><path d="M4 21V8l8-5 8 5v13"></path><path d="M4 11h16"></path><path d="M9 21v-6h6v6"></path></svg>
         Casetas del día
       </span>
-      <div className="tcas-linea"><span className="tcas-nombre">Gastado hoy (Dólares)</span><span className="tcas-monto">{fmtMonto(gastadoHoy('Dólares'))}</span></div>
-      <div className="tcas-linea"><span className="tcas-nombre">Gastado hoy (Pesos)</span><span className="tcas-monto tcas-monto--mxn">{fmtMonto(gastadoHoy('Pesos'))}</span></div>
+      <button type="button" className="tcas-linea tcas-linea--btn" title="Ver las operaciones que suman a este gasto" onClick={() => setVerGasto('Dólares')}><span className="tcas-nombre">Gastado hoy (Dólares)</span><span className="tcas-monto">{fmtMonto(gastadoHoy('Dólares'))}</span></button>
+      <button type="button" className="tcas-linea tcas-linea--btn" title="Ver las operaciones que suman a este gasto" onClick={() => setVerGasto('Pesos')}><span className="tcas-nombre">Gastado hoy (Pesos)</span><span className="tcas-monto tcas-monto--mxn">{fmtMonto(gastadoHoy('Pesos'))}</span></button>
       <button type="button" className="tcas-capturar" onClick={() => { setPuenteId(''); setMonto(''); setModalAbierto(true); }} title="Agregar saldo a un puente (recarga de hoy — queda en Saldos de Puentes)">＋ Actualizar saldo</button>
+      {/* ✅ V00362: operaciones que suman al gasto del día */}
+      {verGasto && (() => {
+        const lista = cruces.filter((c) => c.fecha === hoyISO() && c.moneda === verGasto).sort((a, b) => a.ref.localeCompare(b.ref));
+        const total = lista.reduce((acc, c) => acc + c.monto, 0);
+        return (
+          <div className="tcas-modal-fondo" onClick={() => setVerGasto(null)}>
+            <div className="tcas-modal tcas-modal--gasto" onClick={(e) => e.stopPropagation()}>
+              <div className="tcas-modal-titulo">🌉 Cruces de hoy — {verGasto}</div>
+              <div className="tcas-gasto-marco">
+                <table className="tcas-gasto-tabla">
+                  <thead><tr><th># Referencia</th><th>Puente</th><th className="tcas-gasto-num">Peaje</th></tr></thead>
+                  <tbody>
+                    {lista.length === 0 && <tr><td colSpan={3} className="tcas-gasto-vacio">Sin cruces de hoy en {verGasto}.</td></tr>}
+                    {lista.map((c, i) => (
+                      <tr key={i}><td className="tcas-gasto-ref">{c.ref}</td><td>{c.puenteNombre}</td><td className="tcas-gasto-num">−{fmtMonto(c.monto)}</td></tr>
+                    ))}
+                  </tbody>
+                  {lista.length > 0 && <tfoot><tr><td colSpan={2}>Total gastado hoy ({lista.length} cruce{lista.length === 1 ? '' : 's'})</td><td className="tcas-gasto-num tcas-gasto-total">−{fmtMonto(total)} {verGasto}</td></tr></tfoot>}
+                </table>
+              </div>
+              <div className="tcas-modal-pie"><button type="button" className="tcas-btn" onClick={() => setVerGasto(null)}>Cerrar</button></div>
+            </div>
+          </div>
+        );
+      })()}
       {modalAbierto && (
         <div className="tcas-modal-fondo" onClick={() => !guardando && setModalAbierto(false)}>
           <div className="tcas-modal" onClick={(e) => e.stopPropagation()}>

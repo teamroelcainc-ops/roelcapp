@@ -38,3 +38,17 @@
 
 /* ✅ V00360: gastado del día por moneda */
 .tcas-monto--mxn { color: #fb923c; }
+
+/* ✅ V00362: gasto del día clicable + modal de cruces */
+.tcas-linea--btn { background: transparent; border: none; padding: 0; cursor: pointer; width: 100%; font: inherit; text-align: left; border-radius: 6px; }
+.tcas-linea--btn:hover .tcas-nombre { color: #a371f7; }
+.tcas-modal--gasto { width: min(520px, 94vw); max-height: 78vh; }
+.tcas-gasto-marco { overflow: auto; border: 1px solid #30363d; border-radius: 10px; max-height: 54vh; }
+.tcas-gasto-tabla { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+.tcas-gasto-tabla th { position: sticky; top: 0; background: #161b22; color: #8b949e; text-align: left; padding: 8px 12px; border-bottom: 1px solid #30363d; }
+.tcas-gasto-tabla td { padding: 7px 12px; border-bottom: 1px solid #21262d; color: #c9d1d9; }
+.tcas-gasto-ref { font-family: monospace; color: #58a6ff; }
+.tcas-gasto-num { text-align: right; white-space: nowrap; color: #f85149; }
+.tcas-gasto-vacio { text-align: center; color: #8b949e; padding: 16px; }
+.tcas-gasto-tabla tfoot td { font-weight: 700; color: #e6edf3; border-top: 1px solid #30363d; }
+.tcas-gasto-total { font-size: 0.92rem; }
