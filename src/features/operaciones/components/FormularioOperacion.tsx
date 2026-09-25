@@ -1097,9 +1097,14 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   //   de Caseta Puente III (del catálogo Tipos de Gastos, que Saldos de
   //   Puentes mantiene al día). Solo se coloca una vez (no se pisa).
   const STATUS_COMPLETADOS_IDS_SP = ['c2d57403', 'f557b751'];
-  const camposSaldoPuente = async (statusFinal: string): Promise<Record<string, unknown>> => {
+  const camposSaldoPuente = async (statusFinal: string, statusNombreSP?: string): Promise<Record<string, unknown>> => {
     try {
-      if (!STATUS_COMPLETADOS_IDS_SP.includes(String(statusFinal || '').trim())) return {};
+      // ✅ V00367: también dispara al quedar la operación en VERDE (MX o USA) —
+      //   el peaje se descuenta al marcar el verde, con Completado de respaldo.
+      const nSt = String(statusNombreSP || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      const esVerdeSP = nSt.includes('verde mx') || nSt.includes('verde mexico') || nSt.includes('verde usa');
+      const esCompletadoSP = STATUS_COMPLETADOS_IDS_SP.includes(String(statusFinal || '').trim());
+      if (!esVerdeSP && !esCompletadoSP) return {};
       if (initialData && Number.isFinite(Number((initialData as Record<string, unknown>).saldoPuente))) return {};
       const traf = String(formData.trafico || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
       const objetivo = traf.includes('import') ? 'caseta avi' : traf.includes('export') ? 'caseta puente' : '';
@@ -1117,10 +1122,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         saldoPuente: Number(x.importe) || 0,
         saldoPuentePuente: String(x.nombre_gasto || ''),
         saldoPuenteMoneda: monedaSP,
-        // ✅ V00366: al cobrarse por COMPLETADO (no por verde), el cruce lleva la
-        //   fecha de servicio — el gasto de hoy solo suma verdes marcados hoy.
-        saldoPuenteFecha: String(formData.fechaServicio || '').slice(0, 10) || new Date().toISOString().slice(0, 10),
-        saldoPuenteEvento: 'Completado',
+        // ✅ V00366/V00367: el verde marca el cruce HOY; el respaldo por
+        //   Completado usa la fecha de servicio (no infla el gasto de hoy).
+        saldoPuenteFecha: esVerdeSP ? new Date().toISOString().slice(0, 10) : (String(formData.fechaServicio || '').slice(0, 10) || new Date().toISOString().slice(0, 10)),
+        saldoPuenteEvento: nSt.includes('verde usa') ? 'Verde USA' : esVerdeSP ? 'Verde MX' : 'Completado',
       };
     } catch (e) { console.warn('Saldo de puente al completar:', e); return {}; }
   };
@@ -2550,7 +2555,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         unidad: resolvedUnidad, operador: resolvedOperador,
         unidadProveedor: resolvedUnidadProv, operadorProveedor: resolvedOperadorProv,
         convenioNombre: detalleDoc?.descripcion || formData.convenioNombre || 'Sin descripción', 
-        status: statusCalculado || 'Pendiente', ...(await camposSaldoPuente(statusCalculado)), // ✅ V00355: saldo del puente al completar
+        status: statusCalculado || 'Pendiente', ...(await camposSaldoPuente(statusCalculado, statusObj?.nombre || statusObj?.descripcion || '')), // ✅ V00355/V00367: saldo del puente al marcar Verde (o completar)
         // ✅ FIX: se guarda el NOMBRE del status (la descripción larga del catálogo
         //    solo es texto de ayuda y estaba filtrándose a la tabla del dashboard)
         statusNombre: statusObj?.nombre || statusObj?.descripcion || statusCalculado || 'Pendiente',

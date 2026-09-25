@@ -1088,7 +1088,9 @@ const OperacionesDashboard = () => {
         registradoEn: new Date().toISOString()
       }));
       const opRef = doc(db, 'operaciones', String(operacionViendo._docId || operacionViendo.id));
-      batch.update(opRef, limpiarUndefined({ status: statusId, statusNombre: statusNombreResuelto }));
+      // ✅ V00367: marcar Verde también desde "Registrar Status" manual cobra el peaje
+      const extraSPManual = await camposSaldoPuenteAlCompletar(statusId, operacionViendo, statusNombreResuelto);
+      batch.update(opRef, limpiarUndefined({ status: statusId, statusNombre: statusNombreResuelto, ...extraSPManual }));
 
       await batch.commit();
       notificarOperacionGuardada(String(operacionViendo._docId || operacionViendo.id), { ...operacionViendo, status: statusId, statusNombre: statusNombreResuelto }, 'operaciones-status'); // ✅ V00126
@@ -1736,7 +1738,13 @@ const OperacionesDashboard = () => {
   const renderCellContent = (op: any, colId: string) => {
     switch (colId) {
       // ✅ Referencia coloreada por tipo de operación (Fletes verde / Logística azul / Transfer naranja)
-      case 'ref': return <span className="font-mono" style={{ color: colorTipoOperacion(mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)), fontWeight: 'bold' }}>{op.ref || op.id?.substring(0,6)}</span>;
+      case 'ref': {
+        // ✅ V00367: alerta en la fila si el cruce aún no cobra su peaje (sin Verde marcado)
+        const tipoOpSP = String(op.tipoOperacionNombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        const trafSP = String(op.trafico || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        const faltaPeaje = tipoOpSP.includes('transfer') && (trafSP.includes('import') || trafSP.includes('export')) && !(Number(op.saldoPuente) > 0);
+        return <span className="font-mono" style={{ color: colorTipoOperacion(mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)), fontWeight: 'bold' }}>{op.ref || op.id?.substring(0,6)}{faltaPeaje && <span title="Esta operación aún NO ha descontado el saldo del puente — falta marcar Verde MX / Verde USA" style={{ marginLeft: '6px', cursor: 'help' }}>🌉⚠</span>}</span>;
+      }
       case 'fechaServicio': return <span className="od-x1">{mostrarDato(op.fechaServicio)}</span>;
       case 'fechaCita': return <span className="od-x1">{formatearFechaHora(op.fechaCita)}</span>;
       case 'tipoOperacion': {

@@ -321,7 +321,7 @@ export const SaldosPuentesDashboard: React.FC = () => {
               <div className="sp-modal-titulo">📜 Historial — {historial.titulo}</div>
               <div className="sp-hist-marco">
                 <table className="sp-tabla">
-                  <thead><tr><th>Fecha</th><th>Movimiento</th><th className="sp-num">Monto</th><th className="sp-num">Saldo</th></tr></thead>
+                  <thead><tr><th>Fecha</th><th>Movimiento</th><th className="sp-num">Monto</th></tr></thead>{/* ✅ V00367: sin saldo corrido en los movimientos */}
                   <tbody>
                     {movs.length === 0 && <tr><td colSpan={4} className="sp-vacio">Sin movimientos todavía.</td></tr>}
                     {movs.map((m, i) => (
@@ -329,7 +329,6 @@ export const SaldosPuentesDashboard: React.FC = () => {
                         <td>{fmtDia(m.fecha)}</td>
                         <td>{m.concepto}</td>
                         <td className={`sp-num ${m.monto < 0 ? 'sp-hist-resta' : 'sp-hist-suma'}`}>{m.monto < 0 ? `−${fmtMonto(-m.monto)}` : `+${fmtMonto(m.monto)}`}</td>
-                        <td className={`sp-num sp-monto${m.saldo < 0 ? ' sp-hist-resta' : ''}`}>{fmtMonto(m.saldo)}</td>
                       </tr>
                     ))}
                   </tbody>
