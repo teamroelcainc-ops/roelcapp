@@ -2551,15 +2551,22 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       if (!resolvedUnidadProv && searchUnidadProveedor) { const f = listaUniProvLocal.find((x:any) => String(x.numeroUnidad || x.numero_unidad || x.unidad || x.placas || x.placa || '').toLowerCase() === searchUnidadProveedor.toLowerCase()); if (f) resolvedUnidadProv = f.id; }
       let resolvedOperadorProv = formData.operadorProveedor;
       if (!resolvedOperadorProv && searchOperadorProveedor) { const f = listaOpeProvLocal.find((x:any) => String(x.nombre || x.nombres || x.nombreCompleto || '').toLowerCase() === searchOperadorProveedor.toLowerCase()); if (f) resolvedOperadorProv = f.id; }
-      // ✅ V00371: una operación que cruza puente NO se guarda como SERVICIO
-      //   COMPLETADO sin haber marcado antes Verde MX / Verde USA (el peaje ya
-      //   cobrado la deja pasar). Fletes y Movimientos quedan exentos.
+      // ✅ V00371/V00372: el candado del Verde aplica SOLO al CAMBIAR el status a
+      //   SERVICIO COMPLETADO — nunca a otras ediciones (sueldos, gastos, etc.).
+      //   Si la operación YA estaba completada de antes y le falta el verde, se
+      //   avisa pero se deja guardar. Fletes y Movimientos quedan exentos.
       if (STATUS_COMPLETADOS_IDS_SP.includes(String(statusCalculado || '').trim()) && mostrarPuente) {
         const evtSP = String((initialData as Record<string, unknown> | undefined)?.saldoPuenteEvento || '').toLowerCase();
         const cobradoSP = Number((initialData as Record<string, unknown> | undefined)?.saldoPuente) > 0;
-        if (!cobradoSP && !evtSP.includes('verde')) {
-          alert('⛔ Esta operación cruza puente y aún NO ha marcado Verde MX / Verde USA.\n\nNo se puede guardar como SERVICIO COMPLETADO hasta registrar el verde en los estatus (ahí se descuenta el peaje del puente).');
+        const faltaVerdeSP = !cobradoSP && !evtSP.includes('verde');
+        const yaEstabaCompletada = STATUS_COMPLETADOS_IDS_SP.includes(String(statusPrevio || '').trim());
+        if (faltaVerdeSP && !yaEstabaCompletada) {
+          alert('⛔ Esta operación cruza puente y aún NO ha marcado Verde MX / Verde USA.\n\nNo se puede marcar como SERVICIO COMPLETADO hasta registrar el verde en los estatus (ahí se descuenta el peaje del puente).');
           return;
+        }
+        if (faltaVerdeSP && yaEstabaCompletada) {
+          alert('🌉 Recuerda que debes marcar Verde MX / Verde USA para que se descuente el saldo del puente de esta operación.');
+          // se guarda normal — solo es un recordatorio
         }
       }
 
