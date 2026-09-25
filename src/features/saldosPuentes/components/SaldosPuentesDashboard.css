@@ -100,3 +100,14 @@
 .sp-libro-alerta { font-style: normal; font-size: 0.72rem; }
 .sp-libro-marco { overflow: auto; max-height: 56vh; border: 1px solid #21262d; border-radius: 10px; }
 .sp-tabla--libro th { position: sticky; top: 0; background: #161b22; z-index: 1; }
+
+/* ✅ V00369: reporte de saldos del puente */
+.sp-modal--reporte { width: min(920px, 96vw); max-height: 86vh; display: flex; flex-direction: column; }
+.sp-rep-nota { color: #8b949e; font-size: 0.8rem; margin: 4px 0 10px; }
+.sp-rep-barra { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.sp-rep-barra label { display: flex; flex-direction: column; gap: 4px; font-size: 0.74rem; color: #8b949e; }
+.sp-rep-marco { overflow: auto; border: 1px solid #21262d; border-radius: 10px; flex: 1; min-height: 0; max-height: 58vh; }
+.sp-rep-ref { font-family: monospace; color: #58a6ff; white-space: nowrap; }
+.sp-rep-fila--falta td { background: rgba(210, 153, 34, 0.06); }
+.sp-rep-falta { color: #d29922; font-size: 0.8rem; white-space: nowrap; }
+.sp-tabla--libro tfoot td { font-weight: 700; color: #e6edf3; border-top: 1px solid #30363d; }

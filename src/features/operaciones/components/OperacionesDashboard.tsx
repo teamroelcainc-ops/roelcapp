@@ -848,7 +848,16 @@ const OperacionesDashboard = () => {
   //   → Caseta Puente III en pesos. Al COMPLETAR queda como respaldo (por
   //   tráfico) si el verde no se registró. Nunca se cobra dos veces.
   const STATUS_COMPLETADOS_IDS_SP = ['c2d57403', 'f557b751'];
-  const camposSaldoPuenteAlCompletar = async (statusId: string, op: { saldoPuente?: unknown; trafico?: unknown; fechaServicio?: unknown }, statusNombre?: string): Promise<Record<string, unknown>> => {
+  // ✅ V00369: el peaje aplica SOLO a (1) Transfer y (2) Logística de Cruces
+  //   con proveedor Roelca; Logística de Fletes NUNCA.
+  const aplicaPeajeSP = (op: { tipoOperacionNombre?: unknown; proveedorUnidadNombre?: unknown }): boolean => {
+    const tipo = String(op?.tipoOperacionNombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    if (tipo.includes('transfer')) return true;
+    if (tipo.includes('flete')) return false;
+    if (!tipo.includes('logistica')) return false;
+    return String(op?.proveedorUnidadNombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes('roelca');
+  };
+  const camposSaldoPuenteAlCompletar = async (statusId: string, op: { saldoPuente?: unknown; trafico?: unknown; fechaServicio?: unknown; tipoOperacionNombre?: unknown; proveedorUnidadNombre?: unknown }, statusNombre?: string): Promise<Record<string, unknown>> => {
     try {
       if (Number.isFinite(Number(op?.saldoPuente))) return {};
       const nombreSt = String(statusNombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -856,6 +865,7 @@ const OperacionesDashboard = () => {
       const esVerdeMX = nombreSt.includes('verde mx') || nombreSt.includes('verde mexico');
       const esCompletado = STATUS_COMPLETADOS_IDS_SP.includes(String(statusId || '').trim());
       if (!esVerdeUSA && !esVerdeMX && !esCompletado) return {};
+      if (!aplicaPeajeSP(op as { tipoOperacionNombre?: unknown; proveedorUnidadNombre?: unknown })) return {}; // ✅ V00369
       // ✅ V00365: el puente lo decide el TRÁFICO de la operación — importación
       //   cruza por Caseta AVI (dólares) y exportación por Puente III (pesos) —
       //   sin importar cuál de los verdes se marcó (p. ej. "Verde Mx
@@ -1740,9 +1750,8 @@ const OperacionesDashboard = () => {
       // ✅ Referencia coloreada por tipo de operación (Fletes verde / Logística azul / Transfer naranja)
       case 'ref': {
         // ✅ V00367: alerta en la fila si el cruce aún no cobra su peaje (sin Verde marcado)
-        const tipoOpSP = String(op.tipoOperacionNombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
         const trafSP = String(op.trafico || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-        const faltaPeaje = tipoOpSP.includes('transfer') && (trafSP.includes('import') || trafSP.includes('export')) && !(Number(op.saldoPuente) > 0);
+        const faltaPeaje = aplicaPeajeSP(op) && (trafSP.includes('import') || trafSP.includes('export')) && !(Number(op.saldoPuente) > 0);
         return <span className="font-mono" style={{ color: colorTipoOperacion(mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)), fontWeight: 'bold' }}>{op.ref || op.id?.substring(0,6)}{faltaPeaje && <span title="Esta operación aún NO ha descontado el saldo del puente — falta marcar Verde MX / Verde USA" style={{ marginLeft: '6px', cursor: 'help' }}>🌉⚠</span>}</span>;
       }
       case 'fechaServicio': return <span className="od-x1">{mostrarDato(op.fechaServicio)}</span>;

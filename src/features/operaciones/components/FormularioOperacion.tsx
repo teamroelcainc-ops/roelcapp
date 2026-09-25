@@ -1105,6 +1105,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       const esVerdeSP = nSt.includes('verde mx') || nSt.includes('verde mexico') || nSt.includes('verde usa');
       const esCompletadoSP = STATUS_COMPLETADOS_IDS_SP.includes(String(statusFinal || '').trim());
       if (!esVerdeSP && !esCompletadoSP) return {};
+      // ✅ V00369: el peaje SOLO aplica a Transfer, o Logística de Cruces con
+      //   proveedor Roelca — Fletes nunca (mostrarPuente trae esa regla).
+      if (!mostrarPuente) return {};
       if (initialData && Number.isFinite(Number((initialData as Record<string, unknown>).saldoPuente))) return {};
       const traf = String(formData.trafico || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
       const objetivo = traf.includes('import') ? 'caseta avi' : traf.includes('export') ? 'caseta puente' : '';
@@ -2422,9 +2425,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const showExternalFleet = (isLogistica || isFletes) && !isRoelca;
   const esFlotaPropiaRoelca = showInternalFleet;
 
-  // ✅ Puente: se muestra SOLO en Transfer, o en Logística cuando el Proveedor
-  //    de Transporte es Roelca. En Fletes (o Logística con proveedor externo) no.
-  const mostrarPuente = isTransfer || (isLogistica && isRoelca);
+  // ✅ Puente: se muestra SOLO en Transfer, o en Logística de CRUCES cuando el
+  //    Proveedor de Transporte es Roelca. En Fletes (aunque sea Roelca) o en
+  //    Logística con proveedor externo NO. (Regla V00369)
+  const mostrarPuente = isTransfer || (isLogistica && !isFletes && isRoelca);
   // ✅ V00364: la TARJETA Caseta/Puente solo se enseña cuando la operación ya
   //   marcó Verde MX o Verde USA (o el peaje ya se cobró) — antes de eso no hay
   //   cruce que mostrar. La lógica interna (mostrarPuente) no cambia: el puente

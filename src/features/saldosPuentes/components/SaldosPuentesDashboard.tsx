@@ -6,6 +6,7 @@
 //   Recargas en la colección saldos_puentes (varias por día permitidas).
 import React, { useEffect, useState } from 'react';
 import { addDoc, collection, deleteDoc, doc, getDocs, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
+import * as XLSX from 'xlsx';
 import { db } from '../../../config/firebase';
 import './SaldosPuentesDashboard.css';
 
@@ -108,6 +109,62 @@ export const SaldosPuentesDashboard: React.FC = () => {
     return { saldoInicial, misCruces, consumo, crucesHoy, consumoHoy, saldoActual, nivel, primeraRecarga };
   };
 
+  // ✅ V00369: el peaje aplica SOLO a (1) Transfer y (2) Logística de Cruces
+  //   con proveedor Roelca; Logística de Fletes NUNCA.
+  const aplicaPeajeSP = (x: Record<string, unknown>): boolean => {
+    const tipo = norm(x.tipoOperacionNombre);
+    if (tipo.includes('transfer')) return true;
+    if (tipo.includes('flete')) return false;
+    if (!tipo.includes('logistica')) return false;
+    return norm(x.proveedorUnidadNombre).includes('roelca');
+  };
+
+  // ✅ V00369: REPORTE de saldos del puente
+  interface FilaRep { ref: string; fecha: string; tipo: string; trafico: string; puente: string; saldo: number | null; moneda: string; }
+  const [repAbierto, setRepAbierto] = useState(false);
+  const [repCargando, setRepCargando] = useState(false);
+  const [repFilas, setRepFilas] = useState<FilaRep[]>([]);
+  const [repDe, setRepDe] = useState('');
+  const [repHasta, setRepHasta] = useState('');
+  const abrirReporte = async () => {
+    setRepAbierto(true); setRepCargando(true);
+    try {
+      const snap = await getDocs(collection(db, 'operaciones'));
+      const filas: FilaRep[] = [];
+      snap.docs.forEach((d) => {
+        const x = d.data() as Record<string, unknown>;
+        if (!aplicaPeajeSP(x)) return;
+        if (norm(x.statusNombre).includes('cancel')) return;
+        const traf = norm(x.trafico);
+        const tieneSaldo = Number(x.saldoPuente) > 0;
+        const puenteDef = traf.includes('import') ? 'Caseta AVI' : traf.includes('export') ? 'Caseta Puente III' : '';
+        filas.push({
+          ref: String(x.ref || d.id),
+          fecha: String(x.fechaServicio || '').slice(0, 10),
+          tipo: String(x.tipoOperacionNombre || '—'),
+          trafico: traf.includes('import') ? 'Importación' : traf.includes('export') ? 'Exportación' : String(x.trafico || '—'),
+          puente: String(x.saldoPuentePuente || '') || puenteDef || '—',
+          saldo: tieneSaldo ? Number(x.saldoPuente) : null,
+          moneda: String(x.saldoPuenteMoneda || (puenteDef === 'Caseta AVI' ? 'Dólares' : puenteDef ? 'Pesos' : '')),
+        });
+      });
+      filas.sort((a, b) => b.fecha.localeCompare(a.fecha) || a.ref.localeCompare(b.ref));
+      setRepFilas(filas);
+    } catch (e) { alert(`No se pudo armar el reporte: ${(e as Error)?.message || e}`); }
+    finally { setRepCargando(false); }
+  };
+  const repVisibles = repFilas.filter((f) => (!repDe || f.fecha >= repDe) && (!repHasta || f.fecha <= repHasta));
+  const repExcel = () => {
+    const hoja = repVisibles.map((f) => ({
+      'Fecha de Servicio': f.fecha, '# Referencia': f.ref, 'Tipo de Operación': f.tipo,
+      'Tráfico': f.trafico, 'Puente': f.puente,
+      'Saldo del Puente': f.saldo === null ? 'SIN DESCUENTO' : f.saldo, 'Moneda': f.moneda,
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hoja), 'Saldos del Puente');
+    XLSX.writeFile(wb, `Reporte-Saldos-Puente-${hoyISO()}.xlsx`);
+  };
+
   // ✅ V00358 (de V00357): colocar el saldo del puente a las operaciones
   //   COMPLETADAS que no lo tengan — así sus cruces descuentan de la cuenta.
   const [aplicando, setAplicando] = useState(false);
@@ -136,6 +193,7 @@ export const SaldosPuentesDashboard: React.FC = () => {
           }
           return;
         }
+        if (!aplicaPeajeSP(x)) return; // ✅ V00369: Fletes / Logística no-Roelca no cobran
         const traf = norm(x.trafico);
         const p = traf.includes('import') ? avi : traf.includes('export') ? p3 : undefined;
         if (!p) return;
@@ -217,6 +275,7 @@ export const SaldosPuentesDashboard: React.FC = () => {
         </div>
         <div className="sp-enc-botones">
           <button type="button" className="sp-btn" disabled={aplicando} title="Coloca la tarifa del puente a las operaciones completadas que no la tengan, para que sus cruces descuenten de la cuenta" onClick={aplicarAOperaciones}>{aplicando ? 'Aplicando…' : '🧮 Aplicar a operaciones'}</button>
+          <button type="button" className="sp-btn" onClick={abrirReporte} title="Reporte de operaciones que cruzan puente (Transfer y Logística de Cruces con Roelca)">📊 Reporte</button>
           <button type="button" className="sp-btn sp-btn--primario" onClick={abrirRecarga}>➕ Agregar saldo</button>
         </div>
       </div>
@@ -288,6 +347,54 @@ export const SaldosPuentesDashboard: React.FC = () => {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ✅ V00369: REPORTE de saldos del puente */}
+      {repAbierto && (() => {
+        const cobradas = repVisibles.filter((f) => f.saldo !== null);
+        const sinSaldo = repVisibles.length - cobradas.length;
+        const totUSD = cobradas.filter((f) => norm(f.moneda).includes('dolar')).reduce((a, f) => a + (f.saldo || 0), 0);
+        const totMXN = cobradas.filter((f) => norm(f.moneda).includes('peso')).reduce((a, f) => a + (f.saldo || 0), 0);
+        return (
+          <div className="sp-modal-fondo" onClick={() => setRepAbierto(false)}>
+            <div className="sp-modal sp-modal--reporte" onClick={(e) => e.stopPropagation()}>
+              <div className="sp-modal-titulo">📊 Reporte de saldos del puente</div>
+              <p className="sp-rep-nota">Operaciones de Transfer y de Logística de Cruces con proveedor Roelca (Fletes no cruza puente). "Sin descuento" = aún no marca Verde MX / Verde USA.</p>
+              <div className="sp-rep-barra">
+                <label>De <input type="date" className="form-control" value={repDe} onChange={(e) => setRepDe(e.target.value)} /></label>
+                <label>Hasta <input type="date" className="form-control" value={repHasta} onChange={(e) => setRepHasta(e.target.value)} /></label>
+                <span className="sp-conteo">{repVisibles.length} operación(es) · sin descuento: {sinSaldo}</span>
+                <button type="button" className="sp-btn" onClick={repExcel} disabled={repVisibles.length === 0}>⬇ Excel</button>
+              </div>
+              <div className="sp-rep-marco">
+                <table className="sp-tabla sp-tabla--libro">
+                  <thead><tr><th>Fecha de Servicio</th><th># Referencia</th><th>Tipo de Operación</th><th>Tráfico</th><th>Puente</th><th className="sp-num">Saldo del Puente</th></tr></thead>
+                  <tbody>
+                    {repCargando && <tr><td colSpan={6} className="sp-vacio">Cargando…</td></tr>}
+                    {!repCargando && repVisibles.length === 0 && <tr><td colSpan={6} className="sp-vacio">Sin operaciones en el rango.</td></tr>}
+                    {!repCargando && repVisibles.map((f, i) => (
+                      <tr key={i} className={f.saldo === null ? 'sp-rep-fila--falta' : ''}>
+                        <td>{fmtDia(f.fecha)}</td>
+                        <td className="sp-rep-ref">{f.ref}</td>
+                        <td>{f.tipo}</td>
+                        <td>{f.trafico}</td>
+                        <td>{f.puente}</td>
+                        <td className="sp-num">{f.saldo === null ? <span className="sp-rep-falta" title="Aún no descuenta — falta marcar Verde MX / Verde USA">🌉⚠ Sin descuento</span> : `−${fmtMonto(f.saldo)} ${f.moneda}`}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  {!repCargando && cobradas.length > 0 && (
+                    <tfoot>
+                      <tr><td colSpan={5}>Total descontado — Dólares</td><td className="sp-num sp-hist-resta">−{fmtMonto(totUSD)}</td></tr>
+                      <tr><td colSpan={5}>Total descontado — Pesos</td><td className="sp-num sp-hist-resta">−{fmtMonto(totMXN)}</td></tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
+              <div className="sp-modal-pie"><button type="button" className="sp-btn" onClick={() => setRepAbierto(false)}>Cerrar</button></div>
             </div>
           </div>
         );
