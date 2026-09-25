@@ -3760,7 +3760,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                       historialList.map((h: any) => (
                         <tr className="sc-x220" key={h.id}>
                           <td className="sc-x221">{new Date(h.fechaHora).toLocaleString('es-MX')}</td>
-                          <td className="sc-x222">{mostrarDatoMapeado(h.status, 'statusServicio', 'nombre')}</td>
+                          <td className="sc-x222">{h.statusNombre || mostrarDatoMapeado(h.status, 'statusServicio', 'nombre')}</td>{/* ✅ V00364: el horario guarda statusNombre desnormalizado */}
                         </tr>
                       ))
                     )}

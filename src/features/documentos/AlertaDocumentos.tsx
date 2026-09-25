@@ -10,7 +10,7 @@
 //   (DocumentoUploadModal). Al subir, se re-verifica en vivo (onSnapshot).
 // ---------------------------------------------------------------------------
 import React, { useEffect, useMemo, useState } from 'react';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { DocumentoUploadModal } from './DocumentoUploadModal';
 import './AlertaDocumentos.css';
@@ -43,6 +43,29 @@ export const AlertaDocumentos: React.FC<Props> = ({ coleccionOrigen, registroId,
   const [docs, setDocs] = useState<DocInfo[] | null>(null); // null = cargando
   const [abierto, setAbierto] = useState(false);
   const [subiendo, setSubiendo] = useState(false);
+  // ✅ V00364: las BÓDEGAS no manejan documentos — si la empresa tiene el tipo
+  //   Bódega (id 6e7af5ab o nombre "bódega"), la alerta no se muestra.
+  const [esBodega, setEsBodega] = useState(false);
+
+  useEffect(() => {
+    let vivo = true;
+    if (!registroId || coleccionOrigen !== 'empresas') {
+      Promise.resolve().then(() => { if (vivo) setEsBodega(false); });
+      return () => { vivo = false; };
+    }
+    getDoc(doc(db, 'empresas', registroId)).then((snap) => {
+      if (!vivo) return;
+      if (!snap.exists()) { setEsBodega(false); return; }
+      const x = snap.data() as Record<string, unknown>;
+      const normB = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+      const valores = [
+        ...(Array.isArray(x.tiposEmpresa) ? x.tiposEmpresa : []),
+        ...(Array.isArray(x._tiposEmpresaArray) ? x._tiposEmpresaArray : []),
+      ];
+      setEsBodega(valores.some((v) => String(v) === '6e7af5ab' || normB(v).startsWith('bodega')));
+    }).catch(() => { if (vivo) setEsBodega(false); });
+    return () => { vivo = false; };
+  }, [registroId, coleccionOrigen]);
 
   useEffect(() => {
     setDocs(null); setAbierto(false);
@@ -74,6 +97,7 @@ export const AlertaDocumentos: React.FC<Props> = ({ coleccionOrigen, registroId,
   }, [docs]);
 
   if (!registroId || !resumen) return null;
+  if (esBodega) return null; // ✅ V00364: bódega → sin alerta de documentos
 
   const sinDocs = resumen.total === 0;
   const hayVencidos = resumen.vencidos.length > 0;

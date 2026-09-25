@@ -15,6 +15,7 @@ export interface CambioApp {
 }
 
 export const CAMBIOS_APP: CambioApp[] = [
+  { fecha: '2026-09-25', hora: '17:30', version: 'V00364', titulo: 'Bódegas sin alerta, bitácora en Completados y permisos nuevos', resumen: 'Las bódegas ya no muestran la alerta de Origen/Destino sin documentos; la Bitácora de Servicios Completados enseña el estatus marcado de cada movimiento; la tarjeta Caseta/Puente del formulario aparece solo al marcar Verde MX o USA; y Roles ya lista Saldos de Puentes y la casilla Personalizar Vista (Operaciones).' },
   { fecha: '2026-09-25', hora: '16:00', version: 'V00363', titulo: 'Status visible en los cruces del día', resumen: 'El modal de Casetas del día muestra ahora el status de cada operación que suma al saldo y con qué marca se cobró el peaje (Verde MX, Verde USA o Completado) — el descuento solo ocurre en esas marcas, nunca en un Documentado.' },
   { fecha: '2026-09-25', hora: '15:10', version: 'V00362', titulo: 'Cruces del día al hacer clic en Casetas', resumen: 'Al hacer clic en el gastado de hoy (dólares o pesos) de la tarjeta Casetas del día se abre la lista de operaciones que suman al saldo: referencia, puente y peaje de cada cruce, con el total del día.' },
   { fecha: '2026-09-25', hora: '14:30', version: 'V00361', titulo: 'Agregar saldo con puente desplegable', resumen: 'En Saldos de Puentes el saldo se agrega desde un solo botón arriba, con el puente elegido en lista desplegable (moneda no editable, saldo pendiente y total en vivo); las tarjetas de cada puente quedan solo informativas, con su botón de historial.' },

@@ -228,7 +228,20 @@ const OperacionesDashboard = () => {
   const [botonesOcultos, setBotonesOcultos] = useState<string[]>([]);
   const [puedePersonalizarVista, setPuedePersonalizarVista] = useState(false);
   useEffect(() => {
-    obtenerUsuarioAut().then((u) => setPuedePersonalizarVista(!!u.esAdmin || (u.roles || []).some((r) => String(r).toLowerCase().includes('personalizarvista')))).catch(() => {});
+    // ✅ V00364: el permiso viene de la casilla "Personalizar Vista (Operaciones)"
+    //   de Roles (modulosPermitidos del rol del usuario); Admin siempre puede.
+    obtenerUsuarioAut().then(async (u) => {
+      if (u.esAdmin) { setPuedePersonalizarVista(true); return; }
+      if ((u.roles || []).some((r) => String(r).toLowerCase().includes('personalizarvista'))) { setPuedePersonalizarVista(true); return; }
+      try {
+        const rolesSnap = await getDocs(collection(db, 'roles'));
+        const permitido = rolesSnap.docs.some((d) => {
+          const x = d.data() as Record<string, unknown>;
+          return (u.roles || []).includes(String(x.nombre || '')) && Array.isArray(x.modulosPermitidos) && (x.modulosPermitidos as unknown[]).includes('Personalizar Vista (Operaciones)');
+        });
+        setPuedePersonalizarVista(permitido);
+      } catch { setPuedePersonalizarVista(false); }
+    }).catch(() => {});
     const unsub = onSnapshot(doc(db, 'config_vista', 'operacionesActivas'), (d) => {
       const x = d.data() as Record<string, unknown> | undefined;
       setBotonesOcultos(Array.isArray(x?.botonesOcultos) ? (x!.botonesOcultos as string[]) : []);

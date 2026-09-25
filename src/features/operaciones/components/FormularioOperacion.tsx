@@ -2417,6 +2417,16 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   // ✅ Puente: se muestra SOLO en Transfer, o en Logística cuando el Proveedor
   //    de Transporte es Roelca. En Fletes (o Logística con proveedor externo) no.
   const mostrarPuente = isTransfer || (isLogistica && isRoelca);
+  // ✅ V00364: la TARJETA Caseta/Puente solo se enseña cuando la operación ya
+  //   marcó Verde MX o Verde USA (o el peaje ya se cobró) — antes de eso no hay
+  //   cruce que mostrar. La lógica interna (mostrarPuente) no cambia: el puente
+  //   se sigue precalculando y NO se pierde al guardar sin verde.
+  const puenteVisible = mostrarPuente && (() => {
+    const st = String((initialData as Record<string, unknown> | undefined)?.statusNombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const evento = String((initialData as Record<string, unknown> | undefined)?.saldoPuenteEvento || '');
+    const cobrado = Number((initialData as Record<string, unknown> | undefined)?.saldoPuente) > 0;
+    return st.includes('verde') || !!evento || cobrado;
+  })();
   // Opciones de puente desde catalogo_tipos_gastos (categoria_gasto === "Puente").
   const opcionesPuente = (tiposGastosLocal || []).filter(
     (g: any) => String(g.categoria_gasto || '').trim().toLowerCase() === 'puente'
@@ -3494,7 +3504,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                   )}
 
 
-                  {mostrarPuente && (
+                  {puenteVisible && (
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconDollar /></div><h3 className="roelca-card-title">Caseta / Puente</h3></div>
                     <div className="form-grid">

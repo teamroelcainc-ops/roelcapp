@@ -16,7 +16,7 @@ const GRUPOS_MODULOS: { grupo: string; modulos: string[] }[] = [
   { grupo: 'Clientes', modulos: ['Convenio de Clientes', 'Tarifario Clientes', 'Detalles del Convenio', 'Facturación de Clientes'] }, // ✅ V00198
   { grupo: 'Proveedores', modulos: ['Convenio de Proveedores', 'Facturación de Proveedores', 'Tarifario Proveedores', 'Detalles del Convenio (Proveedores)'] },
   { grupo: 'Empleados', modulos: ['Colaboradores', 'Historial de Chequeo', 'Nómina', 'Deducciones'] },
-  { grupo: 'Bases de Datos', modulos: ['Empresas', 'Contactos', 'Direcciones', 'Tipo de Cambio', 'Combustible', 'Unidades Propias', 'Remolques', 'Proveedores de Unidad', 'Unidades del Proveedor'] },
+  { grupo: 'Bases de Datos', modulos: ['Empresas', 'Contactos', 'Direcciones', 'Tipo de Cambio', 'Saldos de Puentes', 'Combustible', 'Unidades Propias', 'Remolques', 'Proveedores de Unidad', 'Unidades del Proveedor'] }, // ✅ V00364: + Saldos de Puentes
   { grupo: 'Configuración', modulos: ['Usuarios', 'Roles y Permisos', 'Historial de Actividad', 'Reglas de Estatus', 'Datos de la Empresa', 'Autorizaciones', 'Personalizar Etiquetas'] },
   // ✅ NUEVO: permisos especiales de acción (no son items de menú; habilitan
   // capacidades puntuales). "Editar Referencia" permite editar la referencia
@@ -25,7 +25,9 @@ const GRUPOS_MODULOS: { grupo: string; modulos: string[] }[] = [
   // colaboradores; sin este permiso, cada quien ve SOLO sus propios registros.
   // ✅ V00224: "Editar Tarifa (Origen/Destino)" enciende el botón que asigna
   // origen y destino a las tarifas desde una operación de flete.
-  { grupo: 'Permisos Especiales', modulos: ['Editar Referencia', 'Ver todos los chequeos', 'Editar Tarifa (Origen/Destino)'] },
+  // ✅ V00364: "Personalizar Vista (Operaciones)" habilita el botón ✎ Vista de
+  //   Operaciones Activas (ocultar/mostrar botones del módulo).
+  { grupo: 'Permisos Especiales', modulos: ['Editar Referencia', 'Ver todos los chequeos', 'Editar Tarifa (Origen/Destino)', 'Personalizar Vista (Operaciones)'] },
 ];
 
 // Lista plana con todos los módulos (útil para "Seleccionar todo").
