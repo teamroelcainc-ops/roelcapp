@@ -830,14 +830,21 @@ const OperacionesDashboard = () => {
   //   desnormalizado y al nombre de la empresa. Así todos los documentos
   //   (Solicitud de Retiro, Check List, Instrucciones, etc.) muestran la razón
   //   social de clientes y proveedores.
-  // ✅ V00355: tarifa del puente al marcar SERVICIO COMPLETADO.
+  // ✅ V00355/V00360: el PEAJE se descuenta al marcar VERDE en los horarios —
+  //   Verde USA (importación) → Caseta AVI en dólares · Verde MX (exportación)
+  //   → Caseta Puente III en pesos. Al COMPLETAR queda como respaldo (por
+  //   tráfico) si el verde no se registró. Nunca se cobra dos veces.
   const STATUS_COMPLETADOS_IDS_SP = ['c2d57403', 'f557b751'];
-  const camposSaldoPuenteAlCompletar = async (statusId: string, op: { saldoPuente?: unknown; trafico?: unknown }): Promise<Record<string, unknown>> => {
+  const camposSaldoPuenteAlCompletar = async (statusId: string, op: { saldoPuente?: unknown; trafico?: unknown }, statusNombre?: string): Promise<Record<string, unknown>> => {
     try {
-      if (!STATUS_COMPLETADOS_IDS_SP.includes(String(statusId || '').trim())) return {};
       if (Number.isFinite(Number(op?.saldoPuente))) return {};
+      const nombreSt = String(statusNombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      const esVerdeUSA = nombreSt.includes('verde usa');
+      const esVerdeMX = nombreSt.includes('verde mx') || nombreSt.includes('verde mexico');
+      const esCompletado = STATUS_COMPLETADOS_IDS_SP.includes(String(statusId || '').trim());
+      if (!esVerdeUSA && !esVerdeMX && !esCompletado) return {};
       const traf = String(op?.trafico || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-      const objetivo = traf.includes('import') ? 'avi' : traf.includes('export') ? 'p3' : '';
+      const objetivo = esVerdeUSA ? 'avi' : esVerdeMX ? 'p3' : traf.includes('import') ? 'avi' : traf.includes('export') ? 'p3' : '';
       if (!objetivo) return {};
       const snap = await getDocs(collection(db, 'catalogo_tipos_gastos'));
       const normSP = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
@@ -1160,7 +1167,7 @@ const OperacionesDashboard = () => {
           const opRef = doc(db, 'operaciones', String(operacionViendo._docId || operacionViendo.id));
           // ✅ V00355: al COMPLETAR, colocar la tarifa del puente del día
           //   (Importación → Caseta AVI · Exportación → Caseta Puente III).
-          const extraSaldoPuente = await camposSaldoPuenteAlCompletar(statusFinal.id, operacionViendo);
+          const extraSaldoPuente = await camposSaldoPuenteAlCompletar(statusFinal.id, operacionViendo, statusFinal.nombre);
           batch.update(opRef, limpiarUndefined({
             status: statusFinal.id,
             statusNombre: statusFinal.nombre,

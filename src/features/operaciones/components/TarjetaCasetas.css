@@ -35,3 +35,6 @@
 .tcas-modal-linea { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; color: #8b949e; font-size: 0.78rem; }
 .tcas-modal-linea b { color: #c9d1d9; }
 .tcas-modal-linea--total b { color: #a371f7; font-size: 0.9rem; }
+
+/* ✅ V00360: gastado del día por moneda */
+.tcas-monto--mxn { color: #fb923c; }
