@@ -40,8 +40,9 @@ export const SaldosPuentesDashboard: React.FC = () => {
   const [recargas, setRecargas] = useState<Recarga[]>([]);
   const [cruces, setCruces] = useState<CruceOp[]>([]);
   const [cargando, setCargando] = useState(true);
-  // modal de recarga (Agregar saldo)
-  const [modalPuente, setModalPuente] = useState<Puente | null>(null);
+  // ✅ V00361: modal de recarga ÚNICO con el puente en DESPLEGABLE
+  const [modalRecarga, setModalRecarga] = useState(false);
+  const [recPuenteId, setRecPuenteId] = useState('');
   const [monto, setMonto] = useState('');
   const [guardando, setGuardando] = useState(false);
   // edición del historial
@@ -173,19 +174,20 @@ export const SaldosPuentesDashboard: React.FC = () => {
     return conSaldo.reverse(); // más reciente arriba
   };
 
-  const abrirRecarga = (p: Puente) => { setModalPuente(p); setMonto(''); };
-  const cerrarRecarga = () => { if (!guardando) { setModalPuente(null); setMonto(''); } };
+  const abrirRecarga = () => { setRecPuenteId(''); setMonto(''); setModalRecarga(true); };
+  const cerrarRecarga = () => { if (!guardando) { setModalRecarga(false); setRecPuenteId(''); setMonto(''); } };
   const guardarRecarga = async () => {
-    if (!modalPuente) return;
+    const pSel = puentes.find((x) => x.id === recPuenteId);
+    if (!pSel) { alert('Elige el PUENTE en el desplegable.'); return; }
     const n = Number(monto);
     if (!Number.isFinite(n) || n <= 0) { alert('Captura el SALDO a agregar (mayor a cero).'); return; }
     setGuardando(true);
     try {
       await addDoc(collection(db, 'saldos_puentes'), {
-        fecha: hoyISO(), puenteId: modalPuente.id, puenteNombre: modalPuente.nombre,
-        moneda: modalPuente.moneda, saldo: n, creadoEn: new Date().toISOString(),
+        fecha: hoyISO(), puenteId: pSel.id, puenteNombre: pSel.nombre,
+        moneda: pSel.moneda, saldo: n, creadoEn: new Date().toISOString(),
       });
-      setModalPuente(null); setMonto('');
+      cerrarRecarga();
     } catch (e) { alert(`No se pudo agregar el saldo: ${(e as Error)?.message || e}`); }
     finally { setGuardando(false); }
   };
@@ -207,7 +209,6 @@ export const SaldosPuentesDashboard: React.FC = () => {
     return recargas.filter((r) => norm(`${r.puenteNombre} ${r.fecha} ${r.saldo} ${r.moneda}`).includes(q));
   }, [recargas, busqueda]);
 
-  const cuentaModal = modalPuente ? cuentaDe(modalPuente) : null;
   const montoNum = Number(monto) || 0;
 
   return (
@@ -217,7 +218,10 @@ export const SaldosPuentesDashboard: React.FC = () => {
           <h2 className="sp-titulo">🌉 Saldos de Puentes</h2>
           <p className="sp-sub">Cuenta por puente: el saldo inicial es la suma de tus recargas, cada operación COMPLETADA que cruza descuenta su tarifa, y el saldo actual se marca en amarillo o rojo cuando va quedando bajo. La tarifa por cruce vive en el catálogo Tipos de Gastos.</p>
         </div>
-        <button type="button" className="sp-btn" disabled={aplicando} title="Coloca la tarifa del puente a las operaciones completadas que no la tengan, para que sus cruces descuenten de la cuenta" onClick={aplicarAOperaciones}>{aplicando ? 'Aplicando…' : '🧮 Aplicar a operaciones'}</button>
+        <div className="sp-enc-botones">
+          <button type="button" className="sp-btn" disabled={aplicando} title="Coloca la tarifa del puente a las operaciones completadas que no la tengan, para que sus cruces descuenten de la cuenta" onClick={aplicarAOperaciones}>{aplicando ? 'Aplicando…' : '🧮 Aplicar a operaciones'}</button>
+          <button type="button" className="sp-btn sp-btn--primario" onClick={abrirRecarga}>➕ Agregar saldo</button>
+        </div>
       </div>
 
       {/* ✅ V00359: saldo disponible por MONEDA — clic = historial de movimientos */}
@@ -259,10 +263,7 @@ export const SaldosPuentesDashboard: React.FC = () => {
                   {c.nivel === 'rojo' ? '🔴 Saldo crítico — agrega saldo YA' : '🟡 Saldo bajo — programa una recarga'}
                 </div>
               )}
-              <div className="sp-cuenta-acciones">
-                <button type="button" className="sp-btn sp-btn--primario sp-cuenta-btn" onClick={() => abrirRecarga(p)}>➕ Agregar saldo</button>
-                <button type="button" className="sp-btn sp-cuenta-btn" title="Historial de deducciones y saldos de este puente" onClick={() => abrirHistorialPuente(p)}>📜</button>
-              </div>
+              <button type="button" className="sp-btn sp-cuenta-btn" title="Historial de deducciones y saldos de este puente" onClick={() => abrirHistorialPuente(p)}>📜 Ver historial</button>
               <div className="sp-cuenta-tarifa">Tarifa por cruce: {fmtMonto(p.tarifa)} · Amarillo &lt; {fmtMonto(p.umbralAmarillo)} · Rojo &lt; {fmtMonto(p.umbralRojo)}</div>
             </div>
           );
@@ -271,24 +272,34 @@ export const SaldosPuentesDashboard: React.FC = () => {
       </div>
 
       {/* ✅ Modal AGREGAR SALDO — fecha de hoy fija, moneda del catálogo */}
-      {modalPuente && cuentaModal && (
-        <div className="sp-modal-fondo" onClick={cerrarRecarga}>
-          <div className="sp-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="sp-modal-titulo">➕ Agregar saldo — {modalPuente.nombre}</div>
-            <label className="sp-campo"><span>Fecha (hoy)</span><input type="date" className="form-control" value={hoyISO()} disabled readOnly /></label>
-            <label className="sp-campo"><span>Moneda (del catálogo)</span><input type="text" className="form-control" value={modalPuente.moneda} disabled readOnly /></label>
-            <label className="sp-campo"><span>Saldo a agregar</span><input type="number" step="0.01" min="0" className="form-control" value={monto} onChange={(e) => setMonto(e.target.value)} placeholder="0.00" autoFocus /></label>
-            <div className="sp-modal-resumen">
-              <div className="sp-cuenta-linea"><span>Saldo restante (disponible hoy)</span><b>{fmtMonto(cuentaModal.saldoActual)}</b></div>
-              <div className="sp-cuenta-linea sp-modal-total"><span>Total (restante + agregado)</span><b>{fmtMonto(cuentaModal.saldoActual + montoNum)} {modalPuente.moneda}</b></div>
-            </div>
-            <div className="sp-modal-pie">
-              <button type="button" className="sp-btn" disabled={guardando} onClick={cerrarRecarga}>Cancelar</button>
-              <button type="button" className="sp-btn sp-btn--primario" disabled={guardando} onClick={guardarRecarga}>{guardando ? 'Guardando…' : '➕ Agregar saldo'}</button>
+      {modalRecarga && (() => {
+        const pSel = puentes.find((x) => x.id === recPuenteId);
+        const pendiente = pSel ? cuentaDe(pSel).saldoActual : 0;
+        return (
+          <div className="sp-modal-fondo" onClick={cerrarRecarga}>
+            <div className="sp-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="sp-modal-titulo">➕ Agregar saldo</div>
+              <label className="sp-campo"><span>Fecha (hoy)</span><input type="date" className="form-control" value={hoyISO()} disabled readOnly /></label>
+              <label className="sp-campo"><span>Puente (del catálogo)</span>
+                <select className="form-control" value={recPuenteId} onChange={(e) => setRecPuenteId(e.target.value)} autoFocus>
+                  <option value="">— Elegir puente —</option>
+                  {puentes.map((x) => <option key={x.id} value={x.id}>{x.nombre}</option>)}
+                </select>
+              </label>
+              <label className="sp-campo"><span>Moneda (del catálogo)</span><input type="text" className="form-control" value={pSel?.moneda || ''} disabled readOnly placeholder="—" /></label>
+              <label className="sp-campo"><span>Saldo a agregar</span><input type="number" step="0.01" min="0" className="form-control" value={monto} onChange={(e) => setMonto(e.target.value)} placeholder="0.00" /></label>
+              <div className="sp-modal-resumen">
+                <div className="sp-cuenta-linea"><span>Saldo pendiente por puente</span><b>{pSel ? fmtMonto(pendiente) : '—'}</b></div>
+                <div className="sp-cuenta-linea sp-modal-total"><span>Total (agregar + pendiente)</span><b>{pSel ? `${fmtMonto(pendiente + montoNum)} ${pSel.moneda}` : '—'}</b></div>
+              </div>
+              <div className="sp-modal-pie">
+                <button type="button" className="sp-btn" disabled={guardando} onClick={cerrarRecarga}>Cancelar</button>
+                <button type="button" className="sp-btn sp-btn--primario" disabled={guardando || !pSel} onClick={guardarRecarga}>{guardando ? 'Guardando…' : '➕ Agregar saldo'}</button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ✅ V00359: modal HISTORIAL de deducciones y saldos */}
       {historial && (() => {
