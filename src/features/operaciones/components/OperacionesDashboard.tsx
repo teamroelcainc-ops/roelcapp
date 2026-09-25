@@ -856,8 +856,12 @@ const OperacionesDashboard = () => {
       const esVerdeMX = nombreSt.includes('verde mx') || nombreSt.includes('verde mexico');
       const esCompletado = STATUS_COMPLETADOS_IDS_SP.includes(String(statusId || '').trim());
       if (!esVerdeUSA && !esVerdeMX && !esCompletado) return {};
+      // ✅ V00365: el puente lo decide el TRÁFICO de la operación — importación
+      //   cruza por Caseta AVI (dólares) y exportación por Puente III (pesos) —
+      //   sin importar cuál de los verdes se marcó (p. ej. "Verde Mx
+      //   (Importación)" cobra AVI). Sin tráfico, decide el verde marcado.
       const traf = String(op?.trafico || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-      const objetivo = esVerdeUSA ? 'avi' : esVerdeMX ? 'p3' : traf.includes('import') ? 'avi' : traf.includes('export') ? 'p3' : '';
+      const objetivo = traf.includes('import') ? 'avi' : traf.includes('export') ? 'p3' : esVerdeUSA ? 'avi' : esVerdeMX ? 'p3' : '';
       if (!objetivo) return {};
       const snap = await getDocs(collection(db, 'catalogo_tipos_gastos'));
       const normSP = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();

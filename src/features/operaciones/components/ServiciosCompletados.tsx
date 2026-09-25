@@ -1113,6 +1113,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     return `$ ${parseFloat(monto).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
   
+  // ✅ V00365: la fila "Siguiente paso / Registrar Status" salió de la ficha
+  //   (la operación ya está completada); estas piezas quedan por si se
+  //   reactiva el registro manual desde Completados.
   const verHistorial = async () => {
     setModalHorarios('historial');
     setCargandoHorarios(true);
@@ -1261,6 +1264,11 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       alert('Error al guardar el status. Se revirtió el cambio.');
     }
   };
+
+  // ✅ V00365: la fila "Siguiente paso / Registrar Status" salió de la ficha
+  //   (la operación ya está completada); estas piezas quedan por si se
+  //   reactiva el registro manual desde Completados.
+  void ultimoStatusGuardado; void abrirRegistroHorario; void registrarStatusRapido;
 
   const handleDescSolicitudRetiro = async () => {
     await cargarCatalogosSiEsNecesario();
@@ -3094,64 +3102,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                 {(operacionViendo.facturaProveedorFolio || operacionViendo.facturadoProveedor) ? chipConexion(operacionViendo.facturaProveedorFolio || 'Facturada', '#58a6ff') : <span className="sc-x120">Pendiente</span>}
               </div>
 
-              <div className="sc-x122">
-                <span className="sc-x119">SIGUIENTE PASO</span>
-                {botonesDisponibles.length > 0 ? (
-                  <>
-                    {botonesDisponibles.map((botonStr: string) => {
-                      const esExitoso = ultimoStatusGuardado === botonStr;
-                      return (
-                        <button key={botonStr} onClick={() => registrarStatusRapido(botonStr)} disabled={guardandoStatusRapido !== null} className="status-pill"
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', padding: '6px 18px 6px 6px', borderRadius: '999px', border: 'none',
-                            background: esExitoso ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
-                            color: '#fff', cursor: guardandoStatusRapido && !esExitoso ? 'wait' : 'pointer', fontWeight: 600, fontSize: '0.9rem',
-                            boxShadow: esExitoso ? '0 4px 14px rgba(16, 185, 129, 0.4)' : '0 4px 14px rgba(234, 88, 12, 0.35)',
-                            transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                            opacity: guardandoStatusRapido && !esExitoso && guardandoStatusRapido !== botonStr ? 0.4 : 1, position: 'relative', overflow: 'hidden' }}
-                          title={`Marcar como: ${botonStr}`}>
-                          <span className="sc-x123">
-                            {esExitoso ? (
-                              <svg className="sc-x124" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                <polyline points="20 6 9 17 4 12"></polyline>
-                              </svg>
-                            ) : (
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                <polyline points="9 18 15 12 9 6"></polyline>
-                              </svg>
-                            )}
-                          </span>
-                          <span className="sc-x125">{botonStr}</span>
-                        </button>
-                      );
-                    })}
-                    <button onClick={abrirRegistroHorario} className="status-circle-btn sc-x126"
-                      title="Registrar con fecha/hora distinta (retroactivo)">
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                        <line x1="16" y1="2" x2="16" y2="6"></line>
-                        <line x1="8" y1="2" x2="8" y2="6"></line>
-                        <line x1="3" y1="10" x2="21" y2="10"></line>
-                      </svg>
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <span className="sc-x127">
-                      No hay transiciones automáticas configuradas.
-                    </span>
-                    <button onClick={abrirRegistroHorario} className="status-pill sc-x128"
-                      title="Registrar status manualmente">
-                      <span className="sc-x129">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <line x1="12" y1="5" x2="12" y2="19"></line>
-                          <line x1="5" y1="12" x2="19" y2="12"></line>
-                        </svg>
-                      </span>
-                      Registrar Status
-                    </button>
-                  </>
-                )}
-              </div>
+              {/* ✅ V00365: sin "Siguiente paso / Registrar Status" — la operación ya está completada */}
 
               <div className="sc-x130">
                 <span className="sc-x131">GENERAR DOCUMENTOS:</span>

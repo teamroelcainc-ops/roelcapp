@@ -56,3 +56,8 @@
 /* ✅ V00363: status y evento del cruce en el modal */
 .tcas-gasto-status { color: #3fb950; font-size: 0.8rem; }
 .tcas-gasto-evento { display: block; color: #8b949e; font-size: 0.68rem; font-style: normal; }
+
+/* ✅ V00365: modal de cruces más ancho y referencias sin partirse */
+.tcas-modal--gasto { width: min(780px, 96vw); }
+.tcas-gasto-ref, .tcas-gasto-num { white-space: nowrap; }
+.tcas-gasto-tabla { font-size: 0.86rem; }
