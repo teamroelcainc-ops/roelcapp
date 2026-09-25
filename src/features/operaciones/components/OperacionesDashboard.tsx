@@ -848,7 +848,7 @@ const OperacionesDashboard = () => {
   //   → Caseta Puente III en pesos. Al COMPLETAR queda como respaldo (por
   //   tráfico) si el verde no se registró. Nunca se cobra dos veces.
   const STATUS_COMPLETADOS_IDS_SP = ['c2d57403', 'f557b751'];
-  const camposSaldoPuenteAlCompletar = async (statusId: string, op: { saldoPuente?: unknown; trafico?: unknown }, statusNombre?: string): Promise<Record<string, unknown>> => {
+  const camposSaldoPuenteAlCompletar = async (statusId: string, op: { saldoPuente?: unknown; trafico?: unknown; fechaServicio?: unknown }, statusNombre?: string): Promise<Record<string, unknown>> => {
     try {
       if (Number.isFinite(Number(op?.saldoPuente))) return {};
       const nombreSt = String(statusNombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -874,7 +874,13 @@ const OperacionesDashboard = () => {
       const monedaSP = String(x.moneda || '') === '7dca62b3' ? 'Dólares' : String(x.moneda || '') === 'f95d8894' ? 'Pesos' : String(x.moneda || '');
       // ✅ V00363: se registra QUÉ evento cobró el peaje (trazable en la tarjeta)
       const eventoSP = esVerdeUSA ? 'Verde USA' : esVerdeMX ? 'Verde MX' : 'Completado';
-      return { saldoPuente: Number(x.importe) || 0, saldoPuentePuente: String(x.nombre_gasto || ''), saldoPuenteMoneda: monedaSP, saldoPuenteFecha: new Date().toISOString().slice(0, 10), saldoPuenteEvento: eventoSP };
+      // ✅ V00366: el cruce cuenta el día que se MARCA el verde; el respaldo
+      //   Completado (ponerse al día con ops viejas) usa la fecha de servicio
+      //   para no inflar el gasto de hoy.
+      const fechaSP = (esVerdeUSA || esVerdeMX)
+        ? new Date().toISOString().slice(0, 10)
+        : (String(op?.fechaServicio || '').slice(0, 10) || new Date().toISOString().slice(0, 10));
+      return { saldoPuente: Number(x.importe) || 0, saldoPuentePuente: String(x.nombre_gasto || ''), saldoPuenteMoneda: monedaSP, saldoPuenteFecha: fechaSP, saldoPuenteEvento: eventoSP };
     } catch (e) { console.warn('Saldo de puente al completar:', e); return {}; }
   };
 

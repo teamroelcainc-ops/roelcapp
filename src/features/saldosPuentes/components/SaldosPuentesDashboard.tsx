@@ -125,11 +125,22 @@ export const SaldosPuentesDashboard: React.FC = () => {
       snap.docs.forEach((d) => {
         const x = d.data() as Record<string, unknown>;
         if (!STATUS_COMPLETADOS_IDS.includes(String(x.status || '').trim())) return;
-        if (Number.isFinite(Number(x.saldoPuente))) return;
+        if (Number.isFinite(Number(x.saldoPuente))) {
+          // ✅ V00366: REPARA cruces cobrados por Completado (o sin evento) que
+          //   quedaron con la fecha del día en que se registró en vez de la
+          //   fecha de servicio — así el "gastado hoy" solo suma cruces de hoy.
+          const evento = String(x.saldoPuenteEvento || '');
+          const fServ = String(x.fechaServicio || '').slice(0, 10);
+          const fSP = String(x.saldoPuenteFecha || '').slice(0, 10);
+          if (!evento.toLowerCase().includes('verde') && fServ && fSP && fSP !== fServ) {
+            pendientes.push({ id: d.id, data: { saldoPuenteFecha: fServ, saldoPuenteEvento: evento || 'Completado' } });
+          }
+          return;
+        }
         const traf = norm(x.trafico);
         const p = traf.includes('import') ? avi : traf.includes('export') ? p3 : undefined;
         if (!p) return;
-        pendientes.push({ id: d.id, data: { saldoPuente: p.tarifa, saldoPuentePuente: p.nombre, saldoPuenteMoneda: p.moneda, saldoPuenteFecha: String(x.fechaServicio || hoyISO()) } });
+        pendientes.push({ id: d.id, data: { saldoPuente: p.tarifa, saldoPuentePuente: p.nombre, saldoPuenteMoneda: p.moneda, saldoPuenteFecha: String(x.fechaServicio || hoyISO()), saldoPuenteEvento: 'Completado' } });
       });
       const total = pendientes.length;
       while (pendientes.length > 0) {
@@ -139,7 +150,7 @@ export const SaldosPuentesDashboard: React.FC = () => {
         lote.forEach((c) => batch.update(doc(db, 'operaciones', c.id), c.data));
         await batch.commit();
       }
-      alert(`Tarifa del puente colocada en ${total} operación(es) completada(s).`);
+      alert(`Listo: ${total} operación(es) actualizadas (tarifas colocadas y fechas de cruce corregidas).`);
     } catch (e) { alert(`No se pudo completar: ${(e as Error)?.message || e}`); }
     finally { setAplicando(false); }
   };

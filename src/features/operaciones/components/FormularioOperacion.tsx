@@ -1117,7 +1117,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         saldoPuente: Number(x.importe) || 0,
         saldoPuentePuente: String(x.nombre_gasto || ''),
         saldoPuenteMoneda: monedaSP,
-        saldoPuenteFecha: new Date().toISOString().slice(0, 10),
+        // ✅ V00366: al cobrarse por COMPLETADO (no por verde), el cruce lleva la
+        //   fecha de servicio — el gasto de hoy solo suma verdes marcados hoy.
+        saldoPuenteFecha: String(formData.fechaServicio || '').slice(0, 10) || new Date().toISOString().slice(0, 10),
+        saldoPuenteEvento: 'Completado',
       };
     } catch (e) { console.warn('Saldo de puente al completar:', e); return {}; }
   };
