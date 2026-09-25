@@ -1621,6 +1621,38 @@ const CatalogosDashboard = () => {
     setBorrandoSeleccion(false);
   };
 
+  // ✅ V00374: utilidades del GASTO DE PUENTE en Tarifas de Referencia —
+  //   toda tarifa con ADUANA debe tener EXACTAMENTE UN gasto de puente.
+  const normPuente = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  const esGastoPuente = (gastoId: unknown): boolean => {
+    const cat = (opcionesDinamicas['catalogo_tipos_gastos'] || []).find((t: { id?: unknown }) => String(t.id) === String(gastoId || '').trim()) as { categoria_gasto?: unknown } | undefined;
+    return !!cat && normPuente(cat.categoria_gasto) === 'puente';
+  };
+  const puentesDeTarifa = (tarifaId: unknown, excluirDetalleId?: string): number => {
+    const docs = subDocsSnapshot['tarifas_gastos_incluidos'] || [];
+    const pid = String(tarifaId || '').trim().toLowerCase();
+    if (!pid) return 0;
+    return docs.filter((doc0: unknown) => {
+      const d = doc0 as Record<string, unknown>;
+      if (excluirDetalleId && String(d.id) === String(excluirDetalleId)) return false;
+      const vinculado = Object.values(d).some((val) => {
+        if (!val) return false;
+        const conId = val as { id?: unknown };
+        const strVal = typeof val === 'object' && conId.id ? String(conId.id) : String(val);
+        return strVal.trim().toLowerCase() === pid;
+      });
+      return vinculado && esGastoPuente(d.gasto ?? d.gastoId ?? d.gasto_id);
+    }).length;
+  };
+  const avisoPuenteRef = (reg: { id?: unknown; aduana?: unknown }): React.ReactNode => {
+    if (catalogoSeleccionado?.id !== 'tarifas_referencia') return null;
+    if (!String(reg?.aduana || '').trim()) return null;
+    const n = puentesDeTarifa(reg.id);
+    if (n === 1) return null;
+    if (n === 0) return <span className="cd-aviso-puente" title="Esta tarifa tiene aduana y NO tiene gasto de puente en sus Gastos Incluidos — agrégalo para que el peaje se descuente correcto">🌉⚠ Sin gasto de puente</span>;
+    return <span className="cd-aviso-puente cd-aviso-puente--exceso" title="Esta tarifa tiene MÁS DE UN gasto de puente — deja solo uno">⛔ {n} gastos de puente</span>;
+  };
+
   const handleAgregarEditarSubdetalle = (coleccion: string, data?: any) => {
     const detailConfig = catalogoSeleccionado?.details?.find(d => d.collection === coleccion);
     if (!detailConfig) return;
@@ -1643,6 +1675,15 @@ const CatalogosDashboard = () => {
     try {
       const realCol = CACHE_NOMBRES_COLECCIONES[subColeccionActual.collection] || subColeccionActual.collection;
       const tituloSub = getDetailTitle(subColeccionActual);
+
+      // ✅ V00374: una tarifa con ADUANA solo puede tener UN gasto de puente
+      if (subColeccionActual.collection === 'tarifas_gastos_incluidos' && esGastoPuente(subFormData.gasto)) {
+        const yaTiene = puentesDeTarifa(registroActual?.id, subRegistroActual?.id);
+        if (yaTiene >= 1) {
+          alert('⛔ Esta tarifa ya tiene un gasto de PUENTE en sus Gastos Incluidos.\n\nSolo puede haber UNO por tarifa — edita o elimina el existente en lugar de agregar otro.');
+          return;
+        }
+      }
 
       if (subRegistroActual) {
         await actualizarRegistro(realCol, subRegistroActual.id, subFormData);
@@ -2169,7 +2210,7 @@ const CatalogosDashboard = () => {
                       )}
 
                       {catalogoSeleccionado.fields.map((f: CatalogField) => (
-                        <td className="cd-x31" key={f.name}>{getDisplayValue(reg, f)}</td>
+                        <td className="cd-x31" key={f.name}>{getDisplayValue(reg, f)}{f.name === 'descripcion' && avisoPuenteRef(reg)}</td>
                       ))}
                       {/* ✅ NUEVO: cuántas Tarifas de Referencia usan este tipo */}
                       {catalogoSeleccionado.id === 'tipos_tarifarios' && (
@@ -2445,7 +2486,17 @@ const CatalogosDashboard = () => {
                             return { value: String(opt[vField] || opt.id), label: etiquetaDeOpcion(opt, lField, vField) };
                           })}
                           value={subFormData[f.name] || ''}
-                          onChange={(v) => setSubFormData({ ...subFormData, [f.name]: v })}
+                          onChange={(v) => {
+                            // ✅ V00374: al elegir el GASTO se precarga el MONTO con el
+                            //   importe guardado en el catálogo Tipos de Gastos.
+                            if (subColeccionActual?.collection === 'tarifas_gastos_incluidos' && f.name === 'gasto' && !f.multiple) {
+                              const cat = (opcionesDinamicas['catalogo_tipos_gastos'] || []).find((t: { id?: unknown }) => String(t.id) === String(v)) as { importe?: unknown } | undefined;
+                              const imp = Number(cat?.importe);
+                              setSubFormData({ ...subFormData, [f.name]: v, ...(Number.isFinite(imp) && imp > 0 ? { monto: imp } : {}) });
+                              return;
+                            }
+                            setSubFormData({ ...subFormData, [f.name]: v });
+                          }}
                           multiple={!!f.multiple}
                           placeholder="Buscar y seleccionar..."
                         />
