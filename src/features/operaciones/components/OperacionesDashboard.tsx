@@ -4,7 +4,7 @@ import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
 import { FormularioOperacion } from './FormularioOperacion';
 // ✅ NUEVO: Resúmenes Diarios (Transfer / Logística / Fletes) en PDF.
 import { ResumenDiarioOperaciones } from '../../reportes/components/ResumenDiarioOperaciones';
-import { collection, doc, writeBatch, query, getDocs, limit, where, startAfter, orderBy, onSnapshot, setDoc } from 'firebase/firestore';
+import { collection, doc, writeBatch, query, getDoc, getDocs, limit, where, startAfter, orderBy, onSnapshot, setDoc } from 'firebase/firestore';
 import { DocumentosLista } from '../../documentos/DocumentosLista'; // ✅ V00344
 import { obtenerUsuarioAut } from '../../autorizaciones/autorizaciones'; // ✅ V00344
 import { db, eliminarRegistro } from '../../../config/firebase'; 
@@ -867,7 +867,36 @@ const OperacionesDashboard = () => {
   };
   const AVISO_SIN_VERDE = '⛔ Esta operación cruza puente y aún NO ha marcado Verde MX / Verde USA.\n\nNo se puede COMPLETAR el servicio hasta registrar el verde en los estatus (ahí se descuenta el peaje del puente).';
 
-  const camposSaldoPuenteAlCompletar = async (statusId: string, op: { saldoPuente?: unknown; trafico?: unknown; fechaServicio?: unknown; tipoOperacionNombre?: unknown; proveedorUnidadNombre?: unknown }, statusNombre?: string): Promise<Record<string, unknown>> => {
+  // ✅ V00373: la CASETA agregada en los GASTOS INCLUIDOS de la tarifa de la
+  //   operación MANDA sobre el puente por tráfico — se cobra ese puente con el
+  //   MONTO del vínculo (p. ej. Caseta Puente III $144 de la tarifa).
+  const casetaDeGastosSP = async (op: { convenio?: unknown }): Promise<{ nombre: string; moneda: unknown; monto: number } | null> => {
+    try {
+      const convId = String(op?.convenio || '').trim();
+      if (!convId) return null;
+      const det = await getDoc(doc(db, 'convenios_clientes_detalles', convId));
+      if (!det.exists()) return null;
+      const dd = det.data() as Record<string, unknown>;
+      const tarifaBase = String(dd.tarifaBaseId ?? dd.tarifa_base_id ?? dd.tarifaReferenciaId ?? dd.tarifa_referencia_id ?? '').trim();
+      if (!tarifaBase) return null;
+      const [vs, gs] = await Promise.all([getDocs(collection(db, 'tarifas_gastos_incluidos')), getDocs(collection(db, 'catalogo_tipos_gastos'))]);
+      const normSP = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+      const gastoPorId = new Map(gs.docs.map((g) => [g.id, g.data() as Record<string, unknown>]));
+      for (const v of vs.docs) {
+        const g = v.data() as Record<string, unknown>;
+        const ref = String(g.tarifa_referencia_id ?? g.tarifaReferenciaId ?? g.tarifa_referencia ?? g.tarifaReferencia ?? g.ID_SERVICES ?? g.id_services ?? g.idServices ?? g.tarifaId ?? '').trim();
+        if (ref !== tarifaBase) continue;
+        const gastoId = String(g.gasto ?? g.gastoId ?? g.gasto_id ?? '').trim();
+        const cat = gastoPorId.get(gastoId);
+        if (!cat || normSP(cat.categoria_gasto) !== 'puente') continue;
+        const monto = Number(g.monto ?? g.importe ?? g.cantidad ?? g.valor ?? 0) || Number(cat.importe) || 0;
+        return { nombre: String(cat.nombre_gasto || ''), moneda: cat.moneda, monto };
+      }
+      return null;
+    } catch { return null; }
+  };
+
+  const camposSaldoPuenteAlCompletar = async (statusId: string, op: { saldoPuente?: unknown; trafico?: unknown; fechaServicio?: unknown; tipoOperacionNombre?: unknown; proveedorUnidadNombre?: unknown; convenio?: unknown }, statusNombre?: string): Promise<Record<string, unknown>> => {
     try {
       if (Number.isFinite(Number(op?.saldoPuente))) return {};
       const nombreSt = String(statusNombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -876,7 +905,15 @@ const OperacionesDashboard = () => {
       const esCompletado = STATUS_COMPLETADOS_IDS_SP.includes(String(statusId || '').trim());
       if (!esVerdeUSA && !esVerdeMX && !esCompletado) return {};
       if (!aplicaPeajeSP(op as { tipoOperacionNombre?: unknown; proveedorUnidadNombre?: unknown })) return {}; // ✅ V00369
-      // ✅ V00365: el puente lo decide el TRÁFICO de la operación — importación
+      const eventoSP0 = esVerdeUSA ? 'Verde USA' : esVerdeMX ? 'Verde MX' : 'Completado';
+      const fechaSP0 = (esVerdeUSA || esVerdeMX) ? new Date().toISOString().slice(0, 10) : (String(op?.fechaServicio || '').slice(0, 10) || new Date().toISOString().slice(0, 10));
+      // ✅ V00373: primero la caseta de los GASTOS INCLUIDOS de la tarifa
+      const casetaTarifa = await casetaDeGastosSP(op);
+      if (casetaTarifa && casetaTarifa.monto > 0) {
+        const monedaCT = String(casetaTarifa.moneda || '') === '7dca62b3' ? 'Dólares' : String(casetaTarifa.moneda || '') === 'f95d8894' ? 'Pesos' : String(casetaTarifa.moneda || '');
+        return { saldoPuente: casetaTarifa.monto, saldoPuentePuente: casetaTarifa.nombre, saldoPuenteMoneda: monedaCT, saldoPuenteFecha: fechaSP0, saldoPuenteEvento: eventoSP0 };
+      }
+      // ✅ V00365: sin caseta en la tarifa, el puente lo decide el TRÁFICO — importación
       //   cruza por Caseta AVI (dólares) y exportación por Puente III (pesos) —
       //   sin importar cuál de los verdes se marcó (p. ej. "Verde Mx
       //   (Importación)" cobra AVI). Sin tráfico, decide el verde marcado.
@@ -892,15 +929,7 @@ const OperacionesDashboard = () => {
       if (!d) return {};
       const x = d.data() as Record<string, unknown>;
       const monedaSP = String(x.moneda || '') === '7dca62b3' ? 'Dólares' : String(x.moneda || '') === 'f95d8894' ? 'Pesos' : String(x.moneda || '');
-      // ✅ V00363: se registra QUÉ evento cobró el peaje (trazable en la tarjeta)
-      const eventoSP = esVerdeUSA ? 'Verde USA' : esVerdeMX ? 'Verde MX' : 'Completado';
-      // ✅ V00366: el cruce cuenta el día que se MARCA el verde; el respaldo
-      //   Completado (ponerse al día con ops viejas) usa la fecha de servicio
-      //   para no inflar el gasto de hoy.
-      const fechaSP = (esVerdeUSA || esVerdeMX)
-        ? new Date().toISOString().slice(0, 10)
-        : (String(op?.fechaServicio || '').slice(0, 10) || new Date().toISOString().slice(0, 10));
-      return { saldoPuente: Number(x.importe) || 0, saldoPuentePuente: String(x.nombre_gasto || ''), saldoPuenteMoneda: monedaSP, saldoPuenteFecha: fechaSP, saldoPuenteEvento: eventoSP };
+      return { saldoPuente: Number(x.importe) || 0, saldoPuentePuente: String(x.nombre_gasto || ''), saldoPuenteMoneda: monedaSP, saldoPuenteFecha: fechaSP0, saldoPuenteEvento: eventoSP0 };
     } catch (e) { console.warn('Saldo de puente al completar:', e); return {}; }
   };
 

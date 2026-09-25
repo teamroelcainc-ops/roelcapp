@@ -1109,6 +1109,37 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       //   proveedor Roelca — Fletes nunca (mostrarPuente trae esa regla).
       if (!mostrarPuente) return {};
       if (initialData && Number.isFinite(Number((initialData as Record<string, unknown>).saldoPuente))) return {};
+      const normSP0 = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+      const fechaSP0 = esVerdeSP ? new Date().toISOString().slice(0, 10) : (String(formData.fechaServicio || '').slice(0, 10) || new Date().toISOString().slice(0, 10));
+      const eventoSP0 = nSt.includes('verde usa') ? 'Verde USA' : esVerdeSP ? 'Verde MX' : 'Completado';
+      // ✅ V00373: la CASETA de los GASTOS INCLUIDOS de la tarifa del convenio
+      //   MANDA — se cobra ese puente con el monto del vínculo (p. ej. $144).
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- catálogos locales sin tipo canónico (mismo criterio del archivo).
+        const convCliente = (listaConveniosCliente as any[]).find((c: any) => c.id === formData.convenio);
+        const tarifaBase = String(convCliente?.tarifaBaseId ?? '').trim();
+        if (tarifaBase) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- variantes legacy de la FK (mismo criterio del archivo).
+          const vinculo = (gastosIncluidosLocal as any[]).find((g: any) => {
+            const ref = String(g.tarifa_referencia_id ?? g.tarifaReferenciaId ?? g.tarifa_referencia ?? g.tarifaReferencia ?? g.ID_SERVICES ?? g.id_services ?? g.idServices ?? g.tarifaId ?? '').trim();
+            if (ref !== tarifaBase) return false;
+            const gastoId = String(g.gasto ?? g.gastoId ?? g.gasto_id ?? '').trim();
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const cat = (tiposGastosLocal as any[]).find((t: any) => String(t.id) === gastoId);
+            return !!cat && normSP0(cat.categoria_gasto) === 'puente';
+          });
+          if (vinculo) {
+            const gastoId = String(vinculo.gasto ?? vinculo.gastoId ?? vinculo.gasto_id ?? '').trim();
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const cat = (tiposGastosLocal as any[]).find((t: any) => String(t.id) === gastoId);
+            const montoCT = Number(vinculo.monto ?? vinculo.importe ?? vinculo.cantidad ?? vinculo.valor ?? 0) || Number(cat?.importe) || 0;
+            if (montoCT > 0) {
+              const monCT = String(cat?.moneda || '') === '7dca62b3' ? 'Dólares' : String(cat?.moneda || '') === 'f95d8894' ? 'Pesos' : String(cat?.moneda || '');
+              return { saldoPuente: montoCT, saldoPuentePuente: String(cat?.nombre_gasto || ''), saldoPuenteMoneda: monCT, saldoPuenteFecha: fechaSP0, saldoPuenteEvento: eventoSP0 };
+            }
+          }
+        }
+      } catch { /* sigue el fallback por tráfico */ }
       const traf = String(formData.trafico || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
       const objetivo = traf.includes('import') ? 'caseta avi' : traf.includes('export') ? 'caseta puente' : '';
       if (!objetivo) return {};
@@ -1121,15 +1152,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       if (!d) return {};
       const x = d.data() as Record<string, unknown>;
       const monedaSP = String(x.moneda || '') === '7dca62b3' ? 'Dólares' : String(x.moneda || '') === 'f95d8894' ? 'Pesos' : String(x.moneda || '');
-      return {
-        saldoPuente: Number(x.importe) || 0,
-        saldoPuentePuente: String(x.nombre_gasto || ''),
-        saldoPuenteMoneda: monedaSP,
-        // ✅ V00366/V00367: el verde marca el cruce HOY; el respaldo por
-        //   Completado usa la fecha de servicio (no infla el gasto de hoy).
-        saldoPuenteFecha: esVerdeSP ? new Date().toISOString().slice(0, 10) : (String(formData.fechaServicio || '').slice(0, 10) || new Date().toISOString().slice(0, 10)),
-        saldoPuenteEvento: nSt.includes('verde usa') ? 'Verde USA' : esVerdeSP ? 'Verde MX' : 'Completado',
-      };
+      return { saldoPuente: Number(x.importe) || 0, saldoPuentePuente: String(x.nombre_gasto || ''), saldoPuenteMoneda: monedaSP, saldoPuenteFecha: fechaSP0, saldoPuenteEvento: eventoSP0 };
     } catch (e) { console.warn('Saldo de puente al completar:', e); return {}; }
   };
 
