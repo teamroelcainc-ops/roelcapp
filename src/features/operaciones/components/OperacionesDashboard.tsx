@@ -857,16 +857,6 @@ const OperacionesDashboard = () => {
     if (!tipo.includes('logistica')) return false;
     return String(op?.proveedorUnidadNombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes('roelca');
   };
-  // ✅ V00371: una operación que cruza puente NO se puede COMPLETAR sin haber
-  //   marcado antes Verde MX / Verde USA (el peaje ya cobrado la deja pasar).
-  //   Fletes y Movimientos quedan exentos.
-  const faltaVerdeParaCompletar = (op: { tipoOperacionNombre?: unknown; proveedorUnidadNombre?: unknown; saldoPuente?: unknown; saldoPuenteEvento?: unknown }): boolean => {
-    if (!aplicaPeajeSP(op)) return false;
-    if (Number(op?.saldoPuente) > 0) return false;
-    return !String(op?.saldoPuenteEvento || '').toLowerCase().includes('verde');
-  };
-  const AVISO_SIN_VERDE = '⛔ Esta operación cruza puente y aún NO ha marcado Verde MX / Verde USA.\n\nNo se puede COMPLETAR el servicio hasta registrar el verde en los estatus (ahí se descuenta el peaje del puente).';
-
   // ✅ V00373: la CASETA agregada en los GASTOS INCLUIDOS de la tarifa de la
   //   operación MANDA sobre el puente por tráfico — se cobra ese puente con el
   //   MONTO del vínculo (p. ej. Caseta Puente III $144 de la tarifa).
@@ -1127,13 +1117,6 @@ const OperacionesDashboard = () => {
     try {
       const { id: statusId, nombre: statusNombreResuelto } = resolverStatus(nuevoStatus);
 
-      // ✅ V00371: sin Verde marcado no se completa (Fletes/Movimientos exentos)
-      if ((STATUS_COMPLETADOS_IDS_SP.includes(String(statusId || '').trim()) || String(statusNombreResuelto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes('completado')) && faltaVerdeParaCompletar(operacionViendo)) {
-        alert(AVISO_SIN_VERDE);
-        setCargandoHorarios(false);
-        return;
-      }
-
       const batch = writeBatch(db);
       const horarioRef = doc(collection(db, 'horarios'));
       batch.set(horarioRef, limpiarUndefined({
@@ -1173,23 +1156,6 @@ const OperacionesDashboard = () => {
   const registrarStatusRapido = async (statusNombre: string) => {
     if (!operacionViendo || !statusNombre) return;
     if (guardandoStatusRapido) return;
-
-    // ✅ V00371: sin Verde marcado no se completa (Fletes/Movimientos exentos)
-    if (String(statusNombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes('completado') && faltaVerdeParaCompletar(operacionViendo)) {
-      alert(AVISO_SIN_VERDE);
-      return;
-    }
-
-    const _normalizar = (s: string) =>
-      String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-    if (_normalizar(statusNombre).includes('cancel')) {
-      const refOp = operacionViendo.ref || operacionViendo.id?.substring(0, 6) || 'esta operación';
-      const confirmado = window.confirm(
-        `¿Seguro que deseas CANCELAR la operación ${refOp}?\n\n` +
-        `Se registrará el status "${statusNombre}" y la referencia quedará cancelada.`
-      );
-      if (!confirmado) return;
-    }
 
     setGuardandoStatusRapido(statusNombre);
 
