@@ -349,6 +349,7 @@ const OperacionesDashboard = () => {
   //    el desplegable del modal "Registrar Movimiento".
   const statusServicioOrdenado = useMemo(() => {
     const lista = (catalogosGlobales.statusServicio || []) as any[];
+  void statusServicioOrdenado; // ✅ V00378: el modal ya solo usa los estatus del flujo
     return [...lista]
       .filter((s: any) => s && s.nombre)
       .sort((a: any, b: any) => compararStatusPorNumero(String(a.nombre), String(b.nombre)));
@@ -1122,6 +1123,11 @@ const OperacionesDashboard = () => {
   };
 
   const guardarHorario = async () => {
+    // ✅ V00378: solo se registran estatus de la regla del flujo de la operación
+    if (!nuevoStatus || !statusDelFlujo || !statusDelFlujo.includes(nuevoStatus)) {
+      alert('Elige un estatus de la lista — solo se pueden registrar los estatus del flujo configurado para esta operación (Configuración → Reglas de Estatus).');
+      return;
+    }
     if (!nuevoStatus || !nuevaFechaHora) return alert("Completa la fecha y el estatus.");
     setCargandoHorarios(true);
     try {
@@ -2744,17 +2750,17 @@ const OperacionesDashboard = () => {
             <div className="od-x156">
               <div>
                 <label className="od-x157">Estatus</label>
-                <select className="od-x158" value={nuevoStatus} onChange={(e) => setNuevoStatus(e.target.value)}>
-                  <option value="">Selecciona un estatus...</option>
-                  {(statusDelFlujo && statusDelFlujo.length > 0
-                    ? statusDelFlujo /* ✅ V00377: solo los estatus de la regla del flujo */
-                    : statusServicioOrdenado.length > 0
-                      ? statusServicioOrdenado.map((s: any) => String(s.nombre))
-                      : botonesDisponibles
-                  ).map((nombre: string) => (
+                <select className="od-x158" value={nuevoStatus} onChange={(e) => setNuevoStatus(e.target.value)} disabled={!statusDelFlujo || statusDelFlujo.length === 0}>
+                  <option value="">{statusDelFlujo && statusDelFlujo.length > 0 ? 'Selecciona un estatus...' : 'Sin reglas de estatus para esta operación'}</option>
+                  {/* ✅ V00377/V00378: ÚNICAMENTE los estatus de la regla del flujo de
+                      ESTA operación — sin flujo configurado no se puede marcar nada. */}
+                  {(statusDelFlujo || []).map((nombre: string) => (
                     <option key={nombre} value={nombre}>{nombre}</option>
                   ))}
                 </select>
+                {(!statusDelFlujo || statusDelFlujo.length === 0) && (
+                  <div className="od-sinflujo">⚠ Esta operación (su Servicio + Tráfico + Carga) no tiene un flujo en Configuración → Reglas de Estatus. Configúralo y guárdalo para habilitar el registro de movimientos.</div>
+                )}
               </div>
               <div>
                 <label className="od-x157">Fecha y Hora</label>

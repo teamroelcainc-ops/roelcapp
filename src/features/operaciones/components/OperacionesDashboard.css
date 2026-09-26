@@ -392,3 +392,6 @@
 .od-util-total--pos { color: #3fb950; }
 .od-util-total--neg { color: #f85149; }
 .od-util-aviso { color: #d29922; font-size: 0.74rem; margin-top: 6px; }
+
+/* ✅ V00378: aviso de operación sin flujo de estatus */
+.od-sinflujo { margin-top: 8px; padding: 8px 10px; border: 1px solid #d29922; border-radius: 8px; color: #d29922; font-size: 0.78rem; background: rgba(210, 153, 34, 0.08); }
