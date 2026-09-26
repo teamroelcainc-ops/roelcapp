@@ -14,7 +14,7 @@ import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesC
 import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 // ✅ NUEVO: historial de actividad (colección historial_actividad)
 import { registrarLog } from '../../../utils/logger';
-import { calcularStatusDinamico } from '../config/statusRules';
+import { statusDescuentaPuente, calcularStatusDinamico } from '../config/statusRules';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 
@@ -1104,14 +1104,20 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       const nSt = String(statusNombreSP || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
       const esVerdeSP = nSt.includes('verde mx') || nSt.includes('verde mexico') || nSt.includes('verde usa');
       const esCompletadoSP = STATUS_COMPLETADOS_IDS_SP.includes(String(statusFinal || '').trim());
-      if (!esVerdeSP && !esCompletadoSP) return {};
+      // ✅ V00377: la REGLA DE ESTATUS del flujo manda — el estatus marcado con
+      //   "🌉 aquí se descuenta el puente" dispara; verdes solo sin regla.
+      const infoFlujoSP = { ...(initialData as Record<string, unknown> | undefined || {}), tipoServicio: formData.tipoServicio, tipoOperacionId: formData.tipoOperacionId, trafico: formData.trafico, carga: formData.carga ?? (initialData as Record<string, unknown> | undefined)?.carga };
+      const flagFlujoSP = await statusDescuentaPuente(infoFlujoSP, String(statusNombreSP || ''));
+      const disparaSP = flagFlujoSP === true || (flagFlujoSP === null && esVerdeSP) || esCompletadoSP;
+      if (!disparaSP) return {};
+      const esDisparoDirectoSP = flagFlujoSP === true || esVerdeSP;
       // ✅ V00369: el peaje SOLO aplica a Transfer, o Logística de Cruces con
       //   proveedor Roelca — Fletes nunca (mostrarPuente trae esa regla).
       if (!mostrarPuente) return {};
       if (initialData && Number.isFinite(Number((initialData as Record<string, unknown>).saldoPuente))) return {};
       const normSP0 = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-      const fechaSP0 = esVerdeSP ? new Date().toISOString().slice(0, 10) : (String(formData.fechaServicio || '').slice(0, 10) || new Date().toISOString().slice(0, 10));
-      const eventoSP0 = nSt.includes('verde usa') ? 'Verde USA' : esVerdeSP ? 'Verde MX' : 'Completado';
+      const fechaSP0 = esDisparoDirectoSP ? new Date().toISOString().slice(0, 10) : (String(formData.fechaServicio || '').slice(0, 10) || new Date().toISOString().slice(0, 10));
+      const eventoSP0 = flagFlujoSP === true ? String(statusNombreSP || '').trim() : nSt.includes('verde usa') ? 'Verde USA' : esVerdeSP ? 'Verde MX' : 'Completado';
       // ✅ V00373: la CASETA de los GASTOS INCLUIDOS de la tarifa del convenio
       //   MANDA — se cobra ese puente con el monto del vínculo (p. ej. $144).
       try {

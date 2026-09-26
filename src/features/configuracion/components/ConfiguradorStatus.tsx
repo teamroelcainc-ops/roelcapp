@@ -17,6 +17,7 @@ interface ReglaStatus {
   opcionesSiguientes: string[];   // ids de los nodos siguientes
   posicion?: NodoPosicion;
   descripcion?: string;
+  descuentaPuente?: boolean; // ✅ V00377: al marcar este estatus se descuenta el saldo del puente
 }
 
 interface FlujoGuardado {
@@ -2043,6 +2044,17 @@ const Inspector = ({
             {regla.tipoMecanismo === 'manual'     && 'Se mostrará como botón en la app; el usuario decide cuándo avanzar.'}
             {regla.tipoMecanismo === 'boton_decision' && 'Se mostrará como botón; permite múltiples caminos siguientes.'}
           </div>
+        </Section>
+
+        {/* ✅ V00377: en qué estatus se descuenta el saldo del puente */}
+        <Section
+          title="Saldo del puente"
+          hint="Al marcar este estatus en la operación se descuenta el peaje del puente (la caseta de los Gastos Incluidos de la tarifa, o la del tráfico)."
+        >
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: regla.descuentaPuente ? '#d29922' : '#c9d1d9' }}>
+            <input type="checkbox" checked={!!regla.descuentaPuente} onChange={(e) => onChange({ descuentaPuente: e.target.checked })} />
+            🌉 Aquí se descuenta el puente
+          </label>
         </Section>
 
         {/* NUEVO: Campos requeridos (ahora via modal) */}

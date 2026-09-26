@@ -10,7 +10,7 @@ import { obtenerUsuarioAut } from '../../autorizaciones/autorizaciones'; // ✅ 
 import { db, eliminarRegistro } from '../../../config/firebase'; 
 import { registrarLog } from '../../../utils/logger';
 import { sincronizarNombresOperaciones as sincronizarNombresUtil } from '../../../utils/sincronizarNombresOperaciones';
-import { obtenerBotonesHorarioDinamicos, resolverCascadaStatus } from '../config/statusRules';
+import { obtenerBotonesHorarioDinamicos, resolverCascadaStatus, obtenerNombresStatusDelFlujo, statusDescuentaPuente } from '../config/statusRules';
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF, setLogoPdf } from '../../../utils/pdfGenerator'; 
 import * as XLSX from 'xlsx';
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
@@ -296,6 +296,8 @@ const OperacionesDashboard = () => {
   const [ultimoStatusGuardado, setUltimoStatusGuardado] = useState<string | null>(null);
   
   const [botonesDisponibles, setBotonesDisponibles] = useState<string[]>([]);
+  // ✅ V00377: estatus del FLUJO aplicable (Registrar Movimiento solo ofrece estos)
+  const [statusDelFlujo, setStatusDelFlujo] = useState<string[] | null>(null);
   const [catalogosGlobales, setCatalogosGlobales] = useState<any>({});
 
   const [busqueda, setBusqueda] = useState('');
@@ -772,8 +774,10 @@ const OperacionesDashboard = () => {
         }
         const botones = await obtenerBotonesHorarioDinamicos(op);
         setBotonesDisponibles(botones || []);
+        setStatusDelFlujo(await obtenerNombresStatusDelFlujo(op)); // ✅ V00377
       } else {
         setBotonesDisponibles([]);
+        setStatusDelFlujo(null);
       }
     };
     cargarBotones();
@@ -893,10 +897,16 @@ const OperacionesDashboard = () => {
       const esVerdeUSA = nombreSt.includes('verde usa');
       const esVerdeMX = nombreSt.includes('verde mx') || nombreSt.includes('verde mexico');
       const esCompletado = STATUS_COMPLETADOS_IDS_SP.includes(String(statusId || '').trim());
-      if (!esVerdeUSA && !esVerdeMX && !esCompletado) return {};
       if (!aplicaPeajeSP(op as { tipoOperacionNombre?: unknown; proveedorUnidadNombre?: unknown })) return {}; // ✅ V00369
-      const eventoSP0 = esVerdeUSA ? 'Verde USA' : esVerdeMX ? 'Verde MX' : 'Completado';
-      const fechaSP0 = (esVerdeUSA || esVerdeMX) ? new Date().toISOString().slice(0, 10) : (String(op?.fechaServicio || '').slice(0, 10) || new Date().toISOString().slice(0, 10));
+      // ✅ V00377: si la REGLA DE ESTATUS del flujo marca "🌉 aquí se descuenta
+      //   el puente", ESE estatus dispara el cobro (los verdes solo aplican
+      //   cuando el flujo no define ninguno); COMPLETADO sigue de respaldo.
+      const flagFlujo = await statusDescuentaPuente(op, String(statusNombre || ''));
+      const dispara = flagFlujo === true || (flagFlujo === null && (esVerdeUSA || esVerdeMX)) || esCompletado;
+      if (!dispara) return {};
+      const esDisparoDirecto = flagFlujo === true || esVerdeUSA || esVerdeMX;
+      const eventoSP0 = flagFlujo === true ? String(statusNombre || '').trim() : esVerdeUSA ? 'Verde USA' : esVerdeMX ? 'Verde MX' : 'Completado';
+      const fechaSP0 = esDisparoDirecto ? new Date().toISOString().slice(0, 10) : (String(op?.fechaServicio || '').slice(0, 10) || new Date().toISOString().slice(0, 10));
       // ✅ V00373: primero la caseta de los GASTOS INCLUIDOS de la tarifa
       const casetaTarifa = await casetaDeGastosSP(op);
       if (casetaTarifa && casetaTarifa.monto > 0) {
@@ -2736,9 +2746,11 @@ const OperacionesDashboard = () => {
                 <label className="od-x157">Estatus</label>
                 <select className="od-x158" value={nuevoStatus} onChange={(e) => setNuevoStatus(e.target.value)}>
                   <option value="">Selecciona un estatus...</option>
-                  {(statusServicioOrdenado.length > 0
-                    ? statusServicioOrdenado.map((s: any) => String(s.nombre))
-                    : botonesDisponibles
+                  {(statusDelFlujo && statusDelFlujo.length > 0
+                    ? statusDelFlujo /* ✅ V00377: solo los estatus de la regla del flujo */
+                    : statusServicioOrdenado.length > 0
+                      ? statusServicioOrdenado.map((s: any) => String(s.nombre))
+                      : botonesDisponibles
                   ).map((nombre: string) => (
                     <option key={nombre} value={nombre}>{nombre}</option>
                   ))}

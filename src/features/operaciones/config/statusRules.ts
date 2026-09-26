@@ -364,6 +364,33 @@ export const resolverCascadaStatus = async (
 //      Si la operación queda en "En Tránsito", AHORA mostramos "Llegada"
 //      porque seguimos cruzando automáticos hasta el primer manual.
 // =========================================================================
+// ✅ V00377: nombres de TODOS los estatus del flujo aplicable a la operación
+//   (para que "Registrar Movimiento" solo ofrezca los de la regla), en orden.
+export const obtenerNombresStatusDelFlujo = async (operacionInfo: any): Promise<string[] | null> => {
+  try {
+    const snap = await obtenerDocFlujo(operacionInfo);
+    if (!snap || !snap.exists() || !snap.data().flujo) return null;
+    const reglas = snap.data().flujo as any[];
+    const nombres = reglas.slice().sort((a, b) => (Number(a?.orden) || 0) - (Number(b?.orden) || 0)).map((r) => String(r?.nombreStatus || '')).filter(Boolean);
+    return nombres.length > 0 ? nombres : null;
+  } catch { return null; }
+};
+
+// ✅ V00377: ¿este estatus DESCUENTA el puente según la regla del flujo?
+//   true/false cuando el flujo define nodos con descuentaPuente;
+//   null cuando no hay flujo o ningún nodo lo define (aplica el fallback).
+export const statusDescuentaPuente = async (operacionInfo: any, statusNombre: string): Promise<boolean | null> => {
+  try {
+    const snap = await obtenerDocFlujo(operacionInfo);
+    if (!snap || !snap.exists() || !snap.data().flujo) return null;
+    const reglas = snap.data().flujo as any[];
+    const conFlag = reglas.filter((r) => !!r?.descuentaPuente);
+    if (conFlag.length === 0) return null;
+    const n = normalizarNombre(String(statusNombre || ''));
+    return conFlag.some((r) => normalizarNombre(String(r?.nombreStatus || '')) === n);
+  } catch { return null; }
+};
+
 export const obtenerBotonesHorarioDinamicos = async (operacionInfo: any): Promise<string[]> => {
   if (!operacionInfo) return [];
 
