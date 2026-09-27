@@ -1,5 +1,5 @@
 // src/features/operaciones/config/statusRules.ts
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 
 // ✅ CACHÉ DE FLUJOS EN MEMORIA + localStorage (sin cambios)
@@ -23,6 +23,7 @@ const lsSetFlujo = (configId: string, data: any) => {
 };
 
 export const limpiarCacheFlujos = (configId?: string) => {
+  indiceFlujos = null; // ✅ V00379
   if (configId) {
     flujoCache.delete(configId);
     try { localStorage.removeItem(`flujo_v1__${configId}`); } catch {}
@@ -145,6 +146,86 @@ const construirConfigId = (operacionInfo: any): string => {
   return `${tipoOpText}_${trafico}_${carga}`;
 };
 
+// ✅ V00379: índice de flujos (id + tipoServicio/trafico/carga) en memoria, 5 min.
+type EntradaIndiceFlujo = { id: string; tipoServicio: string; trafico: string; carga: string };
+let indiceFlujos: { lista: EntradaIndiceFlujo[]; ts: number } | null = null;
+const INDICE_TTL_MS = 5 * 60 * 1000;
+
+const obtenerIndiceFlujos = async (): Promise<EntradaIndiceFlujo[]> => {
+  if (indiceFlujos && Date.now() - indiceFlujos.ts < INDICE_TTL_MS) return indiceFlujos.lista;
+  const snap = await getDocs(collection(db, 'config_flujos_operacion'));
+  const lista = snap.docs.map(d => {
+    const x = d.data() as Record<string, unknown>;
+    return {
+      id: d.id,
+      tipoServicio: String(x.tipoServicio ?? ''),
+      trafico: String(x.trafico ?? ''),
+      carga: String(x.carga ?? ''),
+    };
+  });
+  indiceFlujos = { lista, ts: Date.now() };
+  return lista;
+};
+
+// Cargado/Cargada/Llena/Lleno → 'cargado'; Vacio/Vacía → 'vacio'
+const canonCarga = (s: unknown): string => {
+  const n = normalizarNombre(String(s ?? ''));
+  if (n.startsWith('cargad') || n.startsWith('llen')) return 'cargado';
+  if (n.startsWith('vaci')) return 'vacio';
+  return n;
+};
+
+const textoConvenio = (operacionInfo: Record<string, unknown>): string =>
+  [operacionInfo.convenioNombre, operacionInfo.convenio, operacionInfo.convenioTarifa, operacionInfo.tarifaNombre, operacionInfo.tipoConvenioNombre]
+    .filter(Boolean).map(v => normalizarNombre(String(v))).join(' ');
+
+const utilValor = (v: unknown): string => {
+  const s = String(v ?? '').trim();
+  return s && s.toUpperCase() !== 'N/A' ? s : '';
+};
+
+const buscarFlujoPorIndice = async (operacionInfo: Record<string, unknown>): Promise<string | null> => {
+  try {
+    const conv = textoConvenio(operacionInfo);
+
+    const tipos = new Set(
+      [operacionInfo.tipoOperacionNombre, operacionInfo.tipoOperacion, operacionInfo.tipoServicio]
+        .map(utilValor).filter(Boolean).map(normalizarNombre)
+    );
+    const traficos = new Set([utilValor(operacionInfo.trafico)].filter(Boolean).map(normalizarNombre));
+    if (conv.includes('importacion')) traficos.add('importacion');
+    if (conv.includes('exportacion')) traficos.add('exportacion');
+    if (conv.includes('nacional')) traficos.add('nacional');
+
+    const cargas = new Set(
+      [operacionInfo.carga, operacionInfo.cargadoVacio].map(utilValor).filter(Boolean).map(canonCarga)
+    );
+    if (/\b(cargad[oa]|llen[oa])\b/.test(conv)) cargas.add('cargado');
+    if (/\bvaci[oa]\b/.test(conv)) cargas.add('vacio');
+
+    if (tipos.size === 0 || traficos.size === 0 || cargas.size === 0) return null;
+
+    const lista = await obtenerIndiceFlujos();
+    // Primero lo capturado en la operación; el convenio solo desempata.
+    const traficoOp = normalizarNombre(utilValor(operacionInfo.trafico));
+    const cargaOp = canonCarga(utilValor(operacionInfo.carga));
+    const candidatos = lista.filter(f =>
+      tipos.has(normalizarNombre(f.tipoServicio)) &&
+      traficos.has(normalizarNombre(f.trafico)) &&
+      cargas.has(canonCarga(f.carga))
+    );
+    if (candidatos.length === 0) return null;
+    const exacto = candidatos.find(f =>
+      (!traficoOp || normalizarNombre(f.trafico) === traficoOp) &&
+      (!cargaOp || canonCarga(f.carga) === cargaOp)
+    );
+    return (exacto || candidatos[0]).id;
+  } catch (e) {
+    console.warn('[statusRules] Índice de flujos no disponible:', e);
+    return null;
+  }
+};
+
 const obtenerDocFlujo = async (operacionInfo: any) => {
   const idPrincipal = construirConfigId(operacionInfo);
 
@@ -186,7 +267,22 @@ const obtenerDocFlujo = async (operacionInfo: any) => {
     }
   }
 
-  console.warn('[statusRules] ❌ No se encontró flujo. Probé:', [idPrincipal, idSinAcentos, ...variantes]);
+  // ✅ V00379: respaldo TOLERANTE por índice. construirConfigId() aplica
+  //   formatTitleCase al servicio y "Logistica Fletes" se volvía
+  //   "Logistica fletes" (los ids de Firestore distinguen mayúsculas), y la
+  //   carga inferida del convenio no reconocía "Cargado"/"Vacio". Aquí se
+  //   comparan los TRES campos guardados por el configurador (tipoServicio,
+  //   trafico, carga) normalizados, igual que buildConfigId del formulario.
+  const porIndice = await buscarFlujoPorIndice(operacionInfo);
+  if (porIndice) {
+    data = await obtenerFlujoConCache(porIndice);
+    if (data) {
+      console.log('[statusRules] ✅ Match (índice tolerante) con:', porIndice);
+      return { exists: () => true, data: () => data };
+    }
+  }
+
+  console.warn('[statusRules] ❌ No se encontró flujo. Probé:', [idPrincipal, idSinAcentos, ...variantes, '(índice tolerante)']);
   return null;
 };
 
