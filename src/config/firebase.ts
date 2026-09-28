@@ -135,6 +135,18 @@ export const eliminarRegistro = async (nombreColeccion: string, id: string, opci
   //      y datos idénticos.
   //   Los módulos que ya capturan su propia nota la pasan en `opciones.motivo`
   //   para no preguntar dos veces.
+  // ✅ V00383: RED DE SEGURIDAD de Autorizaciones — si la acción "Borrar" del
+  //   módulo dueño de esta colección requiere autorización para el usuario,
+  //   el borrado se detiene aquí (antes, varios módulos borraban sin revisar
+  //   la regla). Import dinámico para no crear un ciclo con autorizaciones.ts.
+  if (!opciones?.omitirAutorizacion) {
+    const { evaluarBorrado } = await import('../features/autorizaciones/autorizaciones');
+    const ev = await evaluarBorrado(nombreColeccion);
+    if (!ev.permitido) {
+      alert(ev.motivo);
+      throw new Error('Eliminación bloqueada por Autorizaciones');
+    }
+  }
   let motivo = String(opciones?.motivo ?? '').trim();
   if (!motivo) {
     motivo = pedirNotaEliminacion();
@@ -168,6 +180,8 @@ export interface OpcionesEliminacion {
   modulo?: string;
   /** Descripción corta del registro para identificarlo en la papelera. */
   etiqueta?: string;
+  /** ✅ V00383: procesos internos (no un borrado del usuario) pueden saltar la regla "Borrar". */
+  omitirAutorizacion?: boolean;
 }
 
 /** Pide la nota de eliminación obligatoria. Si el usuario cancela o la deja

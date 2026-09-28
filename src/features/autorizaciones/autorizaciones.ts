@@ -464,6 +464,27 @@ export const valoresEquivalentesAut = (a: unknown, b: unknown): boolean => {
 export const camposModificadosDe = (nuevos: Record<string, any>, anteriores: Record<string, any>): string[] =>
   Object.keys(nuevos || {}).filter((k) => !valoresEquivalentesAut(nuevos[k], anteriores?.[k]));
 
+// ✅ V00383: ¿el usuario actual puede BORRAR en el módulo dueño de una colección?
+//   Respeta Admin, "Ver como", roles de la regla y usuarios exentos.
+export const moduloDeColeccion = (coleccion: string): string | null => {
+  const c = String(coleccion || '');
+  if (c.startsWith('catalogo_')) return 'catalogos';
+  return MODULOS_AUTORIZABLES.find((m) => m.coleccion === c)?.clave || null;
+};
+
+export const evaluarBorrado = async (coleccion: string): Promise<{ permitido: boolean; motivo: string }> => {
+  const modulo = moduloDeColeccion(coleccion);
+  if (!modulo) return { permitido: true, motivo: '' };
+  const [config, usuario] = await Promise.all([cargarConfigModulo(modulo), obtenerUsuarioAut()]);
+  const r = evaluarAutorizacion(config, 'borrar', usuario, [], {}, null);
+  if (!r.requiere) return { permitido: true, motivo: '' };
+  const label = MODULOS_AUTORIZABLES.find((m) => m.clave === modulo)?.label || modulo;
+  return {
+    permitido: false,
+    motivo: `⛔ No se eliminó el registro: la acción "Borrar" de ${label} requiere autorización de un Administrador para tu rol.\n\nPídele a un Admin que lo elimine o que ajuste la regla en Configuración → Autorizaciones.`,
+  };
+};
+
 /** Crea la solicitud pendiente. Devuelve el id. */
 export const crearSolicitudAutorizacion = async (s: Omit<SolicitudAut, 'estado' | 'creadaEn'>): Promise<string> => {
   const payload: SolicitudAut = {

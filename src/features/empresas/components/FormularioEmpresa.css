@@ -87,3 +87,6 @@
 .fe-dirtipo__nombre { flex: 1; min-width: 0; color: #c9d1d9; font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fe-dirtipo__quitar { background: none; border: none; color: #ef4444; cursor: pointer; font-size: 0.8rem; padding: 2px 6px; }
 .fe-dirtipo__quitar:hover { background: rgba(239, 68, 68, 0.12); border-radius: 4px; }
+/* ✅ V00383: encabezado de la sección única de dirección */
+.fe-dirtipo__enc { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.fe-dirtipo__enc .form-label { margin: 0; }

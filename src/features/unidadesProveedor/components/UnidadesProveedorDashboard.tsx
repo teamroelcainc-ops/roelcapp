@@ -6,6 +6,7 @@ import { FormularioUnidadProveedor } from './FormularioUnidadProveedor';
 import type { UnidadProveedorRecord } from '../../../types/unidadProveedor';
 import * as XLSX from 'xlsx';
 import './UnidadesProveedorDashboard.css';
+import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 
 // ✅ COLUMNAS BASE DE LA TABLA UNIDADES DE PROVEEDOR
 const COLUMNAS_BASE = [
@@ -67,6 +68,8 @@ export const UnidadesProveedorDashboard: React.FC = () => {
 
   const handleEliminar = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation(); 
+    const evBorrar = await evaluarBorrado('unidades_proveedor'); // ✅ V00383: regla "Borrar" de Autorizaciones
+    if (!evBorrar.permitido) { alert(evBorrar.motivo); return; }
     if (window.confirm('¿Estás seguro de que deseas eliminar permanentemente esta unidad?')) {
       try {
         await eliminarRegistro('unidades_proveedor', id);

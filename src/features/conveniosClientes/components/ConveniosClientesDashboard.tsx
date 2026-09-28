@@ -10,6 +10,7 @@ import { registrarLog } from '../../../utils/logger';
 import { obtenerTarifasReferencia } from '../services/tarifasReferenciaService';
 import './ConveniosClientesDashboard.css';
 import { hoyLocalISO, fechaLocalISO } from '../../../utils/fechaHoraLocal';
+import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 
 // ============================================================
 // HELPERS DE CRUCE (NORMALIZACIÓN)
@@ -360,6 +361,8 @@ export const ConveniosClientesDashboard: React.FC = () => {
 
   const handleEliminar = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation(); 
+    const evBorrar = await evaluarBorrado('convenios_clientes'); // ✅ V00383: regla "Borrar" de Autorizaciones
+    if (!evBorrar.permitido) { alert(evBorrar.motivo); return; }
     if (window.confirm('¿Estás seguro de que deseas eliminar permanentemente este convenio?')) {
       try {
         await eliminarRegistro('convenios_clientes', id);
@@ -425,6 +428,8 @@ export const ConveniosClientesDashboard: React.FC = () => {
 
   // ✅ Elimina un detalle (tarifa) del convenio.
   const eliminarDetalle = async (det: any) => {
+    const evBorrar = await evaluarBorrado('convenios_clientes_detalles'); // ✅ V00383: regla "Borrar" de Autorizaciones
+    if (!evBorrar.permitido) { alert(evBorrar.motivo); return; }
     const nombre = det.tipoConvenioNombre || det.tarifaNombre || det.nombre || 'esta tarifa';
     if (!window.confirm(`¿Eliminar el detalle "${nombre}"? Esta acción no se puede deshacer.`)) return;
     try {

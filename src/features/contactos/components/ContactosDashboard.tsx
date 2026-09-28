@@ -5,6 +5,7 @@ import { db, eliminarRegistro } from '../../../config/firebase';
 import { FormularioContacto } from './FormularioContacto';
 import './ContactosDashboard.css';
 import { almacenSesion } from '../../../utils/cacheMemoria';
+import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 
 // ✅ TODAS LAS COLUMNAS DE LA COLECCIÓN CON NOMBRES LEGIBLES
 const COLUMNAS_BASE = [
@@ -83,6 +84,8 @@ export const ContactosDashboard = () => {
   };
 
   const eliminarContacto = async (id: string) => {
+    const evBorrar = await evaluarBorrado('contactos'); // ✅ V00383: regla "Borrar" de Autorizaciones
+    if (!evBorrar.permitido) { alert(evBorrar.motivo); return; }
     if (window.confirm('¿Estás seguro de que deseas eliminar este contacto permanentemente?')) {
       try {
         await eliminarRegistro('contactos', id);

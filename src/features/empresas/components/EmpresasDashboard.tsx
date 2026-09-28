@@ -15,6 +15,7 @@ import { DocumentosLista } from '../../documentos/DocumentosLista';
 import { registrarLog } from '../../../utils/logger';
 import * as XLSX from 'xlsx';
 import './EmpresasDashboard.css';
+import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 import { almacenSesion, obtenerCacheMemoria, guardarCacheMemoria } from '../../../utils/cacheMemoria';
 import { hoyLocalISO, fechaLocalISO } from '../../../utils/fechaHoraLocal';
 
@@ -794,6 +795,9 @@ const EmpresasDashboard = () => {
 
   const ejecutarUnion = async () => {
     if (uniendo || !conservarId || seleccionUnir.length < 2) return;
+    // ✅ V00383: unir duplicados ELIMINA empresas → misma regla "Borrar"
+    const evU = await evaluarBorrado('empresas');
+    if (!evU.permitido) { alert(evU.motivo); return; }
     const kept: any = empresas.find((e: any) => e.id === conservarId);
     const duplicados = seleccionUnir.filter((id) => id !== conservarId);
     if (!kept || duplicados.length === 0) return;
@@ -910,6 +914,10 @@ const EmpresasDashboard = () => {
   };
 
   const eliminarEmpresa = async (id: string) => {
+    // ✅ V00383: la regla "Borrar" de Empresas en Autorizaciones se respeta
+    //   ANTES de preguntar (antes se podía eliminar aunque estuviera marcada).
+    const ev = await evaluarBorrado('empresas');
+    if (!ev.permitido) { alert(ev.motivo); return; }
     if (window.confirm('¿Estás seguro de que deseas eliminar permanentemente esta empresa?')) {
       try {
         await eliminarRegistro('empresas', id);

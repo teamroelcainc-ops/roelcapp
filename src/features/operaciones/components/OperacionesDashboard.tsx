@@ -17,6 +17,7 @@ import * as XLSX from 'xlsx';
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
 import './OperacionesDashboard.css';
 import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
+import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 
 // ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
 const fmtFechaAuditoria = (iso: any): string => {
@@ -800,6 +801,8 @@ const OperacionesDashboard = () => {
   };
   
   const eliminarOperacion = async (op: any) => {
+    const evBorrar = await evaluarBorrado('operaciones'); // ✅ V00383: regla "Borrar" de Autorizaciones
+    if (!evBorrar.permitido) { alert(evBorrar.motivo); return; }
     if (!op) return;
     // ✅ Borra por el ID REAL de Firestore (_docId); si no existe, cae al id.
     const docId = op._docId || op.id;

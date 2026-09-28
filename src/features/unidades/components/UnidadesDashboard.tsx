@@ -9,6 +9,7 @@ import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 import type { UnidadRecord } from '../../../types/unidad'; 
 import * as XLSX from 'xlsx';
 import './UnidadesDashboard.css';
+import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 
 // ✅ COLUMNAS BASE DE LA TABLA UNIDADES
 const COLUMNAS_BASE = [
@@ -84,6 +85,8 @@ export const UnidadesDashboard: React.FC = () => {
 
   const handleEliminar = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation(); 
+    const evBorrar = await evaluarBorrado('unidades'); // ✅ V00383: regla "Borrar" de Autorizaciones
+    if (!evBorrar.permitido) { alert(evBorrar.motivo); return; }
     if (window.confirm('¿Estás seguro de que deseas eliminar permanentemente esta unidad?')) {
       try {
         await eliminarRegistro('unidades', id);

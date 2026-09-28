@@ -10,6 +10,7 @@ import { HerramientasEmpleado } from './HerramientasEmpleado';
 import type { Employee } from '../../../types/empleado';
 import * as XLSX from 'xlsx';
 import './EmpleadosDashboard.css';
+import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 
 const COLUMNAS_BASE = [
   { id: 'employeeId', label: '# Empleado', visible: true },
@@ -122,6 +123,8 @@ export const EmpleadosDashboard = () => {
   const editarEmpleado = (emp: Employee) => { setEmpleadoViendo(null); setEmpleadoEditando(emp); setEstadoFormulario('abierto'); };
   
   const eliminarEmpleado = async (id: string) => {
+    const evBorrar = await evaluarBorrado('empleados'); // ✅ V00383: regla "Borrar" de Autorizaciones
+    if (!evBorrar.permitido) { alert(evBorrar.motivo); return; }
     if (window.confirm('¿Eliminar empleado permanentemente?')) {
       try { await eliminarRegistro('empleados', id); setEmpleadoViendo(null); } 
       catch (error) { alert("Error al eliminar."); }

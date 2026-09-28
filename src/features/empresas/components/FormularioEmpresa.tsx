@@ -406,15 +406,22 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
     const sel = dirTipoSeleccion[tipoNombre];
     if (!sel || !sel.id) return;
     setFormData(prev => {
-      const ya = (prev.direccionesPorTipo || []).some(d => d.tipoNombre === tipoNombre && String(d.direccionId) === String(sel.id));
+      const ya = (prev.direccionesPorTipo || []).some(d => (d.tipoNombre === tipoNombre || nombreTipoEmpresaDeIdRef.current(String(d.tipoNombre)) === nombreTipoEmpresaDeIdRef.current(tipoNombre)) && String(d.direccionId) === String(sel.id));
       if (ya) return prev; // sin duplicados del mismo tipo+dirección
       return { ...prev, direccionesPorTipo: [...(prev.direccionesPorTipo || []), { tipoNombre, direccionId: sel.id, direccionNombre: sel.label }] };
     });
     setDirTipoSeleccion(prev => ({ ...prev, [tipoNombre]: { id: '', label: '' } }));
   };
   const quitarDireccionTipo = (tipoNombre: string, direccionId: string) => {
-    setFormData(prev => ({ ...prev, direccionesPorTipo: (prev.direccionesPorTipo || []).filter(d => !(d.tipoNombre === tipoNombre && String(d.direccionId) === String(direccionId))) }));
+    const mismoTipo = (a: string, b: string) => a === b || nombreTipoEmpresaDeIdRef.current(a) === nombreTipoEmpresaDeIdRef.current(b); // ✅ V00383
+    setFormData(prev => ({
+      ...prev,
+      direccionesPorTipo: (prev.direccionesPorTipo || []).filter(d => !(mismoTipo(String(d.tipoNombre), tipoNombre) && String(d.direccionId) === String(direccionId))),
+      // ✅ V00383: si era la dirección principal, también se libera
+      ...(String(prev.direccionId || '') === String(direccionId) ? { direccionId: '', direccion: '', direccionLabel: '' } : {}),
+    }));
   };
+  const nombreTipoEmpresaDeIdRef = React.useRef<(v: string) => string>((v) => v);
   const [modalRegimenAbierto, setModalRegimenAbierto] = useState(false);
   const [mostrarSubirDoc, setMostrarSubirDoc] = useState(false);
 
@@ -540,6 +547,22 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
   // ✅ Conversión entre NOMBRES (interfaz) e IDs (Firestore) de los catálogos.
   const idTipoEmpresaDeNombre = (nombre: string) => catTiposEmpresaFull.find(x => x.nombre === nombre)?.id || nombre;
   const nombreTipoEmpresaDeId = (v: string) => catTiposEmpresaFull.find(x => x.id === String(v))?.nombre || v;
+  nombreTipoEmpresaDeIdRef.current = nombreTipoEmpresaDeId; // ✅ V00383
+  // ✅ V00383: empresas con la DIRECCIÓN GENERAL vieja (direccionId) y sin
+  //   direcciones por tipo → la dirección aparece en el bloque del tipo
+  //   principal (Cliente (Paga) o el primero) para no perderla.
+  useEffect(() => {
+    if (catTiposEmpresaFull.length === 0) return;
+    setFormData(prev => {
+      if ((prev.direccionesPorTipo || []).length > 0 || !String(prev.direccionId || '')) return prev;
+      const tipos = (prev.tiposEmpresa || []).map(v => nombreTipoEmpresaDeId(String(v)));
+      if (tipos.length === 0) return prev;
+      const principal = tipos.find(t => t === 'Cliente (Paga)') || tipos[0];
+      const etiqueta = String((prev as Record<string, unknown>).direccionLabel || (prev as Record<string, unknown>).direccion || '');
+      return { ...prev, direccionesPorTipo: [{ tipoNombre: principal, direccionId: String(prev.direccionId), direccionNombre: etiqueta || String(prev.direccionId) }] };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catTiposEmpresaFull, formData.direccionId, formData.tiposEmpresa]);
   const idTipoServicioDeNombre = (nombre: string) => catTiposServicioFull.find(x => x.nombre === nombre)?.id || nombre;
   const nombreTipoServicioDeId = (v: string) => catTiposServicioFull.find(x => x.id === String(v))?.nombre || v;
 
@@ -628,6 +651,11 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
       }
       // ✅ V00268: direcciones por tipo (empresas viejas no traen el campo)
       if (!Array.isArray(data.direccionesPorTipo)) data.direccionesPorTipo = [];
+      // ✅ V00383: una sola Razón Social — si la empresa traía una razón social
+      //   distinta del nombre, manda la razón social (es la que ya se mostraba
+      //   en operaciones, facturación y pagos).
+      const rsCargada = String((data as Record<string, unknown>).razonSocial ?? '').trim();
+      if (rsCargada) data.nombre = rsCargada;
 
       // ✅ Compatibilidad: convertir el cliente relacionado único (formato viejo)
       // a los nuevos arreglos de selección múltiple.
@@ -771,8 +799,17 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
       //   Paga, Proveedores, etc.). La interfaz trabaja con nombres, así que
       //   aquí se convierten justo antes de guardar. Si algún nombre no está
       //   en el catálogo, se conserva tal cual para no perder información.
+      // ✅ V00383: dirección PRINCIPAL = la de Cliente (Paga) (o la primera
+      //   capturada). Se sigue guardando en direccionId/direccion porque la
+      //   leen Operaciones, Facturación, remisiones y la ficha de la empresa.
+      const dirsTipo = formData.direccionesPorTipo || [];
+      const dirPrincipal = dirsTipo.find((d) => nombreTipoEmpresaDeId(String(d.tipoNombre)) === 'Cliente (Paga)') || dirsTipo[0];
+      const nombreUnico = String(formData.nombre || '').trim();
       const payload = {
         ...formData,
+        nombre: nombreUnico,
+        razonSocial: nombreUnico, // ✅ V00383: una sola razón social
+        ...(dirPrincipal ? { direccionId: String(dirPrincipal.direccionId), direccion: String(dirPrincipal.direccionNombre), direccionLabel: String(dirPrincipal.direccionNombre) } : {}),
         tiposEmpresa: (formData.tiposEmpresa || []).map(n => idTipoEmpresaDeNombre(String(n))),
         tiposServicio: (formData.tiposServicio || []).map(n => idTipoServicioDeNombre(String(n))),
         // ✅ V00268: cada dirección viaja con el ID del tipo y el ID de la
@@ -937,13 +974,8 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                       <label className="form-label fe-x38">Razón Social <span className="fe-x39">*</span></label>
                       <BloqueoAut bloqueado={autBloq('nombre')} titulo={autTituloBloq('nombre')} onSolicitar={() => autSolicitar('nombre')}><input type="text" name="nombre" className="form-control fe-x40" value={formData.nombre} onChange={handleChange} required /></BloqueoAut>
                     </div>
-                    {/* ✅ V00343: RAZÓN SOCIAL — el nombre que se muestra en operaciones,
-                        facturación y pagos (botón 🏷 Razón social). Si se deja vacío,
-                        se usa el nombre de arriba. */}
-                    <div className="form-group">
-                      <label className="form-label fe-x38">Razón Social (para operaciones, facturación y pagos)</label>
-                      <input type="text" name="razonSocial" className="form-control fe-x40" placeholder="Ej. Caro-Kar Transportes" value={(formData as Record<string, unknown>).razonSocial as string || ''} onChange={handleChange} />
-                    </div>
+                    {/* ✅ V00383: UNA sola Razón Social — se guarda en `nombre` y en
+                        `razonSocial` (el que leen operaciones, facturación y pagos). */}
 
                     <div className="form-group">
                       <label className="form-label fe-x38">Nombre Corto / Alias</label>
@@ -1090,64 +1122,31 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                 <div style={{ display: activeTab === 'contacto' ? 'block' : 'none', animation: 'fadeIn 0.3s ease' }}>
                   <div className="form-grid fe-x34">
                     
-                    <div className="form-group fe-x47">
-                      <label className="form-label fe-x43">Dirección de la Empresa (Buscar en Base de Datos)</label>
-                      <div className="fe-x48">
-                        <div className="fe-x49">
-                          <SearchableSelect 
-                            options={direccionesDB}
-                            value={formData.direccionId}
-                            onChange={(id, label) => setFormData(prev => ({ ...prev, direccionId: id, direccionLabel: label, direccion: label }))}
-                            placeholder="Buscar dirección guardada..."
-                          />
-                        </div>
-                        <button type="button" className="btn btn-outline fe-x50" onClick={() => setModalDireccionAbierto(true)}>
-                          + Añadir Nueva
-                        </button>
-                      </div>
-                      {/* Desglose de la dirección seleccionada (campos del catálogo de
-                          direcciones, SOLO LECTURA: se editan desde el catálogo). */}
-                      {(() => {
-                        const dirSel = direccionesDB.find((d: any) => String(d.id) === String(formData.direccionId));
-                        if (!dirSel) return null;
-                        const v = (x: any) => String(x ?? '').trim() || '—';
-                        const campoDir = (etiqueta: string, valor: any) => (
-                          <div>
-                            <label className="fe-x51">{etiqueta}</label>
-                            <input type="text" readOnly disabled value={v(valor)} className="form-control fe-x52" />
-                          </div>
-                        );
-                        return (
-                          <div className="fe-x53">
-                            {campoDir('País', dirSel.paisNombre)}
-                            {campoDir('Estado', dirSel.estadoNombre)}
-                            {campoDir('Municipio', dirSel.municipioNombre)}
-                            {campoDir('Colonia', dirSel.coloniaNombre)}
-                            {campoDir('Calle', dirSel.calleNombre)}
-                            {campoDir('# Exterior', dirSel.numExterior)}
-                            {campoDir('# Interior', dirSel.numInterior)}
-                            {campoDir('Código Postal', dirSel.cpNombre)}
-                          </div>
-                        );
-                      })()}
-                    </div>
-
                     {/* ✅ V00268: DIRECCIONES POR TIPO DE EMPRESA — un bloque por
                         cada tipo seleccionado en Información General; se pueden
                         AGREGAR VARIAS direcciones del Directorio en cada uno. */}
+                    {/* ✅ V00383: UNA sola sección de direcciones — la del tipo de
+                        empresa seleccionado (ej. Dirección Cliente (Paga)). La dirección
+                        general se quitó: la principal se toma de aquí al guardar. */}
+                    <div className="form-group fe-x47 fe-dirtipo">
+                      <div className="fe-dirtipo__enc">
+                        <label className="form-label fe-x43">Dirección de la empresa</label>
+                        <button type="button" className="btn btn-outline fe-x50" onClick={() => setModalDireccionAbierto(true)}>+ Añadir Nueva</button>
+                      </div>
+                      {(formData.tiposEmpresa || []).length === 0 && (
+                        <div className="fe-dirtipo__nota">Selecciona el Tipo de Empresa en Información General para capturar su dirección.</div>
+                      )}
                     {(formData.tiposEmpresa || []).length > 0 && (
-                      <div className="form-group fe-x47 fe-dirtipo">
-                        <label className="form-label fe-x43">Direcciones por tipo de empresa</label>
-                        <div className="fe-dirtipo__nota">Cada tipo seleccionado tiene su propia lista — agrega tantas como necesites desde el Directorio de Direcciones (Bases de Datos → Direcciones).</div>
+                      <>
                         {(formData.tiposEmpresa || []).map((tipoNombre: string) => {
-                          const deEsteTipo = (formData.direccionesPorTipo || []).filter(d => d.tipoNombre === tipoNombre);
+                          const deEsteTipo = (formData.direccionesPorTipo || []).filter(d => nombreTipoEmpresaDeId(String(d.tipoNombre)) === nombreTipoEmpresaDeId(String(tipoNombre)));
                           const sel = dirTipoSeleccion[tipoNombre] || { id: '', label: '' };
                           return (
                             <div key={tipoNombre} className="fe-dirtipo__bloque">
                               <div className="fe-dirtipo__titulo">Dirección {tipoNombre} <span className="fe-dirtipo__conteo">({deEsteTipo.length})</span></div>
                               {deEsteTipo.map((d) => (
                                 <div key={`${tipoNombre}_${d.direccionId}`} className="fe-dirtipo__fila">
-                                  <span className="fe-dirtipo__nombre" title={d.direccionNombre}>{d.direccionNombre}</span>
+                                  {(() => { const nomDir = String(direccionesDB.find((x: { id?: unknown; label?: unknown }) => String(x.id) === String(d.direccionId))?.label || d.direccionNombre || ''); return <span className="fe-dirtipo__nombre" title={nomDir}>{nomDir}</span>; })()}{/* ✅ V00383 */}
                                   <button type="button" className="fe-dirtipo__quitar" title="Quitar esta dirección" onClick={() => quitarDireccionTipo(tipoNombre, d.direccionId)}>✕</button>
                                 </div>
                               ))}
@@ -1167,9 +1166,10 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                             </div>
                           );
                         })}
-                        <div className="fe-dirtipo__nota">¿La dirección no existe todavía? Créala con "+ Añadir Nueva" (arriba) y luego agrégala aquí.</div>
-                      </div>
+                        <div className="fe-dirtipo__nota">¿La dirección no existe todavía? Créala con "+ Añadir Nueva" y luego búscala aquí.</div>
+                      </>
                     )}
+                    </div>
 
                     <div className="form-group fe-x35">
                       <label className="form-label fe-x38">Google Maps (URL)</label>

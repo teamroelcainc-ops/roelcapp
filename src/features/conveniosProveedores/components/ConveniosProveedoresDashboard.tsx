@@ -9,6 +9,7 @@ import { db, eliminarRegistro, actualizarRegistro } from '../../../config/fireba
 import { FormularioConvenioProveedor } from './FormularioConvenioProveedor';
 import type { ConvenioProveedorRecord } from '../../../types/convenioProveedor';
 import './ConveniosProveedoresDashboard.css';
+import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 
 // ============================================================
 // HELPER DE NORMALIZACIÓN PARA EL CRUCE
@@ -305,6 +306,8 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
 
   const handleEliminar = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation(); 
+    const evBorrar = await evaluarBorrado('convenios_proveedores'); // ✅ V00383: regla "Borrar" de Autorizaciones
+    if (!evBorrar.permitido) { alert(evBorrar.motivo); return; }
     if (window.confirm('¿Estás seguro de que deseas eliminar permanentemente este convenio?')) {
       try {
         await eliminarRegistro('convenios_proveedores', id);
@@ -362,6 +365,8 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
 
   // ✅ Elimina un detalle (tarifa) del convenio.
   const eliminarDetalle = async (det: any) => {
+    const evBorrar = await evaluarBorrado('convenios_proveedores_detalles'); // ✅ V00383: regla "Borrar" de Autorizaciones
+    if (!evBorrar.permitido) { alert(evBorrar.motivo); return; }
     const nombre = det.tipoConvenioNombre || det.nombre || 'esta tarifa';
     if (!window.confirm(`¿Eliminar el detalle "${nombre}"? Esta acción no se puede deshacer.`)) return;
     try {

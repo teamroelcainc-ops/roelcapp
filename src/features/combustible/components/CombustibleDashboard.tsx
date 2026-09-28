@@ -6,6 +6,7 @@ import { FormularioCombustible } from './FormularioCombustible';
 import { eliminarRegistro } from '../../../config/firebase'; 
 import * as XLSX from 'xlsx';
 import './CombustibleDashboard.css';
+import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 
 // ✅ TODAS LAS COLUMNAS BASE DE LA TABLA COMBUSTIBLE
 const COLUMNAS_BASE = [
@@ -86,6 +87,8 @@ export const CombustibleDashboard: React.FC = () => {
 
   const handleEliminar = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
+    const evBorrar = await evaluarBorrado('combustibles'); // ✅ V00383: regla "Borrar" de Autorizaciones
+    if (!evBorrar.permitido) { alert(evBorrar.motivo); return; }
     if (!id) return alert("Este registro no tiene ID.");
     if (window.confirm('¿Estás seguro de que deseas eliminar permanentemente este registro de combustible?')) {
       try {
