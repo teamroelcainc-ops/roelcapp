@@ -10,6 +10,7 @@ import './FormularioConvenioCliente.css';
 import { reservarConsecutivosDetalle } from '../../conveniosDetalles/consecutivos'; // ✅ V00199
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { limpiarCacheMemoria } from '../../../utils/cacheMemoria';
+import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 
 // =========================================
 // SUB-COMPONENTE: SELECTOR CON BUSCADOR
@@ -666,6 +667,7 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
           </div>
 
           <div className={`fcc-cuerpo${estado === 'minimizado' ? ' oculto' : ''}`}>
+            <FormularioConfigurable modulo="conveniosClientes">{/* ✅ V00385 */}
             <form onSubmit={handleSubmit}>
               <div className="form-grid fcc-x18">
                 <div className="form-group">
@@ -781,6 +783,7 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
                 <button type="submit" className="btn btn-primary" disabled={cargando}>{cargando ? 'Guardando...' : 'Guardar Convenio Maestro'}</button>
               </div>
             </form>
+            </FormularioConfigurable>
           </div>
         </div>
       </div>

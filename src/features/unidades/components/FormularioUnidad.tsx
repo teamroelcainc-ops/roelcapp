@@ -7,6 +7,7 @@ import { collection, getDocs } from 'firebase/firestore';
 import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
 import type { UnidadRecord } from '../../../types/unidad'; // ✅ RUTA CORREGIDA
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
+import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 import './FormularioUnidad.css'; // ✅ Modal reutilizable de documentos
 
 // ✅ Tipos de documento sugeridos para Unidades Propias.
@@ -250,6 +251,7 @@ export const FormularioUnidad = ({ estado, initialData, onClose, onMinimize, onR
         </div>
 
         <div style={{ display: estado === 'minimizado' ? 'none' : 'block', padding: '24px', maxHeight: '75vh', overflowY: 'auto' }}>
+          <FormularioConfigurable modulo="unidades">{/* ✅ V00385 */}
           <form onSubmit={handleSubmit}>
             
             <div className="fu-x8">
@@ -411,6 +413,7 @@ export const FormularioUnidad = ({ estado, initialData, onClose, onMinimize, onR
               </button>
             </div>
           </form>
+          </FormularioConfigurable>
         </div>
       </div>
 

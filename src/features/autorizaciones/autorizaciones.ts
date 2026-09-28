@@ -277,6 +277,8 @@ export const MODULOS_AUTORIZABLES: ModuloAutorizable[] = [
     { key: 'costo', label: 'Costo' },
     { key: 'tipoCambio', label: 'Tipo de cambio' },
   ] },
+  // ✅ V00385: Usuarios (su formulario ya se configura desde aquí: visibilidad y obligatorios)
+  { clave: 'usuarios', label: 'Usuarios', coleccion: 'usuarios', campos: [], integrado: false },
   // ✅ V00332: Catálogos integrado — el control es por ACCIÓN (crear, editar y
   //   borrar registros de cualquier catálogo), porque cada catálogo tiene sus
   //   propios campos.

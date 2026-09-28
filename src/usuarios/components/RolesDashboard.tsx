@@ -27,7 +27,7 @@ const GRUPOS_MODULOS: { grupo: string; modulos: string[] }[] = [
   // origen y destino a las tarifas desde una operación de flete.
   // ✅ V00364: "Personalizar Vista (Operaciones)" habilita el botón ✎ Vista de
   //   Operaciones Activas (ocultar/mostrar botones del módulo).
-  { grupo: 'Permisos Especiales', modulos: ['Editar Referencia', 'Ver todos los chequeos', 'Editar Tarifa (Origen/Destino)', 'Personalizar Vista (Operaciones)'] },
+  { grupo: 'Permisos Especiales', modulos: ['Editar Referencia', 'Ver todos los chequeos', 'Editar Tarifa (Origen/Destino)', 'Personalizar Vista (Operaciones)', 'Editar Formularios'] }, // ✅ V00385: botón ✎ Editar formulario (Admin siempre)
 ];
 
 // Lista plana con todos los módulos (útil para "Seleccionar todo").

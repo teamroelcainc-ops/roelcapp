@@ -53,6 +53,7 @@ import './FacturacionProveedoresDashboard.css';
 import { TarjetaDocumentoFactura } from './TarjetaDocumentoFactura';
 import { almacenSesion } from '../../../utils/cacheMemoria';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
+import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 
 // ──────────────────────────────────────────────────────────────────────
 // Constantes
@@ -3958,6 +3959,7 @@ export const FacturacionProveedoresDashboard = () => {
                 <span className="fpd-x159">{formatoMoneda(resumenSeleccion.subtotal)}</span>
               </div>
             </div>
+            <FormularioConfigurable modulo="facturacionProveedores">{/* ✅ V00385 */}
             <form onSubmit={handleGuardarFactura}>
               <div className="fpd-x160">
                 <div className="fpd-x161">
@@ -3993,6 +3995,7 @@ export const FacturacionProveedoresDashboard = () => {
                 <button className="fpd-x165" type="submit" disabled={guardando}>{guardando ? 'Guardando...' : 'Confirmar Factura'}</button>
               </div>
             </form>
+            </FormularioConfigurable>
           </div>
         </div>
       )}

@@ -7,6 +7,7 @@ import { registrarLog } from '../../utils/logger';
 import { nombreDeEmpleado } from '../../utils/nombreEmpleado';
 import { DIAS_SEMANA, HORARIO_VACIO, horarioDeHoy, type HorarioTrabajo } from '../../utils/horarioTrabajo';
 import './UsuariosDashboard.css'; 
+import { FormularioConfigurable } from '../../features/formularios/FormularioConfigurable';
 
 // Comprime y redimensiona la imagen a un cuadrado pequeño (máx 256px) en base64,
 // para que la foto pese pocos KB y quepa sin problema en el documento de Firestore.
@@ -389,6 +390,7 @@ export const UsuariosDashboard = () => {
               <button className="ud-x34" onClick={() => setModalAbierto(false)}>✕</button>
             </div>
             
+            <FormularioConfigurable modulo="usuarios">{/* ✅ V00385 */}
             <form className="ud-x35" onSubmit={handleGuardar}>
               {/* ✅ Formulario ancho en 3 columnas (como el detalle de operación):
                   1) Identidad · 2) Roles y vínculos · 3) Horario de trabajo. */}
@@ -576,6 +578,7 @@ export const UsuariosDashboard = () => {
                 </button>
               </div>
             </form>
+            </FormularioConfigurable>
           </div>
         </div>
       )}

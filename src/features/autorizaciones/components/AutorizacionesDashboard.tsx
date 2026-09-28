@@ -21,6 +21,7 @@ import type { ConfigModuloAut, ReglaAut, SolicitudAut } from '../autorizaciones'
 import { guardarOperacionSegura } from '../../operaciones/services/operacionesService';
 import { registrarLog } from '../../../utils/logger';
 import './AutorizacionesDashboard.css';
+import { useConfigsFormularios, guardarCamposFormulario, type CampoFormCfg } from '../../formularios/configFormularios';
 
 const REGLA_VACIA: ReglaAut = { requiere: false, roles: [] };
 
@@ -51,6 +52,12 @@ export const AutorizacionesDashboard = () => {
 
   // ── Configuración ──
   const [configs, setConfigs] = useState<Record<string, ConfigModuloAut>>({});
+  // ✅ V00385: campos de cada FORMULARIO (nombre, obligatorio, oculto, roles que lo ven)
+  const configsForm = useConfigsFormularios();
+  const [formEdits, setFormEdits] = useState<Record<string, Record<string, CampoFormCfg>>>({});
+  const campoForm = (modulo: string, clave: string): CampoFormCfg => ({ ...(configsForm[modulo]?.campos?.[clave] || {}), ...(formEdits[modulo]?.[clave] || {}) });
+  const editarCampoForm = (modulo: string, clave: string, cambio: Partial<CampoFormCfg>) =>
+    setFormEdits((prev) => ({ ...prev, [modulo]: { ...(prev[modulo] || {}), [clave]: { ...(prev[modulo]?.[clave] || {}), ...cambio } } }));
   // ✅ V00181: usuarios (para exenciones permanentes por módulo)
   const [usuariosApp, setUsuariosApp] = useState<any[]>([]);
   // ✅ V00140: VISTA PREVIA del formulario de un módulo (simula un rol)
@@ -202,6 +209,11 @@ export const AutorizacionesDashboard = () => {
     setGuardandoModulo(modulo);
     try {
       await guardarConfigModulo(modulo, configs[modulo] || { acciones: {}, campos: {} });
+      // ✅ V00385: también los ajustes del formulario
+      if (formEdits[modulo] && Object.keys(formEdits[modulo]).length) {
+        await guardarCamposFormulario(modulo, formEdits[modulo]);
+        setFormEdits((prev) => { const sig = { ...prev }; delete sig[modulo]; return sig; });
+      }
       await registrarLog('Autorizaciones', 'Configuración', `Actualizó las reglas de autorización del módulo "${MODULOS_AUTORIZABLES.find(m => m.clave === modulo)?.label || modulo}"`);
       alert('Configuración guardada. Aplica para todos los usuarios.');
     } catch (e) {
@@ -482,6 +494,44 @@ export const AutorizacionesDashboard = () => {
                         </div>
                       </div>
                     )}
+                    {/* ✅ V00385: FORMULARIO — qué campos son obligatorios, cuáles se ven y quién los ve */}
+                    {(() => {
+                      const camposF = Object.entries(configsForm[m.clave]?.campos || {})
+                        .filter(([, v]) => v && v.etiquetaOriginal)
+                        .sort((a, b) => (Number(a[1].indice ?? 999) - Number(b[1].indice ?? 999)) || String(a[1].etiquetaOriginal).localeCompare(String(b[1].etiquetaOriginal)));
+                      return (
+                        <div className="ad-fc">
+                          <div className="ad-x36">Formulario — obligatorios y visibilidad</div>
+                          {camposF.length === 0 ? (
+                            <div className="ad-fc-vacio">Abre una vez el formulario de este módulo y sus campos aparecerán aquí automáticamente.</div>
+                          ) : (
+                            <div className="ad-fc-tabla">
+                              <div className="ad-fc-fila ad-fc-fila--enc"><span>Campo</span><span>Obligatorio</span><span>Oculto</span><span>Lo ven</span></div>
+                              {camposF.map(([clave]) => {
+                                const c = campoForm(m.clave, clave);
+                                const roles = (c.rolesVisibles || []).filter(Boolean);
+                                return (
+                                  <div key={clave} className={`ad-fc-fila${c.oculto ? ' ad-fc-fila--oculto' : ''}`}>
+                                    <input className="ad-fc-nombre" type="text" value={c.etiqueta ?? ''} placeholder={c.etiquetaOriginal} title={`Nombre original: ${c.etiquetaOriginal}`}
+                                      onChange={(e) => editarCampoForm(m.clave, clave, { etiqueta: e.target.value })} />
+                                    <input type="checkbox" className="ad-fc-check" checked={!!c.obligatorio} onChange={() => editarCampoForm(m.clave, clave, { obligatorio: !c.obligatorio })} />
+                                    <input type="checkbox" className="ad-fc-check" checked={!!c.oculto} onChange={() => editarCampoForm(m.clave, clave, { oculto: !c.oculto })} />
+                                    <div className="ad-fc-roles">
+                                      <button type="button" className={`ad-fc-rol${roles.length === 0 ? ' ad-fc-rol--on' : ''}`} onClick={() => editarCampoForm(m.clave, clave, { rolesVisibles: [] })}>Todos</button>
+                                      {rolesCatalogo.map((rol) => (
+                                        <button key={rol} type="button" className={`ad-fc-rol${roles.includes(rol) ? ' ad-fc-rol--on' : ''}`}
+                                          onClick={() => editarCampoForm(m.clave, clave, { rolesVisibles: roles.includes(rol) ? roles.filter((r) => r !== rol) : [...roles, rol] })}>{rol}</button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                              <div className="ad-fc-nota">Nombre vacío = el original. "Lo ven" en Todos = cualquier rol; al elegir roles, solo esos lo ven (Admin siempre lo ve). Un campo obligatorio impide guardar el formulario vacío. El orden se acomoda con "✎ Editar formulario" dentro del propio formulario.</div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                     <div className="ad-x44">
                       <button onClick={() => guardarModulo(m.clave)} disabled={guardandoModulo === m.clave} style={btn('#D84315')}>
                         {guardandoModulo === m.clave ? 'Guardando...' : 'Guardar para todos'}

@@ -21,6 +21,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'fire
 import './ReferenciasDieselDashboard.css';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { SelectBuscable } from '../../catalogos/components/SelectBuscable';
+import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 
 // Columnas configurables de la tabla "Asignar Operaciones" (tabla + Excel).
 // orden:true -> la cabecera es clicable para ordenar por ese campo.
@@ -1954,6 +1955,7 @@ export const ReferenciasDieselDashboard = () => {
               </div>
             </div>
             
+            <FormularioConfigurable modulo="referenciasDiesel">{/* ✅ V00385 */}
             <form onSubmit={handleGuardarReferencia}>
               {/* ✅ 3 columnas: datos | costos+kilometraje+observaciones | fotos */}
               <div className="rdd-modal-cols">
@@ -2119,6 +2121,7 @@ export const ReferenciasDieselDashboard = () => {
                 <button className="rdd-x127" type="submit" disabled={guardando}>{subiendoFotos ? 'Subiendo fotos...' : guardando ? 'Guardando...' : 'Guardar Referencia'}</button>
               </div>
             </form>
+            </FormularioConfigurable>
           </div>
         </div>
       )}
@@ -2395,6 +2398,7 @@ export const ReferenciasDieselDashboard = () => {
               <button className="rdd-x86" onClick={() => setEditandoRef(null)}>✕</button>
             </div>
 
+            <FormularioConfigurable modulo="referenciasDiesel">{/* ✅ V00385 */}
             <form onSubmit={handleGuardarEdicionRef}>
               <div className="rdd-x101">
 
@@ -2472,6 +2476,7 @@ export const ReferenciasDieselDashboard = () => {
                 <button className="rdd-x185" type="submit" disabled={guardandoEdicionRef}>{guardandoEdicionRef ? 'Guardando...' : 'Guardar Cambios'}</button>
               </div>
             </form>
+            </FormularioConfigurable>
           </div>
         </div>
       )}
@@ -2503,6 +2508,7 @@ export const ReferenciasDieselDashboard = () => {
               </div>
             </div>
 
+            <FormularioConfigurable modulo="referenciasDiesel">{/* ✅ V00385 */}
             <form onSubmit={handleActualizarOperacion}>
               <div className="rdd-x194">
                 <label className="rdd-x195">
@@ -2530,6 +2536,7 @@ export const ReferenciasDieselDashboard = () => {
                 </button>
               </div>
             </form>
+            </FormularioConfigurable>
           </div>
         </div>
       )}

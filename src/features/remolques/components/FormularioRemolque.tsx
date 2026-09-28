@@ -9,6 +9,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEstadoConexion } from '../../../hooks/useEstadoConexion';
 import { REMOLQUES_QUERY_KEY } from '../hooks/useRemolques';
 import type { RemolqueRecord } from '../../../types/remolque';
+import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 import './FormularioRemolque.css'; // ✅ RUTA CORREGIDA
 
 // ──────────────────────────────────────────────────────────────────────
@@ -307,6 +308,7 @@ export const FormularioRemolque = ({ estado, initialData, onClose, onMinimize, o
         </div>
 
         <div style={{ display: estado === 'minimizado' ? 'none' : 'block', padding: '24px', maxHeight: '75vh', overflowY: 'auto' }}>
+          <FormularioConfigurable modulo="remolques">{/* ✅ V00385 */}
           <form onSubmit={handleSubmit}>
             
             {/* Grid Responsivo Avanzado (Auto-Fit) */}
@@ -395,6 +397,7 @@ export const FormularioRemolque = ({ estado, initialData, onClose, onMinimize, o
               </button>
             </div>
           </form>
+          </FormularioConfigurable>
         </div>
       </div>
 

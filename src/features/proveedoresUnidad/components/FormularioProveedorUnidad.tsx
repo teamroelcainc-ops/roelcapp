@@ -5,6 +5,7 @@ import { camposModificadosDe } from '../../autorizaciones/autorizaciones';
 import { collection, getDocs } from 'firebase/firestore';
 import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
 import './FormularioProveedorUnidad.css';
+import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 
 interface FormProps {
   estado: 'abierto' | 'minimizado';
@@ -158,6 +159,7 @@ export const FormularioProveedorUnidad = ({ estado, initialData, onClose, onMini
         </div>
 
         <div style={{ display: estado === 'minimizado' ? 'none' : 'block', padding: '10px 0' }}>
+          <FormularioConfigurable modulo="proveedoresUnidad">{/* ✅ V00385 */}
           <form onSubmit={handleSubmit}>
             <div className="form-grid fpu-x2">
               
@@ -225,6 +227,7 @@ export const FormularioProveedorUnidad = ({ estado, initialData, onClose, onMini
               </button>
             </div>
           </form>
+          </FormularioConfigurable>
         </div>
       </div>
     </div>

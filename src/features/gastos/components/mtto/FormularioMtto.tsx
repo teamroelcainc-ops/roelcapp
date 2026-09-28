@@ -9,6 +9,8 @@ import { db } from '../../../../config/firebase';
 import { guardarMttoSeguro } from '../services/mttoService';
 import './FormularioMtto.css';
 import { hoyLocalISO } from '../../../../utils/fechaHoraLocal';
+import { FormularioConfigurable } from '../../../formularios/FormularioConfigurable';
+import { validarFormularioConfigurable } from '../../../formularios/configFormularios';
 // ✅ NUEVO — REFACCIONES: cuando el Tipo de Gasto es "Gastos de Refacción y
 //   Mantenimiento" se habilita una lista de refacciones compradas, cada una
 //   con su detalle, fecha de compra, garantía (y días restantes), dónde se
@@ -399,6 +401,7 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
   };
   // 🔴 LA MAGIA ESTÁ AQUÍ 🔴
   const handleSubmit = async (e: React.FormEvent) => {
+    if (!validarFormularioConfigurable('mtto')) { e?.preventDefault?.(); return; } // ✅ V00385: campos obligatorios (Autorizaciones / editor)
     // ✅ V00140: reglas de acción (crear/editar) de Autorizaciones
     if (!aut.verificarAccion(initialData?.id ? 'editar' : 'crear', camposModificadosDe((formData || {}) as unknown as Record<string, unknown>, (initialData || {}) as unknown as Record<string, unknown>), (initialData || {}) as unknown as Record<string, unknown>) /* ✅ V00382: solo lo que REALMENTE cambió */) return;
     e.preventDefault();
@@ -538,6 +541,7 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
         </div>
 
         {/* CONTENIDO DEL FORMULARIO */}
+        <FormularioConfigurable modulo="mtto">{/* ✅ V00385 */}
         <form className="fm-x10" onSubmit={handleSubmit}>
           
           {/* PESTAÑA 1: INFORMACIÓN GENERAL */}
@@ -884,6 +888,7 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
           )}
           
         </form>
+        </FormularioConfigurable>
 
         {/* PIE DEL MODAL PRINCIPAL */}
         <div className="form-actions fm-x45">

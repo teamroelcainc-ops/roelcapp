@@ -13,6 +13,7 @@ import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
 import './ReferenciasPuentesDashboard.css';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
+import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 
 // ⚠ Si tu colección de convenios de clientes tiene otro nombre, cámbialo aquí.
 const COLECCION_CONVENIOS = 'convenios_clientes';
@@ -931,6 +932,7 @@ export const ReferenciasPuentesDashboard = () => {
               </div>
             </div>
 
+            <FormularioConfigurable modulo="referenciasPuentes">{/* ✅ V00385 */}
             <form onSubmit={handleGuardarReferencia}>
               <div className="rpd-x77">
                 <div>
@@ -981,6 +983,7 @@ export const ReferenciasPuentesDashboard = () => {
                 <button className="rpd-x85" type="submit" disabled={guardando}>{guardando ? 'Guardando...' : 'Confirmar Referencia'}</button>
               </div>
             </form>
+            </FormularioConfigurable>
           </div>
         </div>
       )}

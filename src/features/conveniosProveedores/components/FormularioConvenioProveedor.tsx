@@ -9,6 +9,7 @@ import type { ConvenioProveedorRecord, ConvenioProveedorDetalleRecord } from '..
 import './FormularioConvenioProveedor.css';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { limpiarCacheMemoria } from '../../../utils/cacheMemoria';
+import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 
 // =========================================
 // SUB-COMPONENTE: SELECTOR CON BUSCADOR
@@ -564,6 +565,7 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
         </div>
 
         <div className={`fcp-cuerpo${estado === 'minimizado' ? ' oculto' : ''}`}>
+          <FormularioConfigurable modulo="conveniosProveedores">{/* ✅ V00385 */}
           <form onSubmit={handleSubmit}>
             <div className="form-grid fcp-x6">
               <div className="form-group">
@@ -671,6 +673,7 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
               </button>
             </div>
           </form>
+          </FormularioConfigurable>
         </div>
       </div>
     </div>

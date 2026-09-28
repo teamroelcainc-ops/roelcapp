@@ -30,6 +30,8 @@ import { EditorDetalleConvenioModal } from './EditorDetalleConvenioModal';
 import { AlertaDocumentos } from '../../documentos/AlertaDocumentos';
 import { almacenSesion } from '../../../utils/cacheMemoria';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
+import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
+import { validarFormularioConfigurable } from '../../formularios/configFormularios';
 
 // ✅ NUEVO: utilidades para el Historial de Actividad (historial_actividad).
 //   Nunca deben romper el guardado: los llamados a registrarLog van con .catch.
@@ -2508,6 +2510,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const usuarioActualCancel = useUsuarioStore((s) => s.usuario);
 
   const handleSubmit = async (e: React.FormEvent) => {
+    if (!validarFormularioConfigurable('operaciones')) { e?.preventDefault?.(); return; } // ✅ V00385: campos obligatorios (Autorizaciones / editor)
     e.preventDefault();
 
     // ✅ CANCELACIÓN CONTROLADA: si la operación pasa a Cancelado, se exige
@@ -3107,6 +3110,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
             {pestanasVisibles.includes('cobrar') && (<button type="button" className={`roelca-tab ${pestañaActiva === 'cobrar' ? 'active' : ''}`} onClick={() => setPestañaActiva('cobrar')}><IconDollar size={15} /> Por Cobrar</button>)}
           </div>
 
+          <FormularioConfigurable modulo="operaciones">{/* ✅ V00385 */}
           <form className="fo-x9" onSubmit={handleSubmit}>
             <div className="roelca-scroll">
               {pestañaActiva === 'general' && pestanasVisibles.includes('general') && (
@@ -3663,6 +3667,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
               )}
             </div>
           </form>
+          </FormularioConfigurable>
         </div>
 
         <aside className="roelca-form-right">

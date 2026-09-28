@@ -5,6 +5,7 @@ import { camposModificadosDe } from '../../autorizaciones/autorizaciones';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
 import './FormularioContacto.css';
+import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 
 interface Props {
   estado: 'cerrado' | 'abierto' | 'minimizado';
@@ -119,6 +120,7 @@ export const FormularioContacto: React.FC<Props> = ({ estado, initialData, onClo
           </div>
         </div>
 
+        <FormularioConfigurable modulo="contactos">{/* ✅ V00385 */}
         <form className="fc-x12" onSubmit={handleSubmit}>
           <div className="fc-x13">
             
@@ -181,6 +183,7 @@ export const FormularioContacto: React.FC<Props> = ({ estado, initialData, onClo
             <button className="fc-x22" type="submit" disabled={guardando}>{guardando ? 'Guardando...' : 'Guardar Contacto'}</button>
           </div>
         </form>
+        </FormularioConfigurable>
 
       </div>
     </div>

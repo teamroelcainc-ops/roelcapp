@@ -7,6 +7,7 @@ import { collection, getDocs } from 'firebase/firestore';
 import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
 import type { UnidadProveedorRecord } from '../../../types/unidadProveedor';
 import './FormularioUnidadProveedor.css';
+import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 
 interface FormProps {
   estado: 'abierto' | 'minimizado';
@@ -123,6 +124,7 @@ export const FormularioUnidadProveedor = ({ estado, initialData, onClose, onMini
         </div>
 
         <div style={{ display: estado === 'minimizado' ? 'none' : 'block', padding: '10px 0' }}>
+          <FormularioConfigurable modulo="unidadesProveedor">{/* ✅ V00385 */}
           <form onSubmit={handleSubmit}>
             <div className="form-grid fup-x2">
               
@@ -175,6 +177,7 @@ export const FormularioUnidadProveedor = ({ estado, initialData, onClose, onMini
               </button>
             </div>
           </form>
+          </FormularioConfigurable>
         </div>
       </div>
     </div>

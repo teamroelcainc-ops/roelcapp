@@ -42,6 +42,7 @@ import { TarjetaDocumentoFactura } from './TarjetaDocumentoFactura';
 import { almacenSesion, limpiarCachesPorPrefijo } from '../../../utils/cacheMemoria'; // ✅ V00262
 import { registrarLog } from '../../../utils/logger'; // ✅ V00262
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
+import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 
 // ──────────────────────────────────────────────────────────────────────
 // Constantes
@@ -3905,6 +3906,7 @@ export const FacturacionClientesDashboard = () => {
                 <span className="fcd-x162">{formatoMoneda(resumenSeleccion.subtotal)}</span>
               </div>
             </div>
+            <FormularioConfigurable modulo="facturacionClientes">{/* ✅ V00385 */}
             <form onSubmit={handleGuardarFactura}>
               <div className="fcd-x163">
                 <div className="fcd-x164">
@@ -3940,6 +3942,7 @@ export const FacturacionClientesDashboard = () => {
                 <button className="fcd-x168" type="submit" disabled={guardando}>{guardando ? 'Guardando...' : 'Confirmar Factura'}</button>
               </div>
             </form>
+            </FormularioConfigurable>
           </div>
         </div>
       )}

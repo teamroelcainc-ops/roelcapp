@@ -124,3 +124,19 @@
 /* ✅ V00183: motivo del solicitante */
 .ad-motivo-sol { color: #c9d1d9; font-size: 0.78rem; background: rgba(88, 166, 255, 0.08); border-left: 3px solid #58a6ff; border-radius: 6px; padding: 6px 10px; margin-top: 6px; }
 .ad-motivo-sol b { color: #58a6ff; }
+
+/* ✅ V00385: campos del formulario (obligatorios y visibilidad) */
+.ad-fc { display: flex; flex-direction: column; gap: 8px; }
+.ad-fc-vacio { color: #8b949e; font-size: 0.82rem; padding: 10px 12px; border: 1px dashed #30363d; border-radius: 8px; }
+.ad-fc-tabla { display: flex; flex-direction: column; gap: 4px; }
+.ad-fc-fila { display: grid; grid-template-columns: minmax(180px, 1.2fr) 90px 70px 3fr; align-items: center; gap: 10px; padding: 6px 10px; border: 1px solid #21262d; border-radius: 8px; background: #161b22; }
+.ad-fc-fila--enc { background: transparent; border: none; color: #8b949e; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 2px 10px; }
+.ad-fc-fila--oculto { opacity: 0.6; }
+.ad-fc-nombre { width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: #f0f6fc; font-size: 0.84rem; }
+.ad-fc-nombre::placeholder { color: #c9d1d9; }
+.ad-fc-check { width: 16px; height: 16px; accent-color: #D84315; justify-self: center; cursor: pointer; }
+.ad-fc-roles { display: flex; flex-wrap: wrap; gap: 4px; }
+.ad-fc-rol { padding: 2px 9px; border-radius: 999px; border: 1px solid #30363d; background: transparent; color: #8b949e; font-size: 0.7rem; font-weight: 700; cursor: pointer; }
+.ad-fc-rol--on { border-color: #3fb950; color: #3fb950; background: rgba(63, 185, 80, 0.12); }
+.ad-fc-nota { color: #8b949e; font-size: 0.74rem; margin-top: 4px; }
+@media (max-width: 760px) { .ad-fc-fila { grid-template-columns: 1fr 70px 60px; } .ad-fc-roles { grid-column: 1 / -1; } }

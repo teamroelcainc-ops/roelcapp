@@ -1,0 +1,25 @@
+/* ✅ V00385: formularios configurables */
+.fc-raiz { display: contents; }
+.fc-barra { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; width: 100%; box-sizing: border-box; padding: 6px 12px; }
+.fc-barra--editando { justify-content: space-between; background: rgba(56, 139, 253, 0.1); border: 1px solid rgba(56, 139, 253, 0.45); border-radius: 8px; margin: 6px 0; }
+.fc-barra-texto { flex: 1 1 260px; color: #79c0ff; font-size: 0.8rem; font-weight: 600; }
+.fc-btn { height: 30px; padding: 0 12px; border-radius: 6px; border: 1px solid #30363d; background: #161b22; color: #c9d1d9; font-size: 0.78rem; font-weight: 600; cursor: pointer; white-space: nowrap; font-family: inherit; }
+.fc-btn:hover:not(:disabled) { border-color: #8b949e; color: #f0f6fc; }
+.fc-btn:disabled { opacity: 0.6; cursor: wait; }
+.fc-btn--editar { border-style: dashed; color: #8b949e; }
+.fc-btn--primario { background: #388bfd; border-color: #388bfd; color: #ffffff; }
+.fc-btn--primario:hover:not(:disabled) { background: #4c97ff; }
+
+/* campos en modo edición */
+.fc-campo--editando { outline: 1px dashed rgba(56, 139, 253, 0.6); outline-offset: 3px; border-radius: 4px; }
+.fc-campo--oculto { opacity: 0.4; outline-color: #f85149 !important; }
+.fc-oblig::after { content: ' *'; color: #f85149; font-weight: 700; }
+.fc-falta { outline: 2px solid #f85149 !important; outline-offset: 3px; border-radius: 4px; }
+
+/* capa de controles (portal) */
+.fc-capa { position: fixed; inset: 0; pointer-events: none; z-index: 6000; }
+.fc-ctrl { position: fixed; top: var(--fc-top); left: var(--fc-left); transform: translateX(-100%); display: flex; gap: 2px; pointer-events: auto; background: #0d1117; border: 1px solid #388bfd; border-radius: 6px; padding: 2px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5); }
+.fc-ctrl button { height: 20px; min-width: 20px; padding: 0 6px; border: none; border-radius: 4px; background: #161b22; color: #c9d1d9; font-size: 0.68rem; font-weight: 700; cursor: pointer; font-family: inherit; }
+.fc-ctrl button:hover { background: #1f6feb; color: #ffffff; }
+.fc-ctrl button.fc-on { background: #238636; color: #ffffff; }
+.fc-ctrl button.fc-on--rojo { background: #da3633; }

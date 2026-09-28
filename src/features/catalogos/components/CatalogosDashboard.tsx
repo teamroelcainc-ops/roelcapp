@@ -12,6 +12,7 @@ import { listaCatalogos, catalogosConfig } from '../config/catalogSchemas';
 import type { CatalogSchema, CatalogField } from '../config/catalogSchemas';
 import { SelectBuscable } from './SelectBuscable';
 import './CatalogosDashboard.css';
+import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 
 // ✅ Helper compartido: resuelve la etiqueta a mostrar de una opción dinámica
 //    (misma cadena de respaldos que usaban los <select> nativos)
@@ -2415,6 +2416,7 @@ const CatalogosDashboard = () => {
               <button className="cd-x41" onClick={() => setModalEstado('cerrado')}>✕</button>
             </div>
             
+            <FormularioConfigurable modulo="catalogos">{/* ✅ V00385 */}
             <form className="cd-x74" onSubmit={guardarRegistro}>
               <div className={`cd-x75${(catalogoSeleccionado.formColumns || 1) >= 3 ? ' cd-x75-3col' : ''}`}>
                 {catalogoSeleccionado.fields.map((f: CatalogField) => {
@@ -2459,6 +2461,7 @@ const CatalogosDashboard = () => {
                 <button className="cd-x79" type="submit">Guardar Registro</button>
               </div>
             </form>
+            </FormularioConfigurable>
           </div>
         </div>
       )}
@@ -2471,6 +2474,7 @@ const CatalogosDashboard = () => {
               <h2 className="cd-x39">{subRegistroActual ? 'Editar' : 'Agregar'} Detalles</h2>
               <button className="cd-x41" onClick={() => setSubModalEstado('cerrado')}>✕</button>
             </div>
+            <FormularioConfigurable modulo="catalogos">{/* ✅ V00385 */}
             <form className="cd-x74" onSubmit={guardarSubRegistro}>
               <div className="cd-x75">
                 {subColeccionActual.fields?.filter((f:any) => f.name !== subColeccionActual.foreignKey).map((f: any) => {
@@ -2520,6 +2524,7 @@ const CatalogosDashboard = () => {
                 <button className="cd-x79" type="submit">Guardar Detalle</button>
               </div>
             </form>
+            </FormularioConfigurable>
           </div>
         </div>
       )}

@@ -6,6 +6,7 @@ import { registrarLog } from '../../../utils/logger';
 // ✅ AUTORIZACIONES: interceptar guardado cuando la acción/campo lo requiere.
 import { cargarConfigModulo, evaluarAutorizacion, camposModificadosDe, crearSolicitudAutorizacion, obtenerUsuarioAut } from '../../autorizaciones/autorizaciones';
 import './FormularioTipoCambio.css';
+import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 
 interface FormProps {
   estado: 'abierto' | 'minimizado';
@@ -330,6 +331,7 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
         </div>
 
         <div style={{ display: estado === 'minimizado' ? 'none' : 'block', padding: '20px' }}>
+          <FormularioConfigurable modulo="tipoCambio">{/* ✅ V00385 */}
           <form onSubmit={handleSubmit}>
             <div className="form-grid ftc-x3">
               
@@ -401,6 +403,7 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
               </button>
             </div>
           </form>
+          </FormularioConfigurable>
         </div>
       </div>
 

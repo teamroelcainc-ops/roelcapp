@@ -23,6 +23,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import './CostosAdicionalesDashboard.css';
+import { FormularioConfigurable } from '../formularios/FormularioConfigurable';
 
 const ID_USD = '7dca62b3';
 const ID_MXN = 'f95d8894';
@@ -475,6 +476,7 @@ export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosAc
       {modal && (
         <div className="modal-overlay cad-x40">
           <div className="cad-x41">
+            <FormularioConfigurable modulo="costosAdicionales">{/* ✅ V00385 */}
             <form onSubmit={guardarCosto}>
               <div className="cad-x42">
                 <h2 className="cad-x43">
@@ -511,6 +513,7 @@ export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosAc
                 </div>
               </div>
             </form>
+            </FormularioConfigurable>
           </div>
         </div>
       )}

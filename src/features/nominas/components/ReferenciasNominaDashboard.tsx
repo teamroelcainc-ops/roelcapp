@@ -24,6 +24,7 @@ import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
 import './ReferenciasNominaDashboard.css';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { docsSinPruebas } from '../../../utils/operacionPrueba';
+import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 
 const ID_CARGO_OPERADOR = 'edda3a2b';
 // ✅ IDs de status "completada" en el catálogo (los mismos que usa Facturación
@@ -2570,6 +2571,7 @@ export const ReferenciasNominaDashboard = () => {
               ))}
             </div>
 
+            <FormularioConfigurable modulo="referenciasNomina">{/* ✅ V00385 */}
             <form onSubmit={handleGuardarNomina}>
               {pestanaModalNomina === 'general' && (
                 <div style={gridTres}>
@@ -2739,6 +2741,7 @@ export const ReferenciasNominaDashboard = () => {
                 <button type="submit" disabled={guardando} style={{ padding: '8px 24px', backgroundColor: modoEdicion ? '#a371f7' : '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>{guardando ? 'Guardando...' : (modoEdicion ? 'Guardar Cambios' : 'Confirmar Nómina')}</button>
               </div>
             </form>
+            </FormularioConfigurable>
           </div>
         </div>
       )}

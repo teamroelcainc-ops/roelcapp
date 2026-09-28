@@ -12,6 +12,7 @@ import { FormularioDireccion } from '../../direcciones/components/FormularioDire
 import type { Employee } from '../../../types/empleado';
 import './EmployeeForm.css';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
+import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 
 // Roles disponibles en la empresa
 const ROLES_DISPONIBLES = ['Administrador', 'Recursos Humanos', 'Operaciones', 'Contabilidad', 'Gerencia'];
@@ -503,6 +504,7 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
           </div>
 
           <div style={{ display: estado === 'minimizado' ? 'none' : 'block', padding: '24px', overflowY: 'auto', flex: 1 }}>
+            <FormularioConfigurable modulo="colaboradores">{/* ✅ V00385 */}
             <form id="employeeForm" onSubmit={handleSubmit}>
               
               {/* PESTAÑA 1 */}
@@ -691,6 +693,7 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
               )}
 
             </form>
+            </FormularioConfigurable>
           </div>
 
           <div className="form-actions" style={{ display: estado === 'minimizado' ? 'none' : 'flex', gap: '16px', justifyContent: 'flex-end', borderTop: '1px solid #30363d', padding: '16px 24px', backgroundColor: '#161b22', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px', flexShrink: 0 }}>

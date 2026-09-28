@@ -11,6 +11,7 @@ import { FormularioDireccion } from '../../direcciones/components/FormularioDire
 import { registrarLog } from '../../../utils/logger'; 
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 import './FormularioEmpresa.css';
+import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 
 // Tipos de documento que se manejan para EMPRESAS / CLIENTES (edítalos a tu gusto)
 export const TIPOS_DOCUMENTO_EMPRESA = [
@@ -959,6 +960,7 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
               <button type="button" onClick={() => setActiveTab('contacto')} style={tabStyle(activeTab === 'contacto')}>Contacto</button>
             </div>
 
+            <FormularioConfigurable modulo="empresas">{/* ✅ V00385 */}
             <form className="fe-x32" onSubmit={handleSubmit}>
               <div className="fe-x33">
                 
@@ -1204,6 +1206,7 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                 <button type="submit" className="btn btn-primary fe-x57" disabled={cargando}>{cargando ? 'Guardando...' : 'Guardar Empresa'}</button>
               </div>
             </form>
+            </FormularioConfigurable>
           </div>
         </div>
       </div>

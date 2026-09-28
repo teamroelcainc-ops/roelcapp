@@ -27,6 +27,7 @@ import {
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
 import './DeduccionesDashboard.css';
+import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 
 const COLUMNAS_BASE = [
   { id: 'empleadoNombre',  label: 'Colaborador',      visible: true },
@@ -463,6 +464,7 @@ export const DeduccionesDashboard = () => {
               <button className="dd-x52" type="button" onClick={() => setModalAbierto(false)}>✕</button>
             </div>
             
+            <FormularioConfigurable modulo="deducciones">{/* ✅ V00385 */}
             <form className="dd-x53" onSubmit={handleGuardar}>
               <div className="dd-x54">
                 <label className="dd-x55">EMPLEADO (NÓMINA)</label>
@@ -512,6 +514,7 @@ export const DeduccionesDashboard = () => {
                 <button className="dd-x65" type="submit" disabled={guardando}>{guardando ? 'Guardando...' : deduccionEditando ? 'Actualizar Registro' : 'Guardar Nuevo Registro'}</button>
               </div>
             </form>
+            </FormularioConfigurable>
           </div>
         </div>
       )}

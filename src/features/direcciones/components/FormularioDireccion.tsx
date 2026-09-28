@@ -7,6 +7,7 @@ import { collection, getDocs, addDoc, updateDoc, doc, getDoc, setDoc } from 'fir
 import { db } from '../../../config/firebase';
 import type { DireccionRecord } from '../../../types/direccion';
 import './FormularioDireccion.css';
+import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 
 interface FormProps {
   estado: 'abierto' | 'minimizado';
@@ -543,6 +544,7 @@ export const FormularioDireccion: React.FC<FormProps> = ({
         </div>
 
         <div style={{ display: estado === 'minimizado' ? 'none' : 'block' }}>
+          <FormularioConfigurable modulo="direcciones">{/* ✅ V00385 */}
           <form className="fd-x11" onSubmit={handleSubmit}>
             
             <div className="fd-x12">
@@ -579,6 +581,7 @@ export const FormularioDireccion: React.FC<FormProps> = ({
               </button>
             </div>
           </form>
+          </FormularioConfigurable>
         </div>
       </div>
     </div>

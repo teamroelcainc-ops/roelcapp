@@ -10,6 +10,7 @@ import type { Moneda, CombustibleRecord } from '../../../types/combustible';
 import { getMonedasCatalogo, saveCombustible } from '../services/combustibleService';
 import './FormularioCombustible.css';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
+import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 
 // =========================================
 // SUB-COMPONENTE: SELECTOR CON BUSCADOR
@@ -314,6 +315,7 @@ export const FormularioCombustible: React.FC<FormProps> = ({
         </div>
 
         <div style={{ display: estado === 'minimizado' ? 'none' : 'block', padding: '10px 0' }}>
+          <FormularioConfigurable modulo="combustible">{/* ✅ V00385 */}
           <form onSubmit={handleSubmit}>
             <div className="form-grid fc-x6">
               <div className="form-group">
@@ -397,6 +399,7 @@ export const FormularioCombustible: React.FC<FormProps> = ({
               </p>
             )}
           </form>
+          </FormularioConfigurable>
         </div>
       </div>
     </div>
