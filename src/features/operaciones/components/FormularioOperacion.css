@@ -180,3 +180,6 @@
 .fo-prueba:hover { color: #e3b341; border-color: rgba(227, 179, 65, 0.55); }
 .fo-prueba--activa { color: #e3b341; background: rgba(227, 179, 65, 0.14); border-color: #e3b341; border-style: solid; }
 .fo-prueba--fija { cursor: help; color: #e3b341; background: rgba(227, 179, 65, 0.12); border-color: rgba(227, 179, 65, 0.55); }
+
+/* ✅ V00388: aduana en las opciones del convenio */
+.fo-chip-aduana { display: inline-flex; align-items: center; margin-left: 8px; padding: 1px 8px; border-radius: 999px; border: 1px solid rgba(121, 184, 255, 0.45); background: rgba(56, 139, 253, 0.1); color: #79c0ff; font-size: 0.7rem; font-weight: 700; white-space: nowrap; vertical-align: middle; }

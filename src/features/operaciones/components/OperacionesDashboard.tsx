@@ -20,6 +20,7 @@ import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
 import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 import { ModalFechaStatus } from './ModalFechaStatus';
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
+import { aduanaDeConvenio, camposPisoColombia, casetaRespaldoColombia, esAduanaColombia, esGastoPisoColombia, normPuente } from '../../../utils/puenteColombia';
 
 // ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
 const fmtFechaAuditoria = (iso: any): string => {
@@ -890,6 +891,7 @@ const OperacionesDashboard = () => {
         const gastoId = String(g.gasto ?? g.gastoId ?? g.gasto_id ?? '').trim();
         const cat = gastoPorId.get(gastoId);
         if (!cat || normSP(cat.categoria_gasto) !== 'puente') continue;
+        if (esGastoPisoColombia(cat.nombre_gasto)) continue; // ✅ V00388: el piso de Colombia es el 2º cobro, no la caseta
         const monto = Number(g.monto ?? g.importe ?? g.cantidad ?? g.valor ?? 0) || Number(cat.importe) || 0;
         return { nombre: String(cat.nombre_gasto || ''), moneda: cat.moneda, monto };
       }
@@ -897,7 +899,15 @@ const OperacionesDashboard = () => {
     } catch { return null; }
   };
 
-  const camposSaldoPuenteAlCompletar = async (statusId: string, op: { saldoPuente?: unknown; trafico?: unknown; fechaServicio?: unknown; tipoOperacionNombre?: unknown; proveedorUnidadNombre?: unknown; convenio?: unknown }, statusNombre?: string, fechaEvento?: string): Promise<Record<string, unknown>> => {
+  // ✅ V00388: aduana COLOMBIA → además de la caseta se cobra el PISO del
+  //   puente ("Puente Mx Colombia", monto fijo del catálogo). Nuevo Laredo: uno solo.
+  const camposSaldoPuenteAlCompletar = async (statusId: string, op: { saldoPuente?: unknown; saldoPuentePiso?: unknown; trafico?: unknown; fechaServicio?: unknown; tipoOperacionNombre?: unknown; proveedorUnidadNombre?: unknown; convenio?: unknown; carga?: unknown; convenioNombre?: unknown }, statusNombre?: string, fechaEvento?: string): Promise<Record<string, unknown>> => {
+    const base = await camposSaldoPuenteBaseSP(statusId, op, statusNombre, fechaEvento);
+    if (!(Number(base.saldoPuente) > 0)) return base;
+    return { ...base, ...(await camposPisoColombia(op, base.saldoPuenteFecha, base.saldoPuenteEvento)) };
+  };
+
+  const camposSaldoPuenteBaseSP = async (statusId: string, op: { saldoPuente?: unknown; trafico?: unknown; fechaServicio?: unknown; tipoOperacionNombre?: unknown; proveedorUnidadNombre?: unknown; convenio?: unknown; carga?: unknown; convenioNombre?: unknown }, statusNombre?: string, fechaEvento?: string): Promise<Record<string, unknown>> => {
     try {
       if (Number.isFinite(Number(op?.saldoPuente))) return {};
       const nombreSt = String(statusNombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -920,6 +930,12 @@ const OperacionesDashboard = () => {
       if (casetaTarifa && casetaTarifa.monto > 0) {
         const monedaCT = String(casetaTarifa.moneda || '') === '7dca62b3' ? 'Dólares' : String(casetaTarifa.moneda || '') === 'f95d8894' ? 'Pesos' : String(casetaTarifa.moneda || '');
         return { saldoPuente: casetaTarifa.monto, saldoPuentePuente: casetaTarifa.nombre, saldoPuenteMoneda: monedaCT, saldoPuenteFecha: fechaSP0, saldoPuenteEvento: eventoSP0 };
+      }
+      // ✅ V00388: aduana Colombia sin caseta en la tarifa → Caseta Mx Colombia (o Trompo Colombia)
+      if (esAduanaColombia(await aduanaDeConvenio(op?.convenio))) {
+        const esTrompo = normPuente(`${String(op?.carga || '')} ${String(op?.convenioNombre || '')}`).includes('trompo');
+        const rc = await casetaRespaldoColombia(esTrompo);
+        if (rc && rc.saldoPuente > 0) return { ...rc, saldoPuenteFecha: fechaSP0, saldoPuenteEvento: eventoSP0 };
       }
       // ✅ V00365: sin caseta en la tarifa, el puente lo decide el TRÁFICO — importación
       //   cruza por Caseta AVI (dólares) y exportación por Puente III (pesos) —
@@ -961,13 +977,15 @@ const OperacionesDashboard = () => {
     const generado = aUSD(Number(op?.montoConvenioCliente) || 0, op?.monedaConvenioCliente);
     const cargosCli = aUSD(Number(op?.cargosAdicionales) || 0, op?.monedaConvenioCliente);
     const puente = aUSD(Number(op?.saldoPuente) || 0, op?.saldoPuenteMoneda);
+    const pisoPuente = aUSD(Number(op?.saldoPuentePiso) || 0, op?.saldoPuentePisoMoneda); // ✅ V00388
     const cargosProv = aUSD(Number(op?.cargosAdicionalesProv) || 0, op?.monedaConvenioProv || op?.monedaConvenioCliente);
     const sueldoProv = aUSD(Number(op?.totalAPagarProv) || 0, op?.monedaConvenioProv);
-    const total = generado.usd + cargosCli.usd - puente.usd - cargosProv.usd - sueldoProv.usd;
+    const total = generado.usd + cargosCli.usd - puente.usd - pisoPuente.usd - cargosProv.usd - sueldoProv.usd;
     const lineas = [
       { etiqueta: 'Generado (tarifa cliente)', texto: fmtU(generado.usd) + generado.nota },
       ...(cargosCli.usd ? [{ etiqueta: '+ Cargos adic. (cliente)', texto: fmtU(cargosCli.usd) + cargosCli.nota }] : []),
       { etiqueta: '− Saldo del puente', texto: fmtU(puente.usd) + puente.nota, negativo: true },
+      ...(pisoPuente.usd ? [{ etiqueta: `− ${String(op?.saldoPuentePisoPuente || 'Puente Mx Colombia')}`, texto: fmtU(pisoPuente.usd) + pisoPuente.nota, negativo: true }] : []),
       ...(cargosProv.usd ? [{ etiqueta: '− Gastos adicionales', texto: fmtU(cargosProv.usd) + cargosProv.nota, negativo: true }] : []),
       { etiqueta: '− Sueldo del proveedor', texto: fmtU(sueldoProv.usd) + sueldoProv.nota, negativo: true },
     ];

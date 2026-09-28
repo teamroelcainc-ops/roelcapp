@@ -155,7 +155,12 @@ const COLUMNAS_BASE = [
 // ✅ Status que se muestran en esta vista — SOLO estos 2 IDs hex.
 const STATUS_COMPLETADOS_VALORES = ['c2d57403', 'f557b751'];
 // ✅ V00355: saldo del puente colocado al completar (AVI import / Puente III export)
-const fmtSaldoPuente = (op: { saldoPuente?: unknown; saldoPuenteMoneda?: unknown }): string => { const n = Number(op?.saldoPuente); if (!Number.isFinite(n)) return '-'; return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${String(op?.saldoPuenteMoneda || '')}`.trim(); };
+const fmtSaldoPuente = (op: { saldoPuente?: unknown; saldoPuenteMoneda?: unknown; saldoPuentePiso?: unknown; saldoPuentePisoMoneda?: unknown }): string => {
+  const n = Number(op?.saldoPuente); if (!Number.isFinite(n)) return '-';
+  const f = (v: number) => v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const piso = Number(op?.saldoPuentePiso); // ✅ V00388: aduana Colombia = caseta + piso del puente
+  return `$${f(n)} ${String(op?.saldoPuenteMoneda || '')}${piso > 0 ? ` + $${f(piso)} ${String(op?.saldoPuentePisoMoneda || '')}` : ''}`.trim();
+};
 
 // ID del tipo de empresa "Cliente (Paga)" para el buscador
 const ID_TIPO_CLIENTE_PAGA = '7eec9cbb';

@@ -61,9 +61,12 @@ export const TarjetaCasetas: React.FC = () => {
       }));
     }, () => {});
     const u3 = onSnapshot(query(collection(db, 'operaciones'), where('saldoPuente', '>', 0)), (snap) => {
-      setCruces(docsSinPruebas(snap.docs).map((d) => { // ✅ V00380
+      setCruces(docsSinPruebas(snap.docs).flatMap((d) => { // ✅ V00380
         const x = d.data() as Record<string, unknown>;
-        return { puenteNombre: String(x.saldoPuentePuente || ''), fecha: String(x.saldoPuenteFecha || ''), monto: Number(x.saldoPuente) || 0, moneda: nombreMoneda(x.saldoPuenteMoneda), ref: String(x.ref || d.id), statusNombre: String(x.statusNombre || ''), evento: String(x.saldoPuenteEvento || '') };
+        const caseta = { puenteNombre: String(x.saldoPuentePuente || ''), fecha: String(x.saldoPuenteFecha || ''), monto: Number(x.saldoPuente) || 0, moneda: nombreMoneda(x.saldoPuenteMoneda), ref: String(x.ref || d.id), statusNombre: String(x.statusNombre || ''), evento: String(x.saldoPuenteEvento || '') };
+        // ✅ V00388: aduana Colombia — el PISO del puente cuenta como segundo cruce
+        if (!(Number(x.saldoPuentePiso) > 0)) return [caseta];
+        return [caseta, { ...caseta, puenteNombre: String(x.saldoPuentePisoPuente || 'Puente Mx Colombia'), fecha: String(x.saldoPuentePisoFecha || x.saldoPuenteFecha || ''), monto: Number(x.saldoPuentePiso) || 0, moneda: nombreMoneda(x.saldoPuentePisoMoneda), evento: String(x.saldoPuentePisoEvento || x.saldoPuenteEvento || '') }];
       }));
     }, () => {});
     return () => { u1(); u2(); u3(); };

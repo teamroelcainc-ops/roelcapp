@@ -13,6 +13,7 @@ import type { CatalogSchema, CatalogField } from '../config/catalogSchemas';
 import { SelectBuscable } from './SelectBuscable';
 import './CatalogosDashboard.css';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
+import { esAduanaColombia, esGastoPisoColombia } from '../../../utils/puenteColombia';
 
 // ✅ Helper compartido: resuelve la etiqueta a mostrar de una opción dinámica
 //    (misma cadena de respaldos que usaban los <select> nativos)
@@ -1629,29 +1630,53 @@ const CatalogosDashboard = () => {
     const cat = (opcionesDinamicas['catalogo_tipos_gastos'] || []).find((t: { id?: unknown }) => String(t.id) === String(gastoId || '').trim()) as { categoria_gasto?: unknown } | undefined;
     return !!cat && normPuente(cat.categoria_gasto) === 'puente';
   };
-  const puentesDeTarifa = (tarifaId: unknown, excluirDetalleId?: string): number => {
+  // ✅ V00388: cuenta los gastos de puente de una tarifa separando la CASETA del
+  //   PISO de Colombia ("Puente Mx Colombia"). Nuevo Laredo: 1 solo gasto de
+  //   puente. Colombia: 1 caseta (Caseta Mx Colombia / Trompo Colombia) + el piso.
+  const nombreGastoCat = (gastoId: unknown): string => {
+    const cat = (opcionesDinamicas['catalogo_tipos_gastos'] || []).find((t: { id?: unknown }) => String(t.id) === String(gastoId || '').trim()) as { nombre_gasto?: unknown } | undefined;
+    return String(cat?.nombre_gasto || '');
+  };
+  const puentesDeTarifaDet = (tarifaId: unknown, excluirDetalleId?: string): { casetas: number; pisos: number } => {
     const docs = subDocsSnapshot['tarifas_gastos_incluidos'] || [];
     const pid = String(tarifaId || '').trim().toLowerCase();
-    if (!pid) return 0;
-    return docs.filter((doc0: unknown) => {
+    const out = { casetas: 0, pisos: 0 };
+    if (!pid) return out;
+    docs.forEach((doc0: unknown) => {
       const d = doc0 as Record<string, unknown>;
-      if (excluirDetalleId && String(d.id) === String(excluirDetalleId)) return false;
+      if (excluirDetalleId && String(d.id) === String(excluirDetalleId)) return;
       const vinculado = Object.values(d).some((val) => {
         if (!val) return false;
         const conId = val as { id?: unknown };
         const strVal = typeof val === 'object' && conId.id ? String(conId.id) : String(val);
         return strVal.trim().toLowerCase() === pid;
       });
-      return vinculado && esGastoPuente(d.gasto ?? d.gastoId ?? d.gasto_id);
-    }).length;
+      const gid = d.gasto ?? d.gastoId ?? d.gasto_id;
+      if (!vinculado || !esGastoPuente(gid)) return;
+      if (esGastoPisoColombia(nombreGastoCat(gid))) out.pisos += 1; else out.casetas += 1;
+    });
+    return out;
+  };
+  const esTarifaColombia = (aduana: unknown): boolean => {
+    const v = String(aduana || '').trim();
+    if (!v) return false;
+    const op = (opcionesDinamicas['catalogo_aduanas'] || []).find((o: { id?: unknown }) => String(o.id) === v) as Record<string, unknown> | undefined;
+    return esAduanaColombia(op ? (op.aduana ?? op.label ?? op.nombre) : v);
   };
   const avisoPuenteRef = (reg: { id?: unknown; aduana?: unknown }): React.ReactNode => {
     if (catalogoSeleccionado?.id !== 'tarifas_referencia') return null;
     if (!String(reg?.aduana || '').trim()) return null;
-    const n = puentesDeTarifa(reg.id);
+    const { casetas, pisos } = puentesDeTarifaDet(reg.id);
+    if (esTarifaColombia(reg.aduana)) {
+      if (casetas === 0) return <span className="cd-aviso-puente" title="Aduana Colombia: falta la CASETA (Caseta Mx Colombia o Trompo Colombia) en sus Gastos Incluidos. El piso del puente (Puente Mx Colombia) se cobra aparte">Sin caseta</span>;
+      if (casetas > 1) return <span className="cd-aviso-puente cd-aviso-puente--exceso" title="Aduana Colombia: solo UNA caseta + el Puente Mx Colombia">{casetas} casetas</span>;
+      if (pisos > 1) return <span className="cd-aviso-puente cd-aviso-puente--exceso" title="Puente Mx Colombia está repetido — deja solo uno">{pisos}× Puente Mx Colombia</span>;
+      return null;
+    }
+    const n = casetas + pisos;
     if (n === 1) return null;
-    if (n === 0) return <span className="cd-aviso-puente" title="Esta tarifa tiene aduana y NO tiene gasto de puente en sus Gastos Incluidos — agrégalo para que el peaje se descuente correcto">🌉⚠ Sin gasto de puente</span>;
-    return <span className="cd-aviso-puente cd-aviso-puente--exceso" title="Esta tarifa tiene MÁS DE UN gasto de puente — deja solo uno">⛔ {n} gastos de puente</span>;
+    if (n === 0) return <span className="cd-aviso-puente" title="Esta tarifa tiene aduana y NO tiene gasto de puente en sus Gastos Incluidos — agrégalo para que el peaje se descuente correcto">Sin gasto de puente</span>;
+    return <span className="cd-aviso-puente cd-aviso-puente--exceso" title="Esta aduana solo admite UN gasto de puente — deja solo uno (solo Colombia lleva caseta + piso)">{n} gastos de puente</span>;
   };
 
   const handleAgregarEditarSubdetalle = (coleccion: string, data?: any) => {
@@ -1677,11 +1702,16 @@ const CatalogosDashboard = () => {
       const realCol = CACHE_NOMBRES_COLECCIONES[subColeccionActual.collection] || subColeccionActual.collection;
       const tituloSub = getDetailTitle(subColeccionActual);
 
-      // ✅ V00374: una tarifa con ADUANA solo puede tener UN gasto de puente
+      // ✅ V00374 / V00388: gastos de PUENTE por tarifa — Nuevo Laredo (y demás
+      //   aduanas) UNO solo; Colombia UNA caseta + el piso "Puente Mx Colombia".
       if (subColeccionActual.collection === 'tarifas_gastos_incluidos' && esGastoPuente(subFormData.gasto)) {
-        const yaTiene = puentesDeTarifa(registroActual?.id, subRegistroActual?.id);
-        if (yaTiene >= 1) {
-          alert('⛔ Esta tarifa ya tiene un gasto de PUENTE en sus Gastos Incluidos.\n\nSolo puede haber UNO por tarifa — edita o elimina el existente en lugar de agregar otro.');
+        const { casetas, pisos } = puentesDeTarifaDet(registroActual?.id, subRegistroActual?.id);
+        const esPiso = esGastoPisoColombia(nombreGastoCat(subFormData.gasto));
+        if (esTarifaColombia(registroActual?.aduana)) {
+          if (esPiso && pisos >= 1) { alert('Esta tarifa ya tiene el Puente Mx Colombia (piso del puente). Solo puede haber uno.'); return; }
+          if (!esPiso && casetas >= 1) { alert('Esta tarifa ya tiene su CASETA.\n\nAduana Colombia admite una caseta (Caseta Mx Colombia o Trompo Colombia) más el Puente Mx Colombia — edita la existente en lugar de agregar otra.'); return; }
+        } else if (casetas + pisos >= 1) {
+          alert('Esta tarifa ya tiene un gasto de PUENTE en sus Gastos Incluidos.\n\nSu aduana solo admite UNO (solo Colombia lleva caseta + piso) — edita o elimina el existente en lugar de agregar otro.');
           return;
         }
       }

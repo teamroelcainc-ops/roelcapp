@@ -33,6 +33,7 @@ import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 import { validarFormularioConfigurable } from '../../formularios/configFormularios';
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
+import { aduanaDeConvenio, camposPisoColombia, casetaRespaldoColombia, esAduanaColombia, esGastoPisoColombia, nombresAduana, normPuente } from '../../../utils/puenteColombia';
 
 // ✅ NUEVO: utilidades para el Historial de Actividad (historial_actividad).
 //   Nunca deben romper el guardado: los llamados a registrarLog van con .catch.
@@ -787,6 +788,16 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const unidades = unidadesLocal;
   const empleados = empleadosLocalState;
   const tarifas = tarifasLocal;
+  // ✅ V00388: ADUANA de cada convenio (tarifa de referencia → catálogo de aduanas)
+  const [mapaAduanas, setMapaAduanas] = useState<Map<string, string>>(new Map());
+  useEffect(() => { nombresAduana().then(setMapaAduanas).catch(() => {}); }, []);
+  const aduanaDeConv = (conv: { tarifaBaseId?: unknown } | null | undefined): string => {
+    const tb = String(conv?.tarifaBaseId ?? '').trim();
+    if (!tb) return '';
+    const t = (tarifas || []).find((x: { id?: unknown }) => String(x.id) === tb) as { aduana?: unknown } | undefined;
+    const v = String(t?.aduana ?? '').trim();
+    return v ? (mapaAduanas.get(v) || v) : '';
+  };
   const conveniosProv = convProvLocal;
   const catalogoConvProvDetalles = convProvDetallesLocal;
   const catalogoConvClientes = convClientesLocal;
@@ -1108,7 +1119,16 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   //   de Caseta Puente III (del catálogo Tipos de Gastos, que Saldos de
   //   Puentes mantiene al día). Solo se coloca una vez (no se pisa).
   const STATUS_COMPLETADOS_IDS_SP = ['c2d57403', 'f557b751'];
+  // ✅ V00388: aduana COLOMBIA → además de la caseta, el PISO del puente
+  //   ("Puente Mx Colombia", monto fijo del catálogo). Nuevo Laredo: uno solo.
   const camposSaldoPuente = async (statusFinal: string, statusNombreSP?: string): Promise<Record<string, unknown>> => {
+    const base = await camposSaldoPuenteBase(statusFinal, statusNombreSP);
+    if (!(Number(base.saldoPuente) > 0)) return base;
+    const previoPiso = (initialData as Record<string, unknown> | undefined)?.saldoPuentePiso;
+    return { ...base, ...(await camposPisoColombia({ convenio: formData.convenio, saldoPuentePiso: previoPiso }, base.saldoPuenteFecha, base.saldoPuenteEvento)) };
+  };
+
+  const camposSaldoPuenteBase = async (statusFinal: string, statusNombreSP?: string): Promise<Record<string, unknown>> => {
     try {
       // ✅ V00367: también dispara al quedar la operación en VERDE (MX o USA) —
       //   el peaje se descuenta al marcar el verde, con Completado de respaldo.
@@ -1143,7 +1163,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
             const gastoId = String(g.gasto ?? g.gastoId ?? g.gasto_id ?? '').trim();
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const cat = (tiposGastosLocal as any[]).find((t: any) => String(t.id) === gastoId);
-            return !!cat && normSP0(cat.categoria_gasto) === 'puente';
+            return !!cat && normSP0(cat.categoria_gasto) === 'puente' && !esGastoPisoColombia(cat.nombre_gasto); // ✅ V00388: el piso no es la caseta
           });
           if (vinculo) {
             const gastoId = String(vinculo.gasto ?? vinculo.gastoId ?? vinculo.gasto_id ?? '').trim();
@@ -1157,6 +1177,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
           }
         }
       } catch { /* sigue el fallback por tráfico */ }
+      // ✅ V00388: aduana Colombia sin caseta en la tarifa → Caseta Mx Colombia (o Trompo Colombia)
+      if (esAduanaColombia(await aduanaDeConvenio(formData.convenio))) {
+        const esTrompo = normPuente(`${String(formData.carga || '')} ${String((formData as Record<string, unknown>).convenioNombre || '')}`).includes('trompo');
+        const rc = await casetaRespaldoColombia(esTrompo);
+        if (rc && rc.saldoPuente > 0) return { ...rc, saldoPuenteFecha: fechaSP0, saldoPuenteEvento: eventoSP0 };
+      }
       const traf = String(formData.trafico || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
       const objetivo = traf.includes('import') ? 'caseta avi' : traf.includes('export') ? 'caseta puente' : '';
       if (!objetivo) return {};
@@ -2144,8 +2170,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     const m = Number(monto) || 0;
     const convUSD = esMonedaUSD(monConvenio), convMXN = esMonedaMXN(monConvenio);
     const factUSD = esMonedaUSD(monFactura), factMXN = esMonedaMXN(monFactura);
-    if (convUSD && factMXN) return { monto: tc > 0 ? m * tc : 0, convertido: true, sinTC: !(tc > 0) };
-    if (convMXN && factUSD) return { monto: tc > 0 ? m / tc : 0, convertido: true, sinTC: !(tc > 0) };
+    // ✅ V00388: el monto convertido se muestra a 2 decimales (antes 2567,9500000000003)
+    const dos = (v: number) => Math.round(v * 100) / 100;
+    if (convUSD && factMXN) return { monto: tc > 0 ? dos(m * tc) : 0, convertido: true, sinTC: !(tc > 0) };
+    if (convMXN && factUSD) return { monto: tc > 0 ? dos(m / tc) : 0, convertido: true, sinTC: !(tc > 0) };
     return { monto: m, convertido: false, sinTC: false };
   };
 
@@ -3844,6 +3872,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
               <div className="fo-x44">
                 {formData.trafico && formData.trafico !== 'N/A' && <span className="roelca-chip">{formData.trafico}</span>}
                 {formData.carga && formData.carga !== 'N/A' && <span className="roelca-chip">{formData.carga}</span>}
+                {aduanaDeConv(convClienteSel) && <span className="roelca-chip" title="Aduana de la tarifa del convenio">Aduana {aduanaDeConv(convClienteSel)}</span>}{/* ✅ V00388 */}
                 {searchProvTransporte && <span className="roelca-chip">{searchProvTransporte}</span>}
               </div>
             </div>
@@ -3959,6 +3988,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                   <span className="fo-tarifa-cons">{consecutivoDe(c) || '—'}</span>
                   <span className="fo-tarifa-monto">{fmtMoney(c.tarifaMonto)}</span>
                   <span className="fo-tarifa-mon">{nombreMoneda(modalTarifas.tipo === 'cliente' ? c.monedaMaestro : c.monedaBase)}</span>
+                  {aduanaDeConv(c) && <span className="fo-chip-aduana" title="Aduana de la tarifa">{aduanaDeConv(c)}</span>}{/* ✅ V00388 */}
                 </button>
               ))}
             </div>
@@ -4047,7 +4077,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       >
                         <td className="fo-x60 fo-col-consec">{String(c.tarifarioConsec || c.tarifarioId || '—')}</td>{/* ✅ V00272 */}
                         <td className="fo-x60 fo-col-consec">{String(c.consecutivo || c.id || '—')}</td>
-                        <td className="fo-x60">{c.descripcion}</td>
+                        <td className="fo-x60">{c.descripcion}{aduanaDeConv(c) && <span className="fo-chip-aduana" title="Aduana de la tarifa">{aduanaDeConv(c)}</span>}</td>
                         <td className="fo-x61"><span className={`fo-chip-moneda${String(c.monedaMaestro) === ID_USD ? ' fo-chip-moneda--usd' : ' fo-chip-moneda--mxn'}`}>{String(c.monedaMaestro) === ID_USD ? 'USD' : 'MXN'}</span></td>{/* ✅ V00281 */}
                         <td className="fo-x61">
                           {fmtMoney(c.tarifaMonto)}
@@ -4071,7 +4101,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         }}>
                           <td className="fo-x60" />
                           <td className="fo-x60 fo-col-consec fo-sub-tarifa">↳ Tarifa {String.fromCharCode(65 + i)}</td>
-                          <td className="fo-x60">{c.descripcion}</td>
+                          <td className="fo-x60">{c.descripcion}{aduanaDeConv(c) && <span className="fo-chip-aduana" title="Aduana de la tarifa">{aduanaDeConv(c)}</span>}</td>
                           <td className="fo-x61"><span className={`fo-chip-moneda${String(c.monedaMaestro) === ID_USD ? ' fo-chip-moneda--usd' : ' fo-chip-moneda--mxn'}`}>{String(c.monedaMaestro) === ID_USD ? 'USD' : 'MXN'}</span></td>
                           <td className="fo-x61">{fmtMoney(m)}{m === Number(c.tarifaMonto) ? <span className="fo-vigente-tag">vigente</span> : null}</td>
                           <td className="fo-x62" />

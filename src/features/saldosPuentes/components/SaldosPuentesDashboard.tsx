@@ -91,9 +91,12 @@ export const SaldosPuentesDashboard: React.FC = () => {
     }, (e) => { console.warn('Recargas de puentes:', e); setCargando(false); });
     // Cruces = operaciones completadas que llevan saldo de puente colocado (V00355)
     const u3 = onSnapshot(query(collection(db, 'operaciones'), where('saldoPuente', '>', 0)), (snap) => {
-      setCruces(docsSinPruebas(snap.docs).map((d) => { // ✅ V00380
+      setCruces(docsSinPruebas(snap.docs).flatMap((d) => { // ✅ V00380
         const x = d.data() as Record<string, unknown>;
-        return { puenteNombre: String(x.saldoPuentePuente || ''), fecha: String(x.saldoPuenteFecha || ''), monto: Number(x.saldoPuente) || 0, ref: String(x.ref || d.id) };
+        const caseta = { puenteNombre: String(x.saldoPuentePuente || ''), fecha: String(x.saldoPuenteFecha || ''), monto: Number(x.saldoPuente) || 0, ref: String(x.ref || d.id) };
+        // ✅ V00388: aduana Colombia — el PISO del puente es un segundo cruce (Puente Mx Colombia)
+        if (!(Number(x.saldoPuentePiso) > 0)) return [caseta];
+        return [caseta, { puenteNombre: String(x.saldoPuentePisoPuente || 'Puente Mx Colombia'), fecha: String(x.saldoPuentePisoFecha || x.saldoPuenteFecha || ''), monto: Number(x.saldoPuentePiso) || 0, ref: String(x.ref || d.id) }];
       }));
     }, (e) => console.warn('Cruces con saldo:', e));
     return () => { u1(); u2(); u3(); };
@@ -152,6 +155,18 @@ export const SaldosPuentesDashboard: React.FC = () => {
           saldo: tieneSaldo ? Number(x.saldoPuente) : null,
           moneda: String(x.saldoPuenteMoneda || (puenteDef === 'Caseta AVI' ? 'Dólares' : puenteDef ? 'Pesos' : '')),
         });
+        // ✅ V00388: aduana Colombia — segunda fila con el piso del puente
+        if (Number(x.saldoPuentePiso) > 0) {
+          filas.push({
+            ref: String(x.ref || d.id),
+            fecha: String(x.fechaServicio || '').slice(0, 10),
+            tipo: String(x.tipoOperacionNombre || '—'),
+            trafico: traf.includes('import') ? 'Importación' : traf.includes('export') ? 'Exportación' : String(x.trafico || '—'),
+            puente: String(x.saldoPuentePisoPuente || 'Puente Mx Colombia'),
+            saldo: Number(x.saldoPuentePiso),
+            moneda: String(x.saldoPuentePisoMoneda || 'Pesos'),
+          });
+        }
       });
       filas.sort((a, b) => b.fecha.localeCompare(a.fecha) || a.ref.localeCompare(b.ref));
       setRepFilas(filas);
