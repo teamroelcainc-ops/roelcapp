@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
+import { camposModificadosDe } from '../../autorizaciones/autorizaciones';
 import { collection, getDocs, addDoc, updateDoc, doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import type { DireccionRecord } from '../../../types/direccion';
@@ -354,7 +355,7 @@ export const FormularioDireccion: React.FC<FormProps> = ({
   const aut = useAutorizacionesCampos('direcciones');
   const handleSubmit = async (e: React.FormEvent) => {
     // ✅ V00142: reglas de Autorizaciones
-    if (!aut.verificarAccion(initialData?.id ? 'editar' : 'crear', Object.keys(formData || {}))) return;
+    if (!aut.verificarAccion(initialData?.id ? 'editar' : 'crear', camposModificadosDe((formData || {}) as unknown as Record<string, unknown>, (initialData || {}) as unknown as Record<string, unknown>), (initialData || {}) as unknown as Record<string, unknown>) /* ✅ V00382: solo lo que REALMENTE cambió */) return;
     e.preventDefault();
 
     // ✅ Resolución de textos pendientes: si el usuario escribió pero no dio

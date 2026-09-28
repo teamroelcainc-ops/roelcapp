@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
+import { camposModificadosDe } from '../../autorizaciones/autorizaciones';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
 import './FormularioContacto.css';
@@ -72,7 +73,7 @@ export const FormularioContacto: React.FC<Props> = ({ estado, initialData, onClo
   const aut = useAutorizacionesCampos('contactos');
   const handleSubmit = async (e: React.FormEvent) => {
     // ✅ V00142: reglas de Autorizaciones
-    if (!aut.verificarAccion(initialData?.id ? 'editar' : 'crear', Object.keys(formData || {}))) return;
+    if (!aut.verificarAccion(initialData?.id ? 'editar' : 'crear', camposModificadosDe((formData || {}) as unknown as Record<string, unknown>, (initialData || {}) as unknown as Record<string, unknown>), (initialData || {}) as unknown as Record<string, unknown>) /* ✅ V00382: solo lo que REALMENTE cambió */) return;
     e.preventDefault();
     if (!formData.id_cliente) return alert("Por favor, selecciona una empresa válida del buscador.");
     

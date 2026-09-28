@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
+import { camposModificadosDe } from '../../autorizaciones/autorizaciones';
 import { collection, getDocs, getDoc, doc, writeBatch, query, where, setDoc, updateDoc } from 'firebase/firestore'; // ✅ V00199: addDoc ya no se usa (la clave del detalle es su consecutivo)
 import { db } from '../../../config/firebase'; 
 import type { ConvenioClienteRecord, ConvenioDetalleRecord } from '../../../types/convenioCliente';
@@ -512,7 +513,7 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
   const aut = useAutorizacionesCampos('conveniosClientes');
   const handleSubmit = async (e: React.FormEvent) => {
     // ✅ V00140: reglas de acción (crear/editar) de Autorizaciones
-    if (!aut.verificarAccion(initialData?.id ? 'editar' : 'crear', Object.keys(formData || {}))) return;
+    if (!aut.verificarAccion(initialData?.id ? 'editar' : 'crear', camposModificadosDe((formData || {}) as unknown as Record<string, unknown>, (initialData || {}) as unknown as Record<string, unknown>), (initialData || {}) as unknown as Record<string, unknown>) /* ✅ V00382: solo lo que REALMENTE cambió */) return;
     e.preventDefault();
     if (isRequired('clienteId') && !formData.clienteId) return alert("Seleccione un cliente.");
 

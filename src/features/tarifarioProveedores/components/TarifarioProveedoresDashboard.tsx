@@ -90,6 +90,7 @@ import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
 import html2pdf from 'html2pdf.js'; // ✅ V00250: descarga directa (como Operaciones)
 import { LOGO_CTPAT_SRC } from '../../../utils/logoCtpat'; // ✅ V00250/V00251
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
+import { valoresEquivalentesAut } from '../../autorizaciones/autorizaciones';
 import { reservarConsecutivosDetalleProveedor, reservarConsecutivosTarifarioProveedor } from '../../conveniosDetalles/consecutivos'; // ✅ V00199/V00203
 import { urlVerEnPestana, filtrosDeUrl } from '../../../utils/verEnPestana'; // ✅ V00312
 import { cargarObligatoriosTarifa, guardarObligatoriosTarifa, ETIQUETAS_CAMPOS_TARIFA, OBLIGATORIOS_TARIFA_DEFAULT, type CamposObligatoriosTarifa } from '../../../utils/camposObligatoriosTarifa'; // ✅ V00286
@@ -358,9 +359,41 @@ export function TarifarioProveedoresDashboard() {
   //   captura de tarifas — antes el único guardado vivía dentro de
   //   "Pre convenios" y al editar (fechas, "Tarifario obligatorio" o el
   //   documento) no había botón para guardar.
+  // ✅ V00382: AUTORIZACIONES con lo que REALMENTE cambió. Antes se enviaban
+  //   siempre todos los campos (fecha, proveedorId, tarifas, tarifa, cotizadoEn) y
+  //   cualquier regla bloqueaba el guardado aunque solo se tocara otra cosa.
+  const registroEdicionRef = useRef<Doc | null>(null);
+  const camposEditadosTarifario = (conTarifas: boolean): string[] => {
+    const r = registroEdicionRef.current;
+    if (!r) return conTarifas ? ['fecha', 'proveedorId', 'tarifas', 'tarifa', 'cotizadoEn'] : ['fecha', 'cotizadoEn']; // sin referencia: conservador
+    const out: string[] = [];
+    if (!valoresEquivalentesAut(fecha, r.fecha)) out.push('fecha');
+    if (proveedorSel && !valoresEquivalentesAut(String(proveedorSel.id ?? ''), r.proveedorId)) out.push('proveedorId');
+    let cambioMoneda = !valoresEquivalentesAut(monedaEfectiva || '', canonMoneda(r.moneda) || '');
+    if (conTarifas) {
+      type Linea = { id: string; monto: number; moneda: string };
+      const guardadas: Linea[] = (Array.isArray(r.tarifas) ? r.tarifas : [])
+        .filter((t: Doc) => t && t.tarifaReferenciaId)
+        .map((t: Doc) => ({ id: String(t.tarifaReferenciaId), monto: Number(t.tarifa) || 0, moneda: canonMoneda(t.cotizadoEn) || '' }));
+      const actuales: Linea[] = [
+        ...[...seleccion].map((id) => ({ id, monto: Number(tarifaValor[id]) || 0, moneda: monedaTarifa[id] || '' })),
+        ...extras.map((x) => ({ id: x.tarifaRefId, monto: Number(x.valor) || 0, moneda: x.moneda || '' })),
+      ];
+      const ids = (ls: Linea[]) => [...new Set(ls.map((l) => l.id))].sort().join(';');
+      const montos = (ls: Linea[]) => ls.map((l) => `${l.id}|${Math.round(l.monto * 100)}`).sort().join(';');
+      if (ids(guardadas) !== ids(actuales)) out.push('tarifas');
+      if (montos(guardadas) !== montos(actuales)) out.push('tarifa');
+      // moneda por línea: solo cuenta donde ambas la traen
+      const monG = new Map(guardadas.filter((l) => l.moneda).map((l) => [l.id, l.moneda]));
+      if (actuales.some((l) => l.moneda && monG.has(l.id) && monG.get(l.id) !== l.moneda)) cambioMoneda = true;
+    }
+    if (cambioMoneda) out.push('cotizadoEn');
+    return [...new Set(out)];
+  };
+
   const guardarCabeceraEdicion = async () => {
     if (!editandoId) return;
-    if (!aut.verificarAccion('editar', ['fecha', 'cotizadoEn'])) return;
+    if (!aut.verificarAccion('editar', camposEditadosTarifario(false))) return; // ✅ V00382
     setGuardando(true);
     try {
       await updateDoc(doc(db, 'tarifario_proveedores', editandoId), {
@@ -427,6 +460,7 @@ export function TarifarioProveedoresDashboard() {
 
   // ✅ V00194: abrir la captura en modo EDICIÓN con todo precargado.
   const abrirEdicion = (r: Doc) => {
+    registroEdicionRef.current = r; // ✅ V00382: base para saber qué cambió
     setDocObligatorioForm(esDocObligatorio(r)); // ✅ V00277
     setMonedaCabecera(canonMoneda(r.moneda) || ''); // ✅ V00302: precarga la moneda guardada
     const emp = empresas.find((e) => String(e.id) === String(r.proveedorId));
@@ -530,7 +564,7 @@ export function TarifarioProveedoresDashboard() {
   const guardarPreConvenio = async () => {
     if (!proveedorSel || seleccion.size === 0 || guardando) return;
     // ✅ V00195: Agregar y Editar se autorizan POR SEPARADO según las reglas del módulo.
-    if (!aut.verificarAccion(editandoId ? 'editar' : 'crear', editandoId ? ['fecha', 'proveedorId', 'tarifas', 'tarifa', 'cotizadoEn'] : [])) return;
+    if (!aut.verificarAccion(editandoId ? 'editar' : 'crear', editandoId ? camposEditadosTarifario(true) : [])) return; // ✅ V00382
     setGuardando(true);
     try {
       const elegidas = tarifasRef.filter((t) => seleccion.has(t.id));

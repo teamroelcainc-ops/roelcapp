@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
+import { camposModificadosDe } from '../../autorizaciones/autorizaciones';
 import { collection, getDocs } from 'firebase/firestore';
 import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
 import type { UnidadRecord } from '../../../types/unidad'; // ✅ RUTA CORREGIDA
@@ -182,7 +183,7 @@ export const FormularioUnidad = ({ estado, initialData, onClose, onMinimize, onR
 
   const handleSubmit = async (e: React.FormEvent) => {
     // ✅ V00140: reglas de acción (crear/editar) de Autorizaciones
-    if (!aut.verificarAccion(initialData?.id ? 'editar' : 'crear', Object.keys(formData || {}))) return;
+    if (!aut.verificarAccion(initialData?.id ? 'editar' : 'crear', camposModificadosDe((formData || {}) as unknown as Record<string, unknown>, (initialData || {}) as unknown as Record<string, unknown>), (initialData || {}) as unknown as Record<string, unknown>) /* ✅ V00382: solo lo que REALMENTE cambió */) return;
     e.preventDefault();
     if (!formData.tipoUnidadId) {
       alert("Debes seleccionar un Tipo de Unidad.");

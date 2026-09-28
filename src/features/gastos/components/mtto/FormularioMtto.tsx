@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { ModalAccesoCampo } from '../../../autorizaciones/ModalAccesoCampo';
 import { useAutorizacionesCampos } from '../../../autorizaciones/useAutorizacionesCampos';
+import { camposModificadosDe } from '../../../autorizaciones/autorizaciones';
 // ✅ IMPORTAMOS 'doc' y 'updateDoc' DE FIREBASE
 import { collection, getDocs, query, limit, orderBy, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../../../config/firebase';
@@ -399,7 +400,7 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
   // 🔴 LA MAGIA ESTÁ AQUÍ 🔴
   const handleSubmit = async (e: React.FormEvent) => {
     // ✅ V00140: reglas de acción (crear/editar) de Autorizaciones
-    if (!aut.verificarAccion(initialData?.id ? 'editar' : 'crear', Object.keys(formData || {}))) return;
+    if (!aut.verificarAccion(initialData?.id ? 'editar' : 'crear', camposModificadosDe((formData || {}) as unknown as Record<string, unknown>, (initialData || {}) as unknown as Record<string, unknown>), (initialData || {}) as unknown as Record<string, unknown>) /* ✅ V00382: solo lo que REALMENTE cambió */) return;
     e.preventDefault();
 
     // ✅ NUEVO — validación de refacciones cuando aplica el tipo de gasto.

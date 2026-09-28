@@ -69,9 +69,14 @@ export const useAutorizacionesCampos = (moduloClave: string) => {
     : {};
 
   /** Evalúa una acción al guardar. Si requiere autorización, muestra el motivo y regresa false. */
-  const verificarAccion = (accion: AccionAut, camposModificados: string[] = []): boolean => {
+  //   ✅ V00382: `valoresAnteriores` (opcional) = el registro tal como estaba;
+  //   si no llega se usan los fijados con setValoresActuales. Los campos con
+  //   acceso temporal APROBADO ya no se cuentan (antes la UI los destapaba pero
+  //   el guardado los volvía a rechazar).
+  const verificarAccion = (accion: AccionAut, camposModificados: string[] = [], valoresAnteriores?: Record<string, unknown> | null): boolean => {
     if (!usuario) return true; // sin sesión resuelta aún: no bloquear
-    const r = evaluarAutorizacion(config ?? null, accion, usuario, camposModificados, etiquetas, valoresActuales); // ✅ V00326
+    const campos = camposModificados.filter((k) => !accesosVigentes.has(k));
+    const r = evaluarAutorizacion(config ?? null, accion, usuario, campos, etiquetas, valoresAnteriores !== undefined ? valoresAnteriores : valoresActuales); // ✅ V00326
     if (!r.requiere) return true;
     alert(`⛔ Esta acción requiere autorización de un Administrador:\n\n· ${r.motivos.join('\n· ')}\n\nPídele a un Admin que realice el cambio o ajuste las reglas en Configuración → Autorizaciones.`);
     return false;
@@ -105,6 +110,7 @@ export const useAutorizacionesCampos = (moduloClave: string) => {
   return {
     cargado: config !== undefined && usuario !== null, esAdmin: !!usuario?.esAdmin,
     campoBloqueado, propsBloqueo, verificarAccion, camposBloqueados,
+    accesoVigente: (k: string) => accesosVigentes.has(k), // ✅ V00382
     etiquetas, abrirSolicitudAcceso, cerrarSolicitudAcceso, enviarSolicitudAcceso,
     solicitudCampo, solicitudEnviando, solicitudEnviada, setContextoRegistro,
     setValoresActuales, // ✅ V00326

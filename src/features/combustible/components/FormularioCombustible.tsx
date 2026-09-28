@@ -1,7 +1,8 @@
 // src/features/combustible/components/FormularioCombustible.tsx
 
 import React, { useState, useEffect } from 'react';
-import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos'; // ✅ V00332
+import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
+import { valoresEquivalentesAut } from '../../autorizaciones/autorizaciones'; // ✅ V00332
 import { useEffect as useEffectAut } from 'react'; // ✅ V00332
 import { collection, getDocs, query, where, limit } from 'firebase/firestore'; // ✅ Importamos utilidades de consulta
 import { db, actualizarRegistro } from '../../../config/firebase'; 
@@ -267,7 +268,7 @@ export const FormularioCombustible: React.FC<FormProps> = ({
     const esEdicionAut = !!(initialData && (initialData as unknown as { id?: string }).id);
     const camposModAut = esEdicionAut
       ? ['fecha', 'tipoCombustible', 'monedaId', 'tipoMedida', 'proveedorId', 'costo', 'tipoCambio']
-          .filter(k => JSON.stringify((record as Record<string, unknown>)[k] ?? '') !== JSON.stringify(((initialData || {}) as unknown as Record<string, unknown>)[k] ?? ''))
+          .filter(k => !valoresEquivalentesAut((record as Record<string, unknown>)[k], ((initialData || {}) as unknown as Record<string, unknown>)[k])) // ✅ V00382
       : [];
     if (!autHook.verificarAccion(esEdicionAut ? 'editar' : 'crear', camposModAut)) return;
 

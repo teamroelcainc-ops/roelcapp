@@ -596,6 +596,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   // ✅ V00141: hook central (config + accesos temporales aprobados + modal de solicitud)
   const autHook = useAutorizacionesCampos('operaciones');
   const campoBloqueadoAut = (k: string) => autHook.campoBloqueado(k);
+  // ✅ V00382: el hook conoce el registro abierto → "Agregar libre" (soloEditar)
+  //   funciona también en Operaciones: al CREAR o con el campo vacío queda libre.
+  const { setValoresActuales: setValoresAut } = autHook;
+  useEffect(() => { setValoresAut((initialData || {}) as Record<string, unknown>); }, [initialData, setValoresAut]);
   // clic sobre un campo bloqueado → modal "No tienes acceso…" con Solicitar autorización
   const clicCampoBloqueado = (k: string) => autHook.abrirSolicitudAcceso(k, { docId: String(initialData?.id || ''), referencia: String((formData as any).ref || initialData?.ref || '') });
   const [referencia, setReferencia] = useState('');
@@ -2643,10 +2647,23 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       const etiquetasCamposAut: Record<string, string> = {};
       (MODULOS_AUTORIZABLES.find(m => m.clave === 'operaciones')?.campos || []).forEach(c => { etiquetasCamposAut[c.key] = c.label; });
       const accionAut: 'crear' | 'editar' = initialData ? 'editar' : 'crear';
-      const camposCambiadosAut = initialData ? camposModificadosDe(operacionData, initialData as any) : [];
+      // ✅ V00382: solo cuentan los campos que el USUARIO pudo cambiar:
+      //   · diff normalizado (0 = vacío, 1500 = "1500.00", fechas, acentos…);
+      //   · fuera 'status' (lo mueve el flujo de Reglas de Estatus, no el usuario);
+      //   · fuera los campos que en pantalla están BLOQUEADOS para él (solo lectura):
+      //     si cambiaron fue por un recálculo automático (convenio, TC, Empresas);
+      //   · fuera los campos con acceso temporal aprobado.
+      const AUT_AUTOMATICOS = ['status'];
+      const AUT_BLOQUEABLES_UI = ['facturadoEnCobrar', 'facturadoEnUnidad', 'sueldoOperador', 'combustible', 'montoConvenioCliente', 'tipoCambioAprobado'];
+      const camposCambiadosAut = initialData
+        ? camposModificadosDe(operacionData, initialData as Record<string, unknown>).filter((k) =>
+            !AUT_AUTOMATICOS.includes(k) &&
+            !(AUT_BLOQUEABLES_UI.includes(k) && campoBloqueadoAut(k)) &&
+            !autHook.accesoVigente(k))
+        : [];
       const usuarioA = usuarioAut || await obtenerUsuarioAut();
       const configA = configAut !== undefined ? configAut : await cargarConfigModulo('operaciones');
-      const evalAut = evaluarAutorizacion(configA, accionAut, usuarioA, camposCambiadosAut, etiquetasCamposAut);
+      const evalAut = evaluarAutorizacion(configA, accionAut, usuarioA, camposCambiadosAut, etiquetasCamposAut, (initialData || null) as Record<string, unknown> | null);
       if (evalAut.requiere) {
         alert(`No tienes permiso para realizar esta modificación:\n\n${evalAut.motivos.join('\n')}\n\nRevierte esos campos para poder guardar el resto de los cambios.`);
         return;

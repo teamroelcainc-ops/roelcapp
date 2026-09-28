@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
+import { camposModificadosDe } from '../../autorizaciones/autorizaciones';
 import { collection, onSnapshot, getDocs, query, orderBy, limit, addDoc, updateDoc, doc } from 'firebase/firestore';
 import { db, storage } from '../../../config/firebase';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'; // ✅ V00287: foto del empleado
@@ -400,7 +401,7 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
     //   página) y el registro "no se guardaba" sin explicación.
     e.preventDefault();
     // ✅ V00140: reglas de acción (crear/editar) de Autorizaciones
-    if (!aut.verificarAccion(initialData?.id ? 'editar' : 'crear', Object.keys(formData || {}))) return;
+    if (!aut.verificarAccion(initialData?.id ? 'editar' : 'crear', camposModificadosDe((formData || {}) as unknown as Record<string, unknown>, (initialData || {}) as unknown as Record<string, unknown>), (initialData || {}) as unknown as Record<string, unknown>) /* ✅ V00382: solo lo que REALMENTE cambió */) return;
     
     if (!formData.employeeId || formData.employeeId.trim() === '' || formData.employeeId === 'Generando...') {
       return alert('El Número de Empleado (Ej. Col-001) es estrictamente necesario.');

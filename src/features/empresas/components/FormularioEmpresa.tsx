@@ -4,6 +4,7 @@ import { obtenerCacheMemoria, guardarCacheMemoria } from '../../../utils/cacheMe
 import { propagarMonedaEmpresa } from '../services/propagarMoneda';
 import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
+import { valoresEquivalentesAut } from '../../autorizaciones/autorizaciones';
 import { collection, getDocs, onSnapshot, addDoc, query, where, writeBatch } from 'firebase/firestore';
 import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
 import { FormularioDireccion } from '../../direcciones/components/FormularioDireccion'; 
@@ -721,7 +722,7 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
     const camposModAut = initialData?.id
       ? [...camposTocadosRef.current].filter(k => {
           const camposForm = CAMPOS_FORM_DE_CLAVE_AUT[k] || [k];
-          return camposForm.some(c => JSON.stringify((formData as Record<string, unknown>)[c] ?? '') !== JSON.stringify(baseAut[c] ?? ''));
+          return camposForm.some(c => !valoresEquivalentesAut((formData as Record<string, unknown>)[c], baseAut[c])); // ✅ V00382
         })
       : Object.keys(formData || {});
     if (!aut.verificarAccion(initialData?.id ? 'editar' : 'crear', camposModAut)) return;

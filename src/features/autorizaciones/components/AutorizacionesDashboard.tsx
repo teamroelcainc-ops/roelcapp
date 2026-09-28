@@ -191,7 +191,7 @@ export const AutorizacionesDashboard = () => {
       Object.keys(acciones).forEach(k => { if (acciones[k]?.requiere) acciones[k] = { ...acciones[k], roles: [...roles] }; });
       const campos: any = { ...cfg.campos };
       Object.keys(campos).forEach(k => { if (campos[k]?.requiere) campos[k] = { ...campos[k], roles: [...roles] }; });
-      return { ...prev, [modulo]: { acciones, campos } };
+      return { ...prev, [modulo]: { ...cfg, acciones, campos } }; // ✅ V00382: conserva usuariosExentos
     });
   };
 

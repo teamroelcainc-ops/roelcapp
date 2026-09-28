@@ -352,7 +352,10 @@ export const cargarConfigModulo = async (modulo: string): Promise<ConfigModuloAu
     // Las reglas por defecto solo se inyectan si el Admin NO las ha tocado
     // (si ya existen en el doc —marcadas o desmarcadas— se respeta lo guardado).
     Object.entries(defaults).forEach(([k, regla]) => { if (campos[k] === undefined) campos[k] = regla; });
-    return { acciones: d.acciones || {}, campos };
+    // ✅ V00382: los USUARIOS EXENTOS también viajan — antes se perdían al leer
+    //   (el exento seguía bloqueado y el configurador los "olvidaba" al guardar).
+    const usuariosExentos = Array.isArray(d.usuariosExentos) ? d.usuariosExentos.map((x: unknown) => String(x)).filter(Boolean) : [];
+    return { acciones: d.acciones || {}, campos, usuariosExentos };
   } catch (e) {
     console.error('Error cargando config de autorizaciones:', modulo, e);
     return Object.keys(defaults).length ? { acciones: {}, campos: defaults } : null;
@@ -375,7 +378,7 @@ export const reglaAplica = (regla: ReglaAut | undefined, rolesUsuario: string[])
 export const evaluarAutorizacion = (
   config: ConfigModuloAut | null,
   accion: AccionAut,
-  usuario: { roles: string[]; esAdmin: boolean },
+  usuario: { roles: string[]; esAdmin: boolean; uid?: string },
   camposModificados: string[] = [],
   etiquetasCampos: Record<string, string> = {},
   // ✅ V00326: valores ANTERIORES del registro — permiten el matiz
@@ -384,6 +387,8 @@ export const evaluarAutorizacion = (
   valoresAnteriores: Record<string, unknown> | null = null,
 ): { requiere: boolean; motivos: string[]; camposControlados: string[] } => {
   if (!config || usuario.esAdmin) return { requiere: false, motivos: [], camposControlados: [] };
+  // ✅ V00382: usuario EXENTO del módulo → nada le requiere autorización
+  if (usuario.uid && (config.usuariosExentos || []).includes(String(usuario.uid))) return { requiere: false, motivos: [], camposControlados: [] };
   const motivos: string[] = [];
   const camposControlados: string[] = [];
 
@@ -405,18 +410,59 @@ export const evaluarAutorizacion = (
   return { requiere: motivos.length > 0, motivos, camposControlados };
 };
 
-/** Diff superficial: claves de `nuevos` cuyo valor cambió respecto a `anteriores`. */
-export const camposModificadosDe = (nuevos: Record<string, any>, anteriores: Record<string, any>): string[] => {
-  const cambios: string[] = [];
-  Object.keys(nuevos || {}).forEach(k => {
-    const a = anteriores?.[k];
-    const b = nuevos[k];
-    const sa = typeof a === 'object' && a !== null ? JSON.stringify(a) : String(a ?? '');
-    const sb = typeof b === 'object' && b !== null ? JSON.stringify(b) : String(b ?? '');
-    if (sa !== sb) cambios.push(k);
-  });
-  return cambios;
+// ✅ V00382: DIFF NORMALIZADO. El diff anterior comparaba texto crudo y marcaba
+//   como "modificados" campos que el usuario no tocó: 0 vs vacío, 1500 vs
+//   "1500.00", "2026-09-25" vs "2026-09-25T00:00:00", Timestamps de Firestore,
+//   mayúsculas/acentos/espacios, u objetos con las claves en otro orden. Eso
+//   disparaba autorizaciones en campos que no se habían cambiado.
+const esVacioAut = (v: unknown): boolean =>
+  v === undefined || v === null || v === 0 || v === false ||
+  (typeof v === 'string' && ['', '0', 'n/a', '-', 'null', 'undefined'].includes(v.trim().toLowerCase())) ||
+  (Array.isArray(v) && v.length === 0) ||
+  (typeof v === 'object' && v !== null && !Array.isArray(v) && Object.keys(v as object).length === 0);
+
+const fechaDe = (v: unknown): string | null => {
+  if (v && typeof v === 'object') {
+    const o = v as { toDate?: () => Date; seconds?: number };
+    if (typeof o.toDate === 'function') { try { return o.toDate().toISOString().slice(0, 10); } catch { return null; } }
+    if (typeof o.seconds === 'number') return new Date(o.seconds * 1000).toISOString().slice(0, 10);
+    if (v instanceof Date) return v.toISOString().slice(0, 10);
+    return null;
+  }
+  const m = String(v ?? '').trim().match(/^(\d{4}-\d{2}-\d{2})(?:[T ]00:00(?::00(?:\.0+)?)?Z?)?$/);
+  return m ? m[1] : null;
 };
+
+const ordenarProfundo = (v: unknown): unknown => {
+  if (Array.isArray(v)) return v.map(ordenarProfundo);
+  if (v && typeof v === 'object') {
+    const f = fechaDe(v);
+    if (f) return f;
+    const o = v as Record<string, unknown>;
+    return Object.keys(o).sort().reduce<Record<string, unknown>>((acc, k) => { acc[k] = ordenarProfundo(o[k]); return acc; }, {});
+  }
+  return v;
+};
+
+const textoComparable = (v: unknown): string =>
+  String(v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+/** true si dos valores son EQUIVALENTES para efectos de autorización. */
+export const valoresEquivalentesAut = (a: unknown, b: unknown): boolean => {
+  if (esVacioAut(a) && esVacioAut(b)) return true;
+  const fa = fechaDe(a), fb = fechaDe(b);
+  if (fa && fb) return fa === fb;
+  const esNum = (v: unknown) => (typeof v === 'number' && Number.isFinite(v)) || (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v.replace(/,/g, ''))));
+  if (esNum(a) && esNum(b)) return Math.abs(Number(String(a).replace(/,/g, '')) - Number(String(b).replace(/,/g, ''))) < 0.005;
+  if ((a && typeof a === 'object') || (b && typeof b === 'object')) {
+    return JSON.stringify(ordenarProfundo(a ?? null)) === JSON.stringify(ordenarProfundo(b ?? null));
+  }
+  return textoComparable(a ?? '') === textoComparable(b ?? '');
+};
+
+/** Claves de `nuevos` cuyo valor cambió REALMENTE respecto a `anteriores`. */
+export const camposModificadosDe = (nuevos: Record<string, any>, anteriores: Record<string, any>): string[] =>
+  Object.keys(nuevos || {}).filter((k) => !valoresEquivalentesAut(nuevos[k], anteriores?.[k]));
 
 /** Crea la solicitud pendiente. Devuelve el id. */
 export const crearSolicitudAutorizacion = async (s: Omit<SolicitudAut, 'estado' | 'creadaEn'>): Promise<string> => {
