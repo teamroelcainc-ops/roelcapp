@@ -1930,6 +1930,42 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     return valor;
   }, [catalogoTrafico]);
 
+  // ✅ V00386: al CAMBIAR el convenio (también en una operación ya guardada) o al
+  //   pulsar "↻ Actualizar convenio", se traen TODOS los datos ligados a él:
+  //   monto y moneda, sueldo del operador, combustible, tipo de servicio,
+  //   tráfico y carga. Los refs guardan para qué convenio ya se aplicó, así el
+  //   usuario puede ajustar a mano después sin que se le sobrescriba.
+  const convMontoAplicadoRef = useRef<string>(String(initialData?.convenio || ''));
+  const convSueldoAplicadoRef = useRef<string>(String(initialData?.convenio || ''));
+  const [refrescoConvenio, setRefrescoConvenio] = useState(0);
+  useEffect(() => {
+    convMontoAplicadoRef.current = String(initialData?.convenio || '');
+    convSueldoAplicadoRef.current = String(initialData?.convenio || '');
+  }, [initialData]);
+  const valoresTarifaDeConvenio = (convId: string): { sueldo: number | null; combustible: number | null } => {
+    const convCliente = listaConveniosCliente.find((c) => String(c.id) === String(convId));
+    const tarifaBase = String(convCliente?.tarifaBaseId ?? '').trim();
+    if (!tarifaBase) return { sueldo: null, combustible: null };
+    const filaSueldo = gastosIncluidosLocal.find((g) => {
+      const ref = String(
+        g.tarifa_referencia_id ?? g.tarifaReferenciaId ?? g.tarifa_referencia ?? g.tarifaReferencia ??
+        g.ID_SERVICES ?? g.id_services ?? g.idServices ?? g.tarifaId ?? ''
+      ).trim();
+      const gastoId = String(g.gasto ?? g.gastoId ?? g.gasto_id ?? '').trim();
+      return ref === tarifaBase && gastoId === ID_GASTO_SUELDO;
+    });
+    const sueldo = filaSueldo ? Number(filaSueldo.monto ?? filaSueldo.importe ?? filaSueldo.cantidad ?? filaSueldo.valor ?? 0) : null;
+    const filaRend = rendimientoLocal.find((r) => {
+      const ref = String(r.ID_SERVICES ?? r.id_services ?? r.idServices ?? r.tarifa_referencia_id ?? r.tarifaId ?? '').trim();
+      return ref === tarifaBase;
+    });
+    const combustible = filaRend ? Number(filaRend.Quantity ?? filaRend.quantity ?? filaRend.QUANTITY ?? filaRend.cantidad ?? 0) : null;
+    return {
+      sueldo: sueldo !== null && !isNaN(sueldo) ? sueldo : null,
+      combustible: combustible !== null && !isNaN(combustible) ? Math.round(combustible) : null,
+    };
+  };
+
   useEffect(() => {
     const resolverFlujo = async () => {
       if (!formData.convenio) return;
@@ -1962,8 +1998,15 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         }
       } catch (error) { console.error('Error resolviendo flujo:', error); }
     };
-    if (!initialData) resolverFlujo();
-  }, [formData.convenio, listaConveniosCliente, tarifas, initialData, resolverNombreTrafico]);
+    if (!initialData) { resolverFlujo(); return; }
+    // ✅ V00386: operación YA GUARDADA — si el convenio cambió (o se pidió
+    //   actualizar), se traen monto, moneda, servicio, tráfico y carga.
+    const conv = String(formData.convenio || '');
+    if (!conv || conv === convMontoAplicadoRef.current) return;
+    if (!listaConveniosCliente.some((c) => String(c.id) === conv)) return; // lista aún cargando
+    convMontoAplicadoRef.current = conv;
+    resolverFlujo();
+  }, [formData.convenio, listaConveniosCliente, tarifas, initialData, resolverNombreTrafico, refrescoConvenio]);
 
   useEffect(() => {
     if (!initialData) return;
@@ -2022,13 +2065,16 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   }, [initialData, formData.convenio, formData.trafico, formData.carga, listaConveniosCliente, tarifas, resolverNombreTrafico]);
 
   useEffect(() => {
-    if (initialData) return;
     if (!formData.convenio) return;
+    // ✅ V00386: en una operación guardada solo cuando el convenio cambió
+    //   (o se pulsó "↻ Actualizar convenio"); una vez por convenio.
+    if (initialData && String(formData.convenio) === convSueldoAplicadoRef.current) return;
 
     const convCliente = listaConveniosCliente.find((c: any) => c.id === formData.convenio);
     if (!convCliente) return;
     const tarifaBase = String(convCliente.tarifaBaseId ?? '').trim();
     if (!tarifaBase) return;
+    if (initialData && (gastosIncluidosLocal.length === 0 || rendimientoLocal.length === 0)) return; // catálogos aún cargando
 
     const filaSueldo = gastosIncluidosLocal.find((g: any) => {
       const ref = String(
@@ -2046,6 +2092,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     });
     const combustible = filaRend ? Number(filaRend.Quantity ?? filaRend.quantity ?? filaRend.QUANTITY ?? filaRend.cantidad ?? 0) : null;
 
+    if (initialData) convSueldoAplicadoRef.current = String(formData.convenio);
     if ((sueldo === null || isNaN(sueldo)) && (combustible === null || isNaN(combustible))) return;
 
     setFormData(prev => ({
@@ -2053,7 +2100,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       ...(sueldo !== null && !isNaN(sueldo) ? { sueldoOperador: sueldo } : {}),
       ...(combustible !== null && !isNaN(combustible) ? { combustible: Math.round(combustible) } : {}),
     }));
-  }, [formData.convenio, listaConveniosCliente, gastosIncluidosLocal, rendimientoLocal, initialData]);
+  }, [formData.convenio, listaConveniosCliente, gastosIncluidosLocal, rendimientoLocal, initialData, refrescoConvenio]);
 
   // ✅ Desglose Dólares/Pesos/Conversión considerando la MONEDA DEL CONVENIO y
   //   la MONEDA DE LA FACTURA (pueden ser distintas):
@@ -2390,12 +2437,28 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     if (lado === 'cliente') {
       const c = listaConveniosCliente.find((x: any) => String(x.id) === String(formData.convenio || ''));
       if (!c) { alert('Elige primero el convenio del cliente.'); return; }
+      // ✅ V00386: trae TODO lo ligado al convenio (no solo el monto)
       const nuevo = Number(c.tarifaMonto) || 0;
       const actual = Number(formData.montoConvenioCliente) || 0;
-      if (nuevo === actual) { alert(`El monto ya está al día: ${fmtMoney(actual)}`); return; }
-      if (!window.confirm(`Actualizar el monto del cliente de ${fmtMoney(actual)} a ${fmtMoney(nuevo)}?\n\nLos totales y la facturación se recalculan solos.`)) return;
+      const v = valoresTarifaDeConvenio(String(c.id));
+      const cambios: string[] = [];
+      if (nuevo !== actual) cambios.push(`Monto: ${fmtMoney(actual)} → ${fmtMoney(nuevo)}`);
+      if (v.sueldo !== null && v.sueldo !== (Number(formData.sueldoOperador) || 0)) cambios.push(`Sueldo del operador: ${fmtMoney(Number(formData.sueldoOperador) || 0)} → ${fmtMoney(v.sueldo)}`);
+      if (v.combustible !== null && v.combustible !== Math.round(Number(formData.combustible) || 0)) cambios.push(`Combustible: ${Math.round(Number(formData.combustible) || 0)} → ${v.combustible}`);
+      const resumen = cambios.length ? cambios.map((x) => `· ${x}`).join('\n') : '· Monto, sueldo y combustible ya están al día';
+      if (!window.confirm(`Actualizar la operación con los datos vigentes del convenio?\n\n${resumen}\n· Tipo de servicio, tráfico y carga se vuelven a tomar del convenio\n\nLos totales y la facturación se recalculan solos.`)) return;
       montoAltCliRef.current = null; // ✅ V00313: traer el vigente deshace la tarifa alterna
-      setFormData(prev => ({ ...prev, montoConvenioCliente: nuevo, monedaConvenioCliente: c.monedaMaestro || prev.monedaConvenioCliente }));
+      setFormData(prev => ({
+        ...prev,
+        montoConvenioCliente: nuevo,
+        monedaConvenioCliente: c.monedaMaestro || prev.monedaConvenioCliente,
+        ...(v.sueldo !== null ? { sueldoOperador: v.sueldo } : {}),
+        ...(v.combustible !== null ? { combustible: v.combustible } : {}),
+      }));
+      // vuelve a derivar servicio / tráfico / carga del convenio
+      convMontoAplicadoRef.current = '';
+      convSueldoAplicadoRef.current = String(c.id); // sueldo y combustible ya se aplicaron arriba
+      setRefrescoConvenio((n) => n + 1);
     } else {
       const c = listaConveniosProveedor.find((x: any) => String(x.id) === String(formData.convenioProveedor || ''));
       if (!c) { alert('Elige primero el convenio del proveedor.'); return; }
@@ -3166,7 +3229,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           {/* ✅ V00126: editar la MONEDA/tarifa del detalle elegido, directo desde aquí */}
                           {formData.convenio && <button className="fo-x18 fo-btn-det" type="button" onClick={() => setDetalleConvenioEdit({ tipo: 'cliente', detalleId: String(formData.convenio) })} title="Ver y editar el detalle del convenio elegido">▤ Detalle del convenio</button>}
                           {/* ✅ V00242: trae el monto vigente del convenio */}
-                          {formData.convenio && <button className="fo-x18 fo-btn-actualizar" type="button" onClick={() => actualizarMontoConvenio('cliente')} title="Traer el monto actual del convenio (si cambió en Convenio de Clientes)">↻ Actualizar monto</button>}
+                          {formData.convenio && <button className="fo-x18 fo-btn-actualizar" type="button" onClick={() => actualizarMontoConvenio('cliente')} title="Traer los datos vigentes del convenio: monto, moneda, sueldo del operador, combustible, servicio, tráfico y carga">↻ Actualizar convenio</button>}
                           {/* ✅ V00224: origen/destino de las tarifas (solo fletes y con permiso) */}
                           {isFletes && puedeClave('editarTarifaOrigenDestino') && (
                             <button className="fo-x18 fo-btn-tarifa-od" type="button" onClick={() => setEditorTarifaOD(true)} title="Asignar el origen y destino de las tarifas de esta operación">✎ Origen/Destino</button>
@@ -3631,7 +3694,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       </div>
                       <div className="form-group"><label className="form-label">Subtotal <span className="campo-badge">montoConvenioCliente</span>
                         {/* ✅ V00243: traer el monto vigente del convenio, aquí mismo */}
-                        {formData.convenio && <button type="button" className="fo-btn-act-moneda fo-btn-actualizar" onClick={() => actualizarMontoConvenio('cliente')} title="Traer el monto actual del convenio (si cambió en Convenio de Clientes)">↻ Actualizar monto</button>}
+                        {formData.convenio && <button type="button" className="fo-btn-act-moneda fo-btn-actualizar" onClick={() => actualizarMontoConvenio('cliente')} title="Traer los datos vigentes del convenio: monto, moneda, sueldo del operador, combustible, servicio, tráfico y carga">↻ Actualizar convenio</button>}
                       </label><ConSimboloMoneda><input type="number" step="any" className="form-control" value={subtotalClienteFact.convertido ? subtotalClienteFact.monto : (formData.montoConvenioCliente || 0)} readOnly={campoBloqueadoAut('montoConvenioCliente') || subtotalClienteFact.convertido} onChange={e => setFormData(prev => ({ ...prev, montoConvenioCliente: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('montoConvenioCliente') ? 'Bloqueado por autorizaciones para tu rol' : subtotalClienteFact.convertido ? leyendaConversion(subtotalClienteFact, Number(formData.montoConvenioCliente || 0), monConvCliActual) : 'Se toma del convenio (tarifario) del cliente; puedes ajustarlo manualmente'} style={{ color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 600 : undefined, ...(campoBloqueadoAut('montoConvenioCliente') ? { opacity: 0.65, cursor: 'not-allowed' } : {}) }} /></ConSimboloMoneda>{subtotalClienteFact.convertido && <small className={subtotalClienteFact.sinTC ? 'fo-conv-alerta' : 'fo-conv-ok'}>{leyendaConversion(subtotalClienteFact, Number(formData.montoConvenioCliente || 0), monConvCliActual)}</small>}</div>
                       {/* ✅ V00126: se eliminó el selector "Moneda del Monto"; la moneda del monto viene del detalle del convenio (monedaConvenioCliente se sigue guardando). */}
                       <div className="form-group">
