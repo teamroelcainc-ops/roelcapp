@@ -1,0 +1,50 @@
+/* ✅ V00381: tarjeta del documento de la factura */
+.tdf { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: 12px; border: 1px solid #30363d; background: #0d1117; border-left-width: 5px; }
+.tdf-archivo { flex: 0 0 auto; width: 52px; height: 60px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.82rem; letter-spacing: 0.04em; color: #0d1117; background: #3fb950; position: relative; }
+.tdf-archivo::after { content: ''; position: absolute; top: 0; right: 0; width: 14px; height: 14px; background: rgba(13, 17, 23, 0.35); border-bottom-left-radius: 6px; }
+.tdf-cuerpo { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.tdf-estado { display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; }
+.tdf-ico { flex: 0 0 auto; }
+.tdf-nombre { color: #f0f6fc; font-size: 0.98rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tdf-meta { color: #b1bac4; font-size: 0.8rem; }
+.tdf-acciones { flex: 0 0 auto; display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.tdf-btn { display: inline-flex; align-items: center; justify-content: center; height: 34px; padding: 0 14px; border-radius: 8px; border: 1px solid #3d444d; background: #161b22; color: #e6edf3; font-size: 0.84rem; font-weight: 600; cursor: pointer; text-decoration: none; white-space: nowrap; }
+.tdf-btn:hover { border-color: #8b949e; background: #1c2129; }
+.tdf-btn--ver { background: #238636; border-color: #238636; color: #ffffff; }
+.tdf-btn--ver:hover { background: #2ea043; border-color: #2ea043; }
+.tdf-btn--subir { background: #d29922; border-color: #d29922; color: #0d1117; }
+.tdf-btn--subir:hover { background: #e3b341; border-color: #e3b341; }
+.tdf-btn--quitar:hover { border-color: #f85149; color: #ff7b72; }
+
+.tdf--ok { border-color: #238636; border-left-color: #3fb950; background: linear-gradient(90deg, rgba(46, 160, 67, 0.14), rgba(46, 160, 67, 0.03) 60%); }
+.tdf--ok .tdf-estado { color: #56d364; }
+
+.tdf--pendiente { border-color: #1f6feb; border-left-color: #58a6ff; background: linear-gradient(90deg, rgba(56, 139, 253, 0.14), rgba(56, 139, 253, 0.03) 60%); }
+.tdf--pendiente .tdf-estado { color: #79c0ff; }
+.tdf--pendiente .tdf-archivo { background: #58a6ff; }
+
+.tdf--vacio { border-style: dashed; border-color: #9e6a03; border-left-style: solid; border-left-color: #d29922; background: rgba(187, 128, 9, 0.08); }
+.tdf--vacio .tdf-estado { color: #e3b341; }
+.tdf-archivo--vacio { background: transparent; color: #9e6a03; border: 2px dashed #9e6a03; }
+.tdf-archivo--vacio::after { display: none; }
+
+.tdf--subiendo { border-color: #30363d; border-left-color: #8b949e; }
+.tdf--subiendo .tdf-archivo { background: #30363d; color: #c9d1d9; }
+.tdf--subiendo .tdf-estado { color: #c9d1d9; }
+
+@media (max-width: 640px) {
+  .tdf { flex-wrap: wrap; }
+  .tdf-acciones { width: 100%; justify-content: flex-start; }
+}
+
+/* Indicador del documento en la FILA de la tabla (reemplaza 📄 / ⚠) */
+.tdf-pill { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 9px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.02em; white-space: nowrap; cursor: pointer; user-select: none; border: 1px solid transparent; }
+.tdf-pill--ok { background: #238636; border-color: #2ea043; color: #ffffff; }
+.tdf-pill--ok:hover { background: #2ea043; }
+.tdf-pill--falta { background: rgba(187, 128, 9, 0.12); border-color: #9e6a03; border-style: dashed; color: #e3b341; }
+.tdf-pill--falta:hover { background: rgba(187, 128, 9, 0.22); }
+.tdf-pill--subiendo { background: #30363d; color: #c9d1d9; cursor: wait; }
+
+/* Fila de factura clicable: abre la ficha */
+.fac-fila-clic { cursor: pointer; }
+.fac-fila-clic:hover > td { background: rgba(88, 166, 255, 0.07); }

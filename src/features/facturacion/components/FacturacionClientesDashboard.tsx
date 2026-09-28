@@ -38,6 +38,7 @@ import { exportarExcelProfesional } from './exportarExcelProfesional';
 import { generarRemisionPDF } from './generarRemisionPDF';
 import type { EmisorRemision, RemisionData } from './generarRemisionPDF';
 import './FacturacionClientesDashboard.css';
+import { TarjetaDocumentoFactura } from './TarjetaDocumentoFactura';
 import { almacenSesion, limpiarCachesPorPrefijo } from '../../../utils/cacheMemoria'; // ✅ V00262
 import { registrarLog } from '../../../utils/logger'; // ✅ V00262
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
@@ -561,6 +562,9 @@ export const FacturacionClientesDashboard = () => {
     }, { merge: true });
     await registrarLog('Facturación Clientes', 'Edición', `Subió el documento de la factura ${etiqueta}: ${archivo.name}.`);
     setFacturasGlobales(prev => prev.map(f => String(f.id) === id ? { ...f, docFacturaUrl: url, docFacturaNombre: archivo.name } : f));
+    // ✅ V00381: la ficha abierta refleja el documento al instante
+    const hoyDoc = new Date().toISOString().slice(0, 10);
+    setFacturaViendo((prev: Record<string, unknown> | null) => (prev && String(prev.id) === id) ? { ...prev, docFacturaUrl: url, docFacturaNombre: archivo.name, docFacturaFecha: hoyDoc, docFacturaPor: auth.currentUser?.email || '' } : prev);
     return url;
   };
   const pedirDocFactura = (f: { id?: unknown; invoice?: unknown; docFacturaUrl?: unknown; docFacturaNombre?: unknown; docFacturaFecha?: unknown }) => {
@@ -584,21 +588,27 @@ export const FacturacionClientesDashboard = () => {
     }
   };
   /** Indicador 📄/⚠ del documento de la factura (fila, ficha). */
-  const indicadorDocFactura = (f: { id?: unknown; invoice?: unknown; docFacturaUrl?: unknown; docFacturaNombre?: unknown; docFacturaFecha?: unknown; docFacturaPor?: unknown }, ficha = false) => (
-    <span
-      className={`fcd-doc-factura${String(f?.docFacturaUrl || '') ? ' fcd-doc-factura--ok' : ' fcd-doc-factura--falta'}${ficha ? ' fcd-doc-factura--ficha' : ''}`}
-      title={String(f?.docFacturaUrl || '')
-        ? `Documento subido${f?.docFacturaFecha ? ` el ${f.docFacturaFecha}` : ''}${String(f?.docFacturaPor || '') ? ` por ${f.docFacturaPor}` : ''} — clic para verlo; Ctrl+clic para reemplazarlo`
-        : 'SIN el documento de la factura — clic para subirlo'}
-      onClick={(e) => {
-        e.stopPropagation();
-        if (subiendoDocFactura === String(f?.id)) return;
-        const url = String(f?.docFacturaUrl || '');
-        if (url && !e.ctrlKey) { window.open(url, '_blank', 'noopener'); return; }
-        pedirDocFactura(f);
-      }}
-    >{subiendoDocFactura === String(f?.id) ? '⏳' : (String(f?.docFacturaUrl || '') ? '📄' : '⚠')}{ficha ? ' Documento' : ''}</span>
-  );
+  /** ✅ V00381: indicador del documento en la FILA — píldora con texto (Doc ✓ / Sin doc). */
+  const indicadorDocFactura = (f: { id?: unknown; invoice?: unknown; docFacturaUrl?: unknown; docFacturaNombre?: unknown; docFacturaFecha?: unknown; docFacturaPor?: unknown }) => {
+    const tiene = !!String(f?.docFacturaUrl || '');
+    const subiendo = subiendoDocFactura === String(f?.id);
+    return (
+      <span
+        role="button"
+        className={`tdf-pill ${subiendo ? 'tdf-pill--subiendo' : tiene ? 'tdf-pill--ok' : 'tdf-pill--falta'}`}
+        title={tiene
+          ? `Documento cargado${f?.docFacturaFecha ? ` el ${f.docFacturaFecha}` : ''}${String(f?.docFacturaPor || '') ? ` por ${f.docFacturaPor}` : ''} — clic para verlo; Ctrl+clic para reemplazarlo`
+          : 'SIN el documento de la factura — clic para subirlo'}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (subiendo) return;
+          const url = String(f?.docFacturaUrl || '');
+          if (url && !e.ctrlKey) { window.open(url, '_blank', 'noopener'); return; }
+          pedirDocFactura(f);
+        }}
+      >{subiendo ? 'Subiendo…' : tiene ? 'Doc ✓' : 'Sin doc'}</span>
+    );
+  };
 
   const [guardandoCols, setGuardandoCols] = useState(false);
 
@@ -3626,7 +3636,8 @@ export const FacturacionClientesDashboard = () => {
                   </td></tr>
                 ) : (
                   registrosVisibles.map(f => (
-                    <tr className="fcd-x113" key={f.id}>
+                    <tr className="fcd-x113 fac-fila-clic" key={f.id} title="Clic en la fila para ver la ficha de la factura"
+                      onClick={(e) => { if ((e.target as HTMLElement).closest('button, a, input, select, textarea, label, [role="button"]')) return; setFacturaViendo(f); }}>{/* ✅ V00381 */}
                       <td className="fcd-x98">
                         <div className="fcd-x114">
                           {indicadorDocFactura(f)}{/* ✅ V00276 */}
@@ -3916,13 +3927,12 @@ export const FacturacionClientesDashboard = () => {
                   <input className="fcd-x166" type="text" placeholder="Referencia CCP..." value={facturaCcpForm} onChange={e => setFacturaCcpForm(e.target.value)} />
                   {/* ✅ V00276: documento de la factura (se sube al confirmar) */}
                   <label className="fcd-x146">DOCUMENTO DE LA FACTURA</label>
-                  <div className="fcd-docfactura-linea">
-                    {docFacturaFile
-                      ? <span className="fcd-docfactura-nombre" title="Se subirá al confirmar la factura">📎 {docFacturaFile.name}</span>
-                      : <span className="fcd-docfactura-nombre fcd-docfactura-nombre--vacio">Sin documento</span>}
-                    <button type="button" className="btn-small fcd-docfactura-btn" onClick={() => inputDocFacturaModalRef.current?.click()}>{docFacturaFile ? 'Cambiar…' : 'Elegir archivo…'}</button>
-                    {docFacturaFile && <button type="button" className="btn-small fcd-docfactura-btn" onClick={() => setDocFacturaFile(null)} title="Quitar el archivo elegido">✕</button>}
-                  </div>
+                  <TarjetaDocumentoFactura
+                    pendiente={docFacturaFile}
+                    notaPendiente="Se subirá al confirmar la factura"
+                    onElegir={() => inputDocFacturaModalRef.current?.click()}
+                    onQuitarPendiente={() => setDocFacturaFile(null)}
+                  />{/* ✅ V00381 */}
                 </div>
               </div>
               <div className="fcd-x167">
@@ -3940,7 +3950,7 @@ export const FacturacionClientesDashboard = () => {
             <div className="fcd-x171">
               <h2 className="fcd-x172">Ficha de Factura</h2>
               <div className="fcd-x173">
-                {indicadorDocFactura(facturaViendo, true)}{/* ✅ V00276 */}
+                
                 <button onClick={() => abrirRemision(facturaViendo)} disabled={cargandoRemision}
                   title="Generar la Remisión en PDF de esta factura"
                   style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#fb923c', color: '#0d1117', border: 'none', borderRadius: '6px', padding: '8px 16px', cursor: cargandoRemision ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem', opacity: cargandoRemision ? 0.7 : 1 }}>
@@ -3990,6 +4000,15 @@ export const FacturacionClientesDashboard = () => {
                   <span className="fcd-x185">{formatoMoneda(facturaViendo.subtotalFactura)}</span>
                 </div>
 
+                {/* ✅ V00381: documento de la factura bien visible */}
+                <TarjetaDocumentoFactura
+                  url={facturaViendo.docFacturaUrl}
+                  nombre={facturaViendo.docFacturaNombre}
+                  fecha={facturaViendo.docFacturaFecha}
+                  por={facturaViendo.docFacturaPor}
+                  subiendo={subiendoDocFactura === String(facturaViendo.id)}
+                  onElegir={() => pedirDocFactura(facturaViendo)}
+                />
                 <div className="fcd-x186"><hr className="fcd-x187" /></div>
 
                 <div className="fcd-x188">
@@ -4256,15 +4275,16 @@ export const FacturacionClientesDashboard = () => {
               <div className="fcd-x164">
                 {/* ✅ V00276: documento de la factura desde el editor (se sube al guardar) */}
                 <label className="fcd-x146">DOCUMENTO DE LA FACTURA</label>
-                <div className="fcd-docfactura-linea">
-                  {docFacturaFile
-                    ? <span className="fcd-docfactura-nombre" title="Se subirá al guardar">📎 {docFacturaFile.name}</span>
-                    : (String(facturaEditando.docFacturaUrl || '')
-                      ? <button type="button" className="fcd-docfactura-ver" onClick={() => window.open(String(facturaEditando.docFacturaUrl), '_blank', 'noopener')} title={`Subido${facturaEditando.docFacturaFecha ? ` el ${facturaEditando.docFacturaFecha}` : ''} — clic para verlo`}>📄 {String(facturaEditando.docFacturaNombre || 'Ver documento')}</button>
-                      : <span className="fcd-docfactura-nombre fcd-docfactura-nombre--vacio">Sin documento</span>)}
-                  <button type="button" className="btn-small fcd-docfactura-btn" onClick={() => inputDocFacturaModalRef.current?.click()}>{String(facturaEditando.docFacturaUrl || '') || docFacturaFile ? 'Reemplazar…' : 'Elegir archivo…'}</button>
-                  {docFacturaFile && <button type="button" className="btn-small fcd-docfactura-btn" onClick={() => setDocFacturaFile(null)} title="Quitar el archivo elegido">✕</button>}
-                </div>
+                <TarjetaDocumentoFactura
+                  url={facturaEditando.docFacturaUrl}
+                  nombre={facturaEditando.docFacturaNombre}
+                  fecha={facturaEditando.docFacturaFecha}
+                  por={facturaEditando.docFacturaPor}
+                  pendiente={docFacturaFile}
+                  notaPendiente={String(facturaEditando.docFacturaUrl || '') ? 'Reemplazará al actual al guardar' : 'Se subirá al guardar'}
+                  onElegir={() => inputDocFacturaModalRef.current?.click()}
+                  onQuitarPendiente={() => setDocFacturaFile(null)}
+                />{/* ✅ V00381 */}
               </div>
               <div>
                 <label className="fcd-x146">FECHA DE FACTURACIÓN</label>

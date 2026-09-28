@@ -1,113 +1,144 @@
-/* ✅ V00350: Saldos de Puentes */
-.sp-modulo { padding: 20px 24px; color: #e6edf3; }
-.sp-titulo { margin: 0 0 4px; font-size: 1.3rem; }
-.sp-sub { margin: 0 0 16px; color: #8b949e; font-size: 0.85rem; max-width: 860px; }
-.sp-form { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; border: 1px solid #30363d; border-radius: 12px; padding: 14px 16px; background: #0d1117; margin-bottom: 14px; }
-.sp-campo { display: flex; flex-direction: column; gap: 5px; color: #8b949e; font-size: 0.78rem; }
-.sp-campo input, .sp-campo select { padding: 8px 10px; min-width: 160px; }
-.sp-campo--puente select { min-width: 280px; }
-.sp-form-botones { display: flex; gap: 8px; margin-left: auto; }
-.sp-btn { border: 1px solid #30363d; background: transparent; color: #c9d1d9; border-radius: 8px; padding: 8px 14px; cursor: pointer; font-size: 0.84rem; }
-.sp-btn--primario { border-color: #a371f7; background: #a371f7; color: #0d1117; font-weight: 700; }
-.sp-btn:disabled { opacity: 0.6; cursor: wait; }
-.sp-barra { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-.sp-buscar { max-width: 340px; padding: 8px 10px; }
-.sp-conteo { color: #8b949e; font-size: 0.8rem; }
-.sp-tabla-marco { border: 1px solid #30363d; border-radius: 12px; overflow: auto; max-height: calc(100vh - 360px); }
-.sp-tabla { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
-.sp-tabla th { position: sticky; top: 0; background: #161b22; color: #8b949e; text-align: left; padding: 10px 12px; border-bottom: 1px solid #30363d; z-index: 2; }
-.sp-tabla td { padding: 9px 12px; border-bottom: 1px solid #21262d; }
-.sp-num { text-align: right; }
-.sp-monto { color: #a371f7; font-weight: 700; }
-.sp-vacio { text-align: center; color: #8b949e; padding: 18px; }
-.sp-fila--editando { outline: 1px solid #a371f7; }
-.sp-acciones { white-space: nowrap; }
-.sp-mini { border: 1px solid #30363d; background: transparent; color: #8b949e; border-radius: 6px; padding: 2px 8px; cursor: pointer; margin-right: 4px; }
-.sp-mini:hover { border-color: #58a6ff; color: #58a6ff; }
-.sp-mini--rojo:hover { border-color: #f85149; color: #f85149; }
+/* ✅ V00381: Saldos de Puentes — vista de CONTROL rediseñada
+   Paleta sobria: superficies grafito, texto de alto contraste, azul como acento
+   y color SOLO para significado (verde abono · rojo cargo/crítico · ámbar bajo). */
+.sp-modulo {
+  --sp-fondo: #0d1117; --sp-sup: #131820; --sp-sup2: #181e27; --sp-borde: #262d38; --sp-borde2: #323a47;
+  --sp-texto: #f0f6fc; --sp-texto2: #c3ccd6; --sp-tenue: #8d97a3;
+  --sp-acento: #388bfd; --sp-acento-bg: rgba(56, 139, 253, 0.12);
+  --sp-verde: #3fb950; --sp-verde-t: #56d364; --sp-rojo: #f85149; --sp-rojo-t: #ff7b72; --sp-ambar: #d29922; --sp-ambar-t: #e3b341;
+  padding: 22px 26px; color: var(--sp-texto); font-size: 0.92rem; line-height: 1.45;
+}
+.sp-num, .sp-resumen-monto, .sp-kpi b, .sp-fecha { font-variant-numeric: tabular-nums; }
 
-/* ✅ V00351: formulario en modal */
-.sp-encabezado { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+/* Encabezado */
+.sp-encabezado { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
+.sp-titulo { margin: 0 0 6px; font-size: 1.5rem; font-weight: 700; letter-spacing: -0.01em; color: var(--sp-texto); }
+.sp-sub { margin: 0; color: var(--sp-texto2); font-size: 0.88rem; max-width: 820px; }
+.sp-enc-botones { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+/* Botones */
+.sp-btn { display: inline-flex; align-items: center; height: 36px; padding: 0 16px; border: 1px solid var(--sp-borde2); background: var(--sp-sup); color: var(--sp-texto); border-radius: 8px; cursor: pointer; font-size: 0.86rem; font-weight: 600; font-family: inherit; }
+.sp-btn:hover:not(:disabled) { border-color: var(--sp-tenue); background: var(--sp-sup2); }
+.sp-btn--primario { background: var(--sp-acento); border-color: var(--sp-acento); color: #ffffff; }
+.sp-btn--primario:hover:not(:disabled) { background: #4c97ff; border-color: #4c97ff; }
+.sp-btn--chico { height: 32px; padding: 0 12px; font-size: 0.82rem; }
+.sp-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.sp-link { align-self: flex-start; background: none; border: none; padding: 0; color: #79b8ff; font-size: 0.82rem; font-weight: 600; cursor: pointer; font-family: inherit; }
+.sp-link:hover { text-decoration: underline; }
+.sp-mini { border: 1px solid var(--sp-borde2); background: transparent; color: var(--sp-texto2); border-radius: 6px; padding: 3px 10px; cursor: pointer; font-size: 0.78rem; font-family: inherit; }
+.sp-mini--rojo:hover { border-color: var(--sp-rojo); color: var(--sp-rojo-t); }
+
+/* Resumen por moneda */
+.sp-monedas { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin-bottom: 18px; }
+.sp-resumen { background: var(--sp-sup); border: 1px solid var(--sp-borde); border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; }
+.sp-resumen--neg { border-color: rgba(248, 81, 73, 0.55); }
+.sp-resumen-enc { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sp-resumen-etq { color: var(--sp-texto2); font-size: 0.78rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.sp-resumen-monto { font-size: 1.9rem; font-weight: 700; color: var(--sp-texto); letter-spacing: -0.01em; }
+.sp-resumen--neg .sp-resumen-monto { color: var(--sp-rojo-t); }
+.sp-resumen-datos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding-top: 10px; border-top: 1px solid var(--sp-borde); }
+.sp-resumen-datos div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sp-resumen-datos span { color: var(--sp-tenue); font-size: 0.74rem; }
+.sp-resumen-datos b { color: var(--sp-texto); font-size: 0.9rem; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Moneda */
+.sp-moneda { display: inline-flex; align-items: center; border: 1px solid var(--sp-borde2); border-radius: 999px; padding: 1px 9px; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.03em; vertical-align: middle; }
+.sp-moneda--usd { color: #79b8ff; border-color: rgba(121, 184, 255, 0.45); background: rgba(56, 139, 253, 0.08); }
+.sp-moneda--mxn { color: #d2a8ff; border-color: rgba(210, 168, 255, 0.45); background: rgba(163, 113, 247, 0.08); }
+
+/* Secciones */
+.sp-seccion { background: var(--sp-sup); border: 1px solid var(--sp-borde); border-radius: 12px; padding: 16px 18px; margin-bottom: 18px; }
+.sp-seccion-enc { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.sp-seccion-titulo { margin: 0 0 4px; font-size: 1.08rem; font-weight: 700; color: var(--sp-texto); display: flex; align-items: center; gap: 8px; }
+.sp-conteo { color: var(--sp-tenue); font-size: 0.8rem; }
+.sp-vacio { text-align: center; color: var(--sp-tenue); padding: 22px; }
+
+/* Tablas */
+.sp-tabla { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.sp-tabla th { position: sticky; top: 0; z-index: 1; background: var(--sp-sup2); color: var(--sp-texto2); text-align: left; font-size: 0.74rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; padding: 10px 14px; border-bottom: 1px solid var(--sp-borde2); white-space: nowrap; }
+.sp-tabla td { padding: 10px 14px; border-bottom: 1px solid var(--sp-borde); color: var(--sp-texto); }
+.sp-tabla tbody tr:nth-child(even) td { background: rgba(255, 255, 255, 0.015); }
+.sp-tabla tbody tr:hover td { background: rgba(56, 139, 253, 0.06); }
+.sp-tabla tfoot td { font-weight: 700; color: var(--sp-texto); background: var(--sp-sup2); border-top: 1px solid var(--sp-borde2); border-bottom: none; }
+.sp-num { text-align: right; white-space: nowrap; }
+.sp-tenue { color: var(--sp-texto2); }
+.sp-fecha { white-space: nowrap; color: var(--sp-texto2); }
+.sp-acciones { white-space: nowrap; text-align: right; }
+.sp-control-marco, .sp-libro-marco, .sp-hist-marco, .sp-rep-marco { overflow: auto; border: 1px solid var(--sp-borde); border-radius: 10px; }
+.sp-libro-marco { max-height: 56vh; }
+.sp-control-marco { max-height: 44vh; }
+
+/* Control por puente */
+.sp-fila-clic { cursor: pointer; }
+.sp-fila--activa td { background: var(--sp-acento-bg) !important; }
+.sp-fila--activa td:first-child { box-shadow: inset 3px 0 0 var(--sp-acento); }
+.sp-celda-puente { font-weight: 600; }
+.sp-disp { font-weight: 700; }
+.sp-disp--ok { color: var(--sp-texto); }
+.sp-disp--amarillo { color: var(--sp-ambar-t); }
+.sp-disp--rojo, .sp-disp--neg { color: var(--sp-rojo-t); }
+
+/* Estado */
+.sp-estado { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-size: 0.76rem; font-weight: 700; white-space: nowrap; border: 1px solid transparent; }
+.sp-estado::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.sp-estado--ok { color: var(--sp-verde-t); background: rgba(46, 160, 67, 0.12); border-color: rgba(46, 160, 67, 0.35); }
+.sp-estado--amarillo { color: var(--sp-ambar-t); background: rgba(187, 128, 9, 0.14); border-color: rgba(187, 128, 9, 0.4); }
+.sp-estado--rojo, .sp-estado--neg { color: var(--sp-rojo-t); background: rgba(248, 81, 73, 0.12); border-color: rgba(248, 81, 73, 0.4); }
+.sp-estado--grande { font-size: 0.86rem; padding: 5px 14px; }
+
+/* Libro */
+.sp-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.sp-kpi { background: var(--sp-fondo); border: 1px solid var(--sp-borde); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 3px; }
+.sp-kpi span { color: var(--sp-tenue); font-size: 0.76rem; font-weight: 600; }
+.sp-kpi b { font-size: 1.2rem; font-weight: 700; color: var(--sp-texto); }
+.sp-kpi em { font-style: normal; color: var(--sp-texto2); font-size: 0.78rem; }
+.sp-kpi--abono { color: var(--sp-verde-t) !important; }
+.sp-kpi--cargo { color: var(--sp-rojo-t) !important; }
+.sp-kpi--disp { border-width: 1px; }
+.sp-kpi--disp.sp-kpi--ok { border-color: rgba(46, 160, 67, 0.45); }
+.sp-kpi--disp.sp-kpi--amarillo { border-color: rgba(187, 128, 9, 0.55); }
+.sp-kpi--disp.sp-kpi--amarillo b { color: var(--sp-ambar-t); }
+.sp-kpi--disp.sp-kpi--rojo, .sp-kpi--disp.sp-kpi--neg { border-color: rgba(248, 81, 73, 0.55); }
+.sp-kpi--disp.sp-kpi--rojo b, .sp-kpi--disp.sp-kpi--neg b { color: var(--sp-rojo-t); }
+.sp-aviso { border-radius: 8px; padding: 10px 14px; font-size: 0.86rem; font-weight: 600; margin-bottom: 12px; border-left: 4px solid; }
+.sp-aviso--amarillo { color: var(--sp-ambar-t); background: rgba(187, 128, 9, 0.1); border-color: var(--sp-ambar); }
+.sp-aviso--rojo, .sp-aviso--neg { color: var(--sp-rojo-t); background: rgba(248, 81, 73, 0.1); border-color: var(--sp-rojo); }
+.sp-filtros { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.sp-filtros label { display: flex; flex-direction: column; gap: 4px; color: var(--sp-tenue); font-size: 0.76rem; font-weight: 600; }
+.sp-filtros input, .sp-filtros select { height: 32px; padding: 0 10px; min-width: 150px; }
+.sp-filtros-conteo { margin-left: auto; align-self: center; }
+.sp-tipo { display: inline-block; padding: 1px 8px; border-radius: 6px; font-size: 0.74rem; font-weight: 700; }
+.sp-tipo--recarga { color: var(--sp-verde-t); background: rgba(46, 160, 67, 0.12); }
+.sp-tipo--cruce { color: var(--sp-texto2); background: rgba(139, 148, 158, 0.14); }
+.sp-cargo { color: var(--sp-rojo-t); font-weight: 600; }
+.sp-abono { color: var(--sp-verde-t); font-weight: 600; }
+.sp-saldo { font-weight: 700; color: var(--sp-texto); }
+.sp-saldo--neg { color: var(--sp-rojo-t); }
+
+/* Modales */
 .sp-modal-fondo { position: fixed; inset: 0; background: rgba(1, 4, 9, 0.72); backdrop-filter: blur(2px); z-index: 3000; display: flex; align-items: center; justify-content: center; }
-.sp-modal { width: min(440px, 92vw); background: #161b22; border: 1px solid #30363d; border-radius: 14px; padding: 18px 20px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6); display: flex; flex-direction: column; gap: 12px; }
-.sp-modal-titulo { color: #e6edf3; font-weight: 700; font-size: 1rem; }
-.sp-modal .sp-campo input, .sp-modal .sp-campo select { width: 100%; min-width: 0; }
+.sp-modal { width: min(460px, 92vw); background: var(--sp-sup, #131820); border: 1px solid #323a47; border-radius: 14px; padding: 20px 22px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6); display: flex; flex-direction: column; gap: 12px; color: #f0f6fc; }
+.sp-modal-titulo { color: #f0f6fc; font-weight: 700; font-size: 1.08rem; }
+.sp-campo { display: flex; flex-direction: column; gap: 5px; color: #c3ccd6; font-size: 0.8rem; font-weight: 600; }
+.sp-modal .sp-campo input, .sp-modal .sp-campo select { width: 100%; min-width: 0; padding: 8px 10px; }
+.sp-modal-resumen { border: 1px solid #262d38; border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; background: #0d1117; }
+.sp-cuenta-linea { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; color: #c3ccd6; font-size: 0.86rem; }
+.sp-cuenta-linea b { color: #f0f6fc; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sp-modal-total { border-top: 1px solid #262d38; padding-top: 8px; }
+.sp-modal-total b { color: #79b8ff; font-size: 1rem; }
 .sp-modal-pie { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.sp-modal--historial { width: min(760px, 94vw); max-height: 82vh; }
+.sp-hist-marco { max-height: 60vh; }
+.sp-modal--reporte { width: min(960px, 96vw); max-height: 86vh; }
+.sp-rep-nota { color: #c3ccd6; font-size: 0.84rem; margin: 0; }
+.sp-rep-barra { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.sp-rep-barra label { display: flex; flex-direction: column; gap: 4px; font-size: 0.76rem; color: #8d97a3; font-weight: 600; }
+.sp-rep-marco { flex: 1; min-height: 0; max-height: 58vh; }
+.sp-rep-ref { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #79b8ff; white-space: nowrap; }
+.sp-rep-fila--falta td { background: rgba(187, 128, 9, 0.06); }
 
-/* ✅ V00355: moneda marcada con su color */
-.sp-moneda { border: 1px solid #30363d; border-radius: 999px; padding: 2px 10px; font-size: 0.78rem; }
-.sp-moneda--usd { color: #58a6ff; border-color: #58a6ff; }
-.sp-moneda--mxn { color: #fb923c; border-color: #fb923c; }
-.sp-enc-botones { display: flex; gap: 8px; align-items: center; }
-
-/* ✅ V00358: cuentas por puente con semáforo */
-.sp-cuentas { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; margin-bottom: 18px; }
-.sp-cuenta { border: 1px solid #30363d; border-radius: 12px; padding: 14px 16px; background: #0d1117; display: flex; flex-direction: column; gap: 6px; }
-.sp-cuenta--amarillo { border-color: #d29922; }
-.sp-cuenta--rojo { border-color: #f85149; box-shadow: 0 0 0 1px rgba(248, 81, 73, 0.35); }
-.sp-cuenta-enc { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.sp-cuenta-nombre { color: #e6edf3; font-weight: 700; font-size: 0.92rem; }
-.sp-cuenta-linea { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; color: #8b949e; font-size: 0.82rem; }
-.sp-cuenta-linea b { color: #c9d1d9; font-weight: 600; }
-.sp-cuenta-actual { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; border-top: 1px solid #30363d; margin-top: 4px; padding-top: 8px; color: #8b949e; font-size: 0.85rem; }
-.sp-cuenta-actual b { font-size: 1.05rem; font-weight: 800; color: #3fb950; }
-.sp-cuenta-actual--amarillo b { color: #d29922; }
-.sp-cuenta-actual--rojo b { color: #f85149; }
-.sp-cuenta-alerta { border-radius: 8px; padding: 6px 10px; font-size: 0.76rem; }
-.sp-cuenta-alerta--amarillo { color: #d29922; border: 1px dashed #d29922; }
-.sp-cuenta-alerta--rojo { color: #f85149; border: 1px dashed #f85149; }
-.sp-cuenta-btn { margin-top: 4px; }
-.sp-cuenta-tarifa { color: #6e7681; font-size: 0.7rem; }
-.sp-modal-resumen { border: 1px solid #30363d; border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
-.sp-modal-total b { color: #a371f7; font-size: 0.95rem; }
-.sp-edit-input { max-width: 120px; padding: 4px 8px; text-align: right; }
-
-/* ✅ V00359: saldo disponible por moneda + historial */
-.sp-monedas { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-bottom: 16px; }
-.sp-moneda-card { border: 1px solid #30363d; border-radius: 12px; background: #161b22; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; cursor: pointer; text-align: left; }
-.sp-moneda-card:hover { border-color: #a371f7; }
-.sp-moneda-card--neg { border-color: #f85149; }
-.sp-moneda-card-etq { color: #8b949e; font-size: 0.76rem; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; }
-.sp-moneda-card-monto { color: #3fb950; font-size: 1.35rem; font-weight: 800; }
-.sp-moneda-card--neg .sp-moneda-card-monto { color: #f85149; }
-.sp-moneda-card-ver { color: #a371f7; font-size: 0.74rem; }
-.sp-cuenta-acciones { display: flex; gap: 6px; margin-top: 4px; }
-.sp-cuenta-acciones .sp-cuenta-btn:first-child { flex: 1; }
-.sp-modal--historial { width: min(680px, 94vw); max-height: 80vh; }
-.sp-hist-marco { overflow: auto; border: 1px solid #30363d; border-radius: 10px; max-height: 55vh; }
-.sp-hist-suma { color: #3fb950; }
-.sp-hist-resta { color: #f85149; }
-
-/* ✅ V00368: libro contable por puente */
-.sp-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 10px; }
-.sp-chip { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 8px 12px; cursor: pointer; color: #c9d1d9; font: inherit; }
-.sp-chip:hover { border-color: #a371f7; }
-.sp-chip--activo { border-color: #a371f7; box-shadow: 0 0 0 1px #a371f7; }
-.sp-chip--amarillo { border-color: #d29922; }
-.sp-chip--rojo { border-color: #f85149; }
-.sp-chip-nombre { font-size: 0.74rem; color: #8b949e; }
-.sp-chip-saldo { font-size: 0.92rem; }
-.sp-chip--rojo .sp-chip-saldo { color: #f85149; }
-.sp-chip--amarillo .sp-chip-saldo { color: #d29922; }
-.sp-libro { border: 1px solid #30363d; border-radius: 12px; background: #0d1117; padding: 14px; margin-bottom: 16px; }
-.sp-libro--amarillo { border-color: #d29922; }
-.sp-libro--rojo { border-color: #f85149; }
-.sp-libro-enc { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
-.sp-libro-nombre { font-weight: 700; color: #e6edf3; margin-right: 8px; }
-.sp-libro-disp { text-align: right; display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; }
-.sp-libro-disp > span { font-size: 0.72rem; color: #8b949e; }
-.sp-libro-disp > b { font-size: 1.15rem; }
-.sp-libro-alerta { font-style: normal; font-size: 0.72rem; }
-.sp-libro-marco { overflow: auto; max-height: 56vh; border: 1px solid #21262d; border-radius: 10px; }
-.sp-tabla--libro th { position: sticky; top: 0; background: #161b22; z-index: 1; }
-
-/* ✅ V00369: reporte de saldos del puente */
-.sp-modal--reporte { width: min(920px, 96vw); max-height: 86vh; display: flex; flex-direction: column; }
-.sp-rep-nota { color: #8b949e; font-size: 0.8rem; margin: 4px 0 10px; }
-.sp-rep-barra { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
-.sp-rep-barra label { display: flex; flex-direction: column; gap: 4px; font-size: 0.74rem; color: #8b949e; }
-.sp-rep-marco { overflow: auto; border: 1px solid #21262d; border-radius: 10px; flex: 1; min-height: 0; max-height: 58vh; }
-.sp-rep-ref { font-family: monospace; color: #58a6ff; white-space: nowrap; }
-.sp-rep-fila--falta td { background: rgba(210, 153, 34, 0.06); }
-.sp-rep-falta { color: #d29922; font-size: 0.8rem; white-space: nowrap; }
-.sp-tabla--libro tfoot td { font-weight: 700; color: #e6edf3; border-top: 1px solid #30363d; }
+@media (max-width: 760px) {
+  .sp-modulo { padding: 16px 12px; }
+  .sp-resumen-datos { grid-template-columns: 1fr 1fr; }
+  .sp-filtros-conteo { margin-left: 0; }
+}
