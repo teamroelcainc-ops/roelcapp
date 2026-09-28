@@ -18,6 +18,7 @@ import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
 import './OperacionesDashboard.css';
 import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
 import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
+import { ModalFechaStatus } from './ModalFechaStatus';
 
 // ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
 const fmtFechaAuditoria = (iso: any): string => {
@@ -895,7 +896,7 @@ const OperacionesDashboard = () => {
     } catch { return null; }
   };
 
-  const camposSaldoPuenteAlCompletar = async (statusId: string, op: { saldoPuente?: unknown; trafico?: unknown; fechaServicio?: unknown; tipoOperacionNombre?: unknown; proveedorUnidadNombre?: unknown; convenio?: unknown }, statusNombre?: string): Promise<Record<string, unknown>> => {
+  const camposSaldoPuenteAlCompletar = async (statusId: string, op: { saldoPuente?: unknown; trafico?: unknown; fechaServicio?: unknown; tipoOperacionNombre?: unknown; proveedorUnidadNombre?: unknown; convenio?: unknown }, statusNombre?: string, fechaEvento?: string): Promise<Record<string, unknown>> => {
     try {
       if (Number.isFinite(Number(op?.saldoPuente))) return {};
       const nombreSt = String(statusNombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -911,7 +912,8 @@ const OperacionesDashboard = () => {
       if (!dispara) return {};
       const esDisparoDirecto = flagFlujo === true || esVerdeUSA || esVerdeMX;
       const eventoSP0 = flagFlujo === true ? String(statusNombre || '').trim() : esVerdeUSA ? 'Verde USA' : esVerdeMX ? 'Verde MX' : 'Completado';
-      const fechaSP0 = esDisparoDirecto ? new Date().toISOString().slice(0, 10) : (String(op?.fechaServicio || '').slice(0, 10) || new Date().toISOString().slice(0, 10));
+      // ✅ V00384: el cruce lleva la FECHA capturada del movimiento (antes, siempre hoy)
+      const fechaSP0 = esDisparoDirecto ? (String(fechaEvento || '').slice(0, 10) || new Date().toISOString().slice(0, 10)) : (String(op?.fechaServicio || '').slice(0, 10) || new Date().toISOString().slice(0, 10));
       // ✅ V00373: primero la caseta de los GASTOS INCLUIDOS de la tarifa
       const casetaTarifa = await casetaDeGastosSP(op);
       if (casetaTarifa && casetaTarifa.monto > 0) {
@@ -1148,7 +1150,7 @@ const OperacionesDashboard = () => {
       }));
       const opRef = doc(db, 'operaciones', String(operacionViendo._docId || operacionViendo.id));
       // ✅ V00367: marcar Verde también desde "Registrar Status" manual cobra el peaje
-      const extraSPManual = await camposSaldoPuenteAlCompletar(statusId, operacionViendo, statusNombreResuelto);
+      const extraSPManual = await camposSaldoPuenteAlCompletar(statusId, operacionViendo, statusNombreResuelto, nuevaFechaHora);
       batch.update(opRef, limpiarUndefined({ status: statusId, statusNombre: statusNombreResuelto, ...extraSPManual }));
 
       await batch.commit();
@@ -1173,7 +1175,14 @@ const OperacionesDashboard = () => {
     setCargandoHorarios(false);
   };
 
-  const registrarStatusRapido = async (statusNombre: string) => {
+  // ✅ V00384: el botón de SIGUIENTE PASO primero pide fecha y hora
+  const [pasoPendiente, setPasoPendiente] = useState<{ status: string; fecha: string } | null>(null);
+  const pedirFechaPaso = (statusNombre: string) => {
+    if (!operacionViendo || !statusNombre || guardandoStatusRapido) return;
+    setPasoPendiente({ status: statusNombre, fecha: ahoraLocalISOCorto() });
+  };
+
+  const registrarStatusRapido = async (statusNombre: string, fechaHoraElegida?: string) => {
     if (!operacionViendo || !statusNombre) return;
     if (guardandoStatusRapido) return;
 
@@ -1217,7 +1226,7 @@ const OperacionesDashboard = () => {
         .catch(() => {});
 
       // ✅ FIX: hora local consistente (ver src/utils/fechaHoraLocal.ts).
-      const fechaHoraLocal = ahoraLocalISOCorto();
+      const fechaHoraLocal = fechaHoraElegida || ahoraLocalISOCorto(); // ✅ V00384: la que capturó el usuario
       const registradoEn = new Date().toISOString();
 
       (async () => {
@@ -1242,7 +1251,7 @@ const OperacionesDashboard = () => {
           const opRef = doc(db, 'operaciones', String(operacionViendo._docId || operacionViendo.id));
           // ✅ V00355: al COMPLETAR, colocar la tarifa del puente del día
           //   (Importación → Caseta AVI · Exportación → Caseta Puente III).
-          const extraSaldoPuente = await camposSaldoPuenteAlCompletar(statusFinal.id, operacionViendo, statusFinal.nombre);
+          const extraSaldoPuente = await camposSaldoPuenteAlCompletar(statusFinal.id, operacionViendo, statusFinal.nombre, fechaHoraLocal);
           batch.update(opRef, limpiarUndefined({
             status: statusFinal.id,
             statusNombre: statusFinal.nombre,
@@ -1962,6 +1971,10 @@ const OperacionesDashboard = () => {
   
   const showDetailInternalFleet = evalIsTransfer || ((evalIsLogistica || evalIsFletes) && evalIsRoelca);
   const showDetailExternalFleet = (evalIsLogistica || evalIsFletes) && !evalIsRoelca;
+  // ✅ V00384: Transfer y Logística de Cruces con proveedor Roelca son FLOTA
+  //   PROPIA — la parte de Proveedores (convenio, monto a pagar, conversión)
+  //   no aplica y se oculta en la ficha.
+  const ocultarProveedorDetalle = evalIsTransfer || (evalIsLogistica && !evalIsFletes && evalIsRoelca);
 
   const evalTipoOpId = String(operacionViendo?.tipoOperacionId || '').trim();
   // ✅ Fletes (ID 3e5b0035): además de Check List y Solicitud de Retiro, ahora
@@ -2254,7 +2267,7 @@ const OperacionesDashboard = () => {
                     {botonesDisponibles.map((botonStr: string) => {
                       const esExitoso = ultimoStatusGuardado === botonStr;
                       return (
-                        <button key={botonStr} onClick={() => registrarStatusRapido(botonStr)} disabled={guardandoStatusRapido !== null} className="status-pill"
+                        <button key={botonStr} onClick={() => pedirFechaPaso(botonStr)} disabled={guardandoStatusRapido !== null} className="status-pill"
                           style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', padding: '6px 18px 6px 6px', borderRadius: '999px', border: 'none',
                             background: esExitoso ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
                             color: '#fff', cursor: guardandoStatusRapido && !esExitoso ? 'wait' : 'pointer', fontWeight: 600, fontSize: '0.9rem',
@@ -2482,6 +2495,7 @@ const OperacionesDashboard = () => {
 
               {pestañaDetalleActiva === 'unidad' && (
                 <div className="od-x100">
+                  {!ocultarProveedorDetalle && (<>{/* ✅ V00384 */}
                   <div className="od-x101">
                     <div className="od-x92">
                       <span className="od-x94">Proveedor de Transporte</span>
@@ -2533,6 +2547,7 @@ const OperacionesDashboard = () => {
                       </div>
                     </div>
                   </div>
+                  </>)}
 
                   {showDetailInternalFleet && (
                     <div className="od-x101">
@@ -2745,6 +2760,15 @@ const OperacionesDashboard = () => {
         </div>
       )}
 
+      {/* ✅ V00384: fecha y hora del SIGUIENTE PASO */}
+      {pasoPendiente && operacionViendo && (
+        <ModalFechaStatus
+          status={pasoPendiente.status}
+          fechaInicial={pasoPendiente.fecha}
+          onCancelar={() => setPasoPendiente(null)}
+          onConfirmar={(fh) => { const st = pasoPendiente.status; setPasoPendiente(null); registrarStatusRapido(st, fh); }}
+        />
+      )}
       {modalHorarios === 'registrar' && operacionViendo && (
         <div className="modal-overlay od-x153">
           <div className="od-x154">

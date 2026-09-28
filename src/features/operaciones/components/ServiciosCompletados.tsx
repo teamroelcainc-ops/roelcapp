@@ -2263,6 +2263,10 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   
   const showDetailInternalFleet = evalIsTransfer || ((evalIsLogistica || evalIsFletes) && evalIsRoelca);
   const showDetailExternalFleet = (evalIsLogistica || evalIsFletes) && !evalIsRoelca;
+  // ✅ V00384: Transfer y Logística de Cruces con proveedor Roelca son FLOTA
+  //   PROPIA — la parte de Proveedores (convenio, monto a pagar, conversión)
+  //   no aplica y se oculta en la ficha.
+  const ocultarProveedorDetalle = evalIsTransfer || (evalIsLogistica && !evalIsFletes && evalIsRoelca);
 
   const refOperacionViendo = operacionViendo ? (operacionViendo.ref || operacionViendo.id?.substring(0, 6) || 'Operacion') : '';
 
@@ -3286,6 +3290,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
               {pestañaDetalleActiva === 'unidad' && (
                 <div className="sc-x146">
+                  {!ocultarProveedorDetalle && (<>{/* ✅ V00384 */}
                   <div className="sc-x147">
                     <div className="sc-x138">
                       <span className="sc-x140">Proveedor de Transporte</span>
@@ -3339,6 +3344,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                       </div>
                     </div>
                   </div>
+                  </>)}
 
                   {showDetailInternalFleet && (
                     <div className="sc-x147">

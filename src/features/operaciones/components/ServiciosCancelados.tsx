@@ -23,6 +23,7 @@ import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
 import './ServiciosCancelados.css';
 import { almacenSesion } from '../../../utils/cacheMemoria';
 import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
+import { ModalFechaStatus } from './ModalFechaStatus';
 
 // ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
 const fmtFechaAuditoria = (iso: any): string => {
@@ -734,7 +735,14 @@ const ServiciosCancelados = () => {
   };
 
   // ✅ NUEVO: registrar status rápido (con cascada) — igual que Operaciones Activas.
-  const registrarStatusRapido = async (statusNombre: string) => {
+  // ✅ V00384: el botón de SIGUIENTE PASO primero pide fecha y hora
+  const [pasoPendiente, setPasoPendiente] = useState<{ status: string; fecha: string } | null>(null);
+  const pedirFechaPaso = (statusNombre: string) => {
+    if (!operacionViendo || !statusNombre || guardandoStatusRapido) return;
+    setPasoPendiente({ status: statusNombre, fecha: ahoraLocalISOCorto() });
+  };
+
+  const registrarStatusRapido = async (statusNombre: string, fechaHoraElegida?: string) => {
     if (!operacionViendo || !statusNombre) return;
     if (guardandoStatusRapido) return;
 
@@ -774,7 +782,7 @@ const ServiciosCancelados = () => {
         .catch(() => { });
 
       // ✅ FIX: hora local consistente (ver src/utils/fechaHoraLocal.ts).
-      const fechaHoraLocal = ahoraLocalISOCorto();
+      const fechaHoraLocal = fechaHoraElegida || ahoraLocalISOCorto(); // ✅ V00384: la que capturó el usuario
       const registradoEn = new Date().toISOString();
 
       const batch = writeBatch(db);
@@ -1782,7 +1790,7 @@ const ServiciosCancelados = () => {
                   {botonesDisponibles.map((botonStr: string) => {
                     const esExitoso = ultimoStatusGuardado === botonStr;
                     return (
-                      <button key={botonStr} onClick={() => registrarStatusRapido(botonStr)} disabled={guardandoStatusRapido !== null} className="status-pill"
+                      <button key={botonStr} onClick={() => pedirFechaPaso(botonStr)} disabled={guardandoStatusRapido !== null} className="status-pill"
                         style={{
                           display: 'inline-flex', alignItems: 'center', gap: '10px', padding: '6px 18px 6px 6px', borderRadius: '999px', border: 'none',
                           background: esExitoso ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
@@ -2057,6 +2065,15 @@ const ServiciosCancelados = () => {
       })()}
 
       {/* Registro retroactivo de movimiento (fecha/hora personalizada) */}
+      {/* ✅ V00384: fecha y hora del SIGUIENTE PASO */}
+      {pasoPendiente && operacionViendo && (
+        <ModalFechaStatus
+          status={pasoPendiente.status}
+          fechaInicial={pasoPendiente.fecha}
+          onCancelar={() => setPasoPendiente(null)}
+          onConfirmar={(fh) => { const st = pasoPendiente.status; setPasoPendiente(null); registrarStatusRapido(st, fh); }}
+        />
+      )}
       {modalHorarios === 'registrar' && (
         <div className="modal-overlay sc-x168">
           <div className="form-card sc-x169">

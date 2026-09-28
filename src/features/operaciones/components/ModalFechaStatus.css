@@ -1,0 +1,18 @@
+/* ✅ V00384: modal de fecha/hora del SIGUIENTE PASO (mismo aspecto que Registrar Movimiento) */
+.mfs-fondo { position: fixed; inset: 0; z-index: 4000; background: rgba(1, 4, 9, 0.72); backdrop-filter: blur(2px); display: flex; align-items: center; justify-content: center; }
+.mfs-modal { width: min(400px, 92vw); background: #161b22; border: 1px solid #30363d; border-radius: 12px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6); padding: 20px; display: flex; flex-direction: column; gap: 16px; color: #e6edf3; }
+.mfs-enc { display: flex; align-items: center; justify-content: space-between; padding-bottom: 12px; border-bottom: 1px solid #30363d; }
+.mfs-titulo { margin: 0; font-size: 1.05rem; font-weight: 700; color: #f0f6fc; }
+.mfs-cerrar { background: none; border: none; color: #8b949e; font-size: 1rem; cursor: pointer; }
+.mfs-cerrar:hover { color: #f0f6fc; }
+.mfs-cuerpo { display: flex; flex-direction: column; gap: 14px; }
+.mfs-etq { display: block; color: #8b949e; font-size: 0.8rem; font-weight: 600; margin-bottom: 6px; }
+.mfs-status { padding: 9px 12px; border-radius: 6px; border: 1px solid rgba(234, 88, 12, 0.55); background: rgba(234, 88, 12, 0.1); color: #fb923c; font-weight: 700; font-size: 0.9rem; }
+.mfs-campo { display: block; }
+.mfs-input { width: 100%; box-sizing: border-box; padding: 9px 12px; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: #e6edf3; font-size: 0.9rem; color-scheme: dark; }
+.mfs-input:focus { outline: none; border-color: #D84315; }
+.mfs-pie { display: flex; justify-content: flex-end; gap: 10px; padding-top: 12px; border-top: 1px solid #30363d; }
+.mfs-btn { padding: 9px 18px; border-radius: 6px; border: 1px solid #30363d; background: transparent; color: #c9d1d9; font-weight: 600; cursor: pointer; }
+.mfs-btn:hover { border-color: #8b949e; }
+.mfs-btn--primario { background: #D84315; border-color: #D84315; color: #ffffff; font-weight: 700; }
+.mfs-btn--primario:hover { background: #e4521f; border-color: #e4521f; }
