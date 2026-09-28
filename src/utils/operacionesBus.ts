@@ -5,6 +5,7 @@
 //   al instante, además de invalidar sus cachés de sesión para que la próxima
 //   carga vuelva a leer de Firestore.
 import { almacenSesion } from './cacheMemoria';
+import { esOperacionPrueba } from './operacionPrueba';
 
 export const EVENTO_OPERACION_GUARDADA = 'roelca:operacion-guardada';
 
@@ -28,7 +29,8 @@ export const notificarOperacionGuardada = (id: string, data: Record<string, unkn
 };
 
 export const suscribirOperacionGuardada = (cb: (d: OperacionGuardadaDetalle) => void): (() => void) => {
-  const handler = (e: Event) => { const d = (e as CustomEvent<OperacionGuardadaDetalle>).detail; if (d && d.id) cb(d); };
+  // ✅ V00380: las operaciones de PRUEBA nunca llegan a Facturación/Pagos.
+  const handler = (e: Event) => { const d = (e as CustomEvent<OperacionGuardadaDetalle>).detail; if (d && d.id && !esOperacionPrueba(d.data)) cb(d); };
   window.addEventListener(EVENTO_OPERACION_GUARDADA, handler);
   return () => window.removeEventListener(EVENTO_OPERACION_GUARDADA, handler);
 };

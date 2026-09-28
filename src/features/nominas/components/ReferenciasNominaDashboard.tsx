@@ -23,6 +23,7 @@ import { FormularioOperacion } from '../../operaciones/components/FormularioOper
 import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
 import './ReferenciasNominaDashboard.css';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
+import { docsSinPruebas } from '../../../utils/operacionPrueba';
 
 const ID_CARGO_OPERADOR = 'edda3a2b';
 // ✅ IDs de status "completada" en el catálogo (los mismos que usa Facturación
@@ -537,7 +538,7 @@ export const ReferenciasNominaDashboard = () => {
     //   estar en `operacionesIds` de `referencias_nomina` (ver esAsignada).
     const qOps = query(collection(db, 'operaciones'), where('status', 'in', STATUS_COMPLETADOS_NOMINA));
     const unSub = onSnapshot(qOps, (snap) => {
-      const ops = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+      const ops = docsSinPruebas(snap.docs).map(d => ({ id: d.id, ...(d.data() as any) })); // ✅ V00380: pruebas no generan nómina
       ops.sort((a: any, b: any) => (parsearFechaSegura(b.fechaServicio || b.createdAt)?.getTime() || 0) - (parsearFechaSegura(a.fechaServicio || a.createdAt)?.getTime() || 0));
       setOperacionesGlobales(ops);
     }, (err) => {
@@ -1043,7 +1044,7 @@ export const ReferenciasNominaDashboard = () => {
     setRefrescandoOps(true);
     try {
       const snap = await getDocs(query(collection(db, 'operaciones'), where('status', 'in', STATUS_COMPLETADOS_NOMINA)));
-      const ops = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+      const ops = docsSinPruebas(snap.docs).map(d => ({ id: d.id, ...(d.data() as any) })); // ✅ V00380
       ops.sort((a: any, b: any) => (parsearFechaSegura(b.fechaServicio || b.createdAt)?.getTime() || 0) - (parsearFechaSegura(a.fechaServicio || a.createdAt)?.getTime() || 0));
       setOperacionesGlobales(ops);
     } catch (e) {

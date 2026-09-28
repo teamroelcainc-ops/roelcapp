@@ -15,6 +15,7 @@ import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { EditorOperacionEmbebido } from '../../operaciones/components/EditorOperacionEmbebido';
 import { HiloModal } from '../../hilo/HiloModal';
 import { suscribirOperacionGuardada } from '../../../utils/operacionesBus';
+import { sinPruebas } from '../../../utils/operacionPrueba';
 import {
   collection,
   query,
@@ -997,7 +998,7 @@ export const FacturacionClientesDashboard = () => {
         if (raw) {
           const obj = JSON.parse(raw);
           if (obj && Array.isArray(obj.data) && obj.data.length && (Date.now() - (obj.ts || 0)) < SS_OPS_TTL) {
-            setOperacionesGlobales(obj.data);
+            setOperacionesGlobales(sinPruebas(obj.data)); // ✅ V00380
             setTopeOpsAlcanzado(obj.data.length >= LIMITE_OPS_TODAS);
             return;
           }
@@ -1044,6 +1045,7 @@ export const FacturacionClientesDashboard = () => {
           if (snap.docs.length < PAG_OPS) break;
         }
       }
+      todas = sinPruebas(todas); // ✅ V00380: las operaciones de prueba no se facturan
       todas.sort((a: any, b: any) => String(b.fechaServicio || b.createdAt || '').localeCompare(String(a.fechaServicio || a.createdAt || '')));
       setOperacionesGlobales(todas);
       setTopeOpsAlcanzado(todas.length >= LIMITE_OPS_TODAS);

@@ -11,6 +11,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import './AuditoriaCadenaEmpresa.css';
+import { sinPruebas } from '../../../utils/operacionPrueba';
 
 interface Props { empresaId: string; empresaNombre: string; onCerrar: () => void; }
 
@@ -68,9 +69,9 @@ export const AuditoriaCadenaEmpresa: React.FC<Props> = ({ empresaId, empresaNomb
       .then((d) => setMonedaEmpresa(nombreMoneda((d.data() as Record<string, unknown> | undefined)?.moneda || (d.data() as Record<string, unknown> | undefined)?.monedaId)))
       .catch((e) => console.error('ACE moneda empresa:', e)); // ✅ V00335
     const subs = [
-      onSnapshot(query(collection(db, 'operaciones'), where('clientePaga', '==', empresaId)), (s) => setOpsPaga(mapear(s)), (e) => console.error('ACE ops paga:', e)),
-      onSnapshot(query(collection(db, 'operaciones'), where('clienteMercancia', '==', empresaId)), (s) => setOpsMerc(mapear(s)), (e) => console.error('ACE ops mercancía:', e)),
-      onSnapshot(query(collection(db, 'operaciones'), where('proveedorUnidad', '==', empresaId)), (s) => setOpsProv(mapear(s)), (e) => console.error('ACE ops proveedor:', e)),
+      onSnapshot(query(collection(db, 'operaciones'), where('clientePaga', '==', empresaId)), (s) => setOpsPaga(sinPruebas(mapear(s))), (e) => console.error('ACE ops paga:', e)),
+      onSnapshot(query(collection(db, 'operaciones'), where('clienteMercancia', '==', empresaId)), (s) => setOpsMerc(sinPruebas(mapear(s))), (e) => console.error('ACE ops mercancía:', e)),
+      onSnapshot(query(collection(db, 'operaciones'), where('proveedorUnidad', '==', empresaId)), (s) => setOpsProv(sinPruebas(mapear(s))), (e) => console.error('ACE ops proveedor:', e)),
       onSnapshot(query(collection(db, 'facturas_clientes'), where('clienteId', '==', empresaId)), (s) => setFactCli(mapear(s)), (e) => console.error('ACE fact cliente:', e)),
       onSnapshot(query(collection(db, 'facturas_proveedores'), where('proveedorId', '==', empresaId)), (s) => setFactProv(mapear(s)), (e) => console.error('ACE fact proveedor:', e)),
       // Pagos: unos documentos guardan clienteId/proveedorId y otros entidadId —

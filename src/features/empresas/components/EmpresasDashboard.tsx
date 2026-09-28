@@ -4,6 +4,7 @@ import { AuditoriaCadenaEmpresa } from './AuditoriaCadenaEmpresa'; // ✅ V00333
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { propagarMonedaEmpresa } from '../services/propagarMoneda';
 import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
+import { docsSinPruebas } from '../../../utils/operacionPrueba';
 import { collection, onSnapshot, getDocs, query, where, limit, orderBy, writeBatch, doc, deleteDoc, getCountFromServer } from 'firebase/firestore'; // ✅ V00269
 import { db, eliminarRegistro, actualizarRegistro } from '../../../config/firebase';
 import { FormularioEmpresa, TIPOS_DOCUMENTO_EMPRESA } from './FormularioEmpresa';
@@ -252,7 +253,7 @@ const EmpresasDashboard = () => {
         await Promise.all(ROLES.map(async ([campo, etiqueta]) => {
           try {
             const snap = await getDocs(query(collection(db, 'operaciones'), where(campo, '==', idEmp), limit(1000)));
-            snap.docs.forEach((d) => {
+            docsSinPruebas(snap.docs).forEach((d) => { // ✅ V00380
               const previo = porOp.get(d.id);
               if (previo) { previo._roles.push(etiqueta); return; }
               porOp.set(d.id, { id: d.id, ...d.data(), _roles: [etiqueta] });

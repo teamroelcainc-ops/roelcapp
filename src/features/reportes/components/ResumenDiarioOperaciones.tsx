@@ -35,6 +35,7 @@ import { db, auth } from '../../../config/firebase';
 // Mismo logo base64 que usan los demás PDF del proyecto.
 import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
 import './ResumenDiarioOperaciones.css';
+import { docsSinPruebas } from '../../../utils/operacionPrueba';
 
 type TipoResumen = 'Transfer' | 'Logística' | 'Fletes';
 const TIPOS: TipoResumen[] = ['Transfer', 'Logística', 'Fletes'];
@@ -197,7 +198,7 @@ export const ResumenDiarioOperaciones = () => {
         if (nombre) conv[d.id] = nombre;
       });
 
-      const ops = opSnap.docs.map(d => {
+      const ops = docsSinPruebas(opSnap.docs).map(d => { // ✅ V00380
         const data = d.data() as any;
         const iso = normalizarFechaISO(data.fechaServicio);
         return { id: d.id, ...data, _fechaISO: iso };

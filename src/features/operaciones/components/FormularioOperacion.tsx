@@ -25,6 +25,7 @@ import { EmployeeForm } from '../../empleados/components/EmployeeForm';
 import { CostosAdicionalesDashboard } from '../../costosAdicionales/CostosAdicionalesDashboard';
 import './FormularioOperacion.css';
 import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
+import { esOperacionPrueba, PREFIJO_PRUEBA } from '../../../utils/operacionPrueba';
 import { EditorDetalleConvenioModal } from './EditorDetalleConvenioModal';
 import { AlertaDocumentos } from '../../documentos/AlertaDocumentos';
 import { almacenSesion } from '../../../utils/cacheMemoria';
@@ -924,6 +925,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const [searchConvenioProveedor, setSearchConvenioProveedor] = useState('');
   // ✅ V00271: retirado — el convenio se elige en el modal, ya no hay dropdown de búsqueda.
 
+
+  // ✅ V00380: operación de PRUEBA (no factura, no paga, no entra a estadísticas/reportes)
+  const [esPrueba, setEsPrueba] = useState<boolean>(() => esOperacionPrueba(initialData));
 
   const [formData, setFormData] = useState({
     tipoServicio: '', trafico: '', carga: '',
@@ -2583,6 +2587,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
       const operacionData: any = { 
         ...datosLimpios, 
+        ...(esPrueba ? { esPrueba: true } : {}), // ✅ V00380
         clientePaga: resolvedClientePaga, origen: resolvedOrigen, destino: resolvedDestino,
         numeroRemolque: resolvedRemolque, clienteMercancia: resolvedClienteMercancia,
         provServicios: resolvedProvServicios, proveedorUnidad: resolvedProvTransporte,
@@ -2701,7 +2706,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
           const refActual = String((initialData as any).ref || '');
           const matchRef = refActual.match(/^([A-ZÑ0-9.]{1,6})-(\d{6})-(\d+)$/);
           const tipoNuevoNombre = tiposOperacion?.find((t: any) => t.id === formData.tipoOperacionId)?.tipo_operacion || '';
-          const prefijoNuevo = prefijoTipoOperacion(tipoNuevoNombre);
+          const prefijoNuevo = (esPrueba ? PREFIJO_PRUEBA : '') + prefijoTipoOperacion(tipoNuevoNombre); // ✅ V00380: la prueba conserva PR.
           if (matchRef && tipoNuevoNombre && prefijoNuevo !== matchRef[1]) {
             renumerarPendiente = { prefijo: prefijoNuevo, ddmmyy: matchRef[2] }; // conserva la fecha de la referencia
           }
@@ -3055,6 +3060,20 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
               <p>{initialData ? 'Modifica los datos y guarda los cambios' : 'Completa el formulario para registrar una nueva operación'}</p>
             </div>
             <div className="fo-x7">
+              {/* ✅ V00380: operación de PRUEBA — se elige al crear; su referencia lleva PR. */}
+              {initialData ? (
+                esPrueba && <span className="fo-prueba fo-prueba--fija" title="Operación de prueba: no entra a Facturación, Pagos, Nómina, Estadísticas, Reportes ni Saldos de Puentes">🧪 PRUEBA</span>
+              ) : (
+                <button
+                  type="button"
+                  className={`fo-prueba${esPrueba ? ' fo-prueba--activa' : ''}`}
+                  onClick={() => setEsPrueba(v => !v)}
+                  aria-pressed={esPrueba}
+                  title={esPrueba ? 'Se guardará como PRUEBA (referencia PR.…). Clic para volver a operación real.' : 'Marcar como operación de prueba: no afecta Facturación, Pagos, Nómina, Estadísticas, Reportes ni Saldos de Puentes'}
+                >
+                  🧪 Prueba{esPrueba ? ' ✓' : ''}
+                </button>
+              )}
               <button type="button" onClick={() => { if (!idOperacion) { alert('Guarda la operación primero para poder adjuntarle documentos.'); return; } setMostrarSubirDoc(true); }} className="roelca-window-btn" title={idOperacion ? 'Subir documentos de la operación' : 'Guarda la operación primero'} style={{ width: 'auto', padding: '0 12px', gap: '6px', color: idOperacion ? '#fb923c' : '#6e7681', borderColor: idOperacion ? 'rgba(251,146,60,0.4)' : '#2d333b' }}>
                 <IconFileText size={15} /> <span className="fo-x8">Documentos</span>
               </button>

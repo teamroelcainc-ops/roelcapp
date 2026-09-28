@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
+import { sinPruebas, esOperacionPrueba } from '../../../utils/operacionPrueba';
 import { addDoc, collection, query, getDocs, onSnapshot, orderBy, limit, where, startAfter, documentId, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db, auth } from '../../../config/firebase';
 import { direccionCompletaDeEmpresa } from '../../../utils/direccionEmpresa'; // ✅ V00281
@@ -1993,7 +1994,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const renderCellContent = (op: any, colId: string) => {
     switch (colId) {
       // ✅ Referencia coloreada por tipo de operación (Fletes verde / Logística azul / Transfer naranja)
-      case 'ref': return <span className="font-mono" style={{ color: colorTipoOperacion(mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)), fontWeight: 'bold' }}>{op.ref || op.id?.substring(0,6)}</span>;
+      case 'ref': return <span className="font-mono" style={{ color: colorTipoOperacion(mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)), fontWeight: 'bold' }}>{op.ref || op.id?.substring(0,6)}{esOperacionPrueba(op) && <span className="op-prueba-chip" title="Operación de PRUEBA: no entra a Facturación, Pagos, Nómina, Estadísticas, Reportes ni Saldos de Puentes">🧪 PRUEBA</span>}</span>;
       case 'fechaServicio': return <span className="sc-x1">{mostrarDato(op.fechaServicio)}</span>;
       case 'fechaCita': return <span className="sc-x1">{formatearFechaHora(op.fechaCita)}</span>;
       case 'tipoOperacion': {
@@ -2167,7 +2168,8 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
     await cargarCatalogosSiEsNecesario();
 
-    const datosExcel = operacionesOrdenadas.map(op => {
+    // ✅ V00380: las operaciones de PRUEBA no salen en el Excel
+    const datosExcel = sinPruebas(operacionesOrdenadas).map(op => {
       const fila: any = {};
       columnasVisibles.forEach(col => {
         let val: any = '-';

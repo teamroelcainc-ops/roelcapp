@@ -34,6 +34,7 @@ import { DesgloseJerarquico, capitalizar, type Dimension } from './DesgloseJerar
 // ✅ V00191: facturas del cliente con su moneda (clic en el monto del desglose).
 import { FacturasClienteMoneda } from './FacturasClienteMoneda';
 import './EstadisticasDashboard.css';
+import { esOperacionPrueba } from '../../../utils/operacionPrueba';
 
 const STATUS_CANCELADO_ID = '7607f692';
 
@@ -453,7 +454,8 @@ export function EstadisticasDashboard() {
       (snap) => {
         const lista = snap.docs
           .map((d) => ({ id: d.id, ...d.data() } as Op))
-          .filter((op) => String(op.status || '') !== STATUS_CANCELADO_ID);
+          .filter((op) => String(op.status || '') !== STATUS_CANCELADO_ID)
+          .filter((op) => !esOperacionPrueba(op)); // ✅ V00380
         setOps(lista);
         setBusquedaHecha(true);
         setCargando(false);

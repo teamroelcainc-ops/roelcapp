@@ -16,6 +16,7 @@ import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
 import { EditorOperacionEmbebido } from '../../operaciones/components/EditorOperacionEmbebido';
 import './AuditoriaCadenaCliente.css';
+import { sinPruebas } from '../../../utils/operacionPrueba';
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- docs de Firestore sin tipo canónico (mismo criterio del módulo de Facturación). */
 
@@ -228,7 +229,7 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
     setOpsRaw(null); setPagosRaw(null); setFactRawId([]); setFactRawNom([]);
     const mapear = (s: any) => s.docs.map((d: any) => ({ id: d.id, ...d.data() }));
     const subs = [
-      onSnapshot(query(collection(db, 'operaciones'), where('clientePaga', '==', aud.id)), (s) => setOpsRaw(mapear(s)), (e) => console.error('Auditoría ops:', e)),
+      onSnapshot(query(collection(db, 'operaciones'), where('clientePaga', '==', aud.id)), (s) => setOpsRaw(sinPruebas(mapear(s))), (e) => console.error('Auditoría ops:', e)),
       onSnapshot(query(collection(db, 'facturas_clientes'), where('clienteId', '==', aud.id)), (s) => setFactRawId(mapear(s)), (e) => console.error('Auditoría facturas:', e)),
       onSnapshot(query(collection(db, 'pagos'), where('tipo', '==', 'cliente'), where('entidadId', '==', aud.id)), (s) => setPagosRaw(mapear(s)), (e) => console.error('Auditoría pagos:', e)),
     ];

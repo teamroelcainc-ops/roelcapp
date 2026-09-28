@@ -1,6 +1,7 @@
 // src/features/operaciones/components/OperacionesDashboard.tsx
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
+import { esOperacionPrueba, sinPruebas } from '../../../utils/operacionPrueba';
 import { FormularioOperacion } from './FormularioOperacion';
 // ✅ NUEVO: Resúmenes Diarios (Transfer / Logística / Fletes) en PDF.
 import { ResumenDiarioOperaciones } from '../../reportes/components/ResumenDiarioOperaciones';
@@ -1786,7 +1787,7 @@ const OperacionesDashboard = () => {
         // ✅ V00367: alerta en la fila si el cruce aún no cobra su peaje (sin Verde marcado)
         const trafSP = String(op.trafico || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
         const faltaPeaje = aplicaPeajeSP(op) && (trafSP.includes('import') || trafSP.includes('export')) && !(Number(op.saldoPuente) > 0);
-        return <span className="font-mono" style={{ color: colorTipoOperacion(mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)), fontWeight: 'bold' }}>{op.ref || op.id?.substring(0,6)}{faltaPeaje && <span title="Esta operación aún NO ha descontado el saldo del puente — falta marcar Verde MX / Verde USA" style={{ marginLeft: '6px', cursor: 'help' }}>🌉⚠</span>}</span>;
+        return <span className="font-mono" style={{ color: colorTipoOperacion(mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)), fontWeight: 'bold' }}>{op.ref || op.id?.substring(0,6)}{esOperacionPrueba(op) && <span className="op-prueba-chip" title="Operación de PRUEBA: no entra a Facturación, Pagos, Nómina, Estadísticas, Reportes ni Saldos de Puentes">🧪 PRUEBA</span>}{faltaPeaje && <span title="Esta operación aún NO ha descontado el saldo del puente — falta marcar Verde MX / Verde USA" style={{ marginLeft: '6px', cursor: 'help' }}>🌉⚠</span>}</span>;
       }
       case 'fechaServicio': return <span className="od-x1">{mostrarDato(op.fechaServicio)}</span>;
       case 'fechaCita': return <span className="od-x1">{formatearFechaHora(op.fechaCita)}</span>;
@@ -1873,7 +1874,8 @@ const OperacionesDashboard = () => {
     const columnasVisibles = columnasTabla.filter(c => c.visible);
     // La exportación usa los nombres ya guardados en cada operación (sin lecturas).
 
-    const datosExcel = operacionesOrdenadas.map(op => {
+    // ✅ V00380: las operaciones de PRUEBA no salen en el Excel
+    const datosExcel = sinPruebas(operacionesOrdenadas).map(op => {
       const fila: any = {};
       columnasVisibles.forEach(col => {
         let val: any = '-';

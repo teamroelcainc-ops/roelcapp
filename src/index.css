@@ -77,3 +77,6 @@ button:focus-visible {
 *::-webkit-scrollbar-thumb { background: #30363d; border-radius: 6px; border: 2px solid #161b22; }
 *::-webkit-scrollbar-thumb:hover { background: #58a6ff; }
 *::-webkit-scrollbar-corner { background: #161b22; }
+
+/* ✅ V00380: operaciones de PRUEBA */
+.op-prueba-chip { display: inline-flex; align-items: center; margin-left: 6px; padding: 1px 7px; border-radius: 10px; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.5px; color: #e3b341; background: rgba(227, 179, 65, 0.12); border: 1px dashed rgba(227, 179, 65, 0.55); vertical-align: middle; font-family: inherit; }

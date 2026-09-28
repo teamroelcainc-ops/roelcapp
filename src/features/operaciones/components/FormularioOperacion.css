@@ -174,3 +174,9 @@
 /* ✅ V00337: píldora minimizada con la información capturada */
 .fo-x46b { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .fo-x46c { color: #8b949e; font-size: 0.72rem; max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ✅ V00380: botón / sello de operación de PRUEBA */
+.fo-prueba { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 8px; border: 1px dashed #2d333b; background: transparent; color: #8b949e; font-size: 0.8rem; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background 0.15s, color 0.15s, border-color 0.15s; }
+.fo-prueba:hover { color: #e3b341; border-color: rgba(227, 179, 65, 0.55); }
+.fo-prueba--activa { color: #e3b341; background: rgba(227, 179, 65, 0.14); border-color: #e3b341; border-style: solid; }
+.fo-prueba--fija { cursor: help; color: #e3b341; background: rgba(227, 179, 65, 0.12); border-color: rgba(227, 179, 65, 0.55); }

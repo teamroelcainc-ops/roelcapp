@@ -8,6 +8,7 @@ import React, { useEffect, useState } from 'react';
 import { addDoc, collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import './TarjetaCasetas.css';
+import { docsSinPruebas } from '../../../utils/operacionPrueba';
 
 const ID_USD = '7dca62b3';
 const ID_MXN = 'f95d8894';
@@ -60,7 +61,7 @@ export const TarjetaCasetas: React.FC = () => {
       }));
     }, () => {});
     const u3 = onSnapshot(query(collection(db, 'operaciones'), where('saldoPuente', '>', 0)), (snap) => {
-      setCruces(snap.docs.map((d) => {
+      setCruces(docsSinPruebas(snap.docs).map((d) => { // ✅ V00380
         const x = d.data() as Record<string, unknown>;
         return { puenteNombre: String(x.saldoPuentePuente || ''), fecha: String(x.saldoPuenteFecha || ''), monto: Number(x.saldoPuente) || 0, moneda: nombreMoneda(x.saldoPuenteMoneda), ref: String(x.ref || d.id), statusNombre: String(x.statusNombre || ''), evento: String(x.saldoPuenteEvento || '') };
       }));

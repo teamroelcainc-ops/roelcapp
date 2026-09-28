@@ -9,6 +9,7 @@ import { addDoc, collection, deleteDoc, doc, getDocs, onSnapshot, query, where, 
 import * as XLSX from 'xlsx';
 import { db } from '../../../config/firebase';
 import './SaldosPuentesDashboard.css';
+import { docsSinPruebas } from '../../../utils/operacionPrueba';
 
 const ID_USD = '7dca62b3';
 const ID_MXN = 'f95d8894';
@@ -86,7 +87,7 @@ export const SaldosPuentesDashboard: React.FC = () => {
     }, (e) => { console.warn('Recargas de puentes:', e); setCargando(false); });
     // Cruces = operaciones completadas que llevan saldo de puente colocado (V00355)
     const u3 = onSnapshot(query(collection(db, 'operaciones'), where('saldoPuente', '>', 0)), (snap) => {
-      setCruces(snap.docs.map((d) => {
+      setCruces(docsSinPruebas(snap.docs).map((d) => { // ✅ V00380
         const x = d.data() as Record<string, unknown>;
         return { puenteNombre: String(x.saldoPuentePuente || ''), fecha: String(x.saldoPuenteFecha || ''), monto: Number(x.saldoPuente) || 0, ref: String(x.ref || d.id) };
       }));
@@ -131,7 +132,7 @@ export const SaldosPuentesDashboard: React.FC = () => {
     try {
       const snap = await getDocs(collection(db, 'operaciones'));
       const filas: FilaRep[] = [];
-      snap.docs.forEach((d) => {
+      docsSinPruebas(snap.docs).forEach((d) => { // ✅ V00380
         const x = d.data() as Record<string, unknown>;
         if (!aplicaPeajeSP(x)) return;
         if (norm(x.statusNombre).includes('cancel')) return;
@@ -178,7 +179,7 @@ export const SaldosPuentesDashboard: React.FC = () => {
     try {
       const snap = await getDocs(collection(db, 'operaciones'));
       let pendientes: { id: string; data: Record<string, unknown> }[] = [];
-      snap.docs.forEach((d) => {
+      docsSinPruebas(snap.docs).forEach((d) => { // ✅ V00380
         const x = d.data() as Record<string, unknown>;
         if (!STATUS_COMPLETADOS_IDS.includes(String(x.status || '').trim())) return;
         if (Number.isFinite(Number(x.saldoPuente))) {

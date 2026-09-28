@@ -19,6 +19,7 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getApp } from 'firebase/app';
 import { db } from '../../../config/firebase';
 import { fechaDDMMYY, prefijoTipoOperacion } from '../../../utils/generarReferencia';
+import { PREFIJO_PRUEBA } from '../../../utils/operacionPrueba';
 
 // La región DEBE coincidir con la del deploy de la función (us-central1).
 const functions = getFunctions(getApp(), 'us-central1');
@@ -122,7 +123,11 @@ export const guardarOperacionSegura = async (operacionData: any) => {
   const ddmmyy = ddmmyyDeFechaServicio(operacionData.fechaServicio) || fechaDDMMYY();
 
   // Prefijo del tipo (TR/LO/FL/OP) — igual que antes.
-  const prefijoCorto = await resolverPrefijoCorto(operacionData);
+  const prefijoLinea = await resolverPrefijoCorto(operacionData);
+  // ✅ V00380: operación de PRUEBA → PR.TR / PR.FL / PR.LO… con su propio contador
+  //   (la Cloud Function acepta cualquier prefijo y cuenta por prefijo+fecha),
+  //   así las pruebas NO consumen consecutivos reales.
+  const prefijoCorto = operacionData?.esPrueba === true ? `${PREFIJO_PRUEBA}${prefijoLinea}` : prefijoLinea;
 
   // Id único por envío: si hay un reintento de red, la función NO duplica.
   const clienteOpId =

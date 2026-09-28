@@ -14,6 +14,7 @@ import { db } from '../../config/firebase';
 import { EditorEncabezados } from '../../components/EditorEncabezados';
 import { useEtiquetas } from '../../contexts/EtiquetasContext';
 import './PanelControlDashboard.css';
+import { esOperacionPrueba } from '../../utils/operacionPrueba';
 
 interface Metas { opsMes: number; opsAnio: number; factMes: number; factAnio: number; utilMes: number; utilAnio: number; }
 const METAS_VACIAS: Metas = { opsMes: 0, opsAnio: 0, factMes: 0, factAnio: 0, utilMes: 0, utilAnio: 0 };
@@ -55,7 +56,7 @@ export const PanelControlDashboard = () => {
         const m: any = mSnap.exists() ? mSnap.data() : {};
         const cargadas: Metas = { opsMes: num(m.opsMes), opsAnio: num(m.opsAnio), factMes: num(m.factMes), factAnio: num(m.factAnio), utilMes: num(m.utilMes), utilAnio: num(m.utilAnio) };
         setMetas(cargadas); setMetasDraft(cargadas);
-        setOps(oSnap.docs.map((d) => d.data()));
+        setOps(oSnap.docs.map((d) => d.data()).filter((o) => !esOperacionPrueba(o))); // ✅ V00380
         const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
         // ✅ V00189: documentos de EMPRESAS de baja/inactivas no cuentan como vencidos
         const empresasBaja = new Set<string>();

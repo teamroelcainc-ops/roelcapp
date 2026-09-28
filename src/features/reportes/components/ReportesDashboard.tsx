@@ -37,6 +37,7 @@ import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
 // ✅ NUEVO: Resúmenes Diarios (Transfer / Logística / Fletes) en PDF.
 import { ResumenDiarioOperaciones } from './ResumenDiarioOperaciones';
 import './ReportesDashboard.css';
+import { docsSinPruebas } from '../../../utils/operacionPrueba';
 
 // ═══════════════════════════════════════════════════════════════════════
 // ✅ (Conversiones del reporte de ventas) Se RECALCULAN SIEMPRE con la regla
@@ -731,7 +732,9 @@ export const ReportesDashboard = () => {
       //   muchos registros. Solución: bajar TODA la colección, normalizar cada
       //   fecha a ISO en memoria y filtrar por el rango. Así salen TODOS.
       const snap = await getDocs(collection(db, modulo.coleccion));
-      const opsTodas = snap.docs.map(d => {
+      // ✅ V00380: en el reporte de Operaciones no entran las de prueba
+      const docsRep = modulo.coleccion === 'operaciones' ? docsSinPruebas(snap.docs) : snap.docs;
+      const opsTodas = docsRep.map(d => {
         const data = d.data() as any;
         const iso = normalizarFechaISO(data[modulo.campoFecha]);
         const base = { id: d.id, ...data, [modulo.campoFecha]: iso || data[modulo.campoFecha], _fechaISO: iso };
