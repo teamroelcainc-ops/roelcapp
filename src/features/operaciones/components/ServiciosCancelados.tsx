@@ -24,6 +24,7 @@ import './ServiciosCancelados.css';
 import { almacenSesion } from '../../../utils/cacheMemoria';
 import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
 import { ModalFechaStatus } from './ModalFechaStatus';
+import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
 
 // ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
 const fmtFechaAuditoria = (iso: any): string => {
@@ -715,7 +716,7 @@ const ServiciosCancelados = () => {
         registradoEn: new Date().toISOString()
       });
       const opRef = doc(db, 'operaciones', String(operacionViendo.id));
-      batch.update(opRef, { status: statusId, statusNombre: statusNombreResuelto });
+      batch.update(opRef, { status: statusId, statusNombre: statusNombreResuelto, ...ajusteSueldoPorStatus(operacionViendo, statusNombreResuelto) }); // ✅ V00387
       await batch.commit();
       notificarOperacionGuardada(String(operacionViendo.id), { ...operacionViendo, status: statusId, statusNombre: statusNombreResuelto }, 'cancelados-status'); // ✅ V00126
 
@@ -799,7 +800,7 @@ const ServiciosCancelados = () => {
         });
       });
       const opRef = doc(db, 'operaciones', String(operacionViendo.id));
-      batch.update(opRef, { status: statusFinal.id, statusNombre: statusFinal.nombre });
+      batch.update(opRef, { status: statusFinal.id, statusNombre: statusFinal.nombre, ...ajusteSueldoPorStatus(operacionViendo, statusFinal.nombre) }); // ✅ V00387
       await batch.commit();
       notificarOperacionGuardada(String(operacionViendo.id), { ...operacionViendo, status: statusFinal.id, statusNombre: statusFinal.nombre }, 'cancelados-status'); // ✅ V00126
 

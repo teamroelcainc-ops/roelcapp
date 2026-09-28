@@ -19,6 +19,7 @@ import './OperacionesDashboard.css';
 import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
 import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 import { ModalFechaStatus } from './ModalFechaStatus';
+import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
 
 // ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
 const fmtFechaAuditoria = (iso: any): string => {
@@ -1151,7 +1152,7 @@ const OperacionesDashboard = () => {
       const opRef = doc(db, 'operaciones', String(operacionViendo._docId || operacionViendo.id));
       // ✅ V00367: marcar Verde también desde "Registrar Status" manual cobra el peaje
       const extraSPManual = await camposSaldoPuenteAlCompletar(statusId, operacionViendo, statusNombreResuelto, nuevaFechaHora);
-      batch.update(opRef, limpiarUndefined({ status: statusId, statusNombre: statusNombreResuelto, ...extraSPManual }));
+      batch.update(opRef, limpiarUndefined({ status: statusId, statusNombre: statusNombreResuelto, ...extraSPManual, ...ajusteSueldoPorStatus(operacionViendo, statusNombreResuelto) })); // ✅ V00387: Falso = sueldo a la mitad
 
       await batch.commit();
       notificarOperacionGuardada(String(operacionViendo._docId || operacionViendo.id), { ...operacionViendo, status: statusId, statusNombre: statusNombreResuelto }, 'operaciones-status'); // ✅ V00126
@@ -1255,7 +1256,8 @@ const OperacionesDashboard = () => {
           batch.update(opRef, limpiarUndefined({
             status: statusFinal.id,
             statusNombre: statusFinal.nombre,
-            ...extraSaldoPuente
+            ...extraSaldoPuente,
+            ...ajusteSueldoPorStatus(operacionViendo, statusFinal.nombre), // ✅ V00387: Falso = sueldo a la mitad
           }));
 
           await batch.commit();

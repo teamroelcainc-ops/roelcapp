@@ -22,6 +22,7 @@ import { FormularioOperacion, TIPOS_DOCUMENTO_OPERACION } from './FormularioOper
 import './ServiciosCompletados.css';
 import { almacenSesion } from '../../../utils/cacheMemoria';
 import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
+import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
 import { cargarCatalogo, TTL } from '../../../hooks/useCatalogoCache'; // ✅ V00256: catálogos C/V y Aduanas para los filtros nuevos
 
 // ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
@@ -1169,7 +1170,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         registradoEn: new Date().toISOString()
       });
       const opRef = doc(db, 'operaciones', String(operacionViendo.id));
-      batch.update(opRef, { status: statusId, statusNombre: statusNombreResuelto });
+      batch.update(opRef, { status: statusId, statusNombre: statusNombreResuelto, ...ajusteSueldoPorStatus(operacionViendo, statusNombreResuelto) }); // ✅ V00387
       await batch.commit();
       notificarOperacionGuardada(String(operacionViendo.id), { ...operacionViendo, status: statusId, statusNombre: statusNombreResuelto }, 'completados-status'); // ✅ V00126
 
@@ -1244,7 +1245,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         });
       });
       const opRef = doc(db, 'operaciones', String(operacionViendo.id));
-      batch.update(opRef, { status: statusFinal.id, statusNombre: statusFinal.nombre });
+      batch.update(opRef, { status: statusFinal.id, statusNombre: statusFinal.nombre, ...ajusteSueldoPorStatus(operacionViendo, statusFinal.nombre) }); // ✅ V00387
       await batch.commit();
 
       // ✅ HISTORIAL: status rápido (incluye la cascada de status automáticos).

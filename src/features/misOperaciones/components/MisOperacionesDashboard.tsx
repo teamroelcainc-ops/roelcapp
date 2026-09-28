@@ -23,6 +23,7 @@ import { nombreDeEmpleado } from '../../../utils/nombreEmpleado';
 import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
 import { ChevronLeft, MapPin, Truck, CheckCircle2, Clock } from 'lucide-react';
 import './MisOperacionesDashboard.css';
+import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
 
 // Status que ya no son "activos" (mismos IDs que usa Operaciones Activas).
 const IDS_STATUS_EXCLUIDOS = ['7607f692', 'f557b751', 'c2d57403'];
@@ -222,6 +223,7 @@ export function MisOperacionesDashboard() {
     batch.update(doc(db, 'operaciones', String(opAbierta._docId || opAbierta.id)), {
       status: siguiente.id,
       statusNombre: siguiente.nombre,
+      ...ajusteSueldoPorStatus(opAbierta as Record<string, unknown>, siguiente.nombre), // ✅ V00387: Falso = sueldo a la mitad
     });
 
     const marca: UltimaMarca = {
@@ -274,6 +276,7 @@ export function MisOperacionesDashboard() {
       await updateDoc(doc(db, 'operaciones', String(opAbierta._docId || opAbierta.id)), {
         status: ultimaMarca.statusAnteriorId,
         statusNombre: ultimaMarca.statusAnteriorNombre,
+        ...ajusteSueldoPorStatus(opAbierta as Record<string, unknown>, ultimaMarca.statusAnteriorNombre), // ✅ V00387
       });
       setHorariosOp((prev) => prev.filter((h) => h.id !== ultimaMarca.horarioId));
       registrarLog('Mis Operaciones', 'Horario', `${usuario?.nombre} DESHIZO "${ultimaMarca.statusMarcadoNombre}" en ${opAbierta.ref || opAbierta.id}`).catch(() => {});

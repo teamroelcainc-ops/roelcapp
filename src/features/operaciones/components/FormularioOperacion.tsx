@@ -32,6 +32,7 @@ import { almacenSesion } from '../../../utils/cacheMemoria';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 import { validarFormularioConfigurable } from '../../formularios/configFormularios';
+import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
 
 // ✅ NUEVO: utilidades para el Historial de Actividad (historial_actividad).
 //   Nunca deben romper el guardado: los llamados a registrarLog van con .catch.
@@ -1930,6 +1931,15 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     return valor;
   }, [catalogoTrafico]);
 
+  // ✅ V00387: con el estatus en FALSO el Sueldo Operador se muestra (y guarda) a la mitad
+  useEffect(() => {
+    if (!statusPreview) return;
+    setFormData(prev => {
+      const aj = ajusteSueldoPorStatus(prev as Record<string, unknown>, statusPreview);
+      return Object.keys(aj).length ? { ...prev, ...aj } : prev;
+    });
+  }, [statusPreview, formData.sueldoOperador]);
+
   // ✅ V00386: al CAMBIAR el convenio (también en una operación ya guardada) o al
   //   pulsar "↻ Actualizar convenio", se traen TODOS los datos ligados a él:
   //   monto y moneda, sueldo del operador, combustible, tipo de servicio,
@@ -2097,7 +2107,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
     setFormData(prev => ({
       ...prev,
-      ...(sueldo !== null && !isNaN(sueldo) ? { sueldoOperador: sueldo } : {}),
+      ...(sueldo !== null && !isNaN(sueldo) ? { sueldoOperador: sueldo, sueldoMitadAplicada: false } : {}), // ✅ V00387
       ...(combustible !== null && !isNaN(combustible) ? { combustible: Math.round(combustible) } : {}),
     }));
   }, [formData.convenio, listaConveniosCliente, gastosIncluidosLocal, rendimientoLocal, initialData, refrescoConvenio]);
@@ -2452,7 +2462,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         ...prev,
         montoConvenioCliente: nuevo,
         monedaConvenioCliente: c.monedaMaestro || prev.monedaConvenioCliente,
-        ...(v.sueldo !== null ? { sueldoOperador: v.sueldo } : {}),
+        ...(v.sueldo !== null ? { sueldoOperador: v.sueldo, sueldoMitadAplicada: false } : {}), // ✅ V00387
         ...(v.combustible !== null ? { combustible: v.combustible } : {}),
       }));
       // vuelve a derivar servicio / tráfico / carga del convenio
@@ -2668,6 +2678,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         // ✅ FIX: se guarda el NOMBRE del status (la descripción larga del catálogo
         //    solo es texto de ayuda y estaba filtrándose a la tabla del dashboard)
         statusNombre: statusObj?.nombre || statusObj?.descripcion || statusCalculado || 'Pendiente',
+        ...ajusteSueldoPorStatus({ ...formData, ...datosLimpios }, statusObj?.nombre || statusObj?.descripcion || statusCalculado || ''), // ✅ V00387: Falso = sueldo a la mitad
         tienePdfDoda: !!pdfDoda, cantPdfsEntrys: (pdfsEntrys || []).filter(Boolean).length,
         clienteNombre: searchClientePaga || '', origenNombre: searchOrigen || '',
         destinoNombre: searchDestino || '', remolqueNombre: searchRemolque || '',clienteMercanciaNombre: searchClienteMercancia || '', provServiciosNombre: searchProvServicios || '',
