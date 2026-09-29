@@ -1,0 +1,96 @@
+/* ── Bitácora de cambios de un registro ────────────────────────────── */
+.chlog {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chlog-empty {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-soft);
+}
+
+.chlog-entry {
+  padding: 9px 13px;
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.chlog-entry.is-create {
+  border-left-color: var(--success);
+}
+
+.chlog-entry.is-update {
+  border-left-color: var(--primary);
+}
+
+.chlog-entry.is-delete {
+  border-left-color: var(--danger);
+}
+
+.chlog-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+}
+
+.chlog-action {
+  font-weight: 800;
+}
+
+.chlog-by {
+  color: var(--text);
+}
+
+.chlog-when {
+  margin-left: auto;
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.chlog-changes {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12.5px;
+  color: var(--text-soft);
+}
+
+.chlog-changes strong {
+  color: var(--text);
+}
+
+/* Pestañas del detalle (historial del camión). */
+.dtabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
+}
+
+.dtabs button {
+  padding: 6px 13px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+  color: var(--text-soft);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.dtabs button.is-active {
+  border-color: var(--primary);
+  color: var(--text);
+}

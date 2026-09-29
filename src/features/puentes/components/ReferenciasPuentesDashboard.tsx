@@ -14,19 +14,23 @@ import * as XLSX from 'xlsx';
 import './ReferenciasPuentesDashboard.css';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
+import { esOperacionPrueba } from '../../../utils/operacionPrueba';
+import { cargarCtxCobroPuente, cobroPuenteDeOperacion } from '../../../utils/puenteColombia';
 
 // ⚠ Si tu colección de convenios de clientes tiene otro nombre, cámbialo aquí.
 const COLECCION_CONVENIOS = 'convenios_clientes';
 
+// ✅ V00392: columnas pedidas — Ref, Fecha, Unidad, Convenio, Puente, Monto
 const COLUMNAS_OPS_PUENTES_BASE = [
   { id: 'ref',           label: 'Ref. Operación', visible: true,  orden: true },
   { id: 'fechaServicio', label: 'Fecha Servicio', visible: true,  orden: true },
-  { id: 'trafico',       label: 'Tráfico',        visible: true,  orden: true },
-  { id: 'operador',      label: 'Operador',       visible: true,  orden: true },
-  { id: 'cliente',       label: 'Cliente',        visible: true,  orden: true },
-  { id: 'origen',        label: 'Origen',         visible: false, orden: true },
-  { id: 'destino',       label: 'Destino',        visible: false, orden: true },
-  { id: 'puente',        label: 'Puente',         visible: true,  orden: true },
+  { id: 'unidad',        label: 'Unidad',         visible: true,  orden: true },
+  { id: 'convenio',      label: 'Convenio',       visible: true,  orden: true },
+  { id: 'puenteNombre',  label: 'Puente',         visible: true,  orden: true },
+  { id: 'puente',        label: 'Monto',          visible: true,  orden: true },
+  { id: 'trafico',       label: 'Tráfico',        visible: false, orden: true },
+  { id: 'operador',      label: 'Operador',       visible: false, orden: true },
+  { id: 'cliente',       label: 'Cliente',        visible: false, orden: true },
 ];
 
 export const ReferenciasPuentesDashboard = () => {
@@ -49,6 +53,11 @@ export const ReferenciasPuentesDashboard = () => {
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
   const [filtroTrafico, setFiltroTrafico] = useState<string>('todos');
+  // ✅ V00392: filtros Puente y Unidad; unidades para mostrar su número
+  const [filtroPuente, setFiltroPuente] = useState<string>('todos');
+  const [filtroUnidad, setFiltroUnidad] = useState<string>('todas');
+  const [unidadesList, setUnidadesList] = useState<Record<string, unknown>[]>([]);
+  const [asignandoMontos, setAsignandoMontos] = useState(false);
   const [seleccionadas, setSeleccionadas] = useState<string[]>([]);
 
   const [filtroEstadoOps, setFiltroEstadoOps] = useState<'pendientes' | 'asignadas'>('pendientes');
@@ -124,7 +133,11 @@ export const ReferenciasPuentesDashboard = () => {
     subs.push(onSnapshot(collection(db, 'catalogo_tipos_tarifarios'), (snap) => {
       setTiposTarifariosList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
     }));
-    const qOps = query(collection(db, 'operaciones'), limit(500));
+    subs.push(onSnapshot(collection(db, 'unidades'), (snap) => {
+      setUnidadesList(snap.docs.map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) })));
+    }));
+    // ✅ V00392: las más recientes por fecha de servicio (antes 500 sin orden)
+    const qOps = query(collection(db, 'operaciones'), orderBy('fechaServicio', 'desc'), limit(2500));
     subs.push(onSnapshot(qOps, (snap) => {
       const ops = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
       ops.sort((a: any, b: any) => new Date(b.fechaServicio || b.createdAt || 0).getTime() - new Date(a.fechaServicio || a.createdAt || 0).getTime());
@@ -153,10 +166,24 @@ export const ReferenciasPuentesDashboard = () => {
   };
 
   // Costo de puente/caseta de la operación (con varios nombres posibles)
-  const getPuente = (op: any) => Number(
-    op.puenteTotal ?? op.casetasTotal ?? op.casetaTotal ?? op.costoPuente ??
-    op.puente ?? op.peajeTotal ?? op.cruceTotal ?? op.casetas ?? 0
-  );
+  // ✅ V00392: monto REAL del cruce = caseta (saldoPuente) + piso de Colombia
+  type OpPuente = Record<string, unknown>;
+  const getPuente = (op: OpPuente) => (Number(op.saldoPuente) || 0) + (Number(op.saldoPuentePiso) || 0);
+  const tieneMontoPuente = (op: OpPuente) => Number(op.saldoPuente) > 0;
+  const nombresPuenteOp = (op: OpPuente): string[] => [op.saldoPuentePuente, Number(op.saldoPuentePiso) > 0 ? op.saldoPuentePisoPuente : ''].map((x) => String(x || '').trim()).filter(Boolean);
+  const unidadPorId = useMemo(() => {
+    const map = new Map<string, string>();
+    unidadesList.forEach(u => map.set(String(u.id), String(u.unidad ?? u.numeroEconomico ?? u.nombre ?? u.id)));
+    return map;
+  }, [unidadesList]);
+  const getUnidad = (op: OpPuente): string => {
+    const v = String(op.unidadNombre || '').trim() || String(op.unidad || '').trim();
+    return v ? (unidadPorId.get(v) || v) : '-';
+  };
+  const getConvenio = (op: OpPuente): string => {
+    const det = detallePorId.get(String(op.convenio || ''));
+    return String(op.convenioNombre || det?.descripcion || det?.nombre || '-');
+  };
 
   // ── Mapas auxiliares (resolver IDs -> nombre) ──
   const convenioPorId = useMemo(() => {
@@ -313,12 +340,21 @@ export const ReferenciasPuentesDashboard = () => {
   const operacionesBaseFiltro = useMemo(() => {
     if (!filtrosCompletos) return [];
     return operacionesGlobales.filter(op => {
-      if (!esPuenteRoelca(op)) return false;
-      const tr = getTrafico(op);
-      const matchTrafico = filtroTrafico === 'todos' || sinAcentos(tr) === sinAcentos(filtroTrafico);
-      return matchTrafico && dentroRangoFecha(op);
+      if (!esPuenteRoelca(op) || esOperacionPrueba(op)) return false;
+      if (sinAcentos(op.statusNombre).includes('cancel')) return false;
+      // ✅ V00392: filtros Puente (caseta o piso) y Unidad
+      if (filtroPuente !== 'todos') {
+        if (filtroPuente === '__sin__') { if (tieneMontoPuente(op)) return false; }
+        else if (!nombresPuenteOp(op).some(n => sinAcentos(n) === sinAcentos(filtroPuente))) return false;
+      }
+      if (filtroUnidad !== 'todas' && getUnidad(op) !== filtroUnidad) return false;
+      return dentroRangoFecha(op);
     });
-  }, [operacionesGlobales, filtroTrafico, fechaInicio, fechaFin, filtrosCompletos, convenioPorId, traficoPorId, detallePorId, tarifaRefPorId, tipoTarifarioPorId]);
+  }, [operacionesGlobales, filtroPuente, filtroUnidad, fechaInicio, fechaFin, filtrosCompletos, unidadPorId]);
+  const unidadesDisponibles = useMemo(() =>
+    Array.from(new Set(operacionesGlobales.filter(op => esPuenteRoelca(op) && dentroRangoFecha(op)).map(getUnidad).filter(u => u && u !== '-'))).sort((a, b) => a.localeCompare(b, 'es', { numeric: true })),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [operacionesGlobales, fechaInicio, fechaFin, unidadPorId]);
 
   const esAsignada = (op: any) => !!op.referenciaPuentesId;
 
@@ -337,6 +373,9 @@ export const ReferenciasPuentesDashboard = () => {
       case 'origen': return String(op.origen || '').toLowerCase();
       case 'destino': return String(op.destino || '').toLowerCase();
       case 'puente': return getPuente(op);
+      case 'unidad': return getUnidad(op).toLowerCase();
+      case 'convenio': return getConvenio(op).toLowerCase();
+      case 'puenteNombre': return nombresPuenteOp(op).join(' + ').toLowerCase();
       default: return '';
     }
   };
@@ -368,6 +407,9 @@ export const ReferenciasPuentesDashboard = () => {
       case 'origen': return op.origen || '-';
       case 'destino': return op.destino || '-';
       case 'puente': return getPuente(op);
+      case 'unidad': return getUnidad(op);
+      case 'convenio': return getConvenio(op);
+      case 'puenteNombre': return nombresPuenteOp(op).join(' + ') || 'Sin monto';
       default: return '-';
     }
   };
@@ -396,7 +438,23 @@ export const ReferenciasPuentesDashboard = () => {
       case 'cliente': return <td key={key} style={tdBase}>{getCliente(op)}</td>;
       case 'origen': return <td key={key} style={tdBase}>{op.origen || '-'}</td>;
       case 'destino': return <td key={key} style={tdBase}>{op.destino || '-'}</td>;
-      case 'puente': return <td className="rpd-x3" key={key}>{formatoMoneda(getPuente(op))}</td>;
+      case 'unidad': return <td key={key} className="rpd-celda">{getUnidad(op)}</td>;
+      case 'convenio': return <td key={key} className="rpd-celda rpd-celda--conv" title={getConvenio(op)}>{getConvenio(op)}</td>;
+      case 'puenteNombre': {
+        // ✅ V00392: Colombia muestra caseta y puente
+        const nombres = nombresPuenteOp(op);
+        return <td key={key} className="rpd-celda">{nombres.length ? nombres.map((n, i) => <div key={i}>{n}</div>) : <span className="rpd-sin-monto">Sin monto</span>}</td>;
+      }
+      case 'puente': return (
+        <td className="rpd-x3" key={key}>
+          {tieneMontoPuente(op) ? (
+            <>
+              <div>{formatoMoneda(Number(op.saldoPuente) || 0)} <span className="rpd-moneda">{op.saldoPuenteMoneda || ''}</span></div>
+              {Number(op.saldoPuentePiso) > 0 && <div>{formatoMoneda(Number(op.saldoPuentePiso))} <span className="rpd-moneda">{op.saldoPuentePisoMoneda || ''}</span></div>}
+            </>
+          ) : <span className="rpd-sin-monto">—</span>}
+        </td>
+      );
       default: return <td key={key} style={tdBase}>-</td>;
     }
   };
@@ -439,12 +497,56 @@ export const ReferenciasPuentesDashboard = () => {
   const resumenSeleccion = useMemo(() => {
     let subtotal = 0;
     const refs: string[] = [];
+    const porMoneda: Record<string, number> = {};
+    let sinMonto = 0;
     seleccionadas.forEach(id => {
       const op = operacionesGlobales.find(o => o.id === id);
-      if (op) { subtotal += getPuente(op); refs.push(op.ref || op.id?.substring(0, 6)); }
+      if (!op) return;
+      subtotal += getPuente(op);
+      refs.push(op.ref || op.id?.substring(0, 6));
+      if (!tieneMontoPuente(op)) sinMonto += 1;
+      const m1 = String(op.saldoPuenteMoneda || 'Sin moneda');
+      if (Number(op.saldoPuente) > 0) porMoneda[m1] = (porMoneda[m1] || 0) + Number(op.saldoPuente);
+      const m2 = String(op.saldoPuentePisoMoneda || 'Sin moneda');
+      if (Number(op.saldoPuentePiso) > 0) porMoneda[m2] = (porMoneda[m2] || 0) + Number(op.saldoPuentePiso);
     });
-    return { subtotal, refs };
+    return { subtotal, refs, porMoneda, sinMonto };
   }, [seleccionadas, operacionesGlobales]);
+
+  // ✅ V00392: SELECCIONAR TODO (como Referencias del Diesel / Nómina)
+  const idsSeleccionables = operacionesMostradas.map(op => op.id);
+  const todasSeleccionadas = idsSeleccionables.length > 0 && idsSeleccionables.every(id => seleccionadas.includes(id));
+  const toggleTodas = () => setSeleccionadas(todasSeleccionadas ? [] : idsSeleccionables);
+
+  // ✅ V00392: ASIGNAR el monto correcto del puente a las operaciones que no lo
+  //   tienen (caseta de la tarifa / por tráfico; Colombia = caseta + puente).
+  const asignarMontosPuente = async () => {
+    const candidatas = operacionesBaseFiltro.filter(op => !tieneMontoPuente(op) || (Number(op.saldoPuente) > 0 && !(Number(op.saldoPuentePiso) > 0)));
+    if (candidatas.length === 0) { alert('Todas las operaciones del filtro ya tienen su monto de puente.'); return; }
+    setAsignandoMontos(true);
+    try {
+      const ctx = await cargarCtxCobroPuente();
+      const cambios = candidatas.map(op => ({ op, campos: cobroPuenteDeOperacion(ctx, op) })).filter(x => Object.keys(x.campos).length > 0);
+      const sinRegla = candidatas.filter(op => !tieneMontoPuente(op)).length - cambios.filter(x => x.campos.saldoPuente !== undefined).length;
+      if (cambios.length === 0) { alert(`No se pudo determinar el puente de ${candidatas.filter(op => !tieneMontoPuente(op)).length} operación(es): revisa su convenio (caseta en Gastos Incluidos) o su tráfico.`); return; }
+      const casetas = cambios.filter(x => x.campos.saldoPuente !== undefined).length;
+      const pisos = cambios.filter(x => x.campos.saldoPuentePiso !== undefined).length;
+      if (!window.confirm(`Asignar el monto del puente a ${cambios.length} operación(es)?\n\n· Casetas: ${casetas}\n· Puente Mx Colombia (piso): ${pisos}${sinRegla > 0 ? `\n· Sin puente determinable (se omiten): ${sinRegla}` : ''}\n\nEl descuento se refleja en Saldos de Puentes.`)) return;
+      for (let i = 0; i < cambios.length; i += 400) {
+        const batch = writeBatch(db);
+        cambios.slice(i, i + 400).forEach(({ op, campos }) => batch.update(doc(db, 'operaciones', op.id), campos));
+        await batch.commit();
+      }
+      const mapa = new Map(cambios.map(x => [x.op.id, x.campos]));
+      setOperacionesGlobales(prev => prev.map(op => mapa.has(op.id) ? { ...op, ...mapa.get(op.id) } : op));
+      alert(`Listo: ${cambios.length} operación(es) con su monto de puente.`);
+    } catch (e) {
+      console.error(e);
+      alert(`No se pudieron asignar los montos: ${(e as Error)?.message || e}`);
+    } finally {
+      setAsignandoMontos(false);
+    }
+  };
 
   // Puentes del catálogo de tipos de gasto (categoria_gasto = "Puente")
   const nombrePuente = (c: any) => c?.nombre ?? c?.concepto ?? c?.tipo_gasto ?? c?.tipoGasto ?? c?.descripcion ?? c?.nombre_gasto ?? c?.id ?? '-';
@@ -460,7 +562,8 @@ export const ReferenciasPuentesDashboard = () => {
     [puentesCatalogo, puenteSeleccionadoId]
   );
   const costoPuenteUnitario = Number(puenteSeleccionado?.importe ?? 0);
-  const subtotalPuentesCalc = costoPuenteUnitario * seleccionadas.length;
+  // ✅ V00392: subtotal = montos reales de las operaciones (respaldo: importe × operaciones)
+  const subtotalPuentesCalc = resumenSeleccion.subtotal > 0 ? resumenSeleccion.subtotal : costoPuenteUnitario * seleccionadas.length;
 
   const generarConsecutivo = (fechaStr: string) => {
     const [year, month, day] = fechaStr.split('-');
@@ -517,7 +620,10 @@ export const ReferenciasPuentesDashboard = () => {
           cliente: op ? getCliente(op) : '-',
           origen: op?.origen || '-',
           destino: op?.destino || '-',
-          puente: costoPuenteUnitario,
+          puente: op ? getPuente(op) : costoPuenteUnitario, // ✅ V00392: monto real del cruce
+          puenteNombre: op ? nombresPuenteOp(op).join(' + ') : '',
+          unidad: op ? getUnidad(op) : '-',
+          convenio: op ? getConvenio(op) : '-',
         };
       });
 
@@ -667,10 +773,10 @@ export const ReferenciasPuentesDashboard = () => {
         <div className="animation-fade-in">
           <div className="rpd-x7">
             <button onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${(fechaInicio || fechaFin || filtroTrafico !== 'todos') ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${(fechaInicio || fechaFin || filtroPuente !== 'todos' || filtroUnidad !== 'todas') ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
               Filtros
-              {(fechaInicio || fechaFin || filtroTrafico !== 'todos') && <span className="rpd-x8">{[fechaInicio || fechaFin, filtroTrafico !== 'todos' ? filtroTrafico : ''].filter(Boolean).length}</span>}
+              {(fechaInicio || fechaFin || filtroPuente !== 'todos' || filtroUnidad !== 'todas') && <span className="rpd-x8">{[fechaInicio || fechaFin, filtroPuente !== 'todos' ? filtroPuente : '', filtroUnidad !== 'todas' ? filtroUnidad : ''].filter(Boolean).length}</span>}
             </button>
             {(fechaInicio || fechaFin) && (
               <span className="rpd-x9">
@@ -678,10 +784,16 @@ export const ReferenciasPuentesDashboard = () => {
                 <button className="rpd-x10" onClick={() => { setFechaInicio(''); setFechaFin(''); setSeleccionadas([]); setBusquedaOpsHecha(false); }}>✕</button>
               </span>
             )}
-            {filtroTrafico !== 'todos' && (
+            {filtroPuente !== 'todos' && (
               <span className="rpd-x11">
-                {capitalizar(filtroTrafico)}
-                <button className="rpd-x12" onClick={() => { setFiltroTrafico('todos'); setSeleccionadas([]); }}>✕</button>
+                {filtroPuente === '__sin__' ? 'Sin monto' : filtroPuente}
+                <button className="rpd-x12" onClick={() => { setFiltroPuente('todos'); setSeleccionadas([]); }}>✕</button>
+              </span>
+            )}
+            {filtroUnidad !== 'todas' && (
+              <span className="rpd-x11">
+                {filtroUnidad}
+                <button className="rpd-x12" onClick={() => { setFiltroUnidad('todas'); setSeleccionadas([]); }}>✕</button>
               </span>
             )}
             {!(fechaInicio || fechaFin) && <span className="rpd-x13">Presiona Filtros, define la fecha de servicio y pulsa Buscar.</span>}
@@ -699,9 +811,13 @@ export const ReferenciasPuentesDashboard = () => {
           <>
           <div className="rpd-x15">
             <span className="rpd-x16">
-              {operacionesMostradas.length} {operacionesMostradas.length === 1 ? 'operación' : 'operaciones'}{(fechaInicio || fechaFin) ? ` · ${fechaInicio ? formatearFechaSpanish(fechaInicio) : '...'} al ${fechaFin ? formatearFechaSpanish(fechaFin) : '...'}` : ''}{filtroTrafico !== 'todos' ? ` · ${capitalizar(filtroTrafico)}` : ''}
+              {operacionesMostradas.length} {operacionesMostradas.length === 1 ? 'operación' : 'operaciones'}{(fechaInicio || fechaFin) ? ` · ${fechaInicio ? formatearFechaSpanish(fechaInicio) : '...'} al ${fechaFin ? formatearFechaSpanish(fechaFin) : '...'}` : ''}{filtroPuente !== 'todos' ? ` · ${filtroPuente === '__sin__' ? 'Sin monto' : filtroPuente}` : ''}{filtroUnidad !== 'todas' ? ` · ${filtroUnidad}` : ''}
             </span>
             <div className="rpd-x17">
+              <button type="button" className="rpd-btn-asignar" onClick={asignarMontosPuente} disabled={asignandoMontos}
+                title="Pone el monto correcto del puente a las operaciones del filtro que no lo tienen (Colombia: caseta + puente)">
+                {asignandoMontos ? 'Asignando…' : `Asignar monto del puente (${operacionesBaseFiltro.filter(op => !tieneMontoPuente(op)).length} sin monto)`}
+              </button>
               <button onClick={() => setModalColumnasOps(true)} style={btnDirStyle} title="Elegir y reordenar columnas">⚙ Configurar Columnas</button>
               <button onClick={exportarExcelOps} disabled={operacionesMostradas.length === 0}
                 style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap',
@@ -720,14 +836,18 @@ export const ReferenciasPuentesDashboard = () => {
                   <span className="rpd-x21">Operaciones</span>
                   <span className="rpd-x22">{seleccionadas.length}</span>
                 </div>
-                <div className="rpd-x20">
-                  <span className="rpd-x21">Tráfico</span>
-                  <span className="rpd-x23">{chipTrafico(traficoPredominante)}</span>
-                </div>
-                <div>
-                  <span className="rpd-x24">Subtotal Puentes</span>
-                  <span className="rpd-x25">{formatoMoneda(resumenSeleccion.subtotal)}</span>
-                </div>
+                {Object.entries(resumenSeleccion.porMoneda).map(([mon, tot]) => (
+                  <div key={mon} className="rpd-x20">
+                    <span className="rpd-x21">Puentes ({mon})</span>
+                    <span className="rpd-x25">{formatoMoneda(tot)}</span>
+                  </div>
+                ))}
+                {resumenSeleccion.sinMonto > 0 && (
+                  <div>
+                    <span className="rpd-x24">Sin monto</span>
+                    <span className="rpd-sin-monto">{resumenSeleccion.sinMonto}</span>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -736,7 +856,11 @@ export const ReferenciasPuentesDashboard = () => {
             <table className="rpd-x27">
               <thead className="rpd-x28">
                 <tr>
-                  <th className="rpd-x29"></th>
+                  <th className="rpd-x29">
+                    {filtroEstadoOps === 'pendientes' && operacionesMostradas.length > 0 && (
+                      <input className="rpd-x32" type="checkbox" checked={todasSeleccionadas} onChange={toggleTodas} title="Seleccionar todas" />
+                    )}
+                  </th>
                   {columnasOps.filter(c => c.visible).map(col => (
                     <th key={col.id}
                       style={col.orden ? thOrdenStyle : { padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}
@@ -1086,13 +1210,20 @@ export const ReferenciasPuentesDashboard = () => {
                   </div>
                 </div>
 
+                {/* ✅ V00392: filtros Puente y Unidad */}
                 <div className="rpd-x117">
-                  <label className="rpd-x118">TRÁFICO</label>
-                  <select className="rpd-x119" value={filtroTrafico} onChange={e => { setFiltroTrafico(e.target.value); setSeleccionadas([]); }}>
+                  <label className="rpd-x118">PUENTE</label>
+                  <select className="rpd-x119" value={filtroPuente} onChange={e => { setFiltroPuente(e.target.value); setSeleccionadas([]); }}>
                     <option value="todos">Todos</option>
-                    <option value="importacion">Importación</option>
-                    <option value="exportacion">Exportación</option>
-                    <option value="movimiento">Movimiento</option>
+                    <option value="__sin__">Sin monto de puente</option>
+                    {puentesCatalogo.map(p => <option key={p.id} value={String(nombrePuente(p))}>{String(nombrePuente(p))}</option>)}
+                  </select>
+                </div>
+                <div className="rpd-x117">
+                  <label className="rpd-x118">UNIDAD</label>
+                  <select className="rpd-x119" value={filtroUnidad} onChange={e => { setFiltroUnidad(e.target.value); setSeleccionadas([]); }}>
+                    <option value="todas">Todas</option>
+                    {unidadesDisponibles.map(u => <option key={u} value={u}>{u}</option>)}
                   </select>
                 </div>
 
@@ -1110,6 +1241,8 @@ export const ReferenciasPuentesDashboard = () => {
                     <select value={ordenOps.campo} onChange={(e) => setOrdenOps(prev => ({ ...prev, campo: e.target.value }))} style={{ ...selectOrdenStyle, flex: 1 }}>
                       <option value="fechaServicio">Fecha Servicio</option>
                       <option value="ref">Referencia</option>
+                      <option value="unidad">Unidad</option>
+                      <option value="convenio">Convenio</option>
                       <option value="trafico">Tráfico</option>
                       <option value="operador">Operador</option>
                       <option value="cliente">Cliente</option>
@@ -1122,7 +1255,7 @@ export const ReferenciasPuentesDashboard = () => {
                 </div>
 
                 <div className="rpd-x122">
-                  Se requiere <b className="rpd-x37">al menos una fecha</b> de servicio; el tráfico y el estado son opcionales.
+                  Se requiere <b className="rpd-x37">al menos una fecha</b> de servicio; puente, unidad y estado son opcionales. Solo aparecen Transfer y Logística con proveedor Roelca.
                 </div>
               </>
             ) : (
@@ -1154,7 +1287,7 @@ export const ReferenciasPuentesDashboard = () => {
 
             <div className="rpd-x127">
               <button className="rpd-x128" onClick={() => {
-                if (activeTab === 'operaciones') { setFechaInicio(''); setFechaFin(''); setFiltroTrafico('todos'); setSeleccionadas([]); setBusquedaOpsHecha(false); }
+                if (activeTab === 'operaciones') { setFechaInicio(''); setFechaFin(''); setFiltroTrafico('todos'); setFiltroPuente('todos'); setFiltroUnidad('todas'); setSeleccionadas([]); setBusquedaOpsHecha(false); }
                 else { setBusquedaHistorial(''); setBusquedaHistHecha(false); }
               }}>Limpiar</button>
               <button className="rpd-x129" onClick={() => {

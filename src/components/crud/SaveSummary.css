@@ -1,0 +1,235 @@
+.ssum {
+  width: 268px;
+  flex-shrink: 0;
+  align-self: flex-start;
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  max-height: 64vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- Cabecera: anillo de progreso + conteo ---- */
+.ssum-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  background: linear-gradient(135deg, var(--primary-bg) 0%, transparent 120%);
+  border-bottom: 1px solid var(--border);
+}
+
+.ssum-ring {
+  position: relative;
+  width: 62px;
+  height: 62px;
+  flex-shrink: 0;
+}
+
+.ssum-ring svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.ssum-ring circle {
+  fill: none;
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+
+.ssum-ring-track {
+  stroke: var(--border);
+}
+
+.ssum-ring-value {
+  stroke: var(--primary);
+  stroke-dasharray: var(--ring-length);
+  stroke-dashoffset: var(--ring-offset);
+  transition: stroke-dashoffset 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ssum.is-complete .ssum-ring-value {
+  stroke: var(--success);
+}
+
+.ssum-ring-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  line-height: 1;
+}
+
+.ssum-ring-label strong {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.5px;
+  line-height: 1;
+}
+
+.ssum-ring-label small {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text-muted);
+  line-height: 1;
+  align-self: center;
+}
+
+.ssum-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ssum-eyebrow {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.ssum-count {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.2px;
+}
+
+.ssum-count span {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.ssum-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  font-size: 10.5px;
+  font-weight: 700;
+  border-radius: 20px;
+  padding: 3px 9px 3px 7px;
+}
+
+.ssum-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.ssum-chip.is-missing {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.ssum-chip.is-ok {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+/* ---- Lista de lo capturado ---- */
+.ssum-list {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 4px 16px 8px;
+}
+
+.ssum-item {
+  padding: 9px 0 9px 10px;
+  border-bottom: 1px solid var(--border);
+  border-left: 2px solid transparent;
+  animation: ssum-appear 0.22s ease;
+}
+
+.ssum-item.is-required {
+  border-left-color: var(--primary-light);
+}
+
+.ssum-item:last-child {
+  border-bottom: none;
+}
+
+.ssum-item dt {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+
+.ssum-item dd {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.ssum-item dd.is-long {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-weight: 500;
+}
+
+.ssum-empty {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.55;
+  padding: 18px 16px 20px;
+}
+
+.ssum-footer {
+  border-top: 1px solid var(--border);
+  padding: 11px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-soft);
+  background: var(--surface-soft);
+}
+
+@keyframes ssum-appear {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ssum-item {
+    animation: none;
+  }
+
+  .ssum-ring-value {
+    transition: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .ssum {
+    width: 100%;
+    position: static;
+    max-height: 280px;
+  }
+}

@@ -59,7 +59,7 @@ export const TarjetaCasetas: React.FC = () => {
   const [monto, setMonto] = useState('');
   const [guardando, setGuardando] = useState(false);
   // ✅ V00362: clic en el gasto del día → operaciones que suman al saldo
-  const [verGasto, setVerGasto] = useState<{ titulo: string; filtro: (nombre: string) => boolean } | null>(null);
+  const [verGasto, setVerGasto] = useState<{ titulo: string; filtro: (nombre: string) => boolean; soloHoy?: boolean } | null>(null);
   const [grupoRecarga, setGrupoRecarga] = useState<GrupoPuente | ''>('');
 
   useEffect(() => {
@@ -120,9 +120,7 @@ export const TarjetaCasetas: React.FC = () => {
   //   Colombia. Colombia muestra por separado la CASETA (cruzar) y el PUENTE
   //   (pisarlo, Puente Mx Colombia).
   const hoy = hoyISO();
-  const crucesHoyDe = (filtro: (nombre: string) => boolean) => cruces.filter((c) => c.fecha === hoy && filtro(c.puenteNombre));
   const sumar = (l: CruceMin[]) => l.reduce((acc, c) => acc + c.monto, 0);
-  const disponibleDe = (filtro: (nombre: string) => boolean) => puentes.filter((p) => filtro(p.nombre)).reduce((acc, p) => acc + pendienteDe(p), 0);
   const monedaDe = (filtro: (nombre: string) => boolean) => puentes.find((p) => filtro(p.nombre))?.moneda || '';
 
   const lineasGrupo = (g: GrupoPuente): { etiqueta: string; filtro: (n: string) => boolean }[] =>
@@ -133,37 +131,58 @@ export const TarjetaCasetas: React.FC = () => {
         ]
       : [{ etiqueta: '', filtro: (n) => grupoDePuente(n) === g }];
 
+  // ✅ V00392: CONTROL por cuenta — saldo agregado (recargas), cruces hechos,
+  //   total consumido (la suma de esos cruces) y saldo restante = agregado − consumido.
+  //   Los cruces cuentan desde la PRIMERA recarga del puente, igual que el saldo.
+  const statsDe = (filtro: (nombre: string) => boolean) => {
+    let agregado = 0, nCruces = 0, consumido = 0;
+    puentes.filter((p) => filtro(p.nombre)).forEach((p) => {
+      const recs = recargas.filter((r) => r.puenteId === p.id).sort((a, b) => a.fecha.localeCompare(b.fecha));
+      const primera = recs[0]?.fecha || '';
+      agregado += recs.reduce((acc, r) => acc + r.saldo, 0);
+      const mios = cruces.filter((x) => norm(x.puenteNombre) === norm(p.nombre) && (!primera || x.fecha >= primera));
+      nCruces += mios.length;
+      consumido += mios.reduce((acc, x) => acc + x.monto, 0);
+    });
+    return { agregado, cruces: nCruces, consumido, restante: agregado - consumido };
+  };
+
   const abrirRecarga = (g: GrupoPuente) => { setGrupoRecarga(g); setPuenteId(''); setMonto(''); setModalAbierto(true); };
   const puentesRecarga = puentes.filter((p) => !grupoRecarga || grupoDePuente(p.nombre) === grupoRecarga);
 
   return (
     <>
       {GRUPOS.map((g) => {
-        // ✅ V00391: mismo diseño que las demás tarjetas del resumen — cifra
-        //   principal = DISPONIBLE; debajo, lo gastado hoy (clic = cruces).
+        // ✅ V00392: agregado · cruces · consumido · restante (Colombia: caseta y puente)
         const lineas = lineasGrupo(g.clave);
         const filtroTodo = (n: string) => lineas.some((l) => l.filtro(n));
-        const disp = disponibleDe(filtroTodo);
+        const total = statsDe(filtroTodo);
         const mon = monedaDe(filtroTodo);
+        const partes = lineas.map((l) => ({ ...l, st: statsDe(l.filtro) }));
+        const col = partes.length > 1;
         return (
-          <div key={g.clave} className="rd-card rd-card--morado" title={`Saldo disponible de ${g.titulo} y lo gastado hoy en cruces. Cuentas completas en Bases de Datos → Saldos de Puentes`}>
+          <div key={g.clave} className="rd-card rd-card--morado" title={`Control de ${g.titulo}: saldo agregado, cruces, consumido y saldo restante. Detalle en Bases de Datos → Saldos de Puentes`}>
             <div className="rd-card__head">
               <span className="rd-card__label">{g.titulo}</span>
               {mon && <span className="rd-card__chip">{mon === 'Dólares' ? 'USD' : mon === 'Pesos' ? 'MXN' : mon}</span>}
             </div>
-            <span className={`rd-card__value${disp < 0 ? ' rd-card__value--neg' : ''}`} title="Saldo disponible">{fmtMonto(disp)}</span>
-            <span className="rd-card__sub">{disp < 0 ? 'Sobregirado' : 'Disponible'}</span>
-            <div className="rd-card__lista">
-              {lineas.map((l) => {
-                const lista = crucesHoyDe(l.filtro);
-                return (
-                  <button key={l.etiqueta || 'unica'} type="button" className="rd-fila" title="Ver los cruces de hoy"
-                    onClick={() => setVerGasto({ titulo: `${g.titulo}${l.etiqueta ? ` — ${l.etiqueta}` : ''}`, filtro: l.filtro })}>
-                    <span className="rd-fila__nombre">{l.etiqueta ? `${l.etiqueta} · hoy` : 'Gastado hoy'} <em>({lista.length})</em></span>
-                    <span className="rd-fila__monto">{fmtMonto(sumar(lista))}</span>
-                  </button>
-                );
-              })}
+            <span className={`rd-card__value${total.restante < 0 ? ' rd-card__value--neg' : ''}`} title="Saldo restante = agregado − consumido">{fmtMonto(total.restante)}</span>
+            <span className="rd-card__sub">{total.restante < 0 ? 'Restante (sobregirado)' : 'Saldo restante'}</span>
+            <div className={`rd-control${col ? ' rd-control--dos' : ''}`}>
+              {col && <><span /> {partes.map((p) => <span key={p.etiqueta} className="rd-control__col">{p.etiqueta}</span>)}</>}
+              <span className="rd-control__et">Agregado</span>
+              {partes.map((p) => <span key={`a${p.etiqueta}`} className="rd-control__v">{fmtMonto(p.st.agregado)}</span>)}
+              <span className="rd-control__et">Cruces</span>
+              {partes.map((p) => (
+                <button key={`c${p.etiqueta}`} type="button" className="rd-control__v rd-control__v--btn" title="Ver los cruces"
+                  onClick={() => setVerGasto({ titulo: `${g.titulo}${p.etiqueta ? ` — ${p.etiqueta}` : ''}`, filtro: p.filtro })}>{p.st.cruces}</button>
+              ))}
+              <span className="rd-control__et">Consumido</span>
+              {partes.map((p) => <span key={`k${p.etiqueta}`} className="rd-control__v rd-control__v--cargo">{fmtMonto(p.st.consumido)}</span>)}
+              {col && <>
+                <span className="rd-control__et">Restante</span>
+                {partes.map((p) => <span key={`r${p.etiqueta}`} className={`rd-control__v${p.st.restante < 0 ? ' rd-control__v--neg' : ''}`}>{fmtMonto(p.st.restante)}</span>)}
+              </>}
             </div>
             <div className="rd-card__foot">
               <button type="button" className="rd-btn" onClick={() => abrirRecarga(g.clave)} title={`Agregar saldo a ${g.titulo} (queda en Saldos de Puentes)`}>Actualizar saldo</button>
@@ -173,19 +192,20 @@ export const TarjetaCasetas: React.FC = () => {
       })}
 
       {verGasto && (() => {
-        const lista = cruces.filter((c) => c.fecha === hoy && verGasto.filtro(c.puenteNombre)).sort((a, b) => a.ref.localeCompare(b.ref));
+        const lista = cruces.filter((c) => (!verGasto.soloHoy || c.fecha === hoy) && verGasto.filtro(c.puenteNombre)).sort((a, b) => b.fecha.localeCompare(a.fecha) || a.ref.localeCompare(b.ref));
         const total = sumar(lista);
         return (
           <div className="tcas-modal-fondo" onClick={() => setVerGasto(null)}>
             <div className="tcas-modal tcas-modal--gasto" onClick={(e) => e.stopPropagation()}>
-              <div className="tcas-modal-titulo">Cruces de hoy — {verGasto.titulo}</div>
+              <div className="tcas-modal-titulo">Cruces — {verGasto.titulo}</div>
               <div className="tcas-gasto-marco">
                 <table className="tcas-gasto-tabla">
-                  <thead><tr><th># Referencia</th><th>Status</th><th>Puente</th><th className="tcas-gasto-num">Peaje</th></tr></thead>
+                  <thead><tr><th>Fecha</th><th># Referencia</th><th>Status</th><th>Puente</th><th className="tcas-gasto-num">Peaje</th></tr></thead>
                   <tbody>
-                    {lista.length === 0 && <tr><td colSpan={4} className="tcas-gasto-vacio">Sin cruces de hoy.</td></tr>}
+                    {lista.length === 0 && <tr><td colSpan={5} className="tcas-gasto-vacio">Sin cruces.</td></tr>}
                     {lista.map((c, i) => (
                       <tr key={i}>
+                        <td>{c.fecha}</td>
                         <td className="tcas-gasto-ref">{c.ref}</td>
                         <td className="tcas-gasto-status" title={c.evento ? `Peaje cobrado al marcar: ${c.evento}` : ''}>{c.statusNombre || '—'}{c.evento && <em className="tcas-gasto-evento">✓ {c.evento}</em>}</td>
                         <td>{c.puenteNombre}</td>
@@ -193,7 +213,7 @@ export const TarjetaCasetas: React.FC = () => {
                       </tr>
                     ))}
                   </tbody>
-                  {lista.length > 0 && <tfoot><tr><td colSpan={3}>Total gastado hoy ({lista.length} cruce{lista.length === 1 ? '' : 's'})</td><td className="tcas-gasto-num tcas-gasto-total">−{fmtMonto(total)}</td></tr></tfoot>}
+                  {lista.length > 0 && <tfoot><tr><td colSpan={4}>Total consumido ({lista.length} cruce{lista.length === 1 ? '' : 's'})</td><td className="tcas-gasto-num tcas-gasto-total">−{fmtMonto(total)}</td></tr></tfoot>}
                 </table>
               </div>
               <div className="tcas-modal-pie"><button type="button" className="tcas-btn" onClick={() => setVerGasto(null)}>Cerrar</button></div>

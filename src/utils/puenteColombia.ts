@@ -85,3 +85,83 @@ export const casetaRespaldoColombia = async (esTrompo: boolean): Promise<{ saldo
     return { saldoPuente: Number(x.importe) || 0, saldoPuentePuente: String(x.nombre_gasto || ''), saldoPuenteMoneda: monedaNombre(x.moneda) };
   } catch { return null; }
 };
+
+// ✅ V00392: cálculo del COBRO DE PUENTE de una operación a partir de catálogos
+//   ya cargados (para asignarlo en lote desde Referencias de Puentes).
+export interface CtxCobroPuente {
+  detalles: Map<string, Record<string, unknown>>;
+  tarifas: Map<string, Record<string, unknown>>;
+  gastosIncluidos: Record<string, unknown>[];
+  tiposGasto: Map<string, Record<string, unknown>>;
+  aduanas: Map<string, string>;
+}
+
+export const cargarCtxCobroPuente = async (): Promise<CtxCobroPuente> => {
+  const [det, tar, gi, tg, adu] = await Promise.all([
+    getDocs(collection(db, 'convenios_clientes_detalles')),
+    getDocs(collection(db, 'catalogo_tarifas_referencia')),
+    getDocs(collection(db, 'tarifas_gastos_incluidos')),
+    getDocs(collection(db, 'catalogo_tipos_gastos')),
+    nombresAduana(),
+  ]);
+  return {
+    detalles: new Map(det.docs.map((d) => [d.id, d.data() as Record<string, unknown>])),
+    tarifas: new Map(tar.docs.map((d) => [d.id, d.data() as Record<string, unknown>])),
+    gastosIncluidos: gi.docs.map((d) => d.data() as Record<string, unknown>),
+    tiposGasto: new Map(tg.docs.map((d) => [d.id, d.data() as Record<string, unknown>])),
+    aduanas: adu,
+  };
+};
+
+const gastoPorNombre = (ctx: CtxCobroPuente, nombres: string[]) => {
+  for (const x of ctx.tiposGasto.values()) if (nombres.includes(normPuente(x.nombre_gasto))) return x;
+  return null;
+};
+
+/** Campos saldoPuente… / saldoPuentePiso… que le FALTAN a la operación ({} si ya los tiene o no aplica). */
+export const cobroPuenteDeOperacion = (ctx: CtxCobroPuente, op: Record<string, unknown>, evento = 'Asignado desde Referencias de Puentes'): Record<string, unknown> => {
+  const fecha = String(op.fechaServicio || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
+  const det = ctx.detalles.get(String(op.convenio || '').trim());
+  const tarifaBase = String(det?.tarifaBaseId ?? det?.tarifa_base_id ?? det?.tarifaReferenciaId ?? det?.tarifa_referencia_id ?? '').trim();
+  const tarifa = tarifaBase ? ctx.tarifas.get(tarifaBase) : undefined;
+  const aduanaV = String(tarifa?.aduana ?? '').trim();
+  const colombia = esAduanaColombia(ctx.aduanas.get(aduanaV) || aduanaV);
+  const out: Record<string, unknown> = {};
+
+  if (!(Number(op.saldoPuente) > 0)) {
+    let caseta: { monto: number; nombre: string; moneda: unknown } | null = null;
+    if (tarifaBase) {
+      for (const g of ctx.gastosIncluidos) {
+        const ref = String(g.tarifa_referencia_id ?? g.tarifaReferenciaId ?? g.tarifa_referencia ?? g.tarifaReferencia ?? g.ID_SERVICES ?? g.id_services ?? g.idServices ?? g.tarifaId ?? '').trim();
+        if (ref !== tarifaBase) continue;
+        const cat = ctx.tiposGasto.get(String(g.gasto ?? g.gastoId ?? g.gasto_id ?? '').trim());
+        if (!cat || normPuente(cat.categoria_gasto) !== 'puente' || esGastoPisoColombia(cat.nombre_gasto)) continue;
+        caseta = { monto: Number(g.monto ?? g.importe ?? g.cantidad ?? g.valor ?? 0) || Number(cat.importe) || 0, nombre: String(cat.nombre_gasto || ''), moneda: cat.moneda };
+        break;
+      }
+    }
+    if (!caseta || !(caseta.monto > 0)) {
+      let x: Record<string, unknown> | null = null;
+      if (colombia) {
+        const trompo = normPuente(`${String(op.carga || '')} ${String(op.convenioNombre || '')}`).includes('trompo');
+        x = gastoPorNombre(ctx, [trompo ? 'trompo colombia' : 'caseta mx colombia']);
+      } else {
+        const traf = normPuente(op.trafico);
+        if (traf.includes('import')) x = gastoPorNombre(ctx, ['caseta avi']);
+        else if (traf.includes('export')) x = gastoPorNombre(ctx, ['caseta puente iii', 'caseta puente 3']);
+      }
+      if (x) caseta = { monto: Number(x.importe) || 0, nombre: String(x.nombre_gasto || ''), moneda: x.moneda };
+    }
+    if (caseta && caseta.monto > 0) {
+      Object.assign(out, { saldoPuente: caseta.monto, saldoPuentePuente: caseta.nombre, saldoPuenteMoneda: monedaNombre(caseta.moneda), saldoPuenteFecha: fecha, saldoPuenteEvento: evento });
+    }
+  }
+
+  if (colombia && !(Number(op.saldoPuentePiso) > 0) && (Number(op.saldoPuente) > 0 || Number(out.saldoPuente) > 0)) {
+    const p = gastoPorNombre(ctx, [normPuente(NOMBRE_PISO_COLOMBIA)]);
+    if (p && Number(p.importe) > 0) {
+      Object.assign(out, { saldoPuentePiso: Number(p.importe), saldoPuentePisoPuente: String(p.nombre_gasto || NOMBRE_PISO_COLOMBIA), saldoPuentePisoMoneda: monedaNombre(p.moneda), saldoPuentePisoFecha: String(op.saldoPuenteFecha || out.saldoPuenteFecha || fecha), saldoPuentePisoEvento: evento });
+    }
+  }
+  return out;
+};

@@ -1,0 +1,121 @@
+.rdetail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px 18px;
+}
+
+.rdetail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.rdetail-item.is-full {
+  grid-column: 1 / -1;
+}
+
+.rdetail-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.rdetail-value {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.rdetail-value.is-empty {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+/* Dato destacado (millajes): recuadro con acento y número grande. */
+.rdetail-item.is-highlight {
+  background: var(--primary-bg);
+  border-color: var(--primary);
+}
+
+.rdetail-item.is-highlight .rdetail-label {
+  color: var(--primary-dark);
+}
+
+.rdetail-item.is-highlight .rdetail-value {
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--primary-dark);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Saldo agotado: el camión ya pasó su próximo mantenimiento. */
+.rdetail-item.is-highlight.is-alert {
+  background: var(--danger-bg);
+  border-color: var(--danger);
+}
+
+.rdetail-item.is-highlight.is-alert .rdetail-label,
+.rdetail-item.is-highlight.is-alert .rdetail-value {
+  color: var(--danger);
+}
+
+/* Referencia navegable: abre el detalle del registro relacionado. */
+.rdetail-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--primary);
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+
+.rdetail-link:hover {
+  color: var(--primary-dark);
+}
+
+.rdetail-link:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.rdetail-meta {
+  margin-right: auto;
+  font-size: 12px;
+  color: var(--text-muted);
+  align-self: center;
+}
+
+.rdetail-extra {
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+@media (max-width: 640px) {
+  .rdetail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Acciones destacadas arriba del detalle (crear mantenimiento, etc.). */
+.rdetail-header-extra {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+}

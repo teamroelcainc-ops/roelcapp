@@ -1,0 +1,30 @@
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.pager-info {
+  font-size: 12.5px;
+  color: var(--text-soft);
+}
+
+.pager-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pager-page {
+  font-size: 12.5px;
+  color: var(--text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pager .icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

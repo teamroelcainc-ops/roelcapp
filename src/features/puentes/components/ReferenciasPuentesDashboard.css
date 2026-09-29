@@ -175,3 +175,12 @@
   .rpd-x121 { flex-wrap: wrap; }
   .rpd-x127 { flex-wrap: wrap; }
 }
+
+/* ✅ V00392: Asignar Operaciones */
+.rpd-celda { padding: 16px; color: #c9d1d9; white-space: nowrap; }
+.rpd-celda--conv { max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+.rpd-moneda { color: #8b949e; font-size: 0.72rem; font-weight: 600; }
+.rpd-sin-monto { display: inline-block; padding: 2px 8px; border-radius: 999px; border: 1px dashed #9e6a03; color: #e3b341; font-size: 0.72rem; font-weight: 700; }
+.rpd-btn-asignar { padding: 8px 14px; border-radius: 6px; border: 1px solid #1f6feb; background: rgba(56, 139, 253, 0.12); color: #79c0ff; font-weight: 700; font-size: 0.82rem; cursor: pointer; white-space: nowrap; }
+.rpd-btn-asignar:hover:not(:disabled) { background: rgba(56, 139, 253, 0.22); }
+.rpd-btn-asignar:disabled { opacity: 0.6; cursor: wait; }

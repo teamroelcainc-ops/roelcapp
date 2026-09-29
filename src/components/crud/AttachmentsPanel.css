@@ -1,0 +1,107 @@
+/* ── Fotos y documentos del registro ───────────────────────────────── */
+.attach-folder {
+  margin: 0 0 10px;
+  font-size: 11.5px;
+  color: var(--text-soft);
+}
+
+.attach-folder code {
+  font-size: 11px;
+}
+
+.attach-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.attach-input {
+  display: none;
+}
+
+.attach-busy {
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.attach-error {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  color: var(--danger);
+}
+
+.attach-empty {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  color: var(--text-soft);
+}
+
+.attach-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.attach-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.attach-grid figure {
+  position: relative;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface-soft);
+}
+
+.attach-grid img {
+  display: block;
+  width: 100%;
+  height: 96px;
+  object-fit: cover;
+}
+
+.attach-del {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  border-radius: 6px;
+}
+
+.attach-docs {
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.attach-docs li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  font-size: 12.5px;
+}
+
+.attach-docs .attach-del {
+  position: static;
+  background: none;
+  color: var(--danger);
+}

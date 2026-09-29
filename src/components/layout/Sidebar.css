@@ -1,0 +1,291 @@
+.sidebar {
+  width: var(--sidebar-width);
+  background: var(--sidebar-bg);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sidebar-brand img {
+  /* El logo se muestra TAL CUAL, sin fondo ni marcos (pedido del cliente). */
+  width: 38px;
+  height: 38px;
+  object-fit: contain;
+}
+
+.sidebar-brand strong {
+  display: block;
+  font-size: 15px;
+}
+
+.sidebar-brand span {
+  display: block;
+  font-size: 11px;
+  color: var(--sidebar-text);
+}
+
+.sidebar-close {
+  display: none;
+  margin-left: auto;
+  color: #fff;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 10px;
+  gap: 3px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+
+  /* Barra de desplazamiento discreta, en la paleta del menú (Firefox). */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+/* Barra de desplazamiento del menú (Chrome, Edge, Safari): delgada,
+   translúcida sobre el navy y visible solo cuando hace falta. */
+.sidebar-nav::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar-nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 20px;
+  transition: background 0.15s ease;
+}
+
+.sidebar-nav:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb:hover,
+.sidebar-nav::-webkit-scrollbar-thumb:active {
+  background: var(--primary);
+}
+
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  color: var(--sidebar-text);
+  text-decoration: none;
+  font-size: 13.5px;
+  font-weight: 500;
+  padding: 10px 12px;
+  border-radius: 9px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.sidebar-link:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff;
+}
+
+.sidebar-link.is-active {
+  background: linear-gradient(135deg, #4a9cff, var(--primary-dark));
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(62, 139, 255, 0.35);
+}
+
+.sidebar-section {
+  margin: 14px 12px 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 90;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+  }
+
+  .sidebar.is-open {
+    transform: translateX(0);
+  }
+
+  .sidebar-close {
+    display: inline-flex;
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(20, 25, 38, 0.55);
+    z-index: 80;
+  }
+}
+
+.sidebar-link-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-edit-actions {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.sidebar-mini-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.sidebar-mini-btn:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.sidebar-edit-row input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 12.5px;
+}
+
+/* ---- Pie del menú: contraer / expandir (solo escritorio) ---- */
+.sidebar-foot {
+  display: none;
+}
+
+/* Firma y versión al final del menú. */
+.sidebar-about {
+  margin-top: auto;
+  padding: 14px 16px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  line-height: 1.35;
+}
+
+.sidebar-version {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.sidebar-author {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.38);
+}
+
+/* Con el menú plegado solo queda la versión, centrada. */
+.sidebar.is-collapsed .sidebar-about {
+  align-items: center;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+@media (min-width: 901px) {
+  .sidebar {
+    transition: width 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .sidebar-foot {
+    display: block;
+    padding: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    position: sticky;
+    bottom: 0;
+    background: var(--sidebar-bg);
+  }
+
+  .sidebar-collapse {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    border: none;
+    border-radius: 10px;
+    padding: 11px 12px;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--sidebar-text);
+    font-size: 12.5px;
+    font-weight: 600;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+
+  .sidebar-collapse:hover {
+    background: rgba(255, 255, 255, 0.14);
+    color: #fff;
+  }
+
+  /* ---- Modo contraído: solo iconos ---- */
+  .sidebar.is-collapsed {
+    width: 76px;
+  }
+
+  .sidebar.is-collapsed .sidebar-brand {
+    justify-content: center;
+    padding: 16px 8px;
+  }
+
+  .sidebar.is-collapsed .sidebar-brand > div {
+    display: none;
+  }
+
+  .sidebar.is-collapsed .sidebar-nav {
+    padding: 12px 10px;
+  }
+
+  .sidebar.is-collapsed .sidebar-link {
+    justify-content: center;
+    padding: 12px 0;
+  }
+
+  .sidebar.is-collapsed .sidebar-link-text,
+  .sidebar.is-collapsed .sidebar-section,
+  .sidebar.is-collapsed .sidebar-edit-actions {
+    display: none;
+  }
+
+  .sidebar.is-collapsed .sidebar-collapse {
+    justify-content: center;
+    gap: 0;
+    padding: 12px 0;
+  }
+}

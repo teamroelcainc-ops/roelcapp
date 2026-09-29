@@ -1319,3 +1319,13 @@ body {
 @media (max-width: 1200px) { .rd-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } .rd-card__value { font-size: 1.45rem; } }
 @media (max-width: 900px) { .rd-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .rd-card { min-height: 150px; } }
 @media (max-width: 420px) { .rd-grid { grid-template-columns: 1fr; } }
+/* ✅ V00392: control por puente (agregado · cruces · consumido · restante) */
+.rd-control { display: grid; grid-template-columns: 1fr auto; column-gap: 10px; row-gap: 3px; align-items: baseline; margin-top: 6px; padding-top: 7px; border-top: 1px solid #21262d; }
+.rd-control--dos { grid-template-columns: 1fr auto auto; }
+.rd-control__col { color: #c3ccd6; font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; text-align: right; }
+.rd-control__et { color: #8d97a3; font-size: 0.72rem; white-space: nowrap; }
+.rd-control__v { color: #e6edf3; font-size: 0.78rem; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rd-control__v--cargo { color: #ff9b95; }
+.rd-control__v--neg { color: #ff7b72; }
+.rd-control__v--btn { background: none; border: none; padding: 0; cursor: pointer; font-family: inherit; text-decoration: underline dotted #8d97a3; text-underline-offset: 3px; }
+.rd-control__v--btn:hover { color: var(--rd-color); }

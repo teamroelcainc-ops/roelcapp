@@ -1,0 +1,52 @@
+/* ── Configuración de umbrales de alerta ───────────────────────────── */
+.alerts-cfg-hint {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  color: var(--text-soft);
+  line-height: 1.45;
+}
+
+.alerts-cfg-error {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  color: var(--danger);
+}
+
+.alerts-cfg ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.alerts-cfg li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.alerts-cfg-label {
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.alerts-cfg label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.alerts-cfg input {
+  width: 84px;
+}
