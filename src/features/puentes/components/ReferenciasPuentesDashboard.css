@@ -185,3 +185,16 @@
 .rpd-btn-asignar:hover:not(:disabled) { background: rgba(56, 139, 253, 0.22); }
 .rpd-btn-asignar:disabled { opacity: 0.6; cursor: wait; }
 .rpd-hora { color: #f0f6fc; font-variant-numeric: tabular-nums; } /* ✅ V00393 */
+/* ✅ V00394: referencias por puente */
+.rpd-grupos { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+.rpd-grupo { border: 1px solid #30363d; border-left: 4px solid #D84315; border-radius: 8px; padding: 10px 14px; background: #0d1117; }
+.rpd-grupo__enc { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.rpd-grupo__cons { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight: 700; color: #ff8a5b; font-size: 0.95rem; }
+.rpd-grupo__puente { color: #c9d1d9; font-weight: 700; font-size: 0.85rem; }
+.rpd-grupo__datos { display: flex; justify-content: space-between; gap: 10px; margin-top: 4px; color: #8b949e; font-size: 0.82rem; }
+.rpd-grupo__total { color: #3fb950; font-weight: 700; }
+.rpd-grupo__refs { margin-top: 4px; color: #8b949e; font-size: 0.74rem; word-break: break-word; }
+.rpd-celda--refs { max-width: 360px; white-space: normal; font-size: 0.8rem; }
+.rpd-status { padding: 4px 12px; border-radius: 12px; font-size: 0.75rem; font-weight: 700; border: 1px solid; }
+.rpd-status--pagada { color: #10b981; border-color: #10b981; background: rgba(16, 185, 129, 0.1); }
+.rpd-status--pendiente { color: #f59e0b; border-color: #f59e0b; background: rgba(245, 158, 11, 0.1); }

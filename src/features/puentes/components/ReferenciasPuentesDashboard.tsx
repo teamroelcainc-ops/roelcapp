@@ -50,12 +50,10 @@ export const ReferenciasPuentesDashboard = () => {
   const [convDetallesList, setConvDetallesList] = useState<any[]>([]);
   const [tarifasRefList, setTarifasRefList] = useState<any[]>([]);
   const [tiposTarifariosList, setTiposTarifariosList] = useState<any[]>([]);
-  const [puenteSeleccionadoId, setPuenteSeleccionadoId] = useState('');
 
   // Filtros pestaña 1
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
-  const [filtroTrafico, setFiltroTrafico] = useState<string>('todos');
   // ✅ V00392: filtros Puente y Unidad; unidades para mostrar su número
   const [filtroPuente, setFiltroPuente] = useState<string>('todos');
   const [filtroUnidad, setFiltroUnidad] = useState<string>('todas');
@@ -84,7 +82,6 @@ export const ReferenciasPuentesDashboard = () => {
   // Modal generar referencia
   const [modalAbierto, setModalAbierto] = useState(false);
   const [guardando, setGuardando] = useState(false);
-  const [consecutivoForm, setConsecutivoForm] = useState('');
   const [fechaPago, setFechaPago] = useState(hoyLocalISO());
   const [statusPagado, setStatusPagado] = useState<'Pendiente' | 'Pagada'>('Pendiente');
   const [observacionesForm, setObservacionesForm] = useState('');
@@ -364,35 +361,55 @@ export const ReferenciasPuentesDashboard = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   [operacionesGlobales, fechaInicio, fechaFin, unidadPorId]);
 
+  // ✅ V00394: HORA DEL VERDE — se consulta la bitácora por lotes en paralelo y
+  //   cada lote se guarda en cuanto llega (antes cualquier actualización de la
+  //   lista cancelaba la carga completa y la hora nunca aparecía). El nombre
+  //   del estatus se toma de la bitácora o, si falta, del catálogo por su id.
+  const horasPedidasRef = React.useRef<Set<string>>(new Set());
+  const statusNombresRef = React.useRef<Map<string, string> | null>(null);
   useEffect(() => {
     if (!busquedaOpsHecha) return;
-    const faltan = operacionesBaseFiltro.map(op => String(op.id)).filter(id => !(id in horasVerde));
+    const faltan = operacionesBaseFiltro.map(op => String(op.id)).filter(id => !horasPedidasRef.current.has(id));
     if (faltan.length === 0) return;
-    let activo = true;
+    faltan.forEach(id => horasPedidasRef.current.add(id));
     (async () => {
-      const nuevo: Record<string, { etiqueta: string; fechaHora: string }[]> = {};
-      faltan.forEach(id => { nuevo[id] = []; });
-      for (let i = 0; i < faltan.length; i += 30) {
+      if (!statusNombresRef.current) {
         try {
-          const snap = await getDocs(query(collection(db, 'horarios'), where('operacionId', 'in', faltan.slice(i, i + 30))));
+          const cat = await getDocs(collection(db, 'catalogo_status_servicio'));
+          statusNombresRef.current = new Map(cat.docs.map(d => [d.id, String((d.data() as Record<string, unknown>).nombre ?? (d.data() as Record<string, unknown>).descripcion ?? '')]));
+        } catch { statusNombresRef.current = new Map(); }
+      }
+      const lotes: string[][] = [];
+      for (let i = 0; i < faltan.length; i += 30) lotes.push(faltan.slice(i, i + 30));
+      const procesar = async (lote: string[]) => {
+        const nuevo: Record<string, { etiqueta: string; fechaHora: string }[]> = {};
+        lote.forEach(id => { nuevo[id] = []; });
+        try {
+          const snap = await getDocs(query(collection(db, 'horarios'), where('operacionId', 'in', lote)));
           snap.docs.forEach(d => {
             const h = d.data() as Record<string, unknown>;
-            const st = sinAcentos(h.statusNombre);
+            const nombre = String(h.statusNombre || statusNombresRef.current?.get(String(h.status || '')) || '');
+            const st = sinAcentos(nombre);
             const etiqueta = st.includes('verde usa') ? 'Verde USA' : (st.includes('verde mx') || st.includes('verde mexico')) ? 'Verde MX' : '';
             if (!etiqueta) return;
             const id = String(h.operacionId || '');
-            const fechaHora = String(h.fechaHora || h.registradoEn || '');
-            (nuevo[id] = nuevo[id] || []).push({ etiqueta, fechaHora });
+            (nuevo[id] = nuevo[id] || []).push({ etiqueta, fechaHora: String(h.fechaHora || h.registradoEn || '') });
           });
-        } catch (e) { console.warn('Horas del verde:', e); }
-      }
-      Object.values(nuevo).forEach(l => l.sort((a, b) => a.fechaHora.localeCompare(b.fechaHora)));
-      if (activo) setHorasVerde(prev => ({ ...prev, ...nuevo }));
+        } catch (e) { console.warn('Horas del verde:', e); lote.forEach(id => horasPedidasRef.current.delete(id)); return; }
+        Object.values(nuevo).forEach(l => l.sort((x, y) => x.fechaHora.localeCompare(y.fechaHora)));
+        setHorasVerde(prev => ({ ...prev, ...nuevo }));
+      };
+      for (let i = 0; i < lotes.length; i += 6) await Promise.all(lotes.slice(i, i + 6).map(procesar));
     })();
-    return () => { activo = false; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [busquedaOpsHecha, operacionesBaseFiltro]);
-  const horaDe = (fh: string) => { const m = String(fh).match(/[T ](\d{2}:\d{2})/); return m ? m[1] : ''; };
+  // hora en formato 12 h, igual que la bitácora (03:57 p.m.)
+  const horaDe = (fh: string) => {
+    const m = String(fh).match(/(\d{1,2}):(\d{2})/);
+    if (!m) return '';
+    const h24 = Number(m[1]);
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    return `${String(h12).padStart(2, '0')}:${m[2]} ${h24 < 12 ? 'a.m.' : 'p.m.'}`;
+  };
   const textoHoraVerde = (op: { id?: unknown }) => (horasVerde[String(op.id)] || []).map(v => `${v.etiqueta} ${horaDe(v.fechaHora)}`).join(' · ');
 
   const esAsignada = (op: any) => !!op.referenciaPuentesId;
@@ -608,31 +625,64 @@ export const ReferenciasPuentesDashboard = () => {
       .sort((a, b) => String(nombrePuente(a)).localeCompare(String(nombrePuente(b)), 'es', { sensitivity: 'base' })),
   [tiposGastoList]);
 
-  const puenteSeleccionado = useMemo(
-    () => puentesCatalogo.find(p => p.id === puenteSeleccionadoId) || null,
-    [puentesCatalogo, puenteSeleccionadoId]
-  );
-  const costoPuenteUnitario = Number(puenteSeleccionado?.importe ?? 0);
-  // ✅ V00392: subtotal = montos reales de las operaciones (respaldo: importe × operaciones)
-  const subtotalPuentesCalc = resumenSeleccion.subtotal > 0 ? resumenSeleccion.subtotal : costoPuenteUnitario * seleccionadas.length;
 
-  const generarConsecutivo = (fechaStr: string) => {
-    const [year, month, day] = fechaStr.split('-');
-    const prefix = `PUENTES-${day}${month}${year}-`;
-    const delDia = referenciasGlobales.filter(r => r.consecutivo?.startsWith(prefix));
+  // ✅ V00394: UNA referencia por PUENTE con su propio consecutivo:
+  //   AVI-DDMMYY-001 (Puente AVI) · PT3-DDMMYY-001 (Puente III) · PTC-DDMMYY-001 (Colombia).
+  //   La fecha del consecutivo es la de GENERACIÓN.
+  type GrupoRef = 'AVI' | 'PT3' | 'PTC';
+  const NOMBRE_GRUPO: Record<GrupoRef, string> = { AVI: 'Puente AVI', PT3: 'Puente III', PTC: 'Puente Colombia' };
+  const grupoPuenteOp = (op: OpPuente): GrupoRef | null => {
+    if (!(Number(op.saldoPuente) > 0)) return null;
+    const n = sinAcentos(`${String(op.saldoPuentePuente || '')} ${String(op.saldoPuentePisoPuente || '')}`);
+    if (n.includes('colombia')) return 'PTC';
+    if (n.includes('avi')) return 'AVI';
+    return 'PT3';
+  };
+  const ddmmyyHoy = () => { const [y, m, d] = hoyLocalISO().split('-'); return `${d}${m}${y.slice(2)}`; };
+  const consecutivoPorPuente = (grupo: GrupoRef, usados: string[] = []) => {
+    const prefix = `${grupo}-${ddmmyyHoy()}-`;
     let maxSeq = 0;
-    delDia.forEach(r => {
-      const parts = r.consecutivo.split('-');
-      if (parts.length === 3) { const seq = parseInt(parts[2], 10); if (seq > maxSeq) maxSeq = seq; }
+    [...referenciasGlobales.map(r => String(r.consecutivo || '')), ...usados].forEach(c => {
+      if (!c.startsWith(prefix)) return;
+      const seq = parseInt(c.slice(prefix.length), 10);
+      if (seq > maxSeq) maxSeq = seq;
     });
     return `${prefix}${String(maxSeq + 1).padStart(3, '0')}`;
   };
+  const gruposSeleccion = useMemo(() => {
+    const mapa = new Map<GrupoRef, { ops: OpPuente[]; porMoneda: Record<string, number> }>();
+    seleccionadas.forEach(id => {
+      const op = operacionesGlobales.find(o => o.id === id);
+      if (!op) return;
+      const g = grupoPuenteOp(op);
+      if (!g) return;
+      const ent = mapa.get(g) || { ops: [], porMoneda: {} };
+      ent.ops.push(op);
+      const m1 = String(op.saldoPuenteMoneda || '');
+      ent.porMoneda[m1] = (ent.porMoneda[m1] || 0) + (Number(op.saldoPuente) || 0);
+      if (Number(op.saldoPuentePiso) > 0) { const m2 = String(op.saldoPuentePisoMoneda || ''); ent.porMoneda[m2] = (ent.porMoneda[m2] || 0) + Number(op.saldoPuentePiso); }
+      mapa.set(g, ent);
+    });
+    const usados: string[] = [];
+    return (['AVI', 'PT3', 'PTC'] as GrupoRef[]).filter(g => mapa.has(g)).map(g => {
+      const consecutivo = consecutivoPorPuente(g, usados);
+      usados.push(consecutivo);
+      const ent = mapa.get(g)!;
+      return { grupo: g, consecutivo, ops: ent.ops, porMoneda: ent.porMoneda, total: ent.ops.reduce((a, o) => a + getPuente(o), 0) };
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seleccionadas, operacionesGlobales, referenciasGlobales]);
+
 
   const abrirModalGenerar = () => {
-    setConsecutivoForm(generarConsecutivo(fechaPago));
+    // ✅ V00394: todas las seleccionadas deben tener su monto de puente
+    const sinMonto = seleccionadas.map(id => operacionesGlobales.find(o => o.id === id)).filter(op => op && !tieneMontoPuente(op));
+    if (sinMonto.length) {
+      alert(`${sinMonto.length} operación(es) seleccionada(s) no tienen monto de puente:\n\n${sinMonto.slice(0, 10).map(o => `· ${o.ref || o.id}`).join('\n')}${sinMonto.length > 10 ? '\n…' : ''}\n\nUsa "Asignar monto del puente" antes de generar la referencia.`);
+      return;
+    }
     setStatusPagado('Pendiente');
     setObservacionesForm('');
-    setPuenteSeleccionadoId('');
     setModalAbierto(true);
   };
 
@@ -653,60 +703,62 @@ export const ReferenciasPuentesDashboard = () => {
   const handleGuardarReferencia = async (e: React.FormEvent) => {
     e.preventDefault();
     if (seleccionadas.length === 0) return alert('Selecciona al menos una operación.');
-    if (!puenteSeleccionadoId) return alert('Selecciona el Puente.');
+    if (gruposSeleccion.length === 0) return alert('Las operaciones seleccionadas no tienen monto de puente.');
     setGuardando(true);
     try {
+      // ✅ V00394: una referencia por puente (AVI / PT3 / PTC) con fecha y hora de generación
+      const ahora = new Date();
+      const fechaGen = hoyLocalISO();
+      const horaGen = `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
       const batch = writeBatch(db);
-      const nuevoId = doc(collection(db, 'referencias_puentes')).id;
-      const consecutivoFinal = generarConsecutivo(fechaPago);
-
-      const operacionesGuardadas = seleccionadas.map(id => {
-        const op = operacionesGlobales.find(o => o.id === id);
-        return {
-          id,
-          ref: op?.ref || id.substring(0, 6),
-          fecha: op?.fechaServicio || op?.fecha || '',
-          trafico: op ? getTrafico(op) : '—',
-          operador: op ? getNombreOperador(op.operadorNombre || op.operadorId || op.operador) : '-',
-          cliente: op ? getCliente(op) : '-',
-          origen: op?.origen || '-',
-          destino: op?.destino || '-',
-          puente: op ? getPuente(op) : costoPuenteUnitario, // ✅ V00392: monto real del cruce
-          puenteNombre: op ? nombresPuenteOp(op).join(' + ') : '',
-          unidad: op ? getUnidad(op) : '-',
-          convenio: op ? getConvenio(op) : '-',
-        };
+      const asignaciones: { id: string; refId: string; consecutivo: string }[] = [];
+      gruposSeleccion.forEach(g => {
+        const nuevoId = doc(collection(db, 'referencias_puentes')).id;
+        const operacionesGuardadas = g.ops.map(op => ({
+          id: String(op.id),
+          ref: String(op.ref || String(op.id).substring(0, 6)),
+          fecha: String(op.fechaServicio || op.fecha || ''),
+          horaVerde: textoHoraVerde(op),
+          unidad: getUnidad(op),
+          convenio: getConvenio(op),
+          trafico: getTrafico(op),
+          puenteNombre: nombresPuenteOp(op).join(' + '),
+          caseta: Number(op.saldoPuente) || 0,
+          casetaMoneda: String(op.saldoPuenteMoneda || ''),
+          piso: Number(op.saldoPuentePiso) || 0,
+          pisoMoneda: String(op.saldoPuentePisoMoneda || ''),
+          puente: getPuente(op),
+        }));
+        batch.set(doc(db, 'referencias_puentes', nuevoId), {
+          consecutivo: g.consecutivo,
+          grupoPuente: g.grupo,
+          puenteNombre: NOMBRE_GRUPO[g.grupo],
+          fechaGeneracion: fechaGen,
+          horaGeneracion: horaGen,
+          fechaPago,
+          fechaInicio, fechaFin,
+          traficoPredominante,
+          operacionesIds: g.ops.map(o => String(o.id)),
+          operaciones: g.ops.map(o => String(o.ref || o.id)),
+          operacionesGuardadas,
+          subtotalPuentes: g.total,
+          totalesPorMoneda: g.porMoneda,
+          statusPagado: statusPagado === 'Pagada',
+          observaciones: observacionesForm,
+          createdAt: ahora.toISOString(),
+        });
+        g.ops.forEach(op => {
+          batch.update(doc(db, 'operaciones', String(op.id)), { referenciaPuentesId: nuevoId, referenciaPuentesConsecutivo: g.consecutivo });
+          asignaciones.push({ id: String(op.id), refId: nuevoId, consecutivo: g.consecutivo });
+        });
       });
-
-      const data = {
-        consecutivo: consecutivoFinal,
-        fechaPago, fechaInicio, fechaFin,
-        filtroTrafico,
-        traficoPredominante,
-        operacionesIds: seleccionadas,
-        operacionesGuardadas,
-        puenteId: puenteSeleccionadoId,
-        puenteNombre: nombrePuente(puenteSeleccionado),
-        puenteImporte: costoPuenteUnitario,
-        subtotalPuentes: subtotalPuentesCalc,
-        statusPagado: statusPagado === 'Pagada',
-        observaciones: observacionesForm,
-        createdAt: new Date().toISOString(),
-      };
-
-      batch.set(doc(db, 'referencias_puentes', nuevoId), data);
-      seleccionadas.forEach(id => {
-        batch.update(doc(db, 'operaciones', id), { referenciaPuentesId: nuevoId, referenciaPuentesConsecutivo: consecutivoFinal });
-      });
-
       await batch.commit();
-      const idsAsignadas = [...seleccionadas];
-      setOperacionesGlobales(prev => prev.map(op =>
-        idsAsignadas.includes(op.id) ? { ...op, referenciaPuentesId: nuevoId, referenciaPuentesConsecutivo: consecutivoFinal } : op
-      ));
+      const mapa = new Map(asignaciones.map(x => [x.id, x]));
+      setOperacionesGlobales(prev => prev.map(op => mapa.has(op.id) ? { ...op, referenciaPuentesId: mapa.get(op.id)!.refId, referenciaPuentesConsecutivo: mapa.get(op.id)!.consecutivo } : op));
       setModalAbierto(false);
       setSeleccionadas([]);
       setActiveTab('historial');
+      setBusquedaHistHecha(true);
     } catch (error) {
       console.error(error);
       alert('Error al guardar la referencia de puentes.');
@@ -987,13 +1039,13 @@ export const ReferenciasPuentesDashboard = () => {
               <thead className="rpd-x28">
                 <tr>
                   <th className="rpd-x42">ACCIONES</th>
-                  <th className="rpd-x43">CONSECUTIVO</th>
+                  <th className="rpd-x43"># REFERENCIA</th>
+                  <th className="rpd-x43">PUENTE</th>
+                  <th className="rpd-x43">FECHA</th>
+                  <th className="rpd-x43">HORA</th>
+                  <th className="rpd-x43">REFERENCIAS SELECCIONADAS</th>
+                  <th className="rpd-x43">TOTAL A PAGAR</th>
                   <th className="rpd-x43">STATUS</th>
-                  <th className="rpd-x43">TRÁFICO</th>
-                  <th className="rpd-x43">FECHA PAGO</th>
-                  <th className="rpd-x43">PERÍODO</th>
-                  <th className="rpd-x43">OPS.</th>
-                  <th className="rpd-x43">SUBTOTAL PUENTES</th>
                 </tr>
               </thead>
               <tbody>
@@ -1032,19 +1084,16 @@ export const ReferenciasPuentesDashboard = () => {
                         </div>
                       </td>
                       <td className="rpd-x52">{r.consecutivo}</td>
-                      <td className="rpd-x2">
-                        <span style={{ padding: '4px 12px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold',
-                          backgroundColor: r.statusPagado ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)',
-                          color: r.statusPagado ? '#10b981' : '#f59e0b',
-                          border: `1px solid ${r.statusPagado ? '#10b981' : '#f59e0b'}` }}>
-                          {r.statusPagado ? 'PAGADA' : 'PENDIENTE'}
-                        </span>
+                      <td className="rpd-celda">{r.puenteNombre || '—'}</td>
+                      <td className="rpd-celda">{formatearFechaSpanish(r.fechaGeneracion || String(r.createdAt || '').slice(0, 10))}</td>
+                      <td className="rpd-celda">{r.horaGeneracion || (r.createdAt ? new Date(r.createdAt).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) : '—')}</td>
+                      <td className="rpd-celda rpd-celda--refs" title={(Array.isArray(r.operaciones) ? r.operaciones : (r.operacionesGuardadas || []).map((o: { ref?: string }) => o.ref)).join(', ')}>
+                        <b>{Array.isArray(r.operacionesIds) ? r.operacionesIds.length : 0}</b> · {(Array.isArray(r.operaciones) ? r.operaciones : (r.operacionesGuardadas || []).map((o: { ref?: string }) => o.ref)).join(', ')}
                       </td>
-                      <td className="rpd-x2">{chipTrafico(r.traficoPredominante || '—')}</td>
-                      <td className="rpd-x53">{formatearFechaSpanish(r.fechaPago)}</td>
-                      <td className="rpd-x54">{formatearFechaSpanish(r.fechaInicio)} <br/>al {formatearFechaSpanish(r.fechaFin)}</td>
-                      <td className="rpd-x55">{Array.isArray(r.operacionesIds) ? r.operacionesIds.length : 0}</td>
-                      <td className="rpd-x3">{formatoMoneda(r.subtotalPuentes)}</td>
+                      <td className="rpd-x3">{r.totalesPorMoneda && Object.keys(r.totalesPorMoneda).length ? Object.entries(r.totalesPorMoneda as Record<string, number>).map(([m, t]) => <div key={m}>{formatoMoneda(t)} <span className="rpd-moneda">{m}</span></div>) : formatoMoneda(r.subtotalPuentes)}</td>
+                      <td className="rpd-x2">
+                        <span className={`rpd-status ${r.statusPagado ? 'rpd-status--pagada' : 'rpd-status--pendiente'}`}>{r.statusPagado ? 'PAGADA' : 'PENDIENTE'}</span>
+                      </td>
                     </tr>
                   ))
                 )}
@@ -1092,31 +1141,33 @@ export const ReferenciasPuentesDashboard = () => {
         <div className="modal-overlay rpd-x68">
           <div className="rpd-x69">
             <div className="rpd-x70">
-              <h2 className="rpd-x71">Generar Referencia: <span className="rpd-x38">{consecutivoForm}</span></h2>
+              <h2 className="rpd-x71">Generar {gruposSeleccion.length === 1 ? 'Referencia' : `${gruposSeleccion.length} Referencias`}</h2>
               <button className="rpd-x62" onClick={() => setModalAbierto(false)}>✕</button>
             </div>
 
-            <div className="rpd-x72">
-              <div>
-                <span className="rpd-x73">Operaciones ({seleccionadas.length})</span>
-                <span className="rpd-x74">{chipTrafico(traficoPredominante)}</span>
-              </div>
-              <div className="rpd-x75">
-                <span className="rpd-x73">Subtotal Puentes</span>
-                <span className="rpd-x76">{formatoMoneda(subtotalPuentesCalc)}</span>
-              </div>
+            {/* ✅ V00394: una referencia por puente */}
+            <div className="rpd-grupos">
+              {gruposSeleccion.map(g => (
+                <div key={g.grupo} className="rpd-grupo">
+                  <div className="rpd-grupo__enc">
+                    <span className="rpd-grupo__cons">{g.consecutivo}</span>
+                    <span className="rpd-grupo__puente">{NOMBRE_GRUPO[g.grupo]}</span>
+                  </div>
+                  <div className="rpd-grupo__datos">
+                    <span>{g.ops.length} {g.ops.length === 1 ? 'operación' : 'operaciones'}</span>
+                    <span className="rpd-grupo__total">{Object.entries(g.porMoneda).map(([m, t]) => `${formatoMoneda(t)} ${m}`).join(' + ')}</span>
+                  </div>
+                  <div className="rpd-grupo__refs">{g.ops.map(o => String(o.ref || o.id)).join(', ')}</div>
+                </div>
+              ))}
             </div>
 
             <FormularioConfigurable modulo="referenciasPuentes">{/* ✅ V00385 */}
             <form onSubmit={handleGuardarReferencia}>
               <div className="rpd-x77">
                 <div>
-                  <label style={labelFiltro}>Consecutivo</label>
-                  <input readOnly value={consecutivoForm} style={{ ...inputFiltro, color: '#D84315', fontFamily: 'monospace', fontWeight: 'bold' }} />
-                </div>
-                <div>
                   <label style={labelFiltro}>Fecha Pago</label>
-                  <input type="date" value={fechaPago} onChange={e => { setFechaPago(e.target.value); setConsecutivoForm(generarConsecutivo(e.target.value)); }} style={{ ...inputFiltro, color: '#fff' }} />
+                  <input type="date" value={fechaPago} onChange={e => setFechaPago(e.target.value)} style={{ ...inputFiltro, color: '#fff' }} />
                 </div>
                 <div>
                   <label style={labelFiltro}>Status</label>
@@ -1126,28 +1177,6 @@ export const ReferenciasPuentesDashboard = () => {
                   </select>
                 </div>
               </div>
-              <div className="rpd-x78">
-                <div>
-                  <label style={labelFiltro}>Puente ★</label>
-                  <select value={puenteSeleccionadoId} onChange={e => setPuenteSeleccionadoId(e.target.value)} required style={{ ...inputFiltro, color: '#fff', cursor: 'pointer' }}>
-                    <option value="">Seleccionar puente...</option>
-                    {puentesCatalogo.map(p => (
-                      <option key={p.id} value={p.id}>{nombrePuente(p)} — {formatoMoneda(p.importe)}</option>
-                    ))}
-                  </select>
-                  {puentesCatalogo.length === 0 && (
-                    <span className="rpd-x79">No hay puentes en el catálogo (catalogo_tipos_gastos con categoria_gasto = Puente).</span>
-                  )}
-                </div>
-                <div>
-                  <label style={labelFiltro}>Costo del Puente (Importe)</label>
-                  <div className="rpd-x80">
-                    {formatoMoneda(costoPuenteUnitario)}
-                  </div>
-                  <span className="rpd-x81">x {seleccionadas.length} {seleccionadas.length === 1 ? 'operación' : 'operaciones'} = {formatoMoneda(subtotalPuentesCalc)}</span>
-                </div>
-              </div>
-
               <div className="rpd-x82">
                 <label style={labelFiltro}>Observaciones</label>
                 <textarea value={observacionesForm} onChange={e => setObservacionesForm(e.target.value)} style={{ ...inputFiltro, color: '#fff', height: '60px' }} />
@@ -1155,7 +1184,7 @@ export const ReferenciasPuentesDashboard = () => {
 
               <div className="rpd-x83">
                 <button className="rpd-x84" type="button" onClick={() => setModalAbierto(false)} disabled={guardando}>Cancelar</button>
-                <button className="rpd-x85" type="submit" disabled={guardando}>{guardando ? 'Guardando...' : 'Confirmar Referencia'}</button>
+                <button className="rpd-x85" type="submit" disabled={guardando}>{guardando ? 'Guardando...' : gruposSeleccion.length > 1 ? `Confirmar ${gruposSeleccion.length} referencias` : 'Confirmar Referencia'}</button>
               </div>
             </form>
             </FormularioConfigurable>
@@ -1208,10 +1237,11 @@ export const ReferenciasPuentesDashboard = () => {
                     <tr>
                       <th className="rpd-x102">REFERENCIA</th>
                       <th className="rpd-x102">FECHA</th>
-                      <th className="rpd-x102">TRÁFICO</th>
-                      <th className="rpd-x102">OPERADOR</th>
-                      <th className="rpd-x102">CLIENTE</th>
+                      <th className="rpd-x102">HORA (VERDE)</th>
+                      <th className="rpd-x102">UNIDAD</th>
+                      <th className="rpd-x102">CONVENIO</th>
                       <th className="rpd-x102">PUENTE</th>
+                      <th className="rpd-x102">MONTO</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1219,14 +1249,18 @@ export const ReferenciasPuentesDashboard = () => {
                       <tr className="rpd-x46" key={op.id}>
                         <td className="rpd-x103">{op.ref}</td>
                         <td className="rpd-x104">{formatearFechaSpanish(op.fecha)}</td>
-                        <td className="rpd-x102">{chipTrafico(op.trafico || '—')}</td>
-                        <td className="rpd-x104">{op.operador || '-'}</td>
-                        <td className="rpd-x104">{op.cliente || '-'}</td>
-                        <td className="rpd-x105">{formatoMoneda(op.puente)}</td>
+                        <td className="rpd-x104">{op.horaVerde || '-'}</td>
+                        <td className="rpd-x104">{op.unidad || '-'}</td>
+                        <td className="rpd-x104">{op.convenio || op.cliente || '-'}</td>
+                        <td className="rpd-x104">{op.puenteNombre || '-'}</td>
+                        <td className="rpd-x105">{op.caseta ? <>
+                          <div>{formatoMoneda(op.caseta)} <span className="rpd-moneda">{op.casetaMoneda}</span></div>
+                          {op.piso > 0 && <div>{formatoMoneda(op.piso)} <span className="rpd-moneda">{op.pisoMoneda}</span></div>}
+                        </> : formatoMoneda(op.puente)}</td>
                       </tr>
                     ))}
                     {(!referenciaViendo.operacionesGuardadas || referenciaViendo.operacionesGuardadas.length === 0) && (
-                      <tr><td className="rpd-x106" colSpan={6}>Sin detalle de operaciones.</td></tr>
+                      <tr><td className="rpd-x106" colSpan={7}>Sin detalle de operaciones.</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -1339,7 +1373,7 @@ export const ReferenciasPuentesDashboard = () => {
 
             <div className="rpd-x127">
               <button className="rpd-x128" onClick={() => {
-                if (activeTab === 'operaciones') { setFechaInicio(''); setFechaFin(''); setFiltroTrafico('todos'); setFiltroPuente('todos'); setFiltroUnidad('todas'); setSeleccionadas([]); setBusquedaOpsHecha(false); }
+                if (activeTab === 'operaciones') { setFechaInicio(''); setFechaFin(''); setFiltroPuente('todos'); setFiltroUnidad('todas'); setSeleccionadas([]); setBusquedaOpsHecha(false); }
                 else { setBusquedaHistorial(''); setBusquedaHistHecha(false); }
               }}>Limpiar</button>
               <button className="rpd-x129" onClick={() => {
