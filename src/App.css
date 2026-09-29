@@ -1281,3 +1281,41 @@ body {
    el acomodo de los módulos al regresar: chips y tarjetas quedaban apilados). */
 .modulo-vivo { display: block; width: 100%; min-width: 0; }
 .modulo-vivo--oculto { display: none; }
+
+/* ✅ V00391: TARJETAS DEL RESUMEN DEL DÍA — un solo diseño, mismo tamaño */
+.rd-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-auto-rows: 1fr; gap: 12px; }
+.rd-card {
+  --rd-color: #58a6ff;
+  position: relative; display: flex; flex-direction: column; gap: 4px; min-width: 0; min-height: 168px;
+  padding: 14px 14px 14px 16px; border-radius: 12px; overflow: hidden;
+  background: linear-gradient(180deg, #121821 0%, #0d1117 100%); border: 1px solid #262d38;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+.rd-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--rd-color); opacity: 0.9; }
+.rd-card--azul { --rd-color: #58a6ff; }
+.rd-card--verde { --rd-color: #3fb950; }
+.rd-card--ambar { --rd-color: #e3b341; }
+.rd-card--naranja { --rd-color: #fb923c; }
+.rd-card--morado { --rd-color: #a371f7; }
+.rd-card__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 18px; }
+.rd-card__label { color: #9aa5b1; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rd-card__icon { flex: 0 0 auto; color: var(--rd-color); opacity: 0.85; }
+.rd-card__chip { flex: 0 0 auto; padding: 1px 7px; border-radius: 999px; border: 1px solid #323a47; color: #c3ccd6; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.04em; }
+.rd-card__value { color: #f0f6fc; font-size: clamp(1.15rem, 1.35vw, 1.6rem); font-weight: 700; line-height: 1.15; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rd-card__value--neg { color: #ff7b72; }
+.rd-card__sub { color: #8d97a3; font-size: 0.74rem; line-height: 1.35; }
+.rd-card__sub--fuerte { font-weight: 700; }
+.rd-card__foot { margin-top: auto; padding-top: 8px; }
+.rd-btn { height: 28px; padding: 0 12px; border-radius: 7px; border: 1px solid #323a47; background: #161b22; color: #c9d1d9; font-size: 0.74rem; font-weight: 600; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.rd-btn:hover { border-color: var(--rd-color); color: #f0f6fc; }
+.rd-barra { height: 5px; border-radius: 999px; background: #21262d; overflow: hidden; margin-top: 4px; }
+.rd-barra__lleno { height: 100%; width: var(--rd-pct, 0%); background: var(--rd-color); border-radius: 999px; }
+.rd-card__lista { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; padding-top: 6px; border-top: 1px solid #21262d; }
+.rd-fila { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; width: 100%; padding: 2px 0; background: none; border: none; cursor: pointer; font-family: inherit; text-align: left; }
+.rd-fila__nombre { color: #8d97a3; font-size: 0.74rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rd-fila__nombre em { font-style: normal; color: #6e7681; }
+.rd-fila__monto { color: #e6edf3; font-size: 0.8rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rd-fila:hover .rd-fila__nombre { color: var(--rd-color); }
+@media (max-width: 1200px) { .rd-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } .rd-card__value { font-size: 1.45rem; } }
+@media (max-width: 900px) { .rd-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .rd-card { min-height: 150px; } }
+@media (max-width: 420px) { .rd-grid { grid-template-columns: 1fr; } }

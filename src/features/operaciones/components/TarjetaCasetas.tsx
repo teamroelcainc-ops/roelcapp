@@ -138,30 +138,39 @@ export const TarjetaCasetas: React.FC = () => {
 
   return (
     <>
-      {GRUPOS.map((g) => (
-        <div key={g.clave} className="tcas-tarjeta" title={`Gastado HOY en cruces de ${g.titulo} y su saldo disponible. Las cuentas completas están en Bases de Datos → Saldos de Puentes`}>
-          <span className="tcas-etiqueta">{g.titulo}</span>
-          {lineasGrupo(g.clave).map((l) => {
-            const lista = crucesHoyDe(l.filtro);
-            const disp = disponibleDe(l.filtro);
-            const mon = monedaDe(l.filtro);
-            return (
-              <div key={l.etiqueta || 'unica'} className="tcas-bloque">
-                {l.etiqueta && <span className="tcas-subtitulo">{l.etiqueta}</span>}
-                <button type="button" className="tcas-linea tcas-linea--btn" title="Ver los cruces de hoy" onClick={() => setVerGasto({ titulo: `${g.titulo}${l.etiqueta ? ` — ${l.etiqueta}` : ''}`, filtro: l.filtro })}>
-                  <span className="tcas-nombre">Gastado hoy · {lista.length} {lista.length === 1 ? 'cruce' : 'cruces'}</span>
-                  <span className={`tcas-monto${mon === 'Pesos' ? ' tcas-monto--mxn' : ''}`}>{fmtMonto(sumar(lista))}</span>
-                </button>
-                <div className="tcas-linea">
-                  <span className="tcas-nombre">Disponible{mon ? ` (${mon})` : ''}</span>
-                  <span className={`tcas-disp${disp < 0 ? ' tcas-disp--neg' : ''}`}>{fmtMonto(disp)}</span>
-                </div>
-              </div>
-            );
-          })}
-          <button type="button" className="tcas-capturar" onClick={() => abrirRecarga(g.clave)} title={`Agregar saldo a ${g.titulo} (queda en Saldos de Puentes)`}>+ Actualizar saldo</button>
-        </div>
-      ))}
+      {GRUPOS.map((g) => {
+        // ✅ V00391: mismo diseño que las demás tarjetas del resumen — cifra
+        //   principal = DISPONIBLE; debajo, lo gastado hoy (clic = cruces).
+        const lineas = lineasGrupo(g.clave);
+        const filtroTodo = (n: string) => lineas.some((l) => l.filtro(n));
+        const disp = disponibleDe(filtroTodo);
+        const mon = monedaDe(filtroTodo);
+        return (
+          <div key={g.clave} className="rd-card rd-card--morado" title={`Saldo disponible de ${g.titulo} y lo gastado hoy en cruces. Cuentas completas en Bases de Datos → Saldos de Puentes`}>
+            <div className="rd-card__head">
+              <span className="rd-card__label">{g.titulo}</span>
+              {mon && <span className="rd-card__chip">{mon === 'Dólares' ? 'USD' : mon === 'Pesos' ? 'MXN' : mon}</span>}
+            </div>
+            <span className={`rd-card__value${disp < 0 ? ' rd-card__value--neg' : ''}`} title="Saldo disponible">{fmtMonto(disp)}</span>
+            <span className="rd-card__sub">{disp < 0 ? 'Sobregirado' : 'Disponible'}</span>
+            <div className="rd-card__lista">
+              {lineas.map((l) => {
+                const lista = crucesHoyDe(l.filtro);
+                return (
+                  <button key={l.etiqueta || 'unica'} type="button" className="rd-fila" title="Ver los cruces de hoy"
+                    onClick={() => setVerGasto({ titulo: `${g.titulo}${l.etiqueta ? ` — ${l.etiqueta}` : ''}`, filtro: l.filtro })}>
+                    <span className="rd-fila__nombre">{l.etiqueta ? `${l.etiqueta} · hoy` : 'Gastado hoy'} <em>({lista.length})</em></span>
+                    <span className="rd-fila__monto">{fmtMonto(sumar(lista))}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="rd-card__foot">
+              <button type="button" className="rd-btn" onClick={() => abrirRecarga(g.clave)} title={`Agregar saldo a ${g.titulo} (queda en Saldos de Puentes)`}>Actualizar saldo</button>
+            </div>
+          </div>
+        );
+      })}
 
       {verGasto && (() => {
         const lista = cruces.filter((c) => c.fecha === hoy && verGasto.filtro(c.puenteNombre)).sort((a, b) => a.ref.localeCompare(b.ref));

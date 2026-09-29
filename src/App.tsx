@@ -564,10 +564,6 @@ function ResumenDelDia() {
   };
   const fechaLegible = hoy.toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
 
-  const tarjeta: CSSProperties = { backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '10px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 };
-  const etiqueta: CSSProperties = { color: '#8b949e', fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.4px', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' };
-  const valorCss = (color: string): CSSProperties => ({ color, fontSize: '1.55rem', fontWeight: 800, lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' });
-  const sub: CSSProperties = { color: '#6e7681', fontSize: '0.7rem' };
 
   return (
     <div className="app-x4">
@@ -581,74 +577,82 @@ function ResumenDelDia() {
         </button>
       </div>
 
-      <div className="app-x9">
-        <div style={tarjeta}>
-          <span style={etiqueta}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" strokeWidth="2.2"><rect x="1" y="3" width="15" height="13" rx="1"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>
-            Operaciones del día
-          </span>
-          <span style={valorCss('#58a6ff')}>{cargando ? '…' : datos.totalHoy}</span>
-          <span style={sub}>{cargando ? ' ' : `${Math.max(0, datos.totalHoy - datos.completadasHoy - datos.canceladasHoy)} en proceso`}</span>
+      {/* ✅ V00391: tarjetas del resumen con un solo diseño — mismo tamaño,
+          etiqueta arriba, cifra principal, detalle y acción al pie. */}
+      <div className="app-x9 rd-grid">
+        <div className="rd-card rd-card--azul">
+          <div className="rd-card__head">
+            <span className="rd-card__label">Operaciones del día</span>
+            <svg className="rd-card__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="3" width="15" height="13" rx="1"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>
+          </div>
+          <span className="rd-card__value">{cargando ? '…' : datos.totalHoy}</span>
+          <span className="rd-card__sub">{cargando ? '\u00a0' : `${Math.max(0, datos.totalHoy - datos.completadasHoy - datos.canceladasHoy)} en proceso`}</span>
           {/* ✅ V00137: meta de operaciones del día (configurable por día de la semana) */}
           {!cargando && metasDia !== null && (
             metaDeHoy() > 0 ? (
-              <span style={sub} title={`Meta de ${ETQ_DIA[claveDiaHoy()]}: ${metaDeHoy()} operaciones`}>
+              <span className={`rd-card__sub rd-card__sub--fuerte ${datos.totalHoy >= metaDeHoy() ? 'app-meta-ok' : 'app-meta-falta'}`} title={`Meta de ${ETQ_DIA[claveDiaHoy()]}: ${metaDeHoy()} operaciones`}>
                 {datos.totalHoy >= metaDeHoy()
-                  ? <b className="app-meta-ok">✅ Meta de {ETQ_DIA[claveDiaHoy()]} alcanzada ({datos.totalHoy}/{metaDeHoy()})</b>
-                  : <b className="app-meta-falta">🎯 Faltan {metaDeHoy() - datos.totalHoy} para la meta ({datos.totalHoy}/{metaDeHoy()})</b>}
+                  ? `Meta alcanzada (${datos.totalHoy}/${metaDeHoy()})`
+                  : `Faltan ${metaDeHoy() - datos.totalHoy} para la meta (${datos.totalHoy}/${metaDeHoy()})`}
               </span>
             ) : (
-              <span style={sub}>Sin meta para {ETQ_DIA[claveDiaHoy()]}</span>
+              <span className="rd-card__sub">Sin meta para {ETQ_DIA[claveDiaHoy()]}</span>
             )
           )}
-          <button className="app-x10 app-btn-metas" onClick={abrirModalMetas} title="Configurar la meta de operaciones para cada día de la semana">🎯 Metas por día</button>
+          <div className="rd-card__foot">
+            <button type="button" className="rd-btn" onClick={abrirModalMetas} title="Configurar la meta de operaciones para cada día de la semana">Metas por día</button>
+          </div>
         </div>
 
-        <div style={tarjeta}>
-          <span style={etiqueta}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#3fb950" strokeWidth="2.2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-            Completadas hoy
-          </span>
-          <span style={valorCss('#3fb950')}>{cargando ? '…' : datos.completadasHoy}</span>
-          <span style={sub}>{cargando || datos.totalHoy === 0 ? ' ' : `${Math.round((datos.completadasHoy / datos.totalHoy) * 100)}% del día`}</span>
-        </div>
-
-        {/* ✅ V00389: se quitó la tarjeta "Canceladas hoy" (sus datos siguen en Servicios Cancelados) */}
-        <div style={tarjeta} title={datos.tcFecha && datos.tcFecha !== hoyISO ? `Último registro: ${fmtDia(datos.tcFecha)}` : 'Tipo de cambio del día'}>
-          <span style={etiqueta}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2.2"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
-            Tipo de cambio
-          </span>
-          <span style={valorCss('#f59e0b')}>{cargando ? '…' : (datos.tc != null ? `$${datos.tc.toFixed(4)}` : '—')}</span>
-          <span style={sub}>
-            {cargando ? ' ' : datos.tc == null ? 'Sin registro' : (datos.tcFecha === hoyISO ? 'DOF de hoy' : `al ${fmtDia(datos.tcFecha)}`)}
-          </span>
-          {!cargando && datos.tcFecha !== hoyISO && (
-            <button className="app-x10" onClick={() => setModalTCAbierto(true)} title="Capturar el tipo de cambio de hoy">
-              + Capturar el de hoy
-            </button>
+        <div className="rd-card rd-card--verde">
+          <div className="rd-card__head">
+            <span className="rd-card__label">Completadas hoy</span>
+            <svg className="rd-card__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+          </div>
+          <span className="rd-card__value">{cargando ? '…' : datos.completadasHoy}</span>
+          <span className="rd-card__sub">{cargando || datos.totalHoy === 0 ? '\u00a0' : `${Math.round((datos.completadasHoy / datos.totalHoy) * 100)}% del día`}</span>
+          {!cargando && datos.totalHoy > 0 && (
+            <div className="rd-barra" title={`${datos.completadasHoy} de ${datos.totalHoy}`}>
+              <div className="rd-barra__lleno" style={{ '--rd-pct': `${Math.min(100, Math.round((datos.completadasHoy / datos.totalHoy) * 100))}%` } as CSSProperties} />
+            </div>
           )}
         </div>
 
-        <div style={tarjeta} title={datos.dieselProveedores > 1 ? `Promedio de ${datos.dieselProveedores} proveedores` : 'Costo del diesel'}>
-          <span style={etiqueta}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fb923c" strokeWidth="2.2"><path d="M3 22V8a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v14"></path><line x1="3" y1="22" x2="15" y2="22"></line><path d="M13 10h2a2 2 0 0 1 2 2v5a1.5 1.5 0 0 0 3 0V9l-3-3"></path></svg>
-            Diesel del día
+        <div className="rd-card rd-card--ambar" title={datos.tcFecha && datos.tcFecha !== hoyISO ? `Último registro: ${fmtDia(datos.tcFecha)}` : 'Tipo de cambio del día'}>
+          <div className="rd-card__head">
+            <span className="rd-card__label">Tipo de cambio</span>
+            <svg className="rd-card__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+          </div>
+          <span className="rd-card__value">{cargando ? '…' : (datos.tc != null ? `$${datos.tc.toFixed(4)}` : '—')}</span>
+          <span className="rd-card__sub">
+            {cargando ? '\u00a0' : datos.tc == null ? 'Sin registro' : (datos.tcFecha === hoyISO ? 'DOF de hoy' : `al ${fmtDia(datos.tcFecha)}`)}
           </span>
-          <span style={valorCss('#fb923c')}>{cargando ? '…' : (datos.diesel != null ? `$${datos.diesel.toFixed(2)}` : '—')}</span>
-          <span style={sub}>
-            {cargando ? ' ' : datos.diesel == null ? 'Sin captura' : `${datos.dieselProveedores > 1 ? `Prom. ${datos.dieselProveedores} proveedores` : 'Por galón (USA)'}${datos.dieselFecha && datos.dieselFecha !== hoyISO ? ` · al ${fmtDia(datos.dieselFecha)}` : ''}`}
+          {!cargando && datos.tcFecha !== hoyISO && (
+            <div className="rd-card__foot">
+              <button type="button" className="rd-btn" onClick={() => setModalTCAbierto(true)} title="Capturar el tipo de cambio de hoy">Capturar el de hoy</button>
+            </div>
+          )}
+        </div>
+
+        <div className="rd-card rd-card--naranja" title={datos.dieselProveedores > 1 ? `Promedio de ${datos.dieselProveedores} proveedores` : 'Costo del diesel'}>
+          <div className="rd-card__head">
+            <span className="rd-card__label">Diesel del día</span>
+            <svg className="rd-card__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 22V8a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v14"></path><line x1="3" y1="22" x2="15" y2="22"></line><path d="M13 10h2a2 2 0 0 1 2 2v5a1.5 1.5 0 0 0 3 0V9l-3-3"></path></svg>
+          </div>
+          <span className="rd-card__value">{cargando ? '…' : (datos.diesel != null ? `$${datos.diesel.toFixed(2)}` : '—')}</span>
+          <span className="rd-card__sub">
+            {cargando ? '\u00a0' : datos.diesel == null ? 'Sin captura' : `${datos.dieselProveedores > 1 ? `Prom. ${datos.dieselProveedores} proveedores` : 'Por galón (USA)'}${datos.dieselFecha && datos.dieselFecha !== hoyISO ? ` · al ${fmtDia(datos.dieselFecha)}` : ''}`}
           </span>
           {/* ✅ V00133: equivalencia por LITRO en pesos — $/galón ÷ 3.78541 × TC del día */}
           {!cargando && datos.diesel != null && (
-            <span style={sub} title={datos.tc != null ? `${datos.diesel.toFixed(2)} ÷ 3.78541 × TC ${datos.tc.toFixed(4)}` : 'Captura el tipo de cambio del día para calcular el precio por litro en pesos'}>
+            <span className="rd-card__sub" title={datos.tc != null ? `${datos.diesel.toFixed(2)} ÷ 3.78541 × TC ${datos.tc.toFixed(4)}` : 'Captura el tipo de cambio del día para calcular el precio por litro en pesos'}>
               {`≈ $${(datos.diesel / 3.78541).toFixed(2)} USD/L`}{datos.tc != null ? ` · $${((datos.diesel / 3.78541) * datos.tc).toFixed(2)} MXN/L` : ' · MXN/L: falta TC'}
             </span>
           )}
           {!cargando && datos.dieselFecha !== hoyISO && (
-            <button className="app-x11" onClick={abrirModalDiesel} title="Capturar el costo del diesel de hoy">
-              + Capturar el de hoy
-            </button>
+            <div className="rd-card__foot">
+              <button type="button" className="rd-btn" onClick={abrirModalDiesel} title="Capturar el costo del diesel de hoy">Capturar el de hoy</button>
+            </div>
           )}
         </div>
 
