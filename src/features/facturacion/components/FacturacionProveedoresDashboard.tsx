@@ -857,6 +857,15 @@ export const FacturacionProveedoresDashboard = () => {
     }
   };
 
+  // ✅ V00390: la caché de sesión del historial se mantiene al día con cada cambio
+  //   (facturas nuevas, documentos subidos, status…) — antes solo se guardaba al
+  //   descargar y al volver al módulo se veía la versión vieja (sin el documento).
+  useEffect(() => {
+    if (facturasGlobales.length === 0) return;
+    const t = setTimeout(() => guardarCacheFacturas(facturasGlobales), 400);
+    return () => clearTimeout(t);
+  }, [facturasGlobales]);
+
   const guardarCacheFacturas = (docs: any[]) => {
     try { almacenSesion.setItem(SS_FACTURAS, JSON.stringify({ ts: Date.now(), data: docs })); } catch { /* cuota */ }
   };
@@ -2462,8 +2471,14 @@ export const FacturacionProveedoresDashboard = () => {
       });
       await batch.commit();
       // ✅ V00276: el documento adjuntado se sube ya con el id real de la factura.
+      // ✅ V00390: los datos del documento se guardan también en la fila NUEVA del
+      //   historial (antes la fila se agregaba DESPUÉS de subirlo y quedaba sin él).
+      let docSubido: Record<string, unknown> = {};
       if (docFacturaFile) {
-        try { await subirDocFacturaA(docId, docFacturaFile, invoiceForm.trim() || docId); }
+        try {
+          const urlDoc = await subirDocFacturaA(docId, docFacturaFile, invoiceForm.trim() || docId);
+          docSubido = { docFacturaUrl: urlDoc, docFacturaNombre: docFacturaFile.name, docFacturaFecha: new Date().toISOString().slice(0, 10), docFacturaPor: auth.currentUser?.email || '' };
+        }
         catch (eDoc: unknown) { console.error(eDoc); const det = (eDoc as { code?: string; message?: string })?.code || (eDoc as { message?: string })?.message || String(eDoc); alert(`La factura se guardó, pero el documento no se pudo subir.\n\nMotivo: ${det}\n\nSi dice "unauthorized", hay que permitir la ruta facturas_documentos/ en las reglas de Storage. Puedes reintentar desde la fila (⚠).`); }
         setDocFacturaFile(null);
       }
@@ -2479,9 +2494,9 @@ export const FacturacionProveedoresDashboard = () => {
       ));
       setFacturasGlobales(prev => {
         if (existente) {
-          return prev.map(f => f.id === docId ? normalizarFactura({ ...facturaResultante, id: docId }) : f);
+          return prev.map(f => f.id === docId ? normalizarFactura({ ...facturaResultante, ...docSubido, id: docId }) : f);
         }
-        return [normalizarFactura({ ...data, id: docId }), ...prev];
+        return [normalizarFactura({ ...data, ...docSubido, id: docId }), ...prev];
       });
       setActiveTab('historial');
     } catch (error) {
@@ -3980,6 +3995,8 @@ export const FacturacionProveedoresDashboard = () => {
                 <div>
                   <label className="fpd-x143">REFERENCIA (Opcional)</label>
                   <input className="fpd-x163" type="text" placeholder="Referencia interna..." value={facturaCcpForm} onChange={e => setFacturaCcpForm(e.target.value)} />
+                </div>
+                <div className="fac-doc-ancho">{/* ✅ V00390: documento a lo ancho del formulario */}
                   {/* ✅ V00276: documento de la factura (se sube al confirmar) */}
                   <label className="fpd-x143">DOCUMENTO DE LA FACTURA</label>
                   <TarjetaDocumentoFactura
