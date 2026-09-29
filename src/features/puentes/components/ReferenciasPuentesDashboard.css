@@ -184,3 +184,4 @@
 .rpd-btn-asignar { padding: 8px 14px; border-radius: 6px; border: 1px solid #1f6feb; background: rgba(56, 139, 253, 0.12); color: #79c0ff; font-weight: 700; font-size: 0.82rem; cursor: pointer; white-space: nowrap; }
 .rpd-btn-asignar:hover:not(:disabled) { background: rgba(56, 139, 253, 0.22); }
 .rpd-btn-asignar:disabled { opacity: 0.6; cursor: wait; }
+.rpd-hora { color: #f0f6fc; font-variant-numeric: tabular-nums; } /* ✅ V00393 */

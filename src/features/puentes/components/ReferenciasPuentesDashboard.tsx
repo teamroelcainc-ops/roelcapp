@@ -7,7 +7,9 @@ import {
   writeBatch,
   doc,
   limit,
-  orderBy
+  orderBy,
+  getDocs,
+  where
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
@@ -24,6 +26,7 @@ const COLECCION_CONVENIOS = 'convenios_clientes';
 const COLUMNAS_OPS_PUENTES_BASE = [
   { id: 'ref',           label: 'Ref. Operación', visible: true,  orden: true },
   { id: 'fechaServicio', label: 'Fecha Servicio', visible: true,  orden: true },
+  { id: 'horaVerde',     label: 'Hora (Verde)',   visible: true,  orden: true }, // ✅ V00393
   { id: 'unidad',        label: 'Unidad',         visible: true,  orden: true },
   { id: 'convenio',      label: 'Convenio',       visible: true,  orden: true },
   { id: 'puenteNombre',  label: 'Puente',         visible: true,  orden: true },
@@ -58,6 +61,8 @@ export const ReferenciasPuentesDashboard = () => {
   const [filtroUnidad, setFiltroUnidad] = useState<string>('todas');
   const [unidadesList, setUnidadesList] = useState<Record<string, unknown>[]>([]);
   const [asignandoMontos, setAsignandoMontos] = useState(false);
+  // ✅ V00393: hora en que se marcó Verde MX / Verde USA (bitácora "horarios")
+  const [horasVerde, setHorasVerde] = useState<Record<string, { etiqueta: string; fechaHora: string }[]>>({});
   const [seleccionadas, setSeleccionadas] = useState<string[]>([]);
 
   const [filtroEstadoOps, setFiltroEstadoOps] = useState<'pendientes' | 'asignadas'>('pendientes');
@@ -332,7 +337,7 @@ export const ReferenciasPuentesDashboard = () => {
   const esPuenteRoelca = (op: any): boolean => {
     const tipo = String(op?.tipoOperacionNombre || op?.tipoOperacionId || '').toLowerCase();
     const isTransfer = tipo.includes('transfer');
-    const isLogistica = tipo.includes('logistica') || tipo.includes('logística');
+    const isLogistica = (tipo.includes('logistica') || tipo.includes('logística')) && !tipo.includes('flete'); // ✅ V00393: Fletes no cruza puente
     const esRoelca = String(op?.proveedorUnidadNombre || op?.proveedorUnidad || '').toLowerCase().includes('roelca');
     return isTransfer || (isLogistica && esRoelca);
   };
@@ -341,6 +346,9 @@ export const ReferenciasPuentesDashboard = () => {
     if (!filtrosCompletos) return [];
     return operacionesGlobales.filter(op => {
       if (!esPuenteRoelca(op) || esOperacionPrueba(op)) return false;
+      // ✅ V00393: solo IMPORTACIÓN y EXPORTACIÓN (los movimientos no cruzan puente)
+      const trOp = sinAcentos(getTrafico(op));
+      if (trOp !== 'importacion' && trOp !== 'exportacion') return false;
       if (sinAcentos(op.statusNombre).includes('cancel')) return false;
       // ✅ V00392: filtros Puente (caseta o piso) y Unidad
       if (filtroPuente !== 'todos') {
@@ -350,11 +358,42 @@ export const ReferenciasPuentesDashboard = () => {
       if (filtroUnidad !== 'todas' && getUnidad(op) !== filtroUnidad) return false;
       return dentroRangoFecha(op);
     });
-  }, [operacionesGlobales, filtroPuente, filtroUnidad, fechaInicio, fechaFin, filtrosCompletos, unidadPorId]);
+  }, [operacionesGlobales, filtroPuente, filtroUnidad, fechaInicio, fechaFin, filtrosCompletos, unidadPorId, traficoPorId, detallePorId, tarifaRefPorId, tipoTarifarioPorId]);
   const unidadesDisponibles = useMemo(() =>
     Array.from(new Set(operacionesGlobales.filter(op => esPuenteRoelca(op) && dentroRangoFecha(op)).map(getUnidad).filter(u => u && u !== '-'))).sort((a, b) => a.localeCompare(b, 'es', { numeric: true })),
   // eslint-disable-next-line react-hooks/exhaustive-deps
   [operacionesGlobales, fechaInicio, fechaFin, unidadPorId]);
+
+  useEffect(() => {
+    if (!busquedaOpsHecha) return;
+    const faltan = operacionesBaseFiltro.map(op => String(op.id)).filter(id => !(id in horasVerde));
+    if (faltan.length === 0) return;
+    let activo = true;
+    (async () => {
+      const nuevo: Record<string, { etiqueta: string; fechaHora: string }[]> = {};
+      faltan.forEach(id => { nuevo[id] = []; });
+      for (let i = 0; i < faltan.length; i += 30) {
+        try {
+          const snap = await getDocs(query(collection(db, 'horarios'), where('operacionId', 'in', faltan.slice(i, i + 30))));
+          snap.docs.forEach(d => {
+            const h = d.data() as Record<string, unknown>;
+            const st = sinAcentos(h.statusNombre);
+            const etiqueta = st.includes('verde usa') ? 'Verde USA' : (st.includes('verde mx') || st.includes('verde mexico')) ? 'Verde MX' : '';
+            if (!etiqueta) return;
+            const id = String(h.operacionId || '');
+            const fechaHora = String(h.fechaHora || h.registradoEn || '');
+            (nuevo[id] = nuevo[id] || []).push({ etiqueta, fechaHora });
+          });
+        } catch (e) { console.warn('Horas del verde:', e); }
+      }
+      Object.values(nuevo).forEach(l => l.sort((a, b) => a.fechaHora.localeCompare(b.fechaHora)));
+      if (activo) setHorasVerde(prev => ({ ...prev, ...nuevo }));
+    })();
+    return () => { activo = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busquedaOpsHecha, operacionesBaseFiltro]);
+  const horaDe = (fh: string) => { const m = String(fh).match(/[T ](\d{2}:\d{2})/); return m ? m[1] : ''; };
+  const textoHoraVerde = (op: { id?: unknown }) => (horasVerde[String(op.id)] || []).map(v => `${v.etiqueta} ${horaDe(v.fechaHora)}`).join(' · ');
 
   const esAsignada = (op: any) => !!op.referenciaPuentesId;
 
@@ -373,6 +412,7 @@ export const ReferenciasPuentesDashboard = () => {
       case 'origen': return String(op.origen || '').toLowerCase();
       case 'destino': return String(op.destino || '').toLowerCase();
       case 'puente': return getPuente(op);
+      case 'horaVerde': return (horasVerde[String(op.id)] || [])[0]?.fechaHora || '';
       case 'unidad': return getUnidad(op).toLowerCase();
       case 'convenio': return getConvenio(op).toLowerCase();
       case 'puenteNombre': return nombresPuenteOp(op).join(' + ').toLowerCase();
@@ -391,7 +431,7 @@ export const ReferenciasPuentesDashboard = () => {
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
       return String(va).localeCompare(String(vb)) * dir;
     });
-  }, [operacionesBaseFiltro, filtroEstadoOps, ordenOps, operadoresList, convenioPorId, traficoPorId, empresaPorId, detallePorId, tarifaRefPorId, tipoTarifarioPorId]);
+  }, [operacionesBaseFiltro, filtroEstadoOps, ordenOps, operadoresList, convenioPorId, traficoPorId, empresaPorId, detallePorId, tarifaRefPorId, tipoTarifarioPorId, horasVerde]);
 
   const toggleOrdenOps = (campo: string) =>
     setOrdenOps(prev => prev.campo === campo ? { campo, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { campo, dir: 'asc' });
@@ -407,6 +447,7 @@ export const ReferenciasPuentesDashboard = () => {
       case 'origen': return op.origen || '-';
       case 'destino': return op.destino || '-';
       case 'puente': return getPuente(op);
+      case 'horaVerde': return textoHoraVerde(op) || '-';
       case 'unidad': return getUnidad(op);
       case 'convenio': return getConvenio(op);
       case 'puenteNombre': return nombresPuenteOp(op).join(' + ') || 'Sin monto';
@@ -438,6 +479,16 @@ export const ReferenciasPuentesDashboard = () => {
       case 'cliente': return <td key={key} style={tdBase}>{getCliente(op)}</td>;
       case 'origen': return <td key={key} style={tdBase}>{op.origen || '-'}</td>;
       case 'destino': return <td key={key} style={tdBase}>{op.destino || '-'}</td>;
+      case 'horaVerde': {
+        const lista = horasVerde[String(op.id)];
+        return (
+          <td key={key} className="rpd-celda">
+            {lista === undefined ? <span className="rpd-moneda">…</span>
+              : lista.length === 0 ? <span className="rpd-moneda">Sin verde</span>
+              : lista.map((v, i) => <div key={i} title={v.fechaHora.replace('T', ' ')}><b className="rpd-hora">{horaDe(v.fechaHora) || '—'}</b> <span className="rpd-moneda">{v.etiqueta}</span></div>)}
+          </td>
+        );
+      }
       case 'unidad': return <td key={key} className="rpd-celda">{getUnidad(op)}</td>;
       case 'convenio': return <td key={key} className="rpd-celda rpd-celda--conv" title={getConvenio(op)}>{getConvenio(op)}</td>;
       case 'puenteNombre': {
@@ -1241,6 +1292,7 @@ export const ReferenciasPuentesDashboard = () => {
                     <select value={ordenOps.campo} onChange={(e) => setOrdenOps(prev => ({ ...prev, campo: e.target.value }))} style={{ ...selectOrdenStyle, flex: 1 }}>
                       <option value="fechaServicio">Fecha Servicio</option>
                       <option value="ref">Referencia</option>
+                      <option value="horaVerde">Hora (Verde)</option>
                       <option value="unidad">Unidad</option>
                       <option value="convenio">Convenio</option>
                       <option value="trafico">Tráfico</option>
@@ -1255,7 +1307,7 @@ export const ReferenciasPuentesDashboard = () => {
                 </div>
 
                 <div className="rpd-x122">
-                  Se requiere <b className="rpd-x37">al menos una fecha</b> de servicio; puente, unidad y estado son opcionales. Solo aparecen Transfer y Logística con proveedor Roelca.
+                  Se requiere <b className="rpd-x37">al menos una fecha</b> de servicio; puente, unidad y estado son opcionales. Solo aparecen operaciones de Importación y Exportación de Transfer y de Logística con proveedor Roelca.
                 </div>
               </>
             ) : (
