@@ -613,15 +613,7 @@ function ResumenDelDia() {
           <span style={sub}>{cargando || datos.totalHoy === 0 ? ' ' : `${Math.round((datos.completadasHoy / datos.totalHoy) * 100)}% del día`}</span>
         </div>
 
-        <div style={tarjeta}>
-          <span style={etiqueta}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#f85149" strokeWidth="2.2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
-            Canceladas hoy
-          </span>
-          <span style={valorCss('#f85149')}>{cargando ? '…' : datos.canceladasHoy}</span>
-          <span style={sub}>{cargando || datos.totalHoy === 0 ? ' ' : `${Math.round((datos.canceladasHoy / datos.totalHoy) * 100)}% del día`}</span>
-        </div>
-
+        {/* ✅ V00389: se quitó la tarjeta "Canceladas hoy" (sus datos siguen en Servicios Cancelados) */}
         <div style={tarjeta} title={datos.tcFecha && datos.tcFecha !== hoyISO ? `Último registro: ${fmtDia(datos.tcFecha)}` : 'Tipo de cambio del día'}>
           <span style={etiqueta}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2.2"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
@@ -660,7 +652,7 @@ function ResumenDelDia() {
           )}
         </div>
 
-        {/* ✅ V00349: saldo EN VIVO de las casetas (Puente AVI y Puente III) con su captura */}
+        {/* ✅ V00349 / V00389: TRES tarjetas de puente — AVI, III y Colombia (caseta + puente) */}
         <TarjetaCasetas />
       </div>
 

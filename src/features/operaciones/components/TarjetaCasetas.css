@@ -61,3 +61,10 @@
 .tcas-modal--gasto { width: min(780px, 96vw); }
 .tcas-gasto-ref, .tcas-gasto-num { white-space: nowrap; }
 .tcas-gasto-tabla { font-size: 0.86rem; }
+
+/* ✅ V00389: tres tarjetas de puente (AVI, III, Colombia) */
+.tcas-bloque { display: flex; flex-direction: column; gap: 3px; }
+.tcas-bloque + .tcas-bloque { border-top: 1px solid #21262d; padding-top: 5px; }
+.tcas-subtitulo { color: #c9d1d9; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.tcas-disp { color: #e6edf3; font-weight: 700; font-size: 0.9rem; white-space: nowrap; }
+.tcas-disp--neg { color: #f85149; }

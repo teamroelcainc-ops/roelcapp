@@ -2395,7 +2395,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const sOperadorProv = (searchOperadorProveedor || '').toLowerCase();
 
   const empresaCoincide = (e:any, q:string) =>
-    nombreEmpresaMostrar(e).toLowerCase().includes(q) || (e.nombre || '').toLowerCase().includes(q);
+    nombreEmpresaMostrar(e).toLowerCase().includes(q) || (e.nombre || '').toLowerCase().includes(q) || String(e.razonSocial || '').toLowerCase().includes(q); // ✅ V00389
 
   // ✅ RESTAURADO (regla AppSheet): Origen y Destino se filtran por PAÍS según
   //   el tráfico y el tipo de operación, replicando el IFS(...) original:
@@ -3474,7 +3474,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                               <div className="fo-x12">
                                 {resultadosProvTransporte.length === 0 ? <div className="fo-x13">Sin resultados</div> : resultadosProvTransporte.map((c:any) => (
                                   <div className="fo-x14" key={c.id} onMouseDown={(e) => { e.preventDefault(); const monedaDefault = resolverMonedaIdDeEmpresa(c); setFormData(prev => ({ ...prev, proveedorUnidad: c.id, convenioProveedor: '', facturadoEnUnidad: monedaDefault || prev.facturadoEnUnidad })); setSearchProvTransporte(razonSocialEmpresa(c)); setSearchConvenioProveedor(''); setShowDropdownProvTransporte(false); }}>
-                                    <div className="fo-x15">{razonSocialEmpresa(c)}{/* ✅ V00271: razón social */}</div>
+                                    {/* ✅ V00389: se busca y se ve por NOMBRE CORTO; al elegirlo queda la RAZÓN SOCIAL */}
+                                    <div className="fo-x15">{nombreCortoEmpresa(c) || razonSocialEmpresa(c)}</div>
+                                    {nombreCortoEmpresa(c) && nombreCortoEmpresa(c).toLowerCase() !== razonSocialEmpresa(c).toLowerCase() && <div className="fo-prov-razon">{razonSocialEmpresa(c)}</div>}
                                   </div>
                                 ))}
                               </div>
