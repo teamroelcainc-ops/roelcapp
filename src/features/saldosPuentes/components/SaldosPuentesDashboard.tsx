@@ -4,7 +4,7 @@
 //   recargas − cruces, con semáforo (amarillo/rojo por umbral). El importe del
 //   catálogo Tipos de Gastos es la TARIFA por cruce (ya no se pisa con saldos).
 //   Recargas en la colección saldos_puentes (varias por día permitidas).
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, deleteDoc, doc, getDocs, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
 import { db } from '../../../config/firebase';
@@ -40,7 +40,10 @@ interface CruceOp { puenteNombre: string; fecha: string; monto: number; ref: str
 export const SaldosPuentesDashboard: React.FC = () => {
   const [puentes, setPuentes] = useState<Puente[]>([]);
   const [recargas, setRecargas] = useState<Recarga[]>([]);
-  const [cruces, setCruces] = useState<CruceOp[]>([]);
+  const [crucesOps, setCruces] = useState<CruceOp[]>([]);
+  // ✅ V00395: OTROS CRUCES (sin operación, registrados en Referencias de Puentes) también descuentan
+  const [crucesOtros, setCrucesOtros] = useState<CruceOp[]>([]);
+  const cruces = useMemo(() => [...crucesOps, ...crucesOtros], [crucesOps, crucesOtros]);
   const [cargando, setCargando] = useState(true);
   // ✅ V00361: modal de recarga ÚNICO con el puente en DESPLEGABLE
   const [modalRecarga, setModalRecarga] = useState(false);
@@ -99,7 +102,13 @@ export const SaldosPuentesDashboard: React.FC = () => {
         return [caseta, { puenteNombre: String(x.saldoPuentePisoPuente || 'Puente Mx Colombia'), fecha: String(x.saldoPuentePisoFecha || x.saldoPuenteFecha || ''), monto: Number(x.saldoPuentePiso) || 0, ref: String(x.ref || d.id) }];
       }));
     }, (e) => console.warn('Cruces con saldo:', e));
-    return () => { u1(); u2(); u3(); };
+    const u4 = onSnapshot(query(collection(db, 'referencias_puentes'), where('tipo', '==', 'otroCruce')), (snap) => {
+      setCrucesOtros(snap.docs.map((d) => {
+        const x = d.data() as Record<string, unknown>;
+        return { puenteNombre: String(x.puenteNombre || ''), fecha: String(x.fechaCruce || x.fechaGeneracion || ''), monto: Number(x.monto ?? x.subtotalPuentes) || 0, ref: `${String(x.consecutivo || d.id)} (otro cruce)` };
+      }));
+    }, () => setCrucesOtros([]));
+    return () => { u1(); u2(); u3(); u4(); };
   }, []);
 
   /** Cuenta de un puente: recargas, cruces (desde la 1ª recarga) y saldo actual. */

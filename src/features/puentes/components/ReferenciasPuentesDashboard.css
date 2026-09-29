@@ -198,3 +198,17 @@
 .rpd-status { padding: 4px 12px; border-radius: 12px; font-size: 0.75rem; font-weight: 700; border: 1px solid; }
 .rpd-status--pagada { color: #10b981; border-color: #10b981; background: rgba(16, 185, 129, 0.1); }
 .rpd-status--pendiente { color: #f59e0b; border-color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
+/* ✅ V00395: Otros Cruces */
+.rpd-otros-barra { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding: 14px 16px; margin-bottom: 16px; border: 1px solid #30363d; border-radius: 8px; background: #161b22; }
+.rpd-otros-nota { color: #8b949e; font-size: 0.85rem; flex: 1 1 320px; }
+.rpd-btn-otro { padding: 10px 20px; border-radius: 6px; border: none; background: #D84315; color: #ffffff; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.rpd-btn-otro:hover { background: #e4521f; }
+.rpd-otro-form { display: flex; flex-direction: column; gap: 16px; }
+.rpd-otro-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 14px; }
+.rpd-otro-campo { display: flex; flex-direction: column; gap: 5px; }
+.rpd-otro-label { color: #8b949e; font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
+.rpd-otro-input { width: 100%; box-sizing: border-box; padding: 9px 10px; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: #f0f6fc; font-size: 0.9rem; color-scheme: dark; }
+.rpd-otro-input:focus { outline: none; border-color: #D84315; }
+.rpd-otro-input--ref { color: #ff8a5b; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight: 700; }
+.rpd-chip-otro { display: inline-block; padding: 1px 8px; border-radius: 999px; border: 1px solid #a371f7; color: #d2a8ff; font-size: 0.7rem; font-weight: 700; margin-right: 4px; }
+@media (max-width: 560px) { .rpd-otro-grid { grid-template-columns: 1fr; } }

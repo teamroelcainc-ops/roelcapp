@@ -4,7 +4,7 @@
 //   agregar, Saldo pendiente por puente y Total. Las recargas quedan en
 //   saldos_puentes y el saldo se consume al marcar Verde MX (exportación,
 //   Puente III en pesos) o Verde USA (importación, Caseta AVI en dólares).
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import './TarjetaCasetas.css';
@@ -53,7 +53,10 @@ const grupoDePuente = (nombre: string): GrupoPuente | null => {
 export const TarjetaCasetas: React.FC = () => {
   const [puentes, setPuentes] = useState<Puente[]>([]);
   const [recargas, setRecargas] = useState<RecargaMin[]>([]);
-  const [cruces, setCruces] = useState<CruceMin[]>([]);
+  const [crucesOps, setCruces] = useState<CruceMin[]>([]);
+  // ✅ V00395: OTROS CRUCES (sin operación, registrados en Referencias de Puentes) también descuentan
+  const [crucesOtros, setCrucesOtros] = useState<CruceMin[]>([]);
+  const cruces = useMemo(() => [...crucesOps, ...crucesOtros], [crucesOps, crucesOtros]);
   const [modalAbierto, setModalAbierto] = useState(false);
   const [puenteId, setPuenteId] = useState('');
   const [monto, setMonto] = useState('');
@@ -88,7 +91,13 @@ export const TarjetaCasetas: React.FC = () => {
         return [caseta, { ...caseta, puenteNombre: String(x.saldoPuentePisoPuente || 'Puente Mx Colombia'), fecha: String(x.saldoPuentePisoFecha || x.saldoPuenteFecha || ''), monto: Number(x.saldoPuentePiso) || 0, moneda: nombreMoneda(x.saldoPuentePisoMoneda), evento: String(x.saldoPuentePisoEvento || x.saldoPuenteEvento || '') }];
       }));
     }, () => {});
-    return () => { u1(); u2(); u3(); };
+    const u4 = onSnapshot(query(collection(db, 'referencias_puentes'), where('tipo', '==', 'otroCruce')), (snap) => {
+      setCrucesOtros(snap.docs.map((d) => {
+        const x = d.data() as Record<string, unknown>;
+        return { puenteNombre: String(x.puenteNombre || ''), fecha: String(x.fechaCruce || x.fechaGeneracion || ''), monto: Number(x.monto ?? x.subtotalPuentes) || 0, moneda: nombreMoneda(x.moneda), ref: String(x.consecutivo || d.id), statusNombre: 'Otro cruce', evento: String(x.unidad || '') };
+      }));
+    }, () => setCrucesOtros([]));
+    return () => { u1(); u2(); u3(); u4(); };
   }, []);
 
   /** Saldo pendiente (disponible) del puente = Σ recargas − Σ cruces desde la 1ª recarga. */
