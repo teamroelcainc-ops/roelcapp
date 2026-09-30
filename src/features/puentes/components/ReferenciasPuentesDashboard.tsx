@@ -1150,7 +1150,7 @@ export const ReferenciasPuentesDashboard = () => {
                                       <div className="rpd-asiento__sub-vacio">Cruce sin operación · {String(it.ref.puenteNombre || '')} · registrado por {String(it.ref.registradoPor || '—')}</div>
                                     ) : (
                                       <table>
-                                        <thead><tr><th>Ref. Operación</th><th>Fecha servicio</th><th>Hora (verde)</th><th>Unidad</th><th>Puente</th><th className="rpd-num">Monto</th></tr></thead>
+                                        <thead><tr><th>Ref. Operación</th><th>Fecha servicio</th><th>Hora (verde)</th><th>Unidad</th><th>Convenio</th><th>Puente</th><th className="rpd-num">Monto</th></tr></thead>
                                         <tbody>
                                           {opsRef.map((o, j) => (
                                             <tr key={j}>
@@ -1158,6 +1158,7 @@ export const ReferenciasPuentesDashboard = () => {
                                               <td>{formatearFechaSpanish(String(o.fecha || ''))}</td>
                                               <td>{String(o.horaVerde || '—')}</td>
                                               <td>{String(o.unidad || '—')}</td>
+                                              <td>{String(o.convenio || '—')}</td>
                                               <td>{String(o.puenteNombre || '—')}</td>
                                               <td className="rpd-num">{formatoMoneda(Number(o.puente) || 0)}</td>
                                             </tr>
@@ -1584,7 +1585,7 @@ export const ReferenciasPuentesDashboard = () => {
       {/* MODAL GENERAR REFERENCIA */}
       {modalAbierto && (
         <div className="modal-overlay rpd-x68">
-          <div className="rpd-x69">
+          <div className="rpd-x69 rpd-modal--ancho">
             <div className="rpd-x70">
               <h2 className="rpd-x71">Generar {gruposSeleccion.length === 1 ? 'Referencia' : `${gruposSeleccion.length} Referencias`}</h2>
               <button className="rpd-x62" onClick={() => setModalAbierto(false)}>✕</button>
@@ -1605,13 +1606,14 @@ export const ReferenciasPuentesDashboard = () => {
                   {/* ✅ V00399: las referencias seleccionadas, visibles */}
                   <div className="rpd-grupo__tabla">
                     <table>
-                      <thead><tr><th>Ref. Operación</th><th>Fecha servicio</th><th>Unidad</th><th>Puente</th><th className="rpd-num">Monto</th></tr></thead>
+                      <thead><tr><th>Ref. Operación</th><th>Fecha servicio</th><th>Unidad</th><th>Convenio</th><th>Puente</th><th className="rpd-num">Monto</th></tr></thead>
                       <tbody>
                         {g.ops.map(o => (
                           <tr key={String(o.id)}>
                             <td className="rpd-x52">{String(o.ref || o.id)}</td>
                             <td>{formatearFechaSpanish(String(o.fechaServicio || ''))}</td>
                             <td>{getUnidad(o)}</td>
+                            <td className="rpd-grupo__conv" title={getConvenio(o)}>{getConvenio(o)}</td>{/* ✅ V00401 */}
                             <td>{nombresPuenteOp(o).join(' + ')}</td>
                             <td className="rpd-num">{formatoMoneda(getPuente(o))}</td>
                           </tr>

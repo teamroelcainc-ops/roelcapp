@@ -245,3 +245,7 @@
 .rpd-grupo__tabla td, .rpd-asiento__sub td { padding: 5px 10px; border-top: 1px solid #21262d; color: #c9d1d9; }
 .rpd-asiento__sub > td { background: #0b0f14; padding: 8px 12px 10px 28px !important; }
 .rpd-asiento__sub-vacio { color: #8b949e; font-size: 0.8rem; }
+/* ✅ V00401: convenio en la tabla de operaciones seleccionadas */
+.rpd-grupo__conv { max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rpd-grupos .rpd-grupo__tabla { max-height: 260px; }
+.rpd-modal--ancho { max-width: 980px; } /* ✅ V00401: cabe la columna Convenio */
