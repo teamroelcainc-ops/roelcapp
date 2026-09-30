@@ -76,6 +76,26 @@ export const ReferenciasPuentesDashboard = () => {
   const [saldoPuenteId, setSaldoPuenteId] = useState('');
   const [saldoMonto, setSaldoMonto] = useState('');
   const [guardandoSaldo, setGuardandoSaldo] = useState(false);
+  // ✅ V00397: cruces que descuentan de los saldos (operaciones con peaje + otros cruces)
+  type CruceSaldo = { fecha: string; hora: string; puente: string; monto: number; moneda: string; ref: string; detalle: string };
+  const [crucesOpsSaldo, setCrucesOpsSaldo] = useState<CruceSaldo[]>([]);
+  const [saldoViendo, setSaldoViendo] = useState<Record<string, unknown> | null>(null);
+  useEffect(() => {
+    if (activeTab !== 'saldos') return;
+    const u = onSnapshot(query(collection(db, 'operaciones'), where('saldoPuente', '>', 0)), (snap) => {
+      const l: CruceSaldo[] = [];
+      snap.docs.forEach(d => {
+        const x = d.data() as Record<string, unknown>;
+        if (esOperacionPrueba(x)) return;
+        const ref = String(x.ref || d.id);
+        l.push({ fecha: String(x.saldoPuenteFecha || ''), hora: '', puente: String(x.saldoPuentePuente || ''), monto: Number(x.saldoPuente) || 0, moneda: String(x.saldoPuenteMoneda || ''), ref, detalle: String(x.saldoPuenteEvento || x.statusNombre || '') });
+        if (Number(x.saldoPuentePiso) > 0) l.push({ fecha: String(x.saldoPuentePisoFecha || x.saldoPuenteFecha || ''), hora: '', puente: String(x.saldoPuentePisoPuente || 'Puente Mx Colombia'), monto: Number(x.saldoPuentePiso) || 0, moneda: String(x.saldoPuentePisoMoneda || ''), ref, detalle: 'Piso del puente' });
+      });
+      setCrucesOpsSaldo(l);
+    }, () => setCrucesOpsSaldo([]));
+    return () => u();
+  }, [activeTab]);
+
   useEffect(() => {
     if (activeTab !== 'saldos') return;
     const u = onSnapshot(collection(db, 'saldos_puentes'), (snap) => {
@@ -821,6 +841,41 @@ export const ReferenciasPuentesDashboard = () => {
     catch (err) { alert(`No se pudo eliminar: ${(err as Error)?.message || err}`); }
   };
 
+  // ✅ V00397: cada SALDO se consume en orden (primero el más antiguo) con los cruces
+  //   de su puente desde su fecha → cruces, monto cruzado, balance y para cuántos
+  //   cruces alcanza (balance ÷ tarifa del puente).
+  const asignacionSaldos = useMemo(() => {
+    const todos: CruceSaldo[] = [
+      ...crucesOpsSaldo,
+      ...otrosCruces.map(r => ({ fecha: String(r.fechaCruce || r.fechaGeneracion || ''), hora: String(r.horaCruce || ''), puente: String(r.puenteNombre || ''), monto: Number(r.monto ?? r.subtotalPuentes) || 0, moneda: String(r.moneda || ''), ref: String(r.consecutivo || r.id), detalle: `Otro cruce · ${String(r.unidad || '')}` })),
+    ];
+    const res: Record<string, { cruces: CruceSaldo[]; consumido: number; balance: number }> = {};
+    const porPuente = new Map<string, Record<string, unknown>[]>();
+    saldosLista.forEach(r => { const k = sinAcentos(r.puenteNombre); porPuente.set(k, [...(porPuente.get(k) || []), r]); });
+    porPuente.forEach((recs, k) => {
+      const orden = [...recs].sort((a, b) => `${String(a.fecha || '')} ${String(a.hora || '')}`.localeCompare(`${String(b.fecha || '')} ${String(b.hora || '')}`));
+      const primera = String(orden[0]?.fecha || '');
+      const restante = orden.map(r => Number(r.saldo) || 0);
+      orden.forEach(r => { res[String(r.id)] = { cruces: [], consumido: 0, balance: Number(r.saldo) || 0 }; });
+      todos
+        .filter(c => sinAcentos(c.puente) === k && (!primera || c.fecha >= primera))
+        .sort((a, b) => `${a.fecha} ${a.hora}`.localeCompare(`${b.fecha} ${b.hora}`) || a.ref.localeCompare(b.ref))
+        .forEach(c => {
+          // al saldo más antiguo que aún tenga, y cuya fecha ya haya empezado; si ninguno, al último (sobregiro)
+          let i = restante.findIndex((v, idx) => v > 0.0001 && String(orden[idx].fecha || '') <= c.fecha);
+          if (i < 0) { i = orden.length - 1; while (i > 0 && String(orden[i].fecha || '') > c.fecha) i--; }
+          restante[i] -= c.monto;
+          const e = res[String(orden[i].id)];
+          e.cruces.push(c); e.consumido += c.monto; e.balance -= c.monto;
+        });
+    });
+    return res;
+  }, [crucesOpsSaldo, otrosCruces, saldosLista]);
+  const tarifaPuente = (r: Record<string, unknown>) => {
+    const p = puentesCatalogo.find(x => x.id === r.puenteId) || puentesCatalogo.find(x => sinAcentos(nombrePuente(x)) === sinAcentos(r.puenteNombre));
+    return Number(p?.importe) || 0;
+  };
+
   const handleGuardarReferencia = async (e: React.FormEvent) => {
     e.preventDefault();
     if (seleccionadas.length === 0) return alert('Selecciona al menos una operación.');
@@ -1012,28 +1067,95 @@ export const ReferenciasPuentesDashboard = () => {
                   <th className="rpd-x43">HORA</th>
                   <th className="rpd-x43">PUENTE</th>
                   <th className="rpd-x43">SALDO INICIAL</th>
+                  <th className="rpd-x43">CRUCES</th>
+                  <th className="rpd-x43">MONTO CRUZADO</th>
+                  <th className="rpd-x43">BALANCE</th>
+                  <th className="rpd-x43">ALCANZA PARA</th>
                   <th className="rpd-x43"></th>
                 </tr>
               </thead>
               <tbody>
                 {saldosLista.length === 0 ? (
-                  <tr><td className="rpd-x45" colSpan={5}>Aún no hay saldos registrados. Usa "+ Agregar saldo".</td></tr>
-                ) : saldosLista.map(r => (
-                  <tr className="rpd-x46" key={String(r.id)}>
+                  <tr><td className="rpd-x45" colSpan={9}>Aún no hay saldos registrados. Usa "+ Agregar saldo".</td></tr>
+                ) : saldosLista.map(r => {
+                  const a = asignacionSaldos[String(r.id)] || { cruces: [], consumido: 0, balance: Number(r.saldo) || 0 };
+                  const tarifa = tarifaPuente(r);
+                  const alcanza = tarifa > 0 && a.balance > 0 ? Math.floor(a.balance / tarifa) : 0;
+                  return (
+                  <tr className="rpd-x46 rpd-fila-clic" key={String(r.id)} title="Ver el asiento: saldo y descuentos" onClick={() => setSaldoViendo(r)}>
                     <td className="rpd-celda">{formatearFechaSpanish(String(r.fecha || ''))}</td>
                     <td className="rpd-celda">{String(r.hora || '—')}</td>
                     <td className="rpd-celda">{String(r.puenteNombre || '')}</td>
                     <td className="rpd-x3">{formatoMoneda(Number(r.saldo) || 0)} <span className="rpd-moneda">{String(r.moneda || '')}</span></td>
+                    <td className="rpd-celda"><b>{a.cruces.length}</b></td>
+                    <td className="rpd-celda rpd-cargo">−{formatoMoneda(a.consumido)}</td>
+                    <td className={`rpd-celda rpd-balance${a.balance < 0 ? ' rpd-balance--neg' : ''}`}>{formatoMoneda(a.balance)}</td>
+                    <td className="rpd-celda">{tarifa > 0 ? <><b>{alcanza}</b> <span className="rpd-moneda">cruces · {formatoMoneda(tarifa)} c/u</span></> : '—'}</td>
                     <td className="rpd-celda">
-                      <button className="rpd-x51" title="Eliminar" onClick={() => eliminarSaldo(r)}>
+                      <button className="rpd-x51" title="Eliminar" onClick={(e) => { e.stopPropagation(); eliminarSaldo(r); }}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                       </button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
+
+          {/* ✅ V00397: ASIENTO del saldo — abono inicial y cada descuento con su saldo corrido */}
+          {saldoViendo && (() => {
+            const a = asignacionSaldos[String(saldoViendo.id)] || { cruces: [], consumido: 0, balance: Number(saldoViendo.saldo) || 0 };
+            let corrido = Number(saldoViendo.saldo) || 0;
+            const mon = String(saldoViendo.moneda || '');
+            return (
+              <div className="modal-overlay rpd-x68" onClick={() => setSaldoViendo(null)}>
+                <div className="rpd-x69 rpd-asiento" onClick={(e) => e.stopPropagation()}>
+                  <div className="rpd-x70">
+                    <h2 className="rpd-x71">{String(saldoViendo.puenteNombre || '')} — saldo del {formatearFechaSpanish(String(saldoViendo.fecha || ''))}</h2>
+                    <button className="rpd-x62" onClick={() => setSaldoViendo(null)}>✕</button>
+                  </div>
+                  <div className="rpd-asiento__resumen">
+                    <div><span>Saldo inicial</span><b>{formatoMoneda(Number(saldoViendo.saldo) || 0)} {mon}</b></div>
+                    <div><span>Cruces</span><b>{a.cruces.length}</b></div>
+                    <div><span>Monto cruzado</span><b className="rpd-cargo">−{formatoMoneda(a.consumido)}</b></div>
+                    <div><span>Balance</span><b className={a.balance < 0 ? 'rpd-balance--neg' : 'rpd-balance'}>{formatoMoneda(a.balance)}</b></div>
+                  </div>
+                  <div className="rpd-asiento__marco">
+                    <table className="rpd-asiento__tabla">
+                      <thead><tr><th>Fecha</th><th>Referencia</th><th>Concepto</th><th className="rpd-num">Cargo (−)</th><th className="rpd-num">Abono (+)</th><th className="rpd-num">Saldo</th></tr></thead>
+                      <tbody>
+                        <tr className="rpd-asiento__abono">
+                          <td>{formatearFechaSpanish(String(saldoViendo.fecha || ''))}{saldoViendo.hora ? ` ${String(saldoViendo.hora)}` : ''}</td>
+                          <td>—</td>
+                          <td>Saldo inicial</td>
+                          <td className="rpd-num"></td>
+                          <td className="rpd-num rpd-abono">+{formatoMoneda(Number(saldoViendo.saldo) || 0)}</td>
+                          <td className="rpd-num">{formatoMoneda(corrido)}</td>
+                        </tr>
+                        {a.cruces.map((c, i) => {
+                          corrido -= c.monto;
+                          return (
+                            <tr key={i}>
+                              <td>{formatearFechaSpanish(c.fecha)}{c.hora ? ` ${c.hora}` : ''}</td>
+                              <td className="rpd-x52">{c.ref}</td>
+                              <td>{c.detalle || 'Cruce'}</td>
+                              <td className="rpd-num rpd-cargo">−{formatoMoneda(c.monto)}</td>
+                              <td className="rpd-num"></td>
+                              <td className={`rpd-num${corrido < 0 ? ' rpd-balance--neg' : ''}`}>{formatoMoneda(corrido)}</td>
+                            </tr>
+                          );
+                        })}
+                        {a.cruces.length === 0 && <tr><td colSpan={6} className="rpd-x45">Aún no hay cruces que descuenten de este saldo.</td></tr>}
+                      </tbody>
+                      <tfoot><tr><td colSpan={3}>Totales</td><td className="rpd-num rpd-cargo">−{formatoMoneda(a.consumido)}</td><td className="rpd-num rpd-abono">+{formatoMoneda(Number(saldoViendo.saldo) || 0)}</td><td className="rpd-num">{formatoMoneda(a.balance)}</td></tr></tfoot>
+                    </table>
+                  </div>
+                  <div className="rpd-x83"><button className="rpd-x84" type="button" onClick={() => setSaldoViendo(null)}>Cerrar</button></div>
+                </div>
+              </div>
+            );
+          })()}
 
           {modalSaldo && (
             <div className="modal-overlay rpd-x68" onClick={() => !guardandoSaldo && setModalSaldo(false)}>
