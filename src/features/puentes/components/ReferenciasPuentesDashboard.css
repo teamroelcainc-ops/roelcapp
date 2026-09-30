@@ -238,3 +238,10 @@
 .rpd-asiento__tabla tfoot td { font-weight: 700; background: #161b22; color: #f0f6fc; border-bottom: none; }
 .rpd-asiento__abono td { background: rgba(46, 160, 67, 0.08); }
 @media (max-width: 640px) { .rpd-asiento__resumen { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* ✅ V00399: referencias seleccionadas y desglose en el asiento */
+.rpd-grupo__tabla { margin-top: 8px; max-height: 220px; overflow: auto; border: 1px solid #21262d; border-radius: 6px; }
+.rpd-grupo__tabla table, .rpd-asiento__sub table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+.rpd-grupo__tabla th, .rpd-asiento__sub th { position: sticky; top: 0; background: #161b22; color: #8b949e; font-size: 0.68rem; text-transform: uppercase; text-align: left; padding: 6px 10px; }
+.rpd-grupo__tabla td, .rpd-asiento__sub td { padding: 5px 10px; border-top: 1px solid #21262d; color: #c9d1d9; }
+.rpd-asiento__sub > td { background: #0b0f14; padding: 8px 12px 10px 28px !important; }
+.rpd-asiento__sub-vacio { color: #8b949e; font-size: 0.8rem; }
