@@ -212,3 +212,10 @@
 .rpd-otro-input--ref { color: #ff8a5b; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight: 700; }
 .rpd-chip-otro { display: inline-block; padding: 1px 8px; border-radius: 999px; border: 1px solid #a371f7; color: #d2a8ff; font-size: 0.7rem; font-weight: 700; margin-right: 4px; }
 @media (max-width: 560px) { .rpd-otro-grid { grid-template-columns: 1fr; } }
+/* ✅ V00396: detalle de otro cruce y filas clicables */
+.rpd-fila-clic { cursor: pointer; }
+.rpd-fila-clic:hover td { background: rgba(88, 166, 255, 0.06); }
+.rpd-otro-detalle { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 12px 0 16px; padding: 14px; border: 1px solid #30363d; border-radius: 8px; background: #0d1117; }
+.rpd-otro-detalle div { display: flex; flex-direction: column; gap: 3px; }
+.rpd-otro-detalle span { color: #8b949e; font-size: 0.74rem; font-weight: 700; text-transform: uppercase; }
+.rpd-otro-detalle b { color: #f0f6fc; font-size: 0.9rem; }

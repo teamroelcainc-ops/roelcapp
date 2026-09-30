@@ -37,7 +37,7 @@ const COLUMNAS_OPS_PUENTES_BASE = [
 ];
 
 export const ReferenciasPuentesDashboard = () => {
-  const [activeTab, setActiveTab] = useState<'operaciones' | 'otros' | 'historial'>('historial');
+  const [activeTab, setActiveTab] = useState<'operaciones' | 'otros' | 'saldos' | 'historial'>('historial');
 
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
   const [referenciasGlobales, setReferenciasGlobales] = useState<any[]>([]);
@@ -67,6 +67,24 @@ export const ReferenciasPuentesDashboard = () => {
   const [otroMonto, setOtroMonto] = useState('');
   const [otroUnidad, setOtroUnidad] = useState('');
   const [guardandoOtro, setGuardandoOtro] = useState(false);
+  // ✅ V00396: AGREGAR SALDO — saldo inicial por puente (colección saldos_puentes,
+  //   la misma que usan Saldos de Puentes y las tarjetas de Operaciones Activas)
+  const [saldosLista, setSaldosLista] = useState<Record<string, unknown>[]>([]);
+  const [modalSaldo, setModalSaldo] = useState(false);
+  const [saldoFecha, setSaldoFecha] = useState(hoyLocalISO());
+  const [saldoHora, setSaldoHora] = useState('');
+  const [saldoPuenteId, setSaldoPuenteId] = useState('');
+  const [saldoMonto, setSaldoMonto] = useState('');
+  const [guardandoSaldo, setGuardandoSaldo] = useState(false);
+  useEffect(() => {
+    if (activeTab !== 'saldos') return;
+    const u = onSnapshot(collection(db, 'saldos_puentes'), (snap) => {
+      const l: Record<string, unknown>[] = snap.docs.map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) }));
+      l.sort((a, b) => `${String(b.fecha || '')} ${String(b.hora || '')}`.localeCompare(`${String(a.fecha || '')} ${String(a.hora || '')}`));
+      setSaldosLista(l);
+    });
+    return () => u();
+  }, [activeTab]);
   // ✅ V00393: hora en que se marcó Verde MX / Verde USA (bitácora "horarios")
   const [horasVerde, setHorasVerde] = useState<Record<string, { etiqueta: string; fechaHora: string }[]>>({});
   const [seleccionadas, setSeleccionadas] = useState<string[]>([]);
@@ -773,6 +791,36 @@ export const ReferenciasPuentesDashboard = () => {
     }
   };
 
+  const abrirSaldo = () => { setSaldoFecha(hoyLocalISO()); setSaldoHora(horaAhora()); setSaldoPuenteId(''); setSaldoMonto(''); setModalSaldo(true); };
+  const guardarSaldo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const p = puentesCatalogo.find(x => x.id === saldoPuenteId);
+    if (!p) return alert('Elige el puente.');
+    const n = Number(saldoMonto);
+    if (!(n > 0)) return alert('Captura el saldo inicial.');
+    if (!saldoFecha || !saldoHora) return alert('Captura la fecha y la hora.');
+    setGuardandoSaldo(true);
+    try {
+      const batch = writeBatch(db);
+      batch.set(doc(collection(db, 'saldos_puentes')), {
+        fecha: saldoFecha, hora: saldoHora,
+        puenteId: p.id, puenteNombre: String(nombrePuente(p)),
+        moneda: monedaCatalogo(p.moneda), saldo: n,
+        registradoPor: usuarioActual(),
+        creadoEn: new Date().toISOString(),
+      });
+      await batch.commit();
+      setModalSaldo(false);
+    } catch (err) {
+      alert(`No se pudo guardar el saldo: ${(err as Error)?.message || err}`);
+    } finally { setGuardandoSaldo(false); }
+  };
+  const eliminarSaldo = async (r: Record<string, unknown>) => {
+    if (!window.confirm(`¿Eliminar el saldo de ${String(r.puenteNombre || '')} del ${formatearFechaSpanish(String(r.fecha || ''))} por ${formatoMoneda(Number(r.saldo) || 0)}?`)) return;
+    try { const batch = writeBatch(db); batch.delete(doc(db, 'saldos_puentes', String(r.id))); await batch.commit(); }
+    catch (err) { alert(`No se pudo eliminar: ${(err as Error)?.message || err}`); }
+  };
+
   const handleGuardarReferencia = async (e: React.FormEvent) => {
     e.preventDefault();
     if (seleccionadas.length === 0) return alert('Selecciona al menos una operación.');
@@ -945,10 +993,89 @@ export const ReferenciasPuentesDashboard = () => {
       <div className="rpd-x6">
         <button onClick={() => setActiveTab('operaciones')} style={tabStyle(activeTab === 'operaciones')}>Asignar Operaciones</button>
         <button onClick={() => setActiveTab('otros')} style={tabStyle(activeTab === 'otros')}>Otros Cruces</button>
+        <button onClick={() => setActiveTab('saldos')} style={tabStyle(activeTab === 'saldos')}>Agregar Saldo</button>
         <button onClick={() => setActiveTab('historial')} style={tabStyle(activeTab === 'historial')}>Historial de Referencias</button>
       </div>
 
-      {activeTab === 'otros' ? (
+      {activeTab === 'saldos' ? (
+        <div className="animation-fade-in">
+          {/* ✅ V00396: AGREGAR SALDO */}
+          <div className="rpd-otros-barra">
+            <span className="rpd-otros-nota">Saldo inicial de cada puente. Es el que se muestra en Operaciones Activas y se descuenta con los cruces de las operaciones (y otros cruces) de ese puente a partir de su fecha.</span>
+            <button type="button" className="rpd-btn-otro" onClick={abrirSaldo}>+ Agregar saldo</button>
+          </div>
+          <div className="table-container rpd-x41">
+            <table className="rpd-x27">
+              <thead className="rpd-x28">
+                <tr>
+                  <th className="rpd-x43">FECHA</th>
+                  <th className="rpd-x43">HORA</th>
+                  <th className="rpd-x43">PUENTE</th>
+                  <th className="rpd-x43">SALDO INICIAL</th>
+                  <th className="rpd-x43"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {saldosLista.length === 0 ? (
+                  <tr><td className="rpd-x45" colSpan={5}>Aún no hay saldos registrados. Usa "+ Agregar saldo".</td></tr>
+                ) : saldosLista.map(r => (
+                  <tr className="rpd-x46" key={String(r.id)}>
+                    <td className="rpd-celda">{formatearFechaSpanish(String(r.fecha || ''))}</td>
+                    <td className="rpd-celda">{String(r.hora || '—')}</td>
+                    <td className="rpd-celda">{String(r.puenteNombre || '')}</td>
+                    <td className="rpd-x3">{formatoMoneda(Number(r.saldo) || 0)} <span className="rpd-moneda">{String(r.moneda || '')}</span></td>
+                    <td className="rpd-celda">
+                      <button className="rpd-x51" title="Eliminar" onClick={() => eliminarSaldo(r)}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {modalSaldo && (
+            <div className="modal-overlay rpd-x68" onClick={() => !guardandoSaldo && setModalSaldo(false)}>
+              <div className="rpd-x69" onClick={(e) => e.stopPropagation()}>
+                <div className="rpd-x70">
+                  <h2 className="rpd-x71">Agregar saldo</h2>
+                  <button className="rpd-x62" onClick={() => setModalSaldo(false)}>✕</button>
+                </div>
+                <FormularioConfigurable modulo="referenciasPuentes">
+                <form onSubmit={guardarSaldo} className="rpd-otro-form">
+                  <div className="rpd-otro-grid">
+                    <div className="rpd-otro-campo">
+                      <label className="rpd-otro-label">Fecha</label>
+                      <input className="rpd-otro-input" type="date" required value={saldoFecha} onChange={(e) => setSaldoFecha(e.target.value)} />
+                    </div>
+                    <div className="rpd-otro-campo">
+                      <label className="rpd-otro-label">Hora</label>
+                      <input className="rpd-otro-input" type="time" required value={saldoHora} onChange={(e) => setSaldoHora(e.target.value)} />
+                    </div>
+                    <div className="rpd-otro-campo">
+                      <label className="rpd-otro-label">Puente</label>
+                      <select className="rpd-otro-input" required value={saldoPuenteId} onChange={(e) => setSaldoPuenteId(e.target.value)}>
+                        <option value="">Seleccionar puente…</option>
+                        {puentesCatalogo.map(p => <option key={p.id} value={p.id}>{String(nombrePuente(p))}</option>)}
+                      </select>
+                    </div>
+                    <div className="rpd-otro-campo">
+                      <label className="rpd-otro-label">Saldo inicial{(() => { const p = puentesCatalogo.find(x => x.id === saldoPuenteId); return p ? ` (${monedaCatalogo(p.moneda)})` : ''; })()}</label>
+                      <input className="rpd-otro-input" type="number" step="0.01" min="0" required value={saldoMonto} onChange={(e) => setSaldoMonto(e.target.value)} placeholder="0.00" />
+                    </div>
+                  </div>
+                  <div className="rpd-x83">
+                    <button className="rpd-x84" type="button" onClick={() => setModalSaldo(false)} disabled={guardandoSaldo}>Cancelar</button>
+                    <button className="rpd-x85" type="submit" disabled={guardandoSaldo}>{guardandoSaldo ? 'Guardando…' : 'Guardar saldo'}</button>
+                  </div>
+                </form>
+                </FormularioConfigurable>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : activeTab === 'otros' ? (
         <div className="animation-fade-in">
           {/* ✅ V00395: OTROS CRUCES */}
           <div className="rpd-otros-barra">
@@ -965,22 +1092,20 @@ export const ReferenciasPuentesDashboard = () => {
                   <th className="rpd-x43">PUENTE</th>
                   <th className="rpd-x43">MONTO</th>
                   <th className="rpd-x43">UNIDAD</th>
-                  <th className="rpd-x43">USUARIO QUE REGISTRÓ</th>
                   <th className="rpd-x43"></th>
                 </tr>
               </thead>
               <tbody>
                 {otrosCruces.length === 0 ? (
-                  <tr><td className="rpd-x45" colSpan={8}>Aún no hay otros cruces registrados. Usa "+ Agregar cruce".</td></tr>
+                  <tr><td className="rpd-x45" colSpan={7}>Aún no hay otros cruces registrados. Usa "+ Agregar cruce".</td></tr>
                 ) : otrosCruces.map(r => (
-                  <tr className="rpd-x46" key={r.id}>
+                  <tr className="rpd-x46 rpd-fila-clic" key={r.id} title="Ver detalle" onClick={() => setReferenciaViendo(r)}>
                     <td className="rpd-x52">{r.consecutivo}</td>
                     <td className="rpd-celda">{formatearFechaSpanish(r.fechaCruce || r.fechaGeneracion)}</td>
                     <td className="rpd-celda">{r.horaCruce || r.horaGeneracion || '—'}</td>
                     <td className="rpd-celda">{r.puenteNombre}</td>
                     <td className="rpd-x3">{formatoMoneda(Number(r.monto ?? r.subtotalPuentes) || 0)} <span className="rpd-moneda">{r.moneda || ''}</span></td>
                     <td className="rpd-celda">{r.unidad || '—'}</td>
-                    <td className="rpd-celda">{r.registradoPor || '—'}</td>
                     <td className="rpd-celda">
                       <button className="rpd-x51" title="Eliminar" onClick={(e) => handleEliminarReferencia(e, r)}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
@@ -1031,10 +1156,6 @@ export const ReferenciasPuentesDashboard = () => {
                       <datalist id="rpd-unidades-otro">
                         {unidadesList.map(u => <option key={String(u.id)} value={String(u.unidad ?? u.numeroEconomico ?? u.nombre ?? '')} />)}
                       </datalist>
-                    </div>
-                    <div className="rpd-otro-campo">
-                      <label className="rpd-otro-label">Usuario que registra</label>
-                      <input className="rpd-otro-input" readOnly value={usuarioActual()} />
                     </div>
                   </div>
                   <div className="rpd-x83">
@@ -1264,7 +1385,7 @@ export const ReferenciasPuentesDashboard = () => {
                       <td className="rpd-celda">{r.horaGeneracion || (r.createdAt ? new Date(r.createdAt).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) : '—')}</td>
                       <td className="rpd-celda rpd-celda--refs" title={(Array.isArray(r.operaciones) ? r.operaciones : (r.operacionesGuardadas || []).map((o: { ref?: string }) => o.ref)).join(', ')}>
                         {r.tipo === 'otroCruce'
-                          ? <><span className="rpd-chip-otro">Otro cruce</span> {r.unidad || '—'} · {r.registradoPor || ''}</>
+                          ? <><span className="rpd-chip-otro">Otro cruce</span> {r.unidad || '—'}</>
                           : <><b>{Array.isArray(r.operacionesIds) ? r.operacionesIds.length : 0}</b> · {(Array.isArray(r.operaciones) ? r.operaciones : (r.operacionesGuardadas || []).map((o: { ref?: string }) => o.ref)).join(', ')}</>}
                       </td>
                       <td className="rpd-x3">{r.totalesPorMoneda && Object.keys(r.totalesPorMoneda).length ? Object.entries(r.totalesPorMoneda as Record<string, number>).map(([m, t]) => <div key={m}>{formatoMoneda(t)} <span className="rpd-moneda">{m}</span></div>) : formatoMoneda(r.subtotalPuentes)}</td>
@@ -1399,11 +1520,24 @@ export const ReferenciasPuentesDashboard = () => {
                 </div>
               </div>
 
+              {referenciaViendo.tipo === 'otroCruce' && (
+                <div className="rpd-otro-detalle">
+                  {/* ✅ V00396: el usuario solo se ve aquí, en el detalle */}
+                  <div><span>Fecha</span><b>{formatearFechaSpanish(referenciaViendo.fechaCruce || referenciaViendo.fechaGeneracion)}</b></div>
+                  <div><span>Hora</span><b>{referenciaViendo.horaCruce || referenciaViendo.horaGeneracion || '—'}</b></div>
+                  <div><span>Puente</span><b>{referenciaViendo.puenteNombre}</b></div>
+                  <div><span>Monto</span><b>{formatoMoneda(Number(referenciaViendo.monto ?? referenciaViendo.subtotalPuentes) || 0)} {referenciaViendo.moneda || ''}</b></div>
+                  <div><span>Unidad</span><b>{referenciaViendo.unidad || '—'}</b></div>
+                  <div><span>Registrado por</span><b>{referenciaViendo.registradoPor || '—'}</b></div>
+                </div>
+              )}
+              {referenciaViendo.tipo !== 'otroCruce' && (
               <div className="rpd-x96">
                 <div><span className="rpd-x97">Fecha de pago: </span>{formatearFechaSpanish(referenciaViendo.fechaPago)}</div>
                 <div><span className="rpd-x97">Período: </span>{formatearFechaSpanish(referenciaViendo.fechaInicio)} al {formatearFechaSpanish(referenciaViendo.fechaFin)}</div>
                 {referenciaViendo.observaciones && <div><span className="rpd-x97">Obs.: </span>{referenciaViendo.observaciones}</div>}
               </div>
+              )}
 
               <span className="rpd-x98">
                 Operaciones incluidas ({referenciaViendo.operacionesGuardadas?.length || 0})
