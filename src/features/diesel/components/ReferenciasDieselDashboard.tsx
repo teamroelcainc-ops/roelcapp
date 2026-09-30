@@ -13,7 +13,7 @@ import {
   getDoc,
   updateDoc
 } from 'firebase/firestore';
-import { db } from '../../../config/firebase';
+import { db, auth } from '../../../config/firebase';
 import { useEstadoPersistente } from '../../../hooks/useEstadoPersistente';
 import * as XLSX from 'xlsx';
 import { generarInstruccionesDieselPDF } from '../../../utils/pdfInstruccionesDiesel';
@@ -171,7 +171,7 @@ const atributosCajaOp = (op: any): { carga: 'CARGADA' | 'VACIA' | ''; hazmat: bo
 };
 
 export const ReferenciasDieselDashboard = () => {
-  const [activeTab, setActiveTab] = useState<'operaciones' | 'referencias' | 'dashboard'>('referencias');
+  const [activeTab, setActiveTab] = useState<'operaciones' | 'saldos' | 'referencias' | 'dashboard'>('referencias');
 
   
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
@@ -547,7 +547,7 @@ export const ReferenciasDieselDashboard = () => {
 
   // ✅ 1. CARGAMOS REFERENCIAS Y CATÁLOGOS LIGEROS
   useEffect(() => {
-    const qRefs = query(collection(db, 'referencias_diesel'), orderBy('createdAt', 'desc'), limit(400));
+    const qRefs = query(collection(db, 'referencias_diesel'), orderBy('createdAt', 'desc'), limit(3000)); // ✅ V00400: saldos necesitan el historial completo
     const unSubReferencias = onSnapshot(qRefs, (snap) => {
       const refs = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
       refs.sort((a: any, b: any) => {
@@ -1061,6 +1061,107 @@ export const ReferenciasDieselDashboard = () => {
     return 'Cargado'; 
   }, [galonesExtras, galonesCargados]);
 
+  // ============================================================================
+  // ✅ V00400: SALDOS DE DIESEL por proveedor (colección saldos_diesel).
+  //   Cada saldo se descuenta con las REFERENCIAS del Historial de su proveedor
+  //   (Total Cargado = galones cargados × costo) desde su fecha; primero se
+  //   consume el saldo más antiguo. Detalle = asiento contable; clic en una
+  //   referencia muestra sus operaciones.
+  // ============================================================================
+  const [saldosDiesel, setSaldosDiesel] = useState<Record<string, unknown>[]>([]);
+  const [modalSaldoD, setModalSaldoD] = useState(false);
+  const [sdFecha, setSdFecha] = useState(hoyLocalISO());
+  const [sdHora, setSdHora] = useState('');
+  const [sdProveedor, setSdProveedor] = useState('');
+  const [sdMonto, setSdMonto] = useState('');
+  const [sdMoneda, setSdMoneda] = useState('Dólares');
+  const [guardandoSd, setGuardandoSd] = useState(false);
+  const [saldoDViendo, setSaldoDViendo] = useState<Record<string, unknown> | null>(null);
+  const [refDAbierta, setRefDAbierta] = useState('');
+  const [opsRefD, setOpsRefD] = useState<Record<string, Record<string, unknown>[]>>({});
+  useEffect(() => {
+    if (activeTab !== 'saldos') return;
+    const u = onSnapshot(collection(db, 'saldos_diesel'), (snap) => {
+      const l: Record<string, unknown>[] = snap.docs.map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) }));
+      l.sort((a, b) => `${String(b.fecha || '')} ${String(b.hora || '')}`.localeCompare(`${String(a.fecha || '')} ${String(a.hora || '')}`));
+      setSaldosDiesel(l);
+    }, () => setSaldosDiesel([]));
+    return () => u();
+  }, [activeTab]);
+  const horaAhoraD = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+  const montoCargadoRef = (r: Record<string, unknown>) => Number(r.totalCargado) || ((Number(r.galonesCargados) || 0) * (Number(r.costoDiesel) || 0));
+  const mismoProveedor = (r: Record<string, unknown>, s0: Record<string, unknown>) => {
+    const pid = String(s0.proveedorId || '');
+    return (!!pid && String(r.proveedorId || r.proveedor || '') === pid) || (!!s0.proveedorNombre && String(r.proveedorNombre || '').trim().toLowerCase() === String(s0.proveedorNombre).trim().toLowerCase());
+  };
+  const asignacionDiesel = useMemo(() => {
+    const res: Record<string, { refs: Record<string, unknown>[]; consumido: number; balance: number; galones: number }> = {};
+    const porProv = new Map<string, Record<string, unknown>[]>();
+    saldosDiesel.forEach(r => { const k = String(r.proveedorId || r.proveedorNombre || ''); porProv.set(k, [...(porProv.get(k) || []), r]); });
+    porProv.forEach((recs) => {
+      const orden = [...recs].sort((a, b) => `${String(a.fecha || '')} ${String(a.hora || '')}`.localeCompare(`${String(b.fecha || '')} ${String(b.hora || '')}`));
+      const primera = String(orden[0]?.fecha || '');
+      const restante = orden.map(r => Number(r.saldo) || 0);
+      orden.forEach(r => { res[String(r.id)] = { refs: [], consumido: 0, balance: Number(r.saldo) || 0, galones: 0 }; });
+      (referenciasGlobales as Record<string, unknown>[])
+        .filter(r => mismoProveedor(r, orden[0]) && montoCargadoRef(r) > 0 && (!primera || String(r.fecha || '') >= primera))
+        .sort((a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')) || String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
+        .forEach(r => {
+          const fecha = String(r.fecha || '');
+          let i = restante.findIndex((v, idx) => v > 0.0001 && String(orden[idx].fecha || '') <= fecha);
+          if (i < 0) { i = orden.length - 1; while (i > 0 && String(orden[i].fecha || '') > fecha) i--; }
+          const m = montoCargadoRef(r);
+          restante[i] -= m;
+          const e = res[String(orden[i].id)];
+          e.refs.push(r); e.consumido += m; e.balance -= m; e.galones += Number(r.galonesCargados) || 0;
+        });
+    });
+    return res;
+  }, [referenciasGlobales, saldosDiesel]);
+  const costoVigenteProv = (s0: Record<string, unknown>) => {
+    const ult = (referenciasGlobales as Record<string, unknown>[]).filter(r => mismoProveedor(r, s0) && Number(r.costoDiesel) > 0)
+      .sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')))[0];
+    return Number(ult?.costoDiesel) || 0;
+  };
+  const abrirSaldoD = () => { setSdFecha(hoyLocalISO()); setSdHora(horaAhoraD()); setSdProveedor(''); setSdMonto(''); setSdMoneda('Dólares'); setModalSaldoD(true); };
+  const guardarSaldoD = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!sdProveedor) return alert('Elige el proveedor de diesel.');
+    const n = Number(sdMonto);
+    if (!(n > 0)) return alert('Captura el saldo inicial.');
+    if (!sdFecha || !sdHora) return alert('Captura la fecha y la hora.');
+    setGuardandoSd(true);
+    try {
+      const batch = writeBatch(db);
+      batch.set(doc(collection(db, 'saldos_diesel')), {
+        fecha: sdFecha, hora: sdHora, proveedorId: sdProveedor, proveedorNombre: getNombreProveedor(sdProveedor),
+        saldo: n, moneda: sdMoneda,
+        registradoPor: auth.currentUser?.displayName || auth.currentUser?.email || 'Usuario',
+        creadoEn: new Date().toISOString(),
+      });
+      await batch.commit();
+      setModalSaldoD(false);
+    } catch (err) { alert(`No se pudo guardar el saldo: ${(err as Error)?.message || err}`); }
+    finally { setGuardandoSd(false); }
+  };
+  const eliminarSaldoD = async (r: Record<string, unknown>) => {
+    if (!window.confirm(`¿Eliminar el saldo de ${String(r.proveedorNombre || '')} del ${formatearFechaSpanish(r.fecha)} por ${formatoMoneda(Number(r.saldo) || 0)}?`)) return;
+    try { const batch = writeBatch(db); batch.delete(doc(db, 'saldos_diesel', String(r.id))); await batch.commit(); }
+    catch (err) { alert(`No se pudo eliminar: ${(err as Error)?.message || err}`); }
+  };
+  const abrirOpsRefD = async (r: Record<string, unknown>) => {
+    const id = String(r.id);
+    setRefDAbierta(prev => (prev === id ? '' : id));
+    if (opsRefD[id]) return;
+    const ids = (Array.isArray(r.operacionesIds) ? r.operacionesIds : []) as string[];
+    const docs = await Promise.all(ids.map(async (oid) => {
+      const local = operacionesGlobales.find((o: { id?: unknown }) => String(o.id) === String(oid));
+      if (local) return local as Record<string, unknown>;
+      try { const d = await getDoc(doc(db, 'operaciones', String(oid))); return d.exists() ? ({ id: d.id, ...(d.data() as Record<string, unknown>) }) : { id: oid }; } catch { return { id: oid }; }
+    }));
+    setOpsRefD(prev => ({ ...prev, [id]: docs }));
+  };
+
   const handleGuardarReferencia = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!proveedorSeleccionado) return alert("Selecciona un proveedor.");
@@ -1435,6 +1536,7 @@ export const ReferenciasDieselDashboard = () => {
 
       <div className="rdd-x13">
         <button onClick={() => setActiveTab('operaciones')} style={tabStyle(activeTab === 'operaciones')}>Asignar Operaciones</button>
+        <button onClick={() => setActiveTab('saldos')} style={tabStyle(activeTab === 'saldos')}>Saldos</button>
         <button onClick={() => setActiveTab('referencias')} style={tabStyle(activeTab === 'referencias')}>Historial de Referencias</button>
         <button onClick={() => setActiveTab('dashboard')} style={tabStyle(activeTab === 'dashboard')}>Dashboard por Unidad</button>
       </div>
@@ -1741,6 +1843,159 @@ export const ReferenciasDieselDashboard = () => {
           </div>
         </div>
 
+      ) : activeTab === 'saldos' ? (
+        <div className="animation-fade-in">
+          {/* ✅ V00400: SALDOS DE DIESEL */}
+          <div className="rdd-saldos-barra">
+            <span className="rdd-saldos-nota">Saldo inicial por proveedor de diesel. Se descuenta con las referencias del Historial de ese proveedor (Total Cargado = galones cargados × costo) a partir de su fecha.</span>
+            <button type="button" className="rdd-btn-saldo" onClick={abrirSaldoD}>+ Agregar saldo</button>
+          </div>
+          <div className="rdd-saldos-marco">
+            <table className="rdd-saldos-tabla">
+              <thead>
+                <tr>
+                  <th>Fecha</th><th>Hora</th><th>Proveedor</th><th className="rdd-num">Saldo inicial</th>
+                  <th className="rdd-num">Cargas</th><th className="rdd-num">Monto cargado</th><th className="rdd-num">Balance</th><th className="rdd-num">Alcanza para</th><th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {saldosDiesel.length === 0 ? (
+                  <tr><td colSpan={9} className="rdd-saldos-vacio">Aún no hay saldos registrados. Usa "+ Agregar saldo".</td></tr>
+                ) : saldosDiesel.map(r => {
+                  const a = asignacionDiesel[String(r.id)] || { refs: [], consumido: 0, balance: Number(r.saldo) || 0, galones: 0 };
+                  const costo = costoVigenteProv(r);
+                  const alcanza = costo > 0 && a.balance > 0 ? a.balance / costo : 0;
+                  return (
+                    <tr key={String(r.id)} className="rdd-fila-clic" title="Ver el asiento: saldo y referencias descontadas" onClick={() => setSaldoDViendo(r)}>
+                      <td>{formatearFechaSpanish(r.fecha)}</td>
+                      <td>{String(r.hora || '—')}</td>
+                      <td>{String(r.proveedorNombre || getNombreProveedor(String(r.proveedorId || '')))}</td>
+                      <td className="rdd-num rdd-abono">{formatoMoneda(Number(r.saldo) || 0)} <span className="rdd-moneda">{String(r.moneda || '')}</span></td>
+                      <td className="rdd-num"><b>{a.refs.length}</b> <span className="rdd-moneda">ref. · {a.galones.toLocaleString('es-MX', { maximumFractionDigits: 2 })} gal</span></td>
+                      <td className="rdd-num rdd-cargo">−{formatoMoneda(a.consumido)}</td>
+                      <td className={`rdd-num rdd-balance${a.balance < 0 ? ' rdd-balance--neg' : ''}`}>{formatoMoneda(a.balance)}</td>
+                      <td className="rdd-num">{costo > 0 ? <><b>{alcanza.toLocaleString('es-MX', { maximumFractionDigits: 1 })}</b> <span className="rdd-moneda">gal · {formatoMoneda(costo)}/gal</span></> : '—'}</td>
+                      <td>
+                        <button className="rdd-btn-borrar" title="Eliminar" onClick={(e) => { e.stopPropagation(); eliminarSaldoD(r); }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {saldoDViendo && (() => {
+            const a = asignacionDiesel[String(saldoDViendo.id)] || { refs: [], consumido: 0, balance: Number(saldoDViendo.saldo) || 0, galones: 0 };
+            let corrido = Number(saldoDViendo.saldo) || 0;
+            return (
+              <div className="modal-overlay rdd-modal-fondo" onClick={() => setSaldoDViendo(null)}>
+                <div className="rdd-asiento" onClick={(e) => e.stopPropagation()}>
+                  <div className="rdd-asiento__enc">
+                    <h2>{String(saldoDViendo.proveedorNombre || '')} — saldo del {formatearFechaSpanish(saldoDViendo.fecha)}</h2>
+                    <button className="rdd-asiento__cerrar" onClick={() => setSaldoDViendo(null)}>✕</button>
+                  </div>
+                  <div className="rdd-asiento__resumen">
+                    <div><span>Saldo inicial</span><b>{formatoMoneda(Number(saldoDViendo.saldo) || 0)} {String(saldoDViendo.moneda || '')}</b></div>
+                    <div><span>Referencias · galones</span><b>{a.refs.length} · {a.galones.toLocaleString('es-MX', { maximumFractionDigits: 2 })}</b></div>
+                    <div><span>Monto cargado</span><b className="rdd-cargo">−{formatoMoneda(a.consumido)}</b></div>
+                    <div><span>Balance</span><b className={a.balance < 0 ? 'rdd-balance--neg' : 'rdd-balance'}>{formatoMoneda(a.balance)}</b></div>
+                  </div>
+                  <div className="rdd-asiento__marco">
+                    <table className="rdd-asiento__tabla">
+                      <thead><tr><th>Fecha</th><th># Referencia</th><th>Unidad</th><th className="rdd-num">Galones</th><th className="rdd-num">Cargo (−)</th><th className="rdd-num">Abono (+)</th><th className="rdd-num">Saldo</th></tr></thead>
+                      <tbody>
+                        <tr className="rdd-asiento__abono">
+                          <td>{formatearFechaSpanish(saldoDViendo.fecha)}{saldoDViendo.hora ? ` ${String(saldoDViendo.hora)}` : ''}</td>
+                          <td>—</td><td>Saldo inicial</td><td className="rdd-num"></td><td className="rdd-num"></td>
+                          <td className="rdd-num rdd-abono">+{formatoMoneda(Number(saldoDViendo.saldo) || 0)}</td>
+                          <td className="rdd-num">{formatoMoneda(corrido)}</td>
+                        </tr>
+                        {a.refs.map((r) => {
+                          const m = montoCargadoRef(r);
+                          corrido -= m;
+                          const id = String(r.id);
+                          const abierta = refDAbierta === id;
+                          const ops = opsRefD[id];
+                          return (
+                            <React.Fragment key={id}>
+                              <tr className="rdd-fila-clic" title="Ver las operaciones de esta referencia" onClick={() => abrirOpsRefD(r)}>
+                                <td>{formatearFechaSpanish(r.fecha)}</td>
+                                <td className="rdd-ref">{abierta ? '▾' : '▸'} {String(r.consecutivo || '')}</td>
+                                <td>{String(r.unidadNombre || '—')}</td>
+                                <td className="rdd-num">{(Number(r.galonesCargados) || 0).toLocaleString('es-MX', { maximumFractionDigits: 2 })}</td>
+                                <td className="rdd-num rdd-cargo">−{formatoMoneda(m)}</td>
+                                <td className="rdd-num"></td>
+                                <td className={`rdd-num${corrido < 0 ? ' rdd-balance--neg' : ''}`}>{formatoMoneda(corrido)}</td>
+                              </tr>
+                              {abierta && (
+                                <tr className="rdd-asiento__sub">
+                                  <td colSpan={7}>
+                                    {!ops ? <span className="rdd-moneda">Cargando operaciones…</span> : ops.length === 0 ? <span className="rdd-moneda">Esta referencia no tiene operaciones.</span> : (
+                                      <table>
+                                        <thead><tr><th>Ref. Operación</th><th>Fecha servicio</th><th>Tipo</th><th>Convenio</th><th className="rdd-num">Diesel</th></tr></thead>
+                                        <tbody>
+                                          {ops.map((o, j) => (
+                                            <tr key={j}>
+                                              <td className="rdd-ref">{String(o.ref || o.id || '')}</td>
+                                              <td>{formatearFechaSpanish(o.fechaServicio)}</td>
+                                              <td>{String(o.tipoOperacionNombre || '—')}</td>
+                                              <td>{String(o.convenioNombre || '—')}</td>
+                                              <td className="rdd-num">{String(o.combustibleTotal ?? o.combustible ?? '—')}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    )}
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
+                        {a.refs.length === 0 && <tr><td colSpan={7} className="rdd-saldos-vacio">Aún no hay referencias de este proveedor que descuenten de este saldo.</td></tr>}
+                      </tbody>
+                      <tfoot><tr><td colSpan={4}>Totales</td><td className="rdd-num rdd-cargo">−{formatoMoneda(a.consumido)}</td><td className="rdd-num rdd-abono">+{formatoMoneda(Number(saldoDViendo.saldo) || 0)}</td><td className="rdd-num">{formatoMoneda(a.balance)}</td></tr></tfoot>
+                    </table>
+                  </div>
+                  <div className="rdd-asiento__pie"><button className="rdd-btn-sec" type="button" onClick={() => setSaldoDViendo(null)}>Cerrar</button></div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {modalSaldoD && (
+            <div className="modal-overlay rdd-modal-fondo" onClick={() => !guardandoSd && setModalSaldoD(false)}>
+              <div className="rdd-saldo-modal" onClick={(e) => e.stopPropagation()}>
+                <div className="rdd-asiento__enc">
+                  <h2>Agregar saldo de diesel</h2>
+                  <button className="rdd-asiento__cerrar" onClick={() => setModalSaldoD(false)}>✕</button>
+                </div>
+                <FormularioConfigurable modulo="referenciasDiesel">
+                <form onSubmit={guardarSaldoD} className="rdd-saldo-form">
+                  <div className="rdd-saldo-grid">
+                    <div className="rdd-saldo-campo"><label>Fecha</label><input type="date" required value={sdFecha} onChange={(e) => setSdFecha(e.target.value)} /></div>
+                    <div className="rdd-saldo-campo"><label>Hora</label><input type="time" required value={sdHora} onChange={(e) => setSdHora(e.target.value)} /></div>
+                    <div className="rdd-saldo-campo rdd-saldo-campo--ancho"><label>Proveedor</label>
+                      <SelectorProveedorBuscable proveedores={proveedoresFiltrados} value={sdProveedor} onChange={setSdProveedor} resolverNombre={getNombreProveedor} />
+                    </div>
+                    <div className="rdd-saldo-campo"><label>Saldo inicial</label><input type="number" step="0.01" min="0" required value={sdMonto} onChange={(e) => setSdMonto(e.target.value)} placeholder="0.00" /></div>
+                    <div className="rdd-saldo-campo"><label>Moneda</label>
+                      <select value={sdMoneda} onChange={(e) => setSdMoneda(e.target.value)}><option value="Dólares">Dólares</option><option value="Pesos">Pesos</option></select>
+                    </div>
+                  </div>
+                  <div className="rdd-asiento__pie">
+                    <button className="rdd-btn-sec" type="button" onClick={() => setModalSaldoD(false)} disabled={guardandoSd}>Cancelar</button>
+                    <button className="rdd-btn-saldo" type="submit" disabled={guardandoSd}>{guardandoSd ? 'Guardando…' : 'Guardar saldo'}</button>
+                  </div>
+                </form>
+                </FormularioConfigurable>
+              </div>
+            </div>
+          )}
+        </div>
       ) : activeTab === 'referencias' ? (
         <div className="animation-fade-in">
           
