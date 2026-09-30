@@ -68,3 +68,5 @@
 .tcas-subtitulo { color: #c9d1d9; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
 .tcas-disp { color: #e6edf3; font-weight: 700; font-size: 0.9rem; white-space: nowrap; }
 .tcas-disp--neg { color: #f85149; }
+/* ✅ V00398: fecha y hora al actualizar el saldo */
+.tcas-modal-fila { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

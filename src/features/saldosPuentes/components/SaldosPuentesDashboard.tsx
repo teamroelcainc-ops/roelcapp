@@ -53,6 +53,8 @@ export const SaldosPuentesDashboard: React.FC = () => {
   // edición del historial
   // ✅ V00368: libro contable — puente seleccionado
   const [libroPuenteId, setLibroPuenteId] = useState('');
+  // ✅ V00398: hora de la actualización del saldo
+  const [horaRecarga, setHoraRecarga] = useState('');
   // ✅ V00381: filtros del libro (control de saldos)
   const [libDe, setLibDe] = useState('');
   const [libHasta, setLibHasta] = useState('');
@@ -266,7 +268,7 @@ export const SaldosPuentesDashboard: React.FC = () => {
     return conSaldo.reverse(); // más reciente arriba
   };
 
-  const abrirRecarga = () => { setRecPuenteId(''); setMonto(''); setModalRecarga(true); };
+  const abrirRecarga = () => { setRecPuenteId(''); setMonto(''); setHoraRecarga(`${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`); setModalRecarga(true); };
   const cerrarRecarga = () => { if (!guardando) { setModalRecarga(false); setRecPuenteId(''); setMonto(''); } };
   const guardarRecarga = async () => {
     const pSel = puentes.find((x) => x.id === recPuenteId);
@@ -276,7 +278,7 @@ export const SaldosPuentesDashboard: React.FC = () => {
     setGuardando(true);
     try {
       await addDoc(collection(db, 'saldos_puentes'), {
-        fecha: hoyISO(), puenteId: pSel.id, puenteNombre: pSel.nombre,
+        fecha: hoyISO(), hora: horaRecarga || `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`, puenteId: pSel.id, puenteNombre: pSel.nombre,
         moneda: pSel.moneda, saldo: n, creadoEn: new Date().toISOString(),
       });
       cerrarRecarga();
@@ -540,6 +542,7 @@ export const SaldosPuentesDashboard: React.FC = () => {
             <div className="sp-modal" onClick={(e) => e.stopPropagation()}>
               <div className="sp-modal-titulo">Agregar saldo</div>
               <label className="sp-campo"><span>Fecha (hoy)</span><input type="date" className="form-control" value={hoyISO()} disabled readOnly /></label>
+              <label className="sp-campo"><span>Hora de la actualización</span><input type="time" className="form-control" value={horaRecarga} onChange={(e) => setHoraRecarga(e.target.value)} /></label>
               <label className="sp-campo"><span>Puente (del catálogo)</span>
                 <select className="form-control" value={recPuenteId} onChange={(e) => setRecPuenteId(e.target.value)} autoFocus>
                   <option value="">— Elegir puente —</option>

@@ -1329,3 +1329,4 @@ body {
 .rd-control__v--neg { color: #ff7b72; }
 .rd-control__v--btn { background: none; border: none; padding: 0; cursor: pointer; font-family: inherit; text-decoration: underline dotted #8d97a3; text-underline-offset: 3px; }
 .rd-control__v--btn:hover { color: var(--rd-color); }
+.rd-control__v--abono { color: #56d364; } /* ✅ V00398 */
