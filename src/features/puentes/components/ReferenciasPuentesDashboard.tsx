@@ -1065,6 +1065,16 @@ export const ReferenciasPuentesDashboard = () => {
                   </tr>
                 ))}
               </tbody>
+              {/* ✅ V00410: cantidades del historial */}
+              {refsAuto.length > 0 && (
+                <tfoot>
+                  <tr className="rpd-total-fila">
+                    <td colSpan={5}><b>{refsAuto.length}</b> {refsAuto.length === 1 ? 'referencia' : 'referencias'}</td>
+                    <td><b>{refsAuto.reduce((a, r) => a + (r.operacionesIds || []).length, 0)}</b> operaciones</td>
+                    <td colSpan={2}></td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         </div>
@@ -1727,6 +1737,7 @@ export const ReferenciasPuentesDashboard = () => {
                 <table className="rpd-x100">
                   <thead className="rpd-x101">
                     <tr>
+                      <th className="rpd-x102">#</th>
                       <th className="rpd-x102">REFERENCIA</th>
                       <th className="rpd-x102">FECHA</th>
                       <th className="rpd-x102">HORA (VERDE)</th>
@@ -1737,8 +1748,9 @@ export const ReferenciasPuentesDashboard = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {(referenciaViendo.operacionesGuardadas || []).map((op: any) => (
+                    {(referenciaViendo.operacionesGuardadas || []).map((op: any, i: number) => (
                       <tr className="rpd-x46" key={op.id}>
+                        <td className="rpd-x104 rpd-num-fila">{i + 1}</td>{/* ✅ V00410 */}
                         <td className="rpd-x103">{op.ref}</td>
                         <td className="rpd-x104">{formatearFechaSpanish(op.fecha)}</td>
                         <td className="rpd-x104">{op.horaVerde || '-'}</td>
@@ -1752,9 +1764,28 @@ export const ReferenciasPuentesDashboard = () => {
                       </tr>
                     ))}
                     {(!referenciaViendo.operacionesGuardadas || referenciaViendo.operacionesGuardadas.length === 0) && (
-                      <tr><td className="rpd-x106" colSpan={7}>Sin detalle de operaciones.</td></tr>
+                      <tr><td className="rpd-x106" colSpan={8}>Sin detalle de operaciones.</td></tr>
                     )}
                   </tbody>
+                  {/* ✅ V00410: totales — cantidad de operaciones y monto por moneda */}
+                  {(referenciaViendo.operacionesGuardadas || []).length > 0 && (() => {
+                    const ops = (referenciaViendo.operacionesGuardadas || []) as Record<string, unknown>[];
+                    const porMoneda: Record<string, number> = {};
+                    ops.forEach(o => {
+                      if (Number(o.caseta) > 0) porMoneda[String(o.casetaMoneda || '')] = (porMoneda[String(o.casetaMoneda || '')] || 0) + Number(o.caseta);
+                      else if (Number(o.puente) > 0) porMoneda[''] = (porMoneda[''] || 0) + Number(o.puente);
+                      if (Number(o.piso) > 0) porMoneda[String(o.pisoMoneda || '')] = (porMoneda[String(o.pisoMoneda || '')] || 0) + Number(o.piso);
+                    });
+                    const conVerde = ops.filter(o => String(o.horaVerde || '').trim() && String(o.horaVerde) !== '-').length;
+                    return (
+                      <tfoot>
+                        <tr className="rpd-total-fila">
+                          <td colSpan={7}><b>{ops.length}</b> {ops.length === 1 ? 'operación' : 'operaciones'} · {conVerde} con verde · {ops.length - conVerde} sin verde</td>
+                          <td className="rpd-x105">{Object.entries(porMoneda).map(([m, t]) => <div key={m}>{formatoMoneda(t)} <span className="rpd-moneda">{m}</span></div>)}</td>
+                        </tr>
+                      </tfoot>
+                    );
+                  })()}
                 </table>
               </div>
             </div>

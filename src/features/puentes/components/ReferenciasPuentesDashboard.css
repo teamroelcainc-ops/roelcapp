@@ -254,3 +254,6 @@
 .rpd-grupo__destino { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
 .rpd-grupo__destino label { color: #8b949e; font-size: 0.74rem; font-weight: 700; text-transform: uppercase; white-space: nowrap; }
 .rpd-grupo__destino select { flex: 1; padding: 7px 10px; border-radius: 6px; border: 1px solid #30363d; background: #161b22; color: #f0f6fc; font-size: 0.85rem; }
+/* ✅ V00410: numeración y totales del detalle */
+.rpd-num-fila { color: #8b949e; font-variant-numeric: tabular-nums; width: 36px; }
+.rpd-total-fila td { position: sticky; bottom: 0; background: #161b22; color: #f0f6fc; padding: 12px 16px; border-top: 1px solid #30363d; font-size: 0.86rem; }

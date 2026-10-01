@@ -8,7 +8,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import './TarjetaCasetas.css';
-import { docsSinPruebas } from '../../../utils/operacionPrueba';
 
 const ID_USD = '7dca62b3';
 const ID_MXN = 'f95d8894';
@@ -87,13 +86,20 @@ export const TarjetaCasetas: React.FC = () => {
         return { puenteId: String(x.puenteId || ''), fecha: String(x.fecha || ''), saldo: Number(x.saldo) || 0 };
       }));
     }, () => {});
-    const u3 = onSnapshot(query(collection(db, 'operaciones'), where('saldoPuente', '>', 0)), (snap) => {
-      setCruces(docsSinPruebas(snap.docs).flatMap((d) => { // ✅ V00380
-        const x = d.data() as Record<string, unknown>;
-        const caseta = { puenteNombre: String(x.saldoPuentePuente || ''), fecha: String(x.saldoPuenteFecha || ''), fechaServicio: String(x.fechaServicio || x.saldoPuenteFecha || '').slice(0, 10), monto: Number(x.saldoPuente) || 0, moneda: nombreMoneda(x.saldoPuenteMoneda), ref: String(x.ref || d.id), statusNombre: String(x.statusNombre || ''), evento: String(x.saldoPuenteEvento || '') };
-        // ✅ V00388: aduana Colombia — el PISO del puente cuenta como segundo cruce
-        if (!(Number(x.saldoPuentePiso) > 0)) return [caseta];
-        return [caseta, { ...caseta, puenteNombre: String(x.saldoPuentePisoPuente || 'Puente Mx Colombia'), fecha: String(x.saldoPuentePisoFecha || x.saldoPuenteFecha || ''), monto: Number(x.saldoPuentePiso) || 0, moneda: nombreMoneda(x.saldoPuentePisoMoneda), evento: String(x.saldoPuentePisoEvento || x.saldoPuenteEvento || '') }];
+    // ✅ V00410: las tarjetas cuadran con la pestaña SALDO de Referencias de Puentes —
+    //   se descuenta lo que está en el HISTORIAL DE REFERENCIAS (calculado) + Otros Cruces.
+    const u3 = onSnapshot(collection(db, 'referencias_puentes_auto'), (snap) => {
+      setCruces(snap.docs.flatMap((d) => {
+        const r = d.data() as Record<string, unknown>;
+        const fechaRef = String(r.fechaGeneracion || '');
+        const ops = (Array.isArray(r.operacionesGuardadas) ? r.operacionesGuardadas : []) as Record<string, unknown>[];
+        return ops.flatMap((o) => {
+          const [nomCaseta, nomPiso] = String(o.puenteNombre || '').split(' + ');
+          const base = { fecha: fechaRef, fechaServicio: String(o.fecha || fechaRef).slice(0, 10), ref: String(o.ref || ''), statusNombre: String(r.consecutivo || ''), evento: String(o.horaVerde || '') };
+          const filas = [{ ...base, puenteNombre: String(nomCaseta || ''), monto: Number(o.caseta ?? o.puente) || 0, moneda: String(o.casetaMoneda || '') }];
+          if (nomPiso && Number(o.piso) > 0) filas.push({ ...base, puenteNombre: String(nomPiso), monto: Number(o.piso) || 0, moneda: String(o.pisoMoneda || '') });
+          return filas;
+        });
       }));
     }, () => {});
     const u4 = onSnapshot(query(collection(db, 'referencias_puentes'), where('tipo', '==', 'otroCruce')), (snap) => {
