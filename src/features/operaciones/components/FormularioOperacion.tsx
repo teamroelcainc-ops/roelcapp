@@ -1964,6 +1964,20 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     return valor;
   }, [catalogoTrafico]);
 
+  // ✅ V00406: TROMPO → el Sueldo Operador es $0 (si hace falta un monto, va en
+  //   Costos Adicionales). Solo se aplica solo en operaciones NUEVAS o al cambiar
+  //   el convenio; las operaciones viejas con sueldo se corrigen con el botón
+  //   "Actualizar sueldo" para que no cambien sin querer.
+  const esTrompoOp = (() => {
+    const conv = listaConveniosCliente.find((c: { id?: unknown }) => String(c.id) === String(formData.convenio)) as { descripcion?: unknown; nombre?: unknown } | undefined;
+    const txt = `${String(formData.carga || '')} ${String(conv?.descripcion || conv?.nombre || '')}`;
+    return txt.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes('trompo');
+  })();
+  useEffect(() => {
+    if (initialData || !esTrompoOp) return;
+    if (Number(formData.sueldoOperador) !== 0) setFormData(prev => ({ ...prev, sueldoOperador: 0, sueldoMitadAplicada: false }));
+  }, [esTrompoOp, formData.sueldoOperador, initialData]);
+
   // ✅ V00387: con el estatus en FALSO el Sueldo Operador se muestra (y guarda) a la mitad
   useEffect(() => {
     if (!statusPreview) return;
@@ -2140,10 +2154,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
     setFormData(prev => ({
       ...prev,
-      ...(sueldo !== null && !isNaN(sueldo) ? { sueldoOperador: sueldo, sueldoMitadAplicada: false } : {}), // ✅ V00387
+      ...(sueldo !== null && !isNaN(sueldo) ? { sueldoOperador: esTrompoOp ? 0 : sueldo, sueldoMitadAplicada: false } : {}), // ✅ V00387 · V00406: trompo = $0
       ...(combustible !== null && !isNaN(combustible) ? { combustible: Math.round(combustible) } : {}),
     }));
-  }, [formData.convenio, listaConveniosCliente, gastosIncluidosLocal, rendimientoLocal, initialData, refrescoConvenio]);
+  }, [formData.convenio, listaConveniosCliente, gastosIncluidosLocal, rendimientoLocal, initialData, refrescoConvenio, esTrompoOp]);
 
   // ✅ Desglose Dólares/Pesos/Conversión considerando la MONEDA DEL CONVENIO y
   //   la MONEDA DE LA FACTURA (pueden ser distintas):
@@ -2485,7 +2499,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       // ✅ V00386: trae TODO lo ligado al convenio (no solo el monto)
       const nuevo = Number(c.tarifaMonto) || 0;
       const actual = Number(formData.montoConvenioCliente) || 0;
-      const v = valoresTarifaDeConvenio(String(c.id));
+      const v0 = valoresTarifaDeConvenio(String(c.id));
+      const v = { ...v0, sueldo: v0.sueldo !== null && esTrompoOp ? 0 : v0.sueldo }; // ✅ V00406: trompo = $0
       const cambios: string[] = [];
       if (nuevo !== actual) cambios.push(`Monto: ${fmtMoney(actual)} → ${fmtMoney(nuevo)}`);
       if (v.sueldo !== null && v.sueldo !== (Number(formData.sueldoOperador) || 0)) cambios.push(`Sueldo del operador: ${fmtMoney(Number(formData.sueldoOperador) || 0)} → ${fmtMoney(v.sueldo)}`);
@@ -3604,7 +3619,15 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           {formData.operador && <AlertaDocumentos coleccionOrigen="empleados" registroId={String(formData.operador)} registroNombre={searchOperador} etiqueta="Operador" />}
                         </div>
                         {/* Sueldo/Combustible base: BLOQUEADOS (vienen del tarifario de rendimientos). Los totales son calculados. */}
-                        <div className="form-group"><label className="form-label">Sueldo Operador <span className="campo-badge">sueldoOperador</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.sueldoOperador || 0} readOnly={campoBloqueadoAut('sueldoOperador')} onClick={() => campoBloqueadoAut('sueldoOperador') && clicCampoBloqueado('sueldoOperador')} onChange={e => setFormData(prev => ({ ...prev, sueldoOperador: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('sueldoOperador') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del tarifario de rendimientos; puedes ajustarlo manualmente'} style={campoBloqueadoAut('sueldoOperador') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} /></ConSimboloMoneda></div>
+                        <div className="form-group"><label className="form-label">Sueldo Operador <span className="campo-badge">sueldoOperador</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.sueldoOperador || 0} readOnly={campoBloqueadoAut('sueldoOperador')} onClick={() => campoBloqueadoAut('sueldoOperador') && clicCampoBloqueado('sueldoOperador')} onChange={e => setFormData(prev => ({ ...prev, sueldoOperador: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('sueldoOperador') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del tarifario de rendimientos; puedes ajustarlo manualmente'} style={campoBloqueadoAut('sueldoOperador') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} /></ConSimboloMoneda>
+                          {/* ✅ V00406: trompo viejo con sueldo → se corrige solo al presionar */}
+                          {esTrompoOp && Number(formData.sueldoOperador) > 0 && !campoBloqueadoAut('sueldoOperador') && (
+                            <button type="button" className="fo-btn-trompo" title="Trompo: el sueldo del operador es $0; si hace falta un monto, agrégalo en Costos Adicionales"
+                              onClick={() => { if (window.confirm(`Esta operación es TROMPO. ¿Poner el Sueldo Operador en $0? (antes ${fmtMoney(Number(formData.sueldoOperador) || 0)})\n\nSi hace falta un monto, agrégalo en Costos Adicionales.`)) setFormData(prev => ({ ...prev, sueldoOperador: 0, sueldoMitadAplicada: false })); }}>
+                              Actualizar sueldo (Trompo = $0)
+                            </button>
+                          )}
+                        </div>
                         <div className="form-group"><label className="form-label">Sueldo Extra <span className="campo-badge">sueldoExtra</span></label><ConSimboloMoneda><input type="number" step="0.01" name="sueldoExtra" className="form-control" value={formData.sueldoExtra || 0} onChange={handleChange} /></ConSimboloMoneda></div>
                         <div className="form-group"><label className="form-label">Sueldo Total <span className="campo-badge">sueldoTotal</span></label><ConSimboloMoneda><input type="number" className="form-control fo-x22" value={formData.sueldoTotal || 0} readOnly /></ConSimboloMoneda></div>
                         {/* Notas del Sueldo Extra: solo aparecen cuando el extra es distinto de 0. */}

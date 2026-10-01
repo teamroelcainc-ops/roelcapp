@@ -185,3 +185,6 @@
 .fo-chip-aduana { display: inline-flex; align-items: center; margin-left: 8px; padding: 1px 8px; border-radius: 999px; border: 1px solid rgba(121, 184, 255, 0.45); background: rgba(56, 139, 253, 0.1); color: #79c0ff; font-size: 0.7rem; font-weight: 700; white-space: nowrap; vertical-align: middle; }
 /* ✅ V00389: razón social debajo del nombre corto en el buscador de proveedor */
 .fo-prov-razon { color: #8b949e; font-size: 0.74rem; margin-top: 2px; }
+/* ✅ V00406: botón para poner en $0 el sueldo de un trompo viejo */
+.fo-btn-trompo { margin-top: 6px; width: 100%; padding: 5px 10px; border-radius: 6px; border: 1px solid #d29922; background: rgba(187, 128, 9, 0.12); color: #e3b341; font-size: 0.74rem; font-weight: 700; cursor: pointer; }
+.fo-btn-trompo:hover { background: rgba(187, 128, 9, 0.22); }
