@@ -30,7 +30,7 @@ const hoyISO = () => { const d = new Date(); return `${d.getFullYear()}-${String
 const horaAhora = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 
 interface Puente { id: string; nombre: string; moneda: string; }
-interface RecargaMin { puenteId: string; fecha: string; saldo: number; }
+interface RecargaMin { puenteId: string; puenteNombre: string; fecha: string; saldo: number; }
 interface CruceMin { puenteNombre: string; fecha: string; fechaServicio: string; monto: number; moneda: string; ref: string; statusNombre: string; evento: string; }
 
 // ✅ V00389: a qué tarjeta pertenece cada puente del catálogo
@@ -83,7 +83,7 @@ export const TarjetaCasetas: React.FC = () => {
     const u2 = onSnapshot(collection(db, 'saldos_puentes'), (snap) => {
       setRecargas(snap.docs.map((d) => {
         const x = d.data() as Record<string, unknown>;
-        return { puenteId: String(x.puenteId || ''), fecha: String(x.fecha || ''), saldo: Number(x.saldo) || 0 };
+        return { puenteId: String(x.puenteId || ''), puenteNombre: String(x.puenteNombre || ''), fecha: String(x.fecha || ''), saldo: Number(x.saldo) || 0 };
       }));
     }, () => {});
     // ✅ V00410: las tarjetas cuadran con la pestaña SALDO de Referencias de Puentes —
@@ -156,9 +156,14 @@ export const TarjetaCasetas: React.FC = () => {
   //   total consumido (la suma de esos cruces) y saldo restante = agregado − consumido.
   //   Los cruces cuentan desde la PRIMERA recarga del puente, igual que el saldo.
   const statsDe = (filtro: (nombre: string) => boolean) => {
+    // ✅ V00411: IGUAL que la pestaña Saldo — solo cuentan los puentes que tienen
+    //   saldo agregado (por id o por nombre) y sus cruces desde su primer saldo.
     let agregado = 0, nCruces = 0, consumido = 0;
+    const conSaldo = new Set<string>();
     puentes.filter((p) => filtro(p.nombre)).forEach((p) => {
-      const recs = recargas.filter((r) => r.puenteId === p.id).sort((a, b) => a.fecha.localeCompare(b.fecha));
+      const recs = recargas.filter((r) => r.puenteId === p.id || norm(r.puenteNombre) === norm(p.nombre)).sort((a, b) => a.fecha.localeCompare(b.fecha));
+      if (recs.length === 0) return;
+      conSaldo.add(norm(p.nombre));
       const primera = recs[0]?.fecha || '';
       agregado += recs.reduce((acc, r) => acc + r.saldo, 0);
       const mios = cruces.filter((x) => norm(x.puenteNombre) === norm(p.nombre) && (!primera || x.fecha >= primera));
@@ -168,9 +173,9 @@ export const TarjetaCasetas: React.FC = () => {
     // ✅ V00398: lo de HOY (por fecha de servicio) — cruces, consumido y recargas del día;
     //   el saldo al iniciar el día cuadra: inicio + recargas hoy − consumido hoy = restante.
     const restante = agregado - consumido;
-    const delDia = cruces.filter((x) => filtro(x.puenteNombre) && x.fechaServicio === hoy);
+    const delDia = cruces.filter((x) => filtro(x.puenteNombre) && conSaldo.has(norm(x.puenteNombre)) && x.fechaServicio === hoy);
     const consumidoHoy = delDia.reduce((acc, x) => acc + x.monto, 0);
-    const recargasHoy = recargas.filter((r) => r.fecha === hoy && puentes.some((p) => p.id === r.puenteId && filtro(p.nombre))).reduce((acc, r) => acc + r.saldo, 0);
+    const recargasHoy = recargas.filter((r) => r.fecha === hoy && puentes.some((p) => (p.id === r.puenteId || norm(p.nombre) === norm(r.puenteNombre)) && filtro(p.nombre))).reduce((acc, r) => acc + r.saldo, 0);
     return { agregado, cruces: nCruces, consumido, restante, crucesHoy: delDia.length, consumidoHoy, recargasHoy, inicioDia: restante + consumidoHoy - recargasHoy };
   };
 
@@ -180,43 +185,46 @@ export const TarjetaCasetas: React.FC = () => {
   return (
     <>
       {GRUPOS.map((g) => {
-        // ✅ V00392: agregado · cruces · consumido · restante (Colombia: caseta y puente)
+        // ✅ V00411: diseño renovado — cifra grande = saldo restante (igual que la
+        //   pestaña Saldo); filas compactas; Colombia en dos bloques (caseta / puente).
         const lineas = lineasGrupo(g.clave);
         const filtroTodo = (n: string) => lineas.some((l) => l.filtro(n));
         const total = statsDe(filtroTodo);
         const mon = monedaDe(filtroTodo);
         const partes = lineas.map((l) => ({ ...l, st: statsDe(l.filtro) }));
-        const col = partes.length > 1;
         return (
-          <div key={g.clave} className="rd-card rd-card--morado" title={`Control de ${g.titulo}: saldo agregado, cruces, consumido y saldo restante. Detalle en Bases de Datos → Saldos de Puentes`}>
+          <div key={g.clave} className="rd-card rd-card--morado" title={`${g.titulo}: saldos agregados menos el Historial de referencias (Referencias de Puentes → Saldo)`}>
             <div className="rd-card__head">
               <span className="rd-card__label">{g.titulo}</span>
               {mon && <span className="rd-card__chip">{mon === 'Dólares' ? 'USD' : mon === 'Pesos' ? 'MXN' : mon}</span>}
             </div>
-            <span className={`rd-card__value${total.restante < 0 ? ' rd-card__value--neg' : ''}`} title="Saldo restante = agregado − consumido">{fmtMonto(total.restante)}</span>
-            <span className="rd-card__sub">{total.restante < 0 ? 'Restante (sobregirado)' : 'Saldo restante'}</span>
-            <div className={`rd-control${col ? ' rd-control--dos' : ''}`}>
-              {col && <><span /> {partes.map((p) => <span key={p.etiqueta} className="rd-control__col">{p.etiqueta}</span>)}</>}
-              <span className="rd-control__et">Saldo al iniciar hoy</span>
-              {partes.map((p) => <span key={`i${p.etiqueta}`} className="rd-control__v">{fmtMonto(p.st.inicioDia)}</span>)}
-              {partes.some((p) => p.st.recargasHoy > 0) && <>
-                <span className="rd-control__et">Recargas hoy</span>
-                {partes.map((p) => <span key={`a${p.etiqueta}`} className="rd-control__v rd-control__v--abono">+{fmtMonto(p.st.recargasHoy)}</span>)}
-              </>}
-              <span className="rd-control__et">Cruces hoy</span>
-              {partes.map((p) => (
-                <button key={`c${p.etiqueta}`} type="button" className="rd-control__v rd-control__v--btn" title="Ver los cruces de hoy"
-                  onClick={() => setVerGasto({ titulo: `${g.titulo}${p.etiqueta ? ` — ${p.etiqueta}` : ''}`, filtro: p.filtro, soloHoy: true })}>{p.st.crucesHoy}</button>
-              ))}
-              <span className="rd-control__et">Consumido hoy</span>
-              {partes.map((p) => <span key={`k${p.etiqueta}`} className="rd-control__v rd-control__v--cargo">−{fmtMonto(p.st.consumidoHoy)}</span>)}
-              {col && <>
-                <span className="rd-control__et">Restante</span>
-                {partes.map((p) => <span key={`r${p.etiqueta}`} className={`rd-control__v${p.st.restante < 0 ? ' rd-control__v--neg' : ''}`}>{fmtMonto(p.st.restante)}</span>)}
-              </>}
+            <span className={`rd-card__value${total.restante < 0 ? ' rd-card__value--neg' : ''}`} title="Saldo restante = saldos agregados − referencias">{fmtMonto(total.restante)}</span>
+            <span className="rd-card__sub">{total.restante < 0 ? 'Sobregirado' : 'Saldo restante'}</span>
+            <div className="rd-filas">
+              {partes.length > 1 ? partes.map((p) => (
+                <React.Fragment key={p.etiqueta}>
+                  <div className="rd-filas__f">
+                    <span className="rd-filas__et rd-filas__et--fuerte">{p.etiqueta}</span>
+                    <span className={`rd-filas__v${p.st.restante < 0 ? ' rd-filas__v--neg' : ''}`}>{fmtMonto(p.st.restante)}</span>
+                  </div>
+                  <button type="button" className="rd-filas__f rd-filas__f--btn" title="Ver los cruces de hoy" onClick={() => setVerGasto({ titulo: `${g.titulo} — ${p.etiqueta}`, filtro: p.filtro, soloHoy: true })}>
+                    <span className="rd-filas__et">Hoy · {p.st.crucesHoy} {p.st.crucesHoy === 1 ? 'cruce' : 'cruces'}</span>
+                    <span className="rd-filas__v rd-filas__v--cargo">−{fmtMonto(p.st.consumidoHoy)}</span>
+                  </button>
+                </React.Fragment>
+              )) : (
+                <>
+                  <div className="rd-filas__f"><span className="rd-filas__et">Al iniciar hoy</span><span className="rd-filas__v">{fmtMonto(total.inicioDia)}</span></div>
+                  {total.recargasHoy > 0 && <div className="rd-filas__f"><span className="rd-filas__et">Recargas hoy</span><span className="rd-filas__v rd-filas__v--abono">+{fmtMonto(total.recargasHoy)}</span></div>}
+                  <button type="button" className="rd-filas__f rd-filas__f--btn" title="Ver los cruces de hoy" onClick={() => setVerGasto({ titulo: g.titulo, filtro: filtroTodo, soloHoy: true })}>
+                    <span className="rd-filas__et">Hoy · {total.crucesHoy} {total.crucesHoy === 1 ? 'cruce' : 'cruces'}</span>
+                    <span className="rd-filas__v rd-filas__v--cargo">−{fmtMonto(total.consumidoHoy)}</span>
+                  </button>
+                </>
+              )}
             </div>
             <div className="rd-card__foot">
-              <button type="button" className="rd-btn" onClick={() => abrirRecarga(g.clave)} title={`Agregar saldo a ${g.titulo} (queda en Saldos de Puentes)`}>Actualizar saldo</button>
+              <button type="button" className="rd-btn rd-btn--ancho" onClick={() => abrirRecarga(g.clave)} title={`Agregar saldo a ${g.titulo} (queda en Referencias de Puentes → Saldo)`}>Actualizar saldo</button>
             </div>
           </div>
         );

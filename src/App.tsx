@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, Suspense, useRef } from 'react';
 import { TarjetaCasetas } from './features/operaciones/components/TarjetaCasetas'; // ✅ V00349
+import { TarjetaSaldoDiesel } from './features/operaciones/components/TarjetaSaldoDiesel'; // ✅ V00411
 import { DocumentosLista } from './features/documentos/DocumentosLista';
 import { APP_VERSION, APP_AUTOR } from './config/version';
 import { emitirBusquedaGlobal, hayReceptorBusqueda, etiquetaReceptorBusqueda, suscribirReceptorBusqueda } from './utils/busquedaGlobal'; // ✅ V00263
@@ -356,8 +357,8 @@ function ResumenDelDia() {
     totalHoy: number; completadasHoy: number; canceladasHoy: number;
     completadasPorTipo: { cruces: number; transfer: number; fletes: number; renta: number; otros: number }; // ✅ V00409
     tc: number | null; tcFecha: string;
-    diesel: number | null; dieselFecha: string; dieselProveedores: number;
-  }>({ totalHoy: 0, completadasHoy: 0, canceladasHoy: 0, completadasPorTipo: { cruces: 0, transfer: 0, fletes: 0, renta: 0, otros: 0 }, tc: null, tcFecha: '', diesel: null, dieselFecha: '', dieselProveedores: 0 });
+    diesel: number | null; dieselFecha: string; dieselProveedores: number; dieselProveedor: string; dieselCapturas: number;
+  }>({ totalHoy: 0, completadasHoy: 0, canceladasHoy: 0, completadasPorTipo: { cruces: 0, transfer: 0, fletes: 0, renta: 0, otros: 0 }, tc: null, tcFecha: '', diesel: null, dieselFecha: '', dieselProveedores: 0, dieselProveedor: '', dieselCapturas: 0 });
 
   const hoy = new Date();
   const hoyISO = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
@@ -494,7 +495,7 @@ function ResumenDelDia() {
 
   const cargar = async () => {
     setCargando(true);
-    const nuevo = { totalHoy: 0, completadasHoy: 0, canceladasHoy: 0, completadasPorTipo: { cruces: 0, transfer: 0, fletes: 0, renta: 0, otros: 0 }, tc: null as number | null, tcFecha: '', diesel: null as number | null, dieselFecha: '', dieselProveedores: 0 };
+    const nuevo = { totalHoy: 0, completadasHoy: 0, canceladasHoy: 0, completadasPorTipo: { cruces: 0, transfer: 0, fletes: 0, renta: 0, otros: 0 }, tc: null as number | null, tcFecha: '', diesel: null as number | null, dieselFecha: '', dieselProveedores: 0, dieselProveedor: '', dieselCapturas: 0 };
 
     // 1) Operaciones con fecha de servicio de HOY, clasificadas por status.
     try {
@@ -554,10 +555,16 @@ function ResumenDelDia() {
           nuevo.dieselFecha = resumenNormalizarISO(data.fecha) || '';
         }
       }
-      const costos = docsDiesel.map((d: any) => Number(d.costo) || 0).filter(n => n > 0);
-      if (costos.length > 0) {
-        nuevo.diesel = costos.reduce((a, b) => a + b, 0) / costos.length;
-        nuevo.dieselProveedores = costos.length;
+      // ✅ V00411: el costo del diesel puede variar en el día y por proveedor →
+      //   se muestra el MÁS BAJO capturado (y de qué proveedor es).
+      type CapturaDiesel = { costo?: unknown; proveedor?: unknown; proveedorId?: unknown };
+      const validos = (docsDiesel as CapturaDiesel[]).filter((d) => Number(d.costo) > 0);
+      if (validos.length > 0) {
+        const menor = validos.reduce((m, d) => (Number(d.costo) < Number(m.costo) ? d : m), validos[0]);
+        nuevo.diesel = Number(menor.costo);
+        nuevo.dieselProveedor = String(menor.proveedor || '');
+        nuevo.dieselCapturas = validos.length;
+        nuevo.dieselProveedores = new Set(validos.map((d) => String(d.proveedorId || d.proveedor || ''))).size;
       }
     } catch (e) { console.error('[Resumen del día] diesel:', e); }
 
@@ -638,46 +645,44 @@ function ResumenDelDia() {
           )}
         </div>
 
-        <div className="rd-card rd-card--ambar" title={datos.tcFecha && datos.tcFecha !== hoyISO ? `Último registro: ${fmtDia(datos.tcFecha)}` : 'Tipo de cambio del día'}>
+        {/* ✅ V00411: TIPO DE CAMBIO + DIESEL en una sola tarjeta */}
+        <div className="rd-card rd-card--ambar">
           <div className="rd-card__head">
-            <span className="rd-card__label">Tipo de cambio</span>
+            <span className="rd-card__label">Tipo de cambio · Diesel</span>
             <svg className="rd-card__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
           </div>
-          <span className="rd-card__value">{cargando ? '…' : (datos.tc != null ? `$${datos.tc.toFixed(4)}` : '—')}</span>
-          <span className="rd-card__sub">
-            {cargando ? '\u00a0' : datos.tc == null ? 'Sin registro' : (datos.tcFecha === hoyISO ? 'DOF de hoy' : `al ${fmtDia(datos.tcFecha)}`)}
-          </span>
-          {!cargando && datos.tcFecha !== hoyISO && (
-            <div className="rd-card__foot">
-              <button type="button" className="rd-btn" onClick={() => setModalTCAbierto(true)} title="Capturar el tipo de cambio de hoy">Capturar el de hoy</button>
+          <div className="rd-dos">
+            <div className="rd-dos__col" title={datos.tcFecha && datos.tcFecha !== hoyISO ? `Último registro: ${fmtDia(datos.tcFecha)}` : 'Tipo de cambio del día (se captura una vez al día)'}>
+              <span className="rd-dos__et">Tipo de cambio</span>
+              <span className="rd-dos__v">{cargando ? '…' : (datos.tc != null ? `$${datos.tc.toFixed(4)}` : '—')}</span>
+              <span className={`rd-card__sub${!cargando && datos.tcFecha !== hoyISO ? ' rd-card__sub--alerta' : ''}`}>{cargando ? '\u00a0' : datos.tc == null ? 'Sin registro' : (datos.tcFecha === hoyISO ? 'DOF de hoy' : `al ${fmtDia(datos.tcFecha)}`)}</span>
             </div>
-          )}
-        </div>
-
-        <div className="rd-card rd-card--naranja" title={datos.dieselProveedores > 1 ? `Promedio de ${datos.dieselProveedores} proveedores` : 'Costo del diesel'}>
-          <div className="rd-card__head">
-            <span className="rd-card__label">Diesel del día</span>
-            <svg className="rd-card__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 22V8a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v14"></path><line x1="3" y1="22" x2="15" y2="22"></line><path d="M13 10h2a2 2 0 0 1 2 2v5a1.5 1.5 0 0 0 3 0V9l-3-3"></path></svg>
+            <div className="rd-dos__col" title={datos.dieselCapturas > 1 ? `El más bajo de ${datos.dieselCapturas} capturas de hoy (${datos.dieselProveedores} proveedor/es)` : 'Costo del diesel por galón'}>
+              <span className="rd-dos__et">Diesel (más bajo)</span>
+              <span className="rd-dos__v rd-dos__v--diesel">{cargando ? '…' : (datos.diesel != null ? `$${datos.diesel.toFixed(2)}` : '—')}</span>
+              <span className={`rd-card__sub${!cargando && datos.dieselFecha !== hoyISO ? ' rd-card__sub--alerta' : ''}`}>
+                {cargando ? '\u00a0' : datos.diesel == null ? 'Sin captura' : `${datos.dieselProveedor || 'Por galón'}${datos.dieselFecha && datos.dieselFecha !== hoyISO ? ` · al ${fmtDia(datos.dieselFecha)}` : ''}`}
+              </span>
+            </div>
           </div>
-          <span className="rd-card__value">{cargando ? '…' : (datos.diesel != null ? `$${datos.diesel.toFixed(2)}` : '—')}</span>
-          <span className="rd-card__sub">
-            {cargando ? '\u00a0' : datos.diesel == null ? 'Sin captura' : `${datos.dieselProveedores > 1 ? `Prom. ${datos.dieselProveedores} proveedores` : 'Por galón (USA)'}${datos.dieselFecha && datos.dieselFecha !== hoyISO ? ` · al ${fmtDia(datos.dieselFecha)}` : ''}`}
-          </span>
           {/* ✅ V00133: equivalencia por LITRO en pesos — $/galón ÷ 3.78541 × TC del día */}
           {!cargando && datos.diesel != null && (
             <span className="rd-card__sub" title={datos.tc != null ? `${datos.diesel.toFixed(2)} ÷ 3.78541 × TC ${datos.tc.toFixed(4)}` : 'Captura el tipo de cambio del día para calcular el precio por litro en pesos'}>
               {`≈ $${(datos.diesel / 3.78541).toFixed(2)} USD/L`}{datos.tc != null ? ` · $${((datos.diesel / 3.78541) * datos.tc).toFixed(2)} MXN/L` : ' · MXN/L: falta TC'}
             </span>
           )}
-          {!cargando && datos.dieselFecha !== hoyISO && (
-            <div className="rd-card__foot">
-              <button type="button" className="rd-btn" onClick={abrirModalDiesel} title="Capturar el costo del diesel de hoy">Capturar el de hoy</button>
-            </div>
-          )}
+          <div className="rd-card__foot rd-card__foot--fila">
+            {!cargando && datos.tcFecha !== hoyISO && (
+              <button type="button" className="rd-btn" onClick={() => setModalTCAbierto(true)} title="El tipo de cambio se captura una vez al día">Capturar TC</button>
+            )}
+            <button type="button" className="rd-btn" onClick={abrirModalDiesel} title="El costo del diesel puede cambiar en el día o por proveedor: se muestra el más bajo">{datos.dieselFecha === hoyISO ? 'Agregar diesel' : 'Capturar diesel'}</button>
+          </div>
         </div>
 
         {/* ✅ V00349 / V00389: TRES tarjetas de puente — AVI, III y Colombia (caseta + puente) */}
         <TarjetaCasetas />
+        {/* ✅ V00411: saldo del DIESEL (Referencias del Diesel → Saldos) */}
+        <TarjetaSaldoDiesel />
       </div>
 
       {/* Modal: capturar TIPO DE CAMBIO de hoy */}

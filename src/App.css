@@ -1330,3 +1330,47 @@ body {
 .rd-control__v--btn { background: none; border: none; padding: 0; cursor: pointer; font-family: inherit; text-decoration: underline dotted #8d97a3; text-underline-offset: 3px; }
 .rd-control__v--btn:hover { color: var(--rd-color); }
 .rd-control__v--abono { color: #56d364; } /* ✅ V00398 */
+
+/* ✅ V00411: TARJETAS DEL RESUMEN — diseño renovado */
+.rd-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); grid-auto-rows: 1fr; gap: 14px; }
+.rd-card {
+  min-height: 200px; padding: 14px 14px 12px 16px; gap: 3px; border-radius: 14px;
+  background: radial-gradient(120% 80% at 0% 0%, color-mix(in srgb, var(--rd-color) 10%, transparent) 0%, transparent 60%), linear-gradient(180deg, #131a23 0%, #0d1117 100%);
+  border: 1px solid #252c37; box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 6px 18px rgba(0, 0, 0, 0.28);
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.rd-card:hover { border-color: color-mix(in srgb, var(--rd-color) 45%, #252c37); transform: translateY(-1px); }
+.rd-card::before { width: 3px; border-radius: 0 3px 3px 0; top: 12px; bottom: 12px; }
+.rd-card__label { font-size: 0.66rem; letter-spacing: 0.07em; color: #a3adb9; }
+.rd-card__value { font-size: clamp(1.15rem, 1.3vw, 1.55rem); margin-top: 6px; }
+.rd-card__sub { font-size: 0.72rem; color: #8d97a3; }
+.rd-card__sub--alerta { color: #e3b341; }
+.rd-card__foot { padding-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+.rd-card__foot--fila .rd-btn { flex: 1 1 auto; }
+.rd-btn { height: 28px; border-radius: 8px; background: rgba(255, 255, 255, 0.03); }
+.rd-btn--ancho { width: 100%; }
+
+/* filas compactas etiqueta / valor */
+.rd-filas { display: flex; flex-direction: column; gap: 3px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #1f2630; }
+.rd-filas__f { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; padding: 1px 0; background: none; border: none; font-family: inherit; text-align: left; width: 100%; }
+.rd-filas__f--btn { cursor: pointer; border-radius: 4px; }
+.rd-filas__f--btn:hover .rd-filas__et { color: var(--rd-color); }
+.rd-filas__f--sep { margin-top: 3px; padding-top: 5px; border-top: 1px dashed #1f2630; }
+.rd-filas__et { color: #8d97a3; font-size: 0.72rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rd-filas__et--fuerte { color: #c3ccd6; font-weight: 700; text-transform: uppercase; font-size: 0.64rem; letter-spacing: 0.05em; }
+.rd-filas__v { color: #e6edf3; font-size: 0.78rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rd-filas__v--neg { color: #ff7b72; }
+.rd-filas__v--cargo { color: #ff9b95; }
+.rd-filas__v--abono { color: #56d364; }
+
+/* Tipo de cambio + Diesel: dos columnas */
+.rd-dos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; }
+.rd-dos__col { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rd-dos__col + .rd-dos__col { padding-left: 10px; border-left: 1px solid #1f2630; }
+.rd-dos__et { color: #8d97a3; font-size: 0.64rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rd-dos__v { color: #f0f6fc; font-size: clamp(1rem, 1.05vw, 1.3rem); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rd-dos__v--diesel { color: #fdba74; }
+
+@media (max-width: 1200px) { .rd-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 900px) { .rd-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .rd-card { min-height: 170px; } }
+@media (max-width: 420px) { .rd-grid { grid-template-columns: 1fr; } }
