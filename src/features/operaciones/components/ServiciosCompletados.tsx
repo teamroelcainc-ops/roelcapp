@@ -23,6 +23,7 @@ import './ServiciosCompletados.css';
 import { almacenSesion } from '../../../utils/cacheMemoria';
 import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
+import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
 import { cargarCatalogo, TTL } from '../../../hooks/useCatalogoCache'; // ✅ V00256: catálogos C/V y Aduanas para los filtros nuevos
 
 // ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
@@ -1177,6 +1178,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       const opRef = doc(db, 'operaciones', String(operacionViendo.id));
       batch.update(opRef, { status: statusId, statusNombre: statusNombreResuelto, ...ajusteSueldoPorStatus(operacionViendo, statusNombreResuelto) }); // ✅ V00387
       await batch.commit();
+      if (esStatusVerde(statusNombreResuelto)) registrarVerdeAutomatico({ ...operacionViendo }, statusNombreResuelto, nuevaFechaHora); // ✅ V00402
       notificarOperacionGuardada(String(operacionViendo.id), { ...operacionViendo, status: statusId, statusNombre: statusNombreResuelto }, 'completados-status'); // ✅ V00126
 
       // ✅ HISTORIAL: cambio de status con el valor anterior y el nuevo.
@@ -1252,6 +1254,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       const opRef = doc(db, 'operaciones', String(operacionViendo.id));
       batch.update(opRef, { status: statusFinal.id, statusNombre: statusFinal.nombre, ...ajusteSueldoPorStatus(operacionViendo, statusFinal.nombre) }); // ✅ V00387
       await batch.commit();
+      { const pasoVerde = cadenaResuelta.find((p) => esStatusVerde(p.nombre)); if (pasoVerde) registrarVerdeAutomatico({ ...operacionViendo }, pasoVerde.nombre, fechaHoraLocal); } // ✅ V00402
 
       // ✅ HISTORIAL: status rápido (incluye la cascada de status automáticos).
       const refLogR = operacionViendo.ref || operacionViendo.id?.substring(0, 6) || operacionViendo.id;

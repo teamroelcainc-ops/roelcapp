@@ -24,6 +24,7 @@ import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
 import { ChevronLeft, MapPin, Truck, CheckCircle2, Clock } from 'lucide-react';
 import './MisOperacionesDashboard.css';
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
+import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
 
 // Status que ya no son "activos" (mismos IDs que usa Operaciones Activas).
 const IDS_STATUS_EXCLUIDOS = ['7607f692', 'f557b751', 'c2d57403'];
@@ -244,6 +245,7 @@ export function MisOperacionesDashboard() {
         mostrarAviso(`${siguiente.nombre} — guardado en el dispositivo (sin conexión)`);
       } else {
         await batch.commit();
+        if (esStatusVerde(siguiente.nombre)) registrarVerdeAutomatico({ ...(opAbierta as Record<string, unknown>), status: siguiente.id, statusNombre: siguiente.nombre }, siguiente.nombre, datosHorario.fechaHora); // ✅ V00402
         setHorariosOp((prev) => [...prev, { id: horarioRef.id, ...datosHorario }]);
         setUltimaMarca(marca);
         registrarLog('Mis Operaciones', 'Horario', `${usuario.nombre} marcó "${siguiente.nombre}" en ${opAbierta.ref || opAbierta.id}`).catch(() => {});

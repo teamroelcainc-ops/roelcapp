@@ -21,6 +21,7 @@ import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 import { ModalFechaStatus } from './ModalFechaStatus';
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
 import { aduanaDeConvenio, camposPisoColombia, casetaRespaldoColombia, esAduanaColombia, esGastoPisoColombia, normPuente } from '../../../utils/puenteColombia';
+import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
 
 // ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
 const fmtFechaAuditoria = (iso: any): string => {
@@ -1174,6 +1175,8 @@ const OperacionesDashboard = () => {
 
       await batch.commit();
       notificarOperacionGuardada(String(operacionViendo._docId || operacionViendo.id), { ...operacionViendo, status: statusId, statusNombre: statusNombreResuelto }, 'operaciones-status'); // ✅ V00126
+      // ✅ V00402: Verde → Historial calculado (referencia automática del puente de hoy)
+      if (esStatusVerde(statusNombreResuelto)) registrarVerdeAutomatico({ ...operacionViendo, ...extraSPManual, status: statusId, statusNombre: statusNombreResuelto }, statusNombreResuelto, nuevaFechaHora);
 
       const operacionActualizada = {
         ...operacionViendo,
@@ -1280,6 +1283,8 @@ const OperacionesDashboard = () => {
 
           await batch.commit();
           notificarOperacionGuardada(String(operacionViendo._docId || operacionViendo.id), { ...operacionViendo, status: statusFinal.id, statusNombre: statusFinal.nombre }, 'operaciones-status'); // ✅ V00126
+          // ✅ V00402: si algún paso de la cascada es Verde → Historial calculado
+          { const pasoVerde = cadenaResuelta.find((p) => esStatusVerde(p.nombre)); if (pasoVerde) registrarVerdeAutomatico({ ...operacionViendo, ...extraSaldoPuente, status: statusFinal.id, statusNombre: statusFinal.nombre }, pasoVerde.nombre, fechaHoraLocal); }
 
           setGuardandoStatusRapido(null);
           setUltimoStatusGuardado(statusNombre);

@@ -25,6 +25,7 @@ import { almacenSesion } from '../../../utils/cacheMemoria';
 import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
 import { ModalFechaStatus } from './ModalFechaStatus';
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
+import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
 
 // ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
 const fmtFechaAuditoria = (iso: any): string => {
@@ -718,6 +719,7 @@ const ServiciosCancelados = () => {
       const opRef = doc(db, 'operaciones', String(operacionViendo.id));
       batch.update(opRef, { status: statusId, statusNombre: statusNombreResuelto, ...ajusteSueldoPorStatus(operacionViendo, statusNombreResuelto) }); // ✅ V00387
       await batch.commit();
+      if (esStatusVerde(statusNombreResuelto)) registrarVerdeAutomatico({ ...operacionViendo }, statusNombreResuelto, nuevaFechaHora); // ✅ V00402
       notificarOperacionGuardada(String(operacionViendo.id), { ...operacionViendo, status: statusId, statusNombre: statusNombreResuelto }, 'cancelados-status'); // ✅ V00126
 
       // ✅ HISTORIAL: cambio de status con el valor anterior y el nuevo.
@@ -802,6 +804,7 @@ const ServiciosCancelados = () => {
       const opRef = doc(db, 'operaciones', String(operacionViendo.id));
       batch.update(opRef, { status: statusFinal.id, statusNombre: statusFinal.nombre, ...ajusteSueldoPorStatus(operacionViendo, statusFinal.nombre) }); // ✅ V00387
       await batch.commit();
+      { const pasoVerde = cadenaResuelta.find((p) => esStatusVerde(p.nombre)); if (pasoVerde) registrarVerdeAutomatico({ ...operacionViendo }, pasoVerde.nombre, fechaHoraLocal); } // ✅ V00402
       notificarOperacionGuardada(String(operacionViendo.id), { ...operacionViendo, status: statusFinal.id, statusNombre: statusFinal.nombre }, 'cancelados-status'); // ✅ V00126
 
       // ✅ HISTORIAL: status rápido (incluye la cascada de status automáticos).

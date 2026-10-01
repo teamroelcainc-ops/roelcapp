@@ -18,6 +18,7 @@ import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 import { esOperacionPrueba } from '../../../utils/operacionPrueba';
 import { cargarCtxCobroPuente, cobroPuenteDeOperacion } from '../../../utils/puenteColombia';
+import { COL_REF_AUTO, recalcularHistorialCalculadoHoy } from '../../../utils/historialCalculadoPuentes';
 
 // ⚠ Si tu colección de convenios de clientes tiene otro nombre, cámbialo aquí.
 const COLECCION_CONVENIOS = 'convenios_clientes';
@@ -37,7 +38,7 @@ const COLUMNAS_OPS_PUENTES_BASE = [
 ];
 
 export const ReferenciasPuentesDashboard = () => {
-  const [activeTab, setActiveTab] = useState<'operaciones' | 'otros' | 'saldos' | 'historial'>('historial');
+  const [activeTab, setActiveTab] = useState<'operaciones' | 'otros' | 'saldos' | 'historial' | 'calculado'>('operaciones');
 
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
   const [referenciasGlobales, setReferenciasGlobales] = useState<any[]>([]);
@@ -52,13 +53,38 @@ export const ReferenciasPuentesDashboard = () => {
   const [tiposTarifariosList, setTiposTarifariosList] = useState<any[]>([]);
 
   // Filtros pestaña 1
-  const [fechaInicio, setFechaInicio] = useState('');
-  const [fechaFin, setFechaFin] = useState('');
+  // ✅ V00402: por defecto se ven las operaciones de HOY
+  const [fechaInicio, setFechaInicio] = useState(hoyLocalISO());
+  const [fechaFin, setFechaFin] = useState(hoyLocalISO());
   // ✅ V00392: filtros Puente y Unidad; unidades para mostrar su número
   const [filtroPuente, setFiltroPuente] = useState<string>('todos');
   const [filtroUnidad, setFiltroUnidad] = useState<string>('todas');
   const [unidadesList, setUnidadesList] = useState<Record<string, unknown>[]>([]);
   const [asignandoMontos, setAsignandoMontos] = useState(false);
+  // ✅ V00402: HISTORIAL CALCULADO (referencias automáticas al marcar Verde)
+  type RefAuto = { id: string; consecutivo?: string; puenteNombre?: string; fechaGeneracion?: string; horaGeneracion?: string; operaciones?: string[]; operacionesIds?: string[]; totalesPorMoneda?: Record<string, number>; subtotalPuentes?: number; statusPagado?: boolean };
+  const [refsAuto, setRefsAuto] = useState<RefAuto[]>([]);
+  const [recalculando, setRecalculando] = useState(false);
+  useEffect(() => {
+    if (activeTab !== 'calculado') return;
+    const u = onSnapshot(query(collection(db, COL_REF_AUTO), orderBy('fechaGeneracion', 'desc'), limit(500)), (snap) => {
+      setRefsAuto(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<RefAuto, 'id'>) })));
+    }, () => setRefsAuto([]));
+    return () => u();
+  }, [activeTab]);
+  const recalcularHoy = async () => {
+    setRecalculando(true);
+    try {
+      const n = await recalcularHistorialCalculadoHoy();
+      alert(n ? `Se revisaron ${n} operación(es) con Verde de hoy.` : 'No hay operaciones marcadas Verde hoy.');
+    } catch (e) { alert(`No se pudo recalcular: ${(e as Error)?.message || e}`); }
+    finally { setRecalculando(false); }
+  };
+  const eliminarRefAuto = async (r: RefAuto) => {
+    if (!window.confirm(`¿Eliminar la referencia automática ${r.consecutivo}? Se volverá a crear si otra operación de ese puente se marca Verde hoy.`)) return;
+    try { const b = writeBatch(db); b.delete(doc(db, COL_REF_AUTO, r.id)); await b.commit(); }
+    catch (e) { alert(`No se pudo eliminar: ${(e as Error)?.message || e}`); }
+  };
   // ✅ V00395: OTROS CRUCES (carros particulares, etc.) — van directo al Historial
   const [modalOtro, setModalOtro] = useState(false);
   const [otroFecha, setOtroFecha] = useState(hoyLocalISO());
@@ -102,7 +128,7 @@ export const ReferenciasPuentesDashboard = () => {
   const [busquedaHistorial, setBusquedaHistorial] = useState('');
   // ✅ NUEVO: panel lateral derecho de filtros + tablas VACÍAS hasta presionar Buscar.
   const [drawerFiltrosAbierto, setDrawerFiltrosAbierto] = useState(false);
-  const [busquedaOpsHecha, setBusquedaOpsHecha] = useState(false);
+  const [busquedaOpsHecha, setBusquedaOpsHecha] = useState(true); // ✅ V00402: búsqueda de hoy al entrar
   const [busquedaHistHecha, setBusquedaHistHecha] = useState(false);
   const [filtroEstadoHist, setFiltroEstadoHist] = useState<'pendientes' | 'pagadas'>('pendientes');
   const [paginaActual, setPaginaActual] = useState(1);
@@ -1045,9 +1071,54 @@ export const ReferenciasPuentesDashboard = () => {
         <button onClick={() => setActiveTab('otros')} style={tabStyle(activeTab === 'otros')}>Otros Cruces</button>
         <button onClick={() => setActiveTab('saldos')} style={tabStyle(activeTab === 'saldos')}>Agregar Saldo</button>
         <button onClick={() => setActiveTab('historial')} style={tabStyle(activeTab === 'historial')}>Historial de Referencias</button>
+        <button onClick={() => setActiveTab('calculado')} style={tabStyle(activeTab === 'calculado')}>Historial calculado</button>
       </div>
 
-      {activeTab === 'saldos' ? (
+      {activeTab === 'calculado' ? (
+        <div className="animation-fade-in">
+          {/* ✅ V00402: HISTORIAL CALCULADO */}
+          <div className="rpd-otros-barra">
+            <span className="rpd-otros-nota">Referencias AUTOMÁTICAS: al marcar Verde (MX o USA) una operación de Transfer o Logística con Roelca, se agrega sola a la referencia de su puente del día de hoy (AVI / PT3 / PTC, misma serie de consecutivos). Es independiente del Historial de Referencias manual.</span>
+            <button type="button" className="rpd-btn-asignar" onClick={recalcularHoy} disabled={recalculando} title="Revisa la bitácora de hoy y agrega los verdes que falten">{recalculando ? 'Revisando…' : 'Recalcular hoy'}</button>
+          </div>
+          <div className="table-container rpd-x41">
+            <table className="rpd-x27">
+              <thead className="rpd-x28">
+                <tr>
+                  <th className="rpd-x42">ACCIONES</th>
+                  <th className="rpd-x43"># REFERENCIA</th>
+                  <th className="rpd-x43">PUENTE</th>
+                  <th className="rpd-x43">FECHA</th>
+                  <th className="rpd-x43">HORA</th>
+                  <th className="rpd-x43">REFERENCIAS SELECCIONADAS</th>
+                  <th className="rpd-x43">TOTAL A PAGAR</th>
+                  <th className="rpd-x43">STATUS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {refsAuto.length === 0 ? (
+                  <tr><td className="rpd-x45" colSpan={8}>Aún no hay referencias automáticas. Se crean al marcar Verde una operación.</td></tr>
+                ) : refsAuto.map(r => (
+                  <tr key={r.id} className="rpd-x46 rpd-fila-clic" title="Ver detalle" onClick={() => setReferenciaViendo(r)}>
+                    <td className="rpd-x47">
+                      <button className="rpd-x51" title="Eliminar" onClick={(e) => { e.stopPropagation(); eliminarRefAuto(r); }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                      </button>
+                    </td>
+                    <td className="rpd-x52">{r.consecutivo} <span className="rpd-chip-auto">auto</span></td>
+                    <td className="rpd-celda">{r.puenteNombre || '—'}</td>
+                    <td className="rpd-celda">{formatearFechaSpanish(r.fechaGeneracion || "")}</td>
+                    <td className="rpd-celda">{r.horaGeneracion || '—'}</td>
+                    <td className="rpd-celda rpd-celda--refs" title={(r.operaciones || []).join(', ')}><b>{(r.operacionesIds || []).length}</b> · {(r.operaciones || []).join(', ')}</td>
+                    <td className="rpd-x3">{r.totalesPorMoneda && Object.keys(r.totalesPorMoneda).length ? Object.entries(r.totalesPorMoneda as Record<string, number>).map(([m, t]) => <div key={m}>{formatoMoneda(t)} <span className="rpd-moneda">{m}</span></div>) : formatoMoneda(r.subtotalPuentes)}</td>
+                    <td className="rpd-x2"><span className={`rpd-status ${r.statusPagado ? 'rpd-status--pagada' : 'rpd-status--pendiente'}`}>{r.statusPagado ? 'PAGADA' : 'PENDIENTE'}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : activeTab === 'saldos' ? (
         <div className="animation-fade-in">
           {/* ✅ V00396: AGREGAR SALDO */}
           <div className="rpd-otros-barra">

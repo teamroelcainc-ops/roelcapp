@@ -249,3 +249,4 @@
 .rpd-grupo__conv { max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rpd-grupos .rpd-grupo__tabla { max-height: 260px; }
 .rpd-modal--ancho { max-width: 980px; } /* ✅ V00401: cabe la columna Convenio */
+.rpd-chip-auto { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; border: 1px solid #1f6feb; color: #79c0ff; font-size: 0.65rem; font-weight: 700; font-family: inherit; vertical-align: middle; } /* ✅ V00402 */
