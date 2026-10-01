@@ -69,6 +69,69 @@ const siguienteConsecutivo = async (grupo: GrupoRef, fecha: string) => {
   return `${prefijo}${String(max + 1).padStart(3, '0')}`;
 };
 
+export type GrupoRefPuente = GrupoRef;
+export const NOMBRE_GRUPO_PUENTE = NOMBRE_GRUPO;
+
+/** Fila de la operación para la referencia + su grupo de puente (null si no se puede determinar). */
+export const filaDeOperacion = async (op: Record<string, unknown>, horaVerde: string): Promise<{ grupo: GrupoRef; fila: Record<string, unknown> } | null> => {
+  const m = await montosPuente(op);
+  if (!m) return null;
+  const opId = String(op._docId || op.id || '');
+  return {
+    grupo: m.grupo,
+    fila: {
+      id: opId,
+      ref: String(op.ref || opId),
+      fecha: String(op.fechaServicio || '').slice(0, 10),
+      horaVerde,
+      unidad: String(op.unidadNombre || op.unidad || '-'),
+      convenio: String(op.convenioNombre || '-'),
+      trafico: String(op.trafico || ''),
+      puenteNombre: m.puenteNombre,
+      caseta: m.caseta, casetaMoneda: m.casetaMoneda,
+      piso: m.piso, pisoMoneda: m.pisoMoneda,
+      puente: m.caseta + m.piso,
+    },
+  };
+};
+
+/** Agrega filas (sin duplicar) a la referencia `docId`; si no existe la crea con su consecutivo. */
+export const upsertReferenciaAuto = async (docId: string, grupo: GrupoRef, fecha: string, filas: Record<string, unknown>[], hora: string, origen: 'verde' | 'manual'): Promise<void> => {
+  const ref = doc(db, COL_REF_AUTO, docId);
+  const previo = await getDoc(ref);
+  const consecutivo = previo.exists() ? String((previo.data() as Record<string, unknown>).consecutivo || '') : await siguienteConsecutivo(grupo, fecha);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const d = (snap.exists() ? snap.data() : {}) as Record<string, unknown>;
+    const ids = (Array.isArray(d.operacionesIds) ? d.operacionesIds : []) as string[];
+    const nuevas = filas.filter((f) => !ids.includes(String(f.id)));
+    if (nuevas.length === 0 && snap.exists()) return;
+    const guardadas = [...((Array.isArray(d.operacionesGuardadas) ? d.operacionesGuardadas : []) as Record<string, unknown>[]), ...nuevas];
+    const porMoneda: Record<string, number> = {};
+    guardadas.forEach((o) => {
+      if (Number(o.caseta) > 0) porMoneda[String(o.casetaMoneda || 'Sin moneda')] = (porMoneda[String(o.casetaMoneda || 'Sin moneda')] || 0) + Number(o.caseta);
+      if (Number(o.piso) > 0) porMoneda[String(o.pisoMoneda || 'Sin moneda')] = (porMoneda[String(o.pisoMoneda || 'Sin moneda')] || 0) + Number(o.piso);
+    });
+    tx.set(ref, {
+      automatico: true,
+      origen: String(d.origen || origen),
+      consecutivo: String(d.consecutivo || consecutivo),
+      grupoPuente: grupo,
+      puenteNombre: NOMBRE_GRUPO[grupo],
+      fechaGeneracion: String(d.fechaGeneracion || fecha),
+      horaGeneracion: String(d.horaGeneracion || hora),
+      operacionesIds: [...ids, ...nuevas.map((f) => String(f.id))],
+      operaciones: guardadas.map((o) => String(o.ref)),
+      operacionesGuardadas: guardadas,
+      subtotalPuentes: guardadas.reduce((a, o) => a + (Number(o.puente) || 0), 0),
+      totalesPorMoneda: porMoneda,
+      statusPagado: d.statusPagado === true,
+      createdAt: String(d.createdAt || new Date().toISOString()),
+      actualizadoEn: new Date().toISOString(),
+    });
+  });
+};
+
 /**
  * Agrega la operación a la referencia automática de su puente de HOY.
  * `op` = datos de la operación ya con lo que se acaba de guardar (status, cobro…).
@@ -78,54 +141,10 @@ export const registrarVerdeAutomatico = async (op: Record<string, unknown>, stat
     if (!esStatusVerde(statusNombre) || esOperacionPrueba(op) || !esPuenteRoelca(op)) return;
     const traf = norm(op.trafico);
     if (traf && !traf.includes('import') && !traf.includes('export')) return;
-    const m = await montosPuente(op);
-    if (!m) return;
+    const r = await filaDeOperacion(op, `${norm(statusNombre).includes('usa') ? 'Verde USA' : 'Verde MX'} ${horaDe(fechaHora)}`.trim());
+    if (!r) return;
     const fecha = hoyLocal();
-    const ref = doc(db, COL_REF_AUTO, `${m.grupo}_${fecha}`);
-    const previo = await getDoc(ref);
-    const consecutivo = previo.exists() ? String((previo.data() as Record<string, unknown>).consecutivo || '') : await siguienteConsecutivo(m.grupo, fecha);
-    const opId = String(op._docId || op.id || '');
-    const fila = {
-      id: opId,
-      ref: String(op.ref || opId),
-      fecha: String(op.fechaServicio || '').slice(0, 10),
-      horaVerde: `${norm(statusNombre).includes('usa') ? 'Verde USA' : 'Verde MX'} ${horaDe(fechaHora)}`.trim(),
-      unidad: String(op.unidadNombre || op.unidad || '-'),
-      convenio: String(op.convenioNombre || '-'),
-      trafico: String(op.trafico || ''),
-      puenteNombre: m.puenteNombre,
-      caseta: m.caseta, casetaMoneda: m.casetaMoneda,
-      piso: m.piso, pisoMoneda: m.pisoMoneda,
-      puente: m.caseta + m.piso,
-    };
-    await runTransaction(db, async (tx) => {
-      const snap = await tx.get(ref);
-      const d = (snap.exists() ? snap.data() : {}) as Record<string, unknown>;
-      const ids = (Array.isArray(d.operacionesIds) ? d.operacionesIds : []) as string[];
-      if (ids.includes(opId)) return; // ya está (no se duplica aunque marque Verde MX y Verde USA)
-      const guardadas = [...((Array.isArray(d.operacionesGuardadas) ? d.operacionesGuardadas : []) as Record<string, unknown>[]), fila];
-      const porMoneda: Record<string, number> = {};
-      guardadas.forEach((o) => {
-        if (Number(o.caseta) > 0) porMoneda[String(o.casetaMoneda || 'Sin moneda')] = (porMoneda[String(o.casetaMoneda || 'Sin moneda')] || 0) + Number(o.caseta);
-        if (Number(o.piso) > 0) porMoneda[String(o.pisoMoneda || 'Sin moneda')] = (porMoneda[String(o.pisoMoneda || 'Sin moneda')] || 0) + Number(o.piso);
-      });
-      tx.set(ref, {
-        automatico: true,
-        consecutivo: String(d.consecutivo || consecutivo),
-        grupoPuente: m.grupo,
-        puenteNombre: NOMBRE_GRUPO[m.grupo],
-        fechaGeneracion: fecha,
-        horaGeneracion: String(d.horaGeneracion || horaDe(fechaHora) || horaDe(new Date().toTimeString())),
-        operacionesIds: [...ids, opId],
-        operaciones: guardadas.map((o) => String(o.ref)),
-        operacionesGuardadas: guardadas,
-        subtotalPuentes: guardadas.reduce((a, o) => a + (Number(o.puente) || 0), 0),
-        totalesPorMoneda: porMoneda,
-        statusPagado: d.statusPagado === true,
-        createdAt: String(d.createdAt || new Date().toISOString()),
-        actualizadoEn: new Date().toISOString(),
-      });
-    });
+    await upsertReferenciaAuto(`${r.grupo}_${fecha}`, r.grupo, fecha, [r.fila], horaDe(fechaHora) || horaDe(new Date().toTimeString()), 'verde');
   } catch (e) {
     console.warn('[historialCalculado] no se pudo registrar el verde:', e);
   }

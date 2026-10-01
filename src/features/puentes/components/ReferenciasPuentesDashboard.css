@@ -250,3 +250,7 @@
 .rpd-grupos .rpd-grupo__tabla { max-height: 260px; }
 .rpd-modal--ancho { max-width: 980px; } /* ✅ V00401: cabe la columna Convenio */
 .rpd-chip-auto { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; border: 1px solid #1f6feb; color: #79c0ff; font-size: 0.65rem; font-weight: 700; font-family: inherit; vertical-align: middle; } /* ✅ V00402 */
+/* ✅ V00404: destino de cada grupo al enviar al Historial */
+.rpd-grupo__destino { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.rpd-grupo__destino label { color: #8b949e; font-size: 0.74rem; font-weight: 700; text-transform: uppercase; white-space: nowrap; }
+.rpd-grupo__destino select { flex: 1; padding: 7px 10px; border-radius: 6px; border: 1px solid #30363d; background: #161b22; color: #f0f6fc; font-size: 0.85rem; }

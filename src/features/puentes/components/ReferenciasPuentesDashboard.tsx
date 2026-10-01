@@ -18,7 +18,7 @@ import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 import { esOperacionPrueba } from '../../../utils/operacionPrueba';
 import { cargarCtxCobroPuente, cobroPuenteDeOperacion } from '../../../utils/puenteColombia';
-import { COL_REF_AUTO, recalcularHistorialCalculadoHoy } from '../../../utils/historialCalculadoPuentes';
+import { COL_REF_AUTO, filaDeOperacion, recalcularHistorialCalculadoHoy, upsertReferenciaAuto } from '../../../utils/historialCalculadoPuentes';
 
 // ⚠ Si tu colección de convenios de clientes tiene otro nombre, cámbialo aquí.
 const COLECCION_CONVENIOS = 'convenios_clientes';
@@ -38,7 +38,7 @@ const COLUMNAS_OPS_PUENTES_BASE = [
 ];
 
 export const ReferenciasPuentesDashboard = () => {
-  const [activeTab, setActiveTab] = useState<'operaciones' | 'otros' | 'saldos' | 'historial' | 'calculado'>('operaciones');
+  const [activeTab, setActiveTab] = useState<'operaciones' | 'otros' | 'saldos' | 'historial' | 'calculado'>('calculado');
 
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
   const [referenciasGlobales, setReferenciasGlobales] = useState<any[]>([]);
@@ -61,6 +61,8 @@ export const ReferenciasPuentesDashboard = () => {
   const [filtroUnidad, setFiltroUnidad] = useState<string>('todas');
   const [unidadesList, setUnidadesList] = useState<Record<string, unknown>[]>([]);
   const [asignandoMontos, setAsignandoMontos] = useState(false);
+  // ✅ V00404: a qué referencia del Historial va cada grupo (puente + fecha de servicio)
+  const [destinoPorGrupo, setDestinoPorGrupo] = useState<Record<string, string>>({});
   // ✅ V00402: HISTORIAL CALCULADO (referencias automáticas al marcar Verde)
   type RefAuto = { id: string; consecutivo?: string; puenteNombre?: string; fechaGeneracion?: string; horaGeneracion?: string; operaciones?: string[]; operacionesIds?: string[]; totalesPorMoneda?: Record<string, number>; subtotalPuentes?: number; statusPagado?: boolean };
   const [refsAuto, setRefsAuto] = useState<RefAuto[]>([]);
@@ -143,10 +145,7 @@ export const ReferenciasPuentesDashboard = () => {
   // Modal generar referencia
   const [modalAbierto, setModalAbierto] = useState(false);
   const [guardando, setGuardando] = useState(false);
-  const [fechaPago, setFechaPago] = useState(hoyLocalISO());
-  const statusPagado = 'Pendiente' as 'Pendiente' | 'Pagada'; // ✅ V00399: sin selector de status
   const [horaReferencia, setHoraReferencia] = useState('');
-  const [observacionesForm, setObservacionesForm] = useState('');
 
   const [referenciaViendo, setReferenciaViendo] = useState<any | null>(null);
 
@@ -171,7 +170,7 @@ export const ReferenciasPuentesDashboard = () => {
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'historial') return; // ✅ V00395: Otros Cruces también usa puentes y unidades
+    if (activeTab === 'historial') return; // ✅ V00395 / V00404: el historial de referencias también necesita operaciones (para asignar)
     const subs: Array<() => void> = [];
     subs.push(onSnapshot(collection(db, 'empleados'), (snap) => {
       setOperadoresList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
@@ -475,7 +474,7 @@ export const ReferenciasPuentesDashboard = () => {
   };
   const textoHoraVerde = (op: { id?: unknown }) => (horasVerde[String(op.id)] || []).map(v => `${v.etiqueta} ${horaDe(v.fechaHora)}`).join(' · ');
 
-  const esAsignada = (op: any) => !!op.referenciaPuentesId;
+  const esAsignada = (op: any) => idsEnHistorialCalculado.has(String(op._docId || op.id)); // ✅ V00404: asignada = está en el Historial de referencias
 
 
   const valorOrdenOp = (op: any, campo: string): string | number => {
@@ -701,64 +700,21 @@ export const ReferenciasPuentesDashboard = () => {
   const consecutivoPorPuente = (grupo: GrupoRef, usados: string[] = [], fechaIso?: string) => {
     const prefix = `${grupo}-${ddmmyyDe(fechaIso || hoyLocalISO())}-`;
     let maxSeq = 0;
-    [...referenciasGlobales.map(r => String(r.consecutivo || '')), ...usados].forEach(c => {
+    [...referenciasGlobales.map(r => String(r.consecutivo || '')), ...refsAuto.map(r => String(r.consecutivo || '')), ...usados].forEach(c => { // ✅ V00404: también las del Historial de referencias
       if (!c.startsWith(prefix)) return;
       const seq = parseInt(c.slice(prefix.length), 10);
       if (seq > maxSeq) maxSeq = seq;
     });
     return `${prefix}${String(maxSeq + 1).padStart(3, '0')}`;
   };
-  const gruposSeleccion = useMemo(() => {
-    const mapa = new Map<GrupoRef, { ops: OpPuente[]; porMoneda: Record<string, number> }>();
-    seleccionadas.forEach(id => {
-      const op = operacionesGlobales.find(o => o.id === id);
-      if (!op) return;
-      const g = grupoPuenteOp(op);
-      if (!g) return;
-      const ent = mapa.get(g) || { ops: [], porMoneda: {} };
-      ent.ops.push(op);
-      const m1 = String(op.saldoPuenteMoneda || '');
-      ent.porMoneda[m1] = (ent.porMoneda[m1] || 0) + (Number(op.saldoPuente) || 0);
-      if (Number(op.saldoPuentePiso) > 0) { const m2 = String(op.saldoPuentePisoMoneda || ''); ent.porMoneda[m2] = (ent.porMoneda[m2] || 0) + Number(op.saldoPuentePiso); }
-      mapa.set(g, ent);
-    });
-    const usados: string[] = [];
-    return (['AVI', 'PT3', 'PTC'] as GrupoRef[]).filter(g => mapa.has(g)).map(g => {
-      const consecutivo = consecutivoPorPuente(g, usados, fechaPago);
-      usados.push(consecutivo);
-      const ent = mapa.get(g)!;
-      return { grupo: g, consecutivo, ops: ent.ops, porMoneda: ent.porMoneda, total: ent.ops.reduce((a, o) => a + getPuente(o), 0) };
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seleccionadas, operacionesGlobales, referenciasGlobales, fechaPago]);
 
 
   const abrirModalGenerar = () => {
     setHoraReferencia(horaAhora()); // ✅ V00399
-    setFechaPago(hoyLocalISO());
-    // ✅ V00394: todas las seleccionadas deben tener su monto de puente
-    const sinMonto = seleccionadas.map(id => operacionesGlobales.find(o => o.id === id)).filter(op => op && !tieneMontoPuente(op));
-    if (sinMonto.length) {
-      alert(`${sinMonto.length} operación(es) seleccionada(s) no tienen monto de puente:\n\n${sinMonto.slice(0, 10).map(o => `· ${o.ref || o.id}`).join('\n')}${sinMonto.length > 10 ? '\n…' : ''}\n\nUsa "Asignar monto del puente" antes de generar la referencia.`);
-      return;
-    }
-    setObservacionesForm('');
+    setDestinoPorGrupo({});
     setModalAbierto(true);
   };
 
-  const traficoPredominante = useMemo(() => {
-    const conteo: Record<string, number> = {};
-    seleccionadas.forEach(id => {
-      const op = operacionesGlobales.find(o => o.id === id);
-      if (!op) return;
-      const tr = getTrafico(op);
-      if (tr && tr !== '—') conteo[tr] = (conteo[tr] || 0) + 1;
-    });
-    const entradas = Object.entries(conteo).sort((a, b) => b[1] - a[1]);
-    if (entradas.length === 0) return '—';
-    if (entradas.length > 1 && entradas[0][1] === entradas[1][1]) return 'Mixto';
-    return entradas[0][0];
-  }, [seleccionadas, operacionesGlobales, convenioPorId, traficoPorId, detallePorId, tarifaRefPorId, tipoTarifarioPorId]);
 
   // ✅ V00395: OTROS CRUCES — cruces que no son de una operación. Cada registro
   //   toma el consecutivo de su puente (AVI / PT3 / PTC, misma serie que las
@@ -872,7 +828,8 @@ export const ReferenciasPuentesDashboard = () => {
       const restante = orden.map(r => Number(r.saldo) || 0);
       orden.forEach(r => { res[String(r.id)] = { refs: [], consumido: 0, balance: Number(r.saldo) || 0, cruces: 0 }; });
       const items: RefSaldo[] = [];
-      referenciasGlobales.forEach((r: Record<string, unknown>) => {
+      // ✅ V00404: Historial de referencias (calculado) + Otros Cruces
+      [...(refsAuto as unknown as Record<string, unknown>[]), ...referenciasGlobales.filter((x: Record<string, unknown>) => x.tipo === 'otroCruce')].forEach((r: Record<string, unknown>) => {
         const fecha = String(r.fechaGeneracion || String(r.createdAt || '').slice(0, 10));
         if (primera && fecha < primera) return;
         const hora = String(r.horaGeneracion || r.horaCruce || '');
@@ -897,75 +854,60 @@ export const ReferenciasPuentesDashboard = () => {
       });
     });
     return res;
-  }, [referenciasGlobales, saldosLista]);
+  }, [referenciasGlobales, saldosLista, refsAuto]);
   const [refAbierta, setRefAbierta] = useState<string>('');
   const tarifaPuente = (r: Record<string, unknown>) => {
     const p = puentesCatalogo.find(x => x.id === r.puenteId) || puentesCatalogo.find(x => sinAcentos(nombrePuente(x)) === sinAcentos(r.puenteNombre));
     return Number(p?.importe) || 0;
   };
 
+  const gruposAsignacion = useMemo(() => {
+    const mapa = new Map<string, { grupo: GrupoRef; fecha: string; ops: OpPuente[] }>();
+    seleccionadas.forEach(id => {
+      const op = operacionesGlobales.find(o => o.id === id);
+      if (!op) return;
+      const g = grupoPuenteOp(op) || 'PT3';
+      const fecha = String(op.fechaServicio || '').slice(0, 10) || hoyLocalISO();
+      const k = `${g}|${fecha}`;
+      const ent = mapa.get(k) || { grupo: g, fecha, ops: [] };
+      ent.ops.push(op);
+      mapa.set(k, ent);
+    });
+    return Array.from(mapa.entries()).map(([clave, v]) => ({
+      clave, ...v,
+      total: v.ops.reduce((a, o) => a + getPuente(o), 0),
+      existentes: refsAuto.filter(r => String((r as { grupoPuente?: string }).grupoPuente || '') === v.grupo && String(r.fechaGeneracion || '') === v.fecha),
+    })).sort((a, b) => a.fecha.localeCompare(b.fecha) || a.grupo.localeCompare(b.grupo));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seleccionadas, operacionesGlobales, refsAuto]);
+
   const handleGuardarReferencia = async (e: React.FormEvent) => {
     e.preventDefault();
+    // ✅ V00404: las operaciones van al HISTORIAL DE REFERENCIAS (calculado) — a la
+    //   referencia elegida de su puente y fecha de servicio, o a una nueva.
     if (seleccionadas.length === 0) return alert('Selecciona al menos una operación.');
-    if (gruposSeleccion.length === 0) return alert('Las operaciones seleccionadas no tienen monto de puente.');
     setGuardando(true);
     try {
-      // ✅ V00394: una referencia por puente (AVI / PT3 / PTC) con fecha y hora de generación
-      const ahora = new Date();
-      const fechaGen = fechaPago || hoyLocalISO(); // ✅ V00399: fecha y hora capturadas
-      const horaGen = horaReferencia || `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
-      const batch = writeBatch(db);
-      const asignaciones: { id: string; refId: string; consecutivo: string }[] = [];
-      gruposSeleccion.forEach(g => {
-        const nuevoId = doc(collection(db, 'referencias_puentes')).id;
-        const operacionesGuardadas = g.ops.map(op => ({
-          id: String(op.id),
-          ref: String(op.ref || String(op.id).substring(0, 6)),
-          fecha: String(op.fechaServicio || op.fecha || ''),
-          horaVerde: textoHoraVerde(op),
-          unidad: getUnidad(op),
-          convenio: getConvenio(op),
-          trafico: getTrafico(op),
-          puenteNombre: nombresPuenteOp(op).join(' + '),
-          caseta: Number(op.saldoPuente) || 0,
-          casetaMoneda: String(op.saldoPuenteMoneda || ''),
-          piso: Number(op.saldoPuentePiso) || 0,
-          pisoMoneda: String(op.saldoPuentePisoMoneda || ''),
-          puente: getPuente(op),
-        }));
-        batch.set(doc(db, 'referencias_puentes', nuevoId), {
-          consecutivo: g.consecutivo,
-          grupoPuente: g.grupo,
-          puenteNombre: NOMBRE_GRUPO[g.grupo],
-          fechaGeneracion: fechaGen,
-          horaGeneracion: horaGen,
-          fechaPago,
-          fechaInicio, fechaFin,
-          traficoPredominante,
-          operacionesIds: g.ops.map(o => String(o.id)),
-          operaciones: g.ops.map(o => String(o.ref || o.id)),
-          operacionesGuardadas,
-          subtotalPuentes: g.total,
-          totalesPorMoneda: g.porMoneda,
-          statusPagado: statusPagado === 'Pagada',
-          observaciones: observacionesForm,
-          createdAt: ahora.toISOString(),
-        });
-        g.ops.forEach(op => {
-          batch.update(doc(db, 'operaciones', String(op.id)), { referenciaPuentesId: nuevoId, referenciaPuentesConsecutivo: g.consecutivo });
-          asignaciones.push({ id: String(op.id), refId: nuevoId, consecutivo: g.consecutivo });
-        });
-      });
-      await batch.commit();
-      const mapa = new Map(asignaciones.map(x => [x.id, x]));
-      setOperacionesGlobales(prev => prev.map(op => mapa.has(op.id) ? { ...op, referenciaPuentesId: mapa.get(op.id)!.refId, referenciaPuentesConsecutivo: mapa.get(op.id)!.consecutivo } : op));
+      let omitidas = 0;
+      for (const g of gruposAsignacion) {
+        const destino = destinoPorGrupo[g.clave] || (g.existentes[0]?.id ?? '__nuevo__');
+        const filas: Record<string, unknown>[] = [];
+        for (const op of g.ops) {
+          const r = await filaDeOperacion({ ...op, _docId: op._docId || op.id }, textoHoraVerde(op));
+          if (r) filas.push(r.fila); else omitidas += 1;
+        }
+        if (filas.length === 0) continue;
+        const docId = destino !== '__nuevo__' ? destino
+          : (g.existentes.length === 0 ? `${g.grupo}_${g.fecha}` : `${g.grupo}_${g.fecha}_${Date.now()}`);
+        await upsertReferenciaAuto(docId, g.grupo, g.fecha, filas, horaReferencia || horaAhora(), 'manual');
+      }
       setModalAbierto(false);
       setSeleccionadas([]);
-      setActiveTab('historial');
-      setBusquedaHistHecha(true);
+      setActiveTab('calculado');
+      if (omitidas) alert(`${omitidas} operación(es) no se agregaron: no se pudo determinar su puente (revisa su convenio o tráfico).`);
     } catch (error) {
       console.error(error);
-      alert('Error al guardar la referencia de puentes.');
+      alert(`Error al enviar al Historial de referencias: ${(error as Error)?.message || error}`);
     } finally {
       setGuardando(false);
     }
@@ -1074,18 +1016,19 @@ export const ReferenciasPuentesDashboard = () => {
       <h1 className="rpd-x5">Referencias de Puentes</h1>
 
       <div className="rpd-x6">
-        <button onClick={() => setActiveTab('operaciones')} style={tabStyle(activeTab === 'operaciones')}>Asignar Operaciones</button>
+        {/* ✅ V00404: orden — Historial de referencias · Operaciones sin asignar · Saldo */}
+        <button onClick={() => setActiveTab('calculado')} style={tabStyle(activeTab === 'calculado')}>Historial de referencias</button>
+        <button onClick={() => setActiveTab('operaciones')} style={tabStyle(activeTab === 'operaciones')}>Operaciones sin asignar</button>
+        <button onClick={() => setActiveTab('saldos')} style={tabStyle(activeTab === 'saldos')}>Saldo</button>
         <button onClick={() => setActiveTab('otros')} style={tabStyle(activeTab === 'otros')}>Otros Cruces</button>
-        <button onClick={() => setActiveTab('saldos')} style={tabStyle(activeTab === 'saldos')}>Agregar Saldo</button>
-        <button onClick={() => setActiveTab('historial')} style={tabStyle(activeTab === 'historial')}>Historial de Referencias</button>
-        <button onClick={() => setActiveTab('calculado')} style={tabStyle(activeTab === 'calculado')}>Historial calculado</button>
+        <button onClick={() => setActiveTab('historial')} style={tabStyle(activeTab === 'historial')}>Historial manual (anterior)</button>
       </div>
 
       {activeTab === 'calculado' ? (
         <div className="animation-fade-in">
           {/* ✅ V00402: HISTORIAL CALCULADO */}
           <div className="rpd-otros-barra">
-            <span className="rpd-otros-nota">Referencias AUTOMÁTICAS: al marcar Verde (MX o USA) una operación de Transfer o Logística con Roelca, se agrega sola a la referencia de su puente del día de hoy (AVI / PT3 / PTC, misma serie de consecutivos). Es independiente del Historial de Referencias manual.</span>
+            <span className="rpd-otros-nota">Una referencia por puente y día (AVI / PT3 / PTC). Las operaciones entran solas al marcar Verde (MX o USA) o se envían desde Operaciones sin asignar. Es lo que descuenta del Saldo.</span>
             <button type="button" className="rpd-btn-asignar" onClick={recalcularHoy} disabled={recalculando} title="Revisa la bitácora de hoy y agrega los verdes que falten">{recalculando ? 'Revisando…' : 'Recalcular hoy'}</button>
           </div>
           <div className="table-container rpd-x41">
@@ -1129,7 +1072,7 @@ export const ReferenciasPuentesDashboard = () => {
         <div className="animation-fade-in">
           {/* ✅ V00396: AGREGAR SALDO */}
           <div className="rpd-otros-barra">
-            <span className="rpd-otros-nota">Saldo inicial de cada puente. Es el que se muestra en Operaciones Activas y se descuenta con los cruces de las operaciones (y otros cruces) de ese puente a partir de su fecha.</span>
+            <span className="rpd-otros-nota">Saldo inicial de cada puente. Se descuenta con el Historial de referencias (y los Otros Cruces) de ese puente a partir de su fecha.</span>
             <button type="button" className="rpd-btn-otro" onClick={abrirSaldo}>+ Agregar saldo</button>
           </div>
           <div className="table-container rpd-x41">
@@ -1427,7 +1370,7 @@ export const ReferenciasPuentesDashboard = () => {
                 disabled={seleccionadas.length === 0 || filtroEstadoOps === 'asignadas'}
                 onClick={abrirModalGenerar}
                 style={{ padding: '10px 20px', backgroundColor: (seleccionadas.length > 0 && filtroEstadoOps !== 'asignadas') ? '#D84315' : '#30363d', color: '#fff', border: 'none', borderRadius: '6px', cursor: (seleccionadas.length > 0 && filtroEstadoOps !== 'asignadas') ? 'pointer' : 'not-allowed', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
-                Generar Referencia ({seleccionadas.length})
+                Enviar al Historial ({seleccionadas.length})
               </button>
             </div>
           </div>
@@ -1665,64 +1608,62 @@ export const ReferenciasPuentesDashboard = () => {
         <div className="modal-overlay rpd-x68">
           <div className="rpd-x69 rpd-modal--ancho">
             <div className="rpd-x70">
-              <h2 className="rpd-x71">Generar {gruposSeleccion.length === 1 ? 'Referencia' : `${gruposSeleccion.length} Referencias`}</h2>
+              <h2 className="rpd-x71">Enviar al Historial de referencias</h2>
               <button className="rpd-x62" onClick={() => setModalAbierto(false)}>✕</button>
             </div>
 
-            {/* ✅ V00394: una referencia por puente */}
+            {/* ✅ V00404: por puente y fecha de servicio, elegir la referencia del Historial o crear una nueva */}
             <div className="rpd-grupos">
-              {gruposSeleccion.map(g => (
-                <div key={g.grupo} className="rpd-grupo">
-                  <div className="rpd-grupo__enc">
-                    <span className="rpd-grupo__cons">{g.consecutivo}</span>
-                    <span className="rpd-grupo__puente">{NOMBRE_GRUPO[g.grupo]}</span>
+              {gruposAsignacion.map(g => {
+                const destino = destinoPorGrupo[g.clave] || (g.existentes[0]?.id ?? '__nuevo__');
+                return (
+                  <div key={g.clave} className="rpd-grupo">
+                    <div className="rpd-grupo__enc">
+                      <span className="rpd-grupo__puente">{NOMBRE_GRUPO[g.grupo]} · {formatearFechaSpanish(g.fecha)}</span>
+                      <span className="rpd-grupo__total">{formatoMoneda(g.total)}</span>
+                    </div>
+                    <div className="rpd-grupo__destino">
+                      <label>Enviar a</label>
+                      <select value={destino} onChange={e => setDestinoPorGrupo(prev => ({ ...prev, [g.clave]: e.target.value }))}>
+                        {g.existentes.map(r => <option key={r.id} value={r.id}>{r.consecutivo} — {(r.operacionesIds || []).length} operación(es)</option>)}
+                        <option value="__nuevo__">+ Crear referencia nueva {g.existentes.length === 0 ? `(${consecutivoPorPuente(g.grupo, [], g.fecha)})` : ''}</option>
+                      </select>
+                    </div>
+                    <div className="rpd-grupo__tabla">
+                      <table>
+                        <thead><tr><th>Ref. Operación</th><th>Fecha servicio</th><th>Unidad</th><th>Convenio</th><th>Puente</th><th className="rpd-num">Monto</th></tr></thead>
+                        <tbody>
+                          {g.ops.map(o => (
+                            <tr key={String(o.id)}>
+                              <td className="rpd-x52">{String(o.ref || o.id)}</td>
+                              <td>{formatearFechaSpanish(String(o.fechaServicio || ''))}</td>
+                              <td>{getUnidad(o)}</td>
+                              <td className="rpd-grupo__conv" title={getConvenio(o)}>{getConvenio(o)}</td>
+                              <td>{nombresPuenteOp(o).join(' + ') || <span className="rpd-sin-monto">Se calcula al enviar</span>}</td>
+                              <td className="rpd-num">{getPuente(o) ? formatoMoneda(getPuente(o)) : '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                  <div className="rpd-grupo__datos">
-                    <span>{g.ops.length} {g.ops.length === 1 ? 'operación' : 'operaciones'}</span>
-                    <span className="rpd-grupo__total">{Object.entries(g.porMoneda).map(([m, t]) => `${formatoMoneda(t)} ${m}`).join(' + ')}</span>
-                  </div>
-                  {/* ✅ V00399: las referencias seleccionadas, visibles */}
-                  <div className="rpd-grupo__tabla">
-                    <table>
-                      <thead><tr><th>Ref. Operación</th><th>Fecha servicio</th><th>Unidad</th><th>Convenio</th><th>Puente</th><th className="rpd-num">Monto</th></tr></thead>
-                      <tbody>
-                        {g.ops.map(o => (
-                          <tr key={String(o.id)}>
-                            <td className="rpd-x52">{String(o.ref || o.id)}</td>
-                            <td>{formatearFechaSpanish(String(o.fechaServicio || ''))}</td>
-                            <td>{getUnidad(o)}</td>
-                            <td className="rpd-grupo__conv" title={getConvenio(o)}>{getConvenio(o)}</td>{/* ✅ V00401 */}
-                            <td>{nombresPuenteOp(o).join(' + ')}</td>
-                            <td className="rpd-num">{formatoMoneda(getPuente(o))}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <FormularioConfigurable modulo="referenciasPuentes">{/* ✅ V00385 */}
             <form onSubmit={handleGuardarReferencia}>
+              {/* ✅ V00404: la fecha de cada referencia es la FECHA DE SERVICIO de sus operaciones */}
               <div className="rpd-x77">
                 <div>
-                  <label style={labelFiltro}>Fecha</label>
-                  <input type="date" required value={fechaPago} onChange={e => setFechaPago(e.target.value)} style={{ ...inputFiltro, color: '#fff' }} />
-                </div>
-                <div>
-                  <label style={labelFiltro}>Hora</label>
+                  <label style={labelFiltro}>Hora (si se crea una referencia nueva)</label>
                   <input type="time" required value={horaReferencia} onChange={e => setHoraReferencia(e.target.value)} style={{ ...inputFiltro, color: '#fff' }} />
                 </div>
-              </div>
-              <div className="rpd-x82">
-                <label style={labelFiltro}>Observaciones</label>
-                <textarea value={observacionesForm} onChange={e => setObservacionesForm(e.target.value)} style={{ ...inputFiltro, color: '#fff', height: '60px' }} />
               </div>
 
               <div className="rpd-x83">
                 <button className="rpd-x84" type="button" onClick={() => setModalAbierto(false)} disabled={guardando}>Cancelar</button>
-                <button className="rpd-x85" type="submit" disabled={guardando}>{guardando ? 'Guardando...' : gruposSeleccion.length > 1 ? `Confirmar ${gruposSeleccion.length} referencias` : 'Confirmar Referencia'}</button>
+                <button className="rpd-x85" type="submit" disabled={guardando}>{guardando ? 'Enviando…' : 'Enviar al Historial'}</button>
               </div>
             </form>
             </FormularioConfigurable>
