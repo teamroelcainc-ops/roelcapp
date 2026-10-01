@@ -149,3 +149,4 @@
   .cs-x99 { flex-wrap: wrap; }
   .cs-x110 { padding: 14px 12px; }
 }
+.cs-comodin { color: #8b949e; font-style: italic; } /* ✅ V00405: flujo sin tráfico/carga = aplica a todos */

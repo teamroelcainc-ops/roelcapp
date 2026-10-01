@@ -1221,11 +1221,18 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
     const idCrudo = `${tipoOpText}_${traficoTxt}_${cargaTxt}`;
 
+    // ✅ V00405: flujo exacto; si no hay, uno del mismo servicio con tráfico y/o
+    //   carga COMODÍN (guardados sin elegir) — siempre el más específico.
+    const esComodin = (v: unknown) => { const n = normClave(v); return !n || n === 'todos' || n === 'n/a'; };
     const match = flujosIndex.find(f =>
       normClave(f.tipoServicio) === normClave(tipoOpText) &&
       normClave(f.trafico) === normClave(traficoTxt) &&
       normClave(f.carga) === normClave(cargaTxt)
-    );
+    ) || flujosIndex
+      .filter(f => normClave(f.tipoServicio) === normClave(tipoOpText) &&
+        (esComodin(f.trafico) || normClave(f.trafico) === normClave(traficoTxt)) &&
+        (esComodin(f.carga) || normClave(f.carga) === normClave(cargaTxt)))
+      .sort((x, y) => (Number(!esComodin(y.trafico)) * 2 + Number(!esComodin(y.carga))) - (Number(!esComodin(x.trafico)) * 2 + Number(!esComodin(x.carga))))[0];
 
     const idGenerado = match ? match.id : idCrudo;
     console.log('🔑 configId generado:', idGenerado, match ? '(resuelto por índice)' : '(crudo)');

@@ -203,23 +203,25 @@ const buscarFlujoPorIndice = async (operacionInfo: Record<string, unknown>): Pro
     if (/\b(cargad[oa]|llen[oa])\b/.test(conv)) cargas.add('cargado');
     if (/\bvaci[oa]\b/.test(conv)) cargas.add('vacio');
 
-    if (tipos.size === 0 || traficos.size === 0 || cargas.size === 0) return null;
+    if (tipos.size === 0) return null;
 
     const lista = await obtenerIndiceFlujos();
     // Primero lo capturado en la operación; el convenio solo desempata.
     const traficoOp = normalizarNombre(utilValor(operacionInfo.trafico));
     const cargaOp = canonCarga(utilValor(operacionInfo.carga));
+    // ✅ V00405: un flujo SIN tráfico o SIN carga es COMODÍN (aplica a cualquiera);
+    //   se prefiere siempre el más específico.
+    const esComodin = (v: string) => { const n = normalizarNombre(v); return !n || n === 'todos' || n === 'n/a'; };
     const candidatos = lista.filter(f =>
       tipos.has(normalizarNombre(f.tipoServicio)) &&
-      traficos.has(normalizarNombre(f.trafico)) &&
-      cargas.has(canonCarga(f.carga))
+      (esComodin(f.trafico) || traficos.has(normalizarNombre(f.trafico))) &&
+      (esComodin(f.carga) || cargas.has(canonCarga(f.carga)))
     );
     if (candidatos.length === 0) return null;
-    const exacto = candidatos.find(f =>
-      (!traficoOp || normalizarNombre(f.trafico) === traficoOp) &&
-      (!cargaOp || canonCarga(f.carga) === cargaOp)
-    );
-    return (exacto || candidatos[0]).id;
+    const puntaje = (f: EntradaIndiceFlujo) =>
+      (esComodin(f.trafico) ? 0 : (normalizarNombre(f.trafico) === traficoOp ? 4 : 2)) +
+      (esComodin(f.carga) ? 0 : (canonCarga(f.carga) === cargaOp ? 2 : 1));
+    return [...candidatos].sort((x, y) => puntaje(y) - puntaje(x))[0].id;
   } catch (e) {
     console.warn('[statusRules] Índice de flujos no disponible:', e);
     return null;

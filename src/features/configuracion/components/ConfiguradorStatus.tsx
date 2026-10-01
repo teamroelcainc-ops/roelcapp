@@ -700,8 +700,10 @@ const EditorFlujoAppSheet = ({
   /* ---------- refs ---------- */
   const canvasRef = useRef<HTMLDivElement | null>(null);
 
-  const configId = `${tipoServicio}_${trafico}_${carga}`;
-  const configValido = !!tipoServicio && !!trafico && !!carga;
+  // ✅ V00405: solo el SERVICIO es obligatorio; sin tráfico o sin carga el flujo
+  //   es COMODÍN ("Todos") y aplica a cualquiera que no tenga uno más específico.
+  const configId = `${tipoServicio}_${trafico || 'Todos'}_${carga || 'Todos'}`;
+  const configValido = !!tipoServicio;
 
   /* ============================================================
      CARGA INICIAL
@@ -1235,7 +1237,11 @@ const EditorFlujoAppSheet = ({
   ============================================================ */
   const guardar = async () => {
     if (!configValido) {
-      setMensaje({ tipo: 'err', texto: 'Selecciona Servicio, Tráfico y Carga antes de guardar.' });
+      setMensaje({ tipo: 'err', texto: 'Selecciona el Servicio antes de guardar.' });
+      return;
+    }
+    if (reglas.length === 0) {
+      setMensaje({ tipo: 'err', texto: 'Agrega al menos un paso al flujo antes de guardar.' });
       return;
     }
     const flujoFinal = reglas.map((r, i) => ({ ...r, orden: i + 1 }));
@@ -1371,14 +1377,14 @@ const EditorFlujoAppSheet = ({
             value={trafico}
             onChange={setTrafico}
             options={traficos}
-            placeholder="Selecciona…"
+            placeholder="Todos (opcional)"
           />
           <SelectorCampo
             label="Carga"
             value={carga}
             onChange={setCarga}
             options={carga && !opcionesCarga.includes(carga) ? [...opcionesCarga, carga] : opcionesCarga}
-            placeholder="Selecciona…"
+            placeholder="Todos (opcional)"
           />
         </div>
 
@@ -2229,8 +2235,8 @@ export const ConfiguradorStatus = () => {
               {filtrados.map(f => (
                 <tr key={f.id} className="hov-row cs-x111">
                   <td className="cs-x112">{f.tipoServicio}</td>
-                  <td className="cs-x113">{f.trafico}</td>
-                  <td className="cs-x113">{f.carga}</td>
+                  <td className="cs-x113">{f.trafico || <span className="cs-comodin">Todos</span>}</td>
+                  <td className="cs-x113">{f.carga || <span className="cs-comodin">Todos</span>}</td>
                   <td className="cs-x114">
                     <span className="cs-x115">
                       {(f.flujo || []).length} pasos
