@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { collection, doc, getDoc, setDoc, getDocs, deleteDoc } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import './ConfiguradorStatus.css';
+import { idDocFlujo } from '../../operaciones/config/statusRules';
 
 /* ============================================================
    TIPOS
@@ -765,7 +766,7 @@ const EditorFlujoAppSheet = ({
       }
       setCargando(true);
       try {
-        const docSnap = await getDoc(doc(db, 'config_flujos_operacion', configId));
+        const docSnap = await getDoc(doc(db, 'config_flujos_operacion', idDocFlujo(configId)));
         if (docSnap.exists()) {
           const data = docSnap.data();
           const flujoData: ReglaStatus[] = (data.flujo || [])
@@ -1258,7 +1259,7 @@ const EditorFlujoAppSheet = ({
       if (pestanasVisibles !== null) configFormulario.pestanasVisibles = pestanasVisibles;
       if (camposObligatorios !== null) configFormulario.camposObligatorios = camposObligatorios;
 
-      await setDoc(doc(db, 'config_flujos_operacion', configId), {
+      await setDoc(doc(db, 'config_flujos_operacion', idDocFlujo(configId)), {
         configId,
         tipoServicio,
         trafico,
@@ -1272,9 +1273,9 @@ const EditorFlujoAppSheet = ({
       //   flujo viejo sigue guardado bajo la combinación anterior. Se ofrece
       //   eliminarlo para que no queden dos flujos duplicados en la lista.
       const configIdOriginal = flujoInicial
-        ? `${flujoInicial.tipoServicio}_${flujoInicial.trafico}_${flujoInicial.carga}`
+        ? `${flujoInicial.tipoServicio}_${flujoInicial.trafico || 'Todos'}_${flujoInicial.carga || 'Todos'}` // ✅ V00407: mismo formato que configId
         : '';
-      if (configIdOriginal && configIdOriginal !== configId) {
+      if (configIdOriginal && idDocFlujo(configIdOriginal) !== idDocFlujo(configId)) {
         const borrarViejo = window.confirm(
           `El flujo quedó guardado como "${configId.replace(/_/g, ' · ')}".\n\n` +
           `¿Deseas ELIMINAR el flujo anterior "${configIdOriginal.replace(/_/g, ' · ')}" para no tener duplicados?\n\n` +
@@ -1283,7 +1284,7 @@ const EditorFlujoAppSheet = ({
         );
         if (borrarViejo) {
           try {
-            await deleteDoc(doc(db, 'config_flujos_operacion', configIdOriginal));
+            await deleteDoc(doc(db, 'config_flujos_operacion', idDocFlujo(configIdOriginal)));
           } catch (eBorrar) {
             console.error('No se pudo eliminar el flujo anterior:', eBorrar);
           }

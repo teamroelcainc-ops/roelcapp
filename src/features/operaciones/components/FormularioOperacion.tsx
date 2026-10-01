@@ -14,7 +14,7 @@ import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesC
 import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 // ✅ NUEVO: historial de actividad (colección historial_actividad)
 import { registrarLog } from '../../../utils/logger';
-import { statusDescuentaPuente, calcularStatusDinamico } from '../config/statusRules';
+import { statusDescuentaPuente, calcularStatusDinamico, idDocFlujo } from '../config/statusRules';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 
@@ -1278,7 +1278,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
     (async () => {
       try {
-        const snap = await getDoc(doc(db, 'config_flujos_operacion', configId));
+        const snap = await getDoc(doc(db, 'config_flujos_operacion', idDocFlujo(configId)));
         if (cancelado) return;
         const data = snap.exists() ? (snap.data() as any) : null;
         setPestanasVisiblesConfig(data && Array.isArray(data.pestanasVisibles) ? data.pestanasVisibles : null);
@@ -1390,7 +1390,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
   const calcularCamposSiguienteAuto = async (configId: string, statusActual: string) => {
     try {
-      const snap = await getDoc(doc(db, 'config_flujos_operacion', configId));
+      const snap = await getDoc(doc(db, 'config_flujos_operacion', idDocFlujo(configId)));
       if (!snap.exists() || !snap.data().flujo) { setCamposSiguienteStatus([]); setNombreSiguienteAuto(''); return; }
       const reglas = snap.data().flujo as any[];
 

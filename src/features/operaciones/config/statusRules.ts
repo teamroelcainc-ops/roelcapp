@@ -1,5 +1,10 @@
 // src/features/operaciones/config/statusRules.ts
 import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
+
+// ✅ V00407: un id de documento de Firestore NO puede llevar "/" (p. ej. el servicio
+//   "Rentas (Patio / Equipo)" rompía al guardar). Se cambia por "／" (barra ancha),
+//   igual al guardar y al leer; es idempotente.
+export const idDocFlujo = (configId: unknown): string => String(configId ?? '').replace(/\//g, '／');
 import { db } from '../../../config/firebase';
 
 // ✅ CACHÉ DE FLUJOS EN MEMORIA + localStorage (sin cambios)
@@ -50,7 +55,7 @@ const obtenerFlujoConCache = async (configId: string): Promise<any | null> => {
   }
 
   console.log(`[statusRules] 📡 Leyendo flujo "${configId}" de Firestore...`);
-  const snap = await getDoc(doc(db, 'config_flujos_operacion', configId));
+  const snap = await getDoc(doc(db, 'config_flujos_operacion', idDocFlujo(configId)));
   if (!snap.exists()) return null;
 
   const data = snap.data();
@@ -297,7 +302,7 @@ export const calcularStatusDinamico = async (configId: string, formData: any, st
     throw new Error("⛔ Faltan datos para determinar el flujo. Asegúrate de que el Convenio generó correctamente el Servicio, Tráfico y Carga.");
   }
 
-  const docRef = doc(db, 'config_flujos_operacion', configId);
+  const docRef = doc(db, 'config_flujos_operacion', idDocFlujo(configId));
   const snap = await getDoc(docRef);
 
   if (!snap.exists() || !snap.data().flujo || snap.data().flujo.length === 0) {
