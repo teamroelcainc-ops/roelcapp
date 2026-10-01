@@ -165,3 +165,12 @@ export const cobroPuenteDeOperacion = (ctx: CtxCobroPuente, op: Record<string, u
   }
   return out;
 };
+
+// ✅ V00412: nombre de la ADUANA de la operación (convenio → tarifa) usando el contexto cargado.
+export const aduanaDeOperacionCtx = (ctx: CtxCobroPuente, op: Record<string, unknown>): string => {
+  const det = ctx.detalles.get(String(op.convenio || '').trim());
+  const tarifaBase = String(det?.tarifaBaseId ?? det?.tarifa_base_id ?? det?.tarifaReferenciaId ?? det?.tarifa_referencia_id ?? '').trim();
+  const t = tarifaBase ? ctx.tarifas.get(tarifaBase) : undefined;
+  const v = String(t?.aduana ?? '').trim();
+  return ctx.aduanas.get(v) || v;
+};

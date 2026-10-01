@@ -13,7 +13,7 @@
 import { collection, doc, getDoc, getDocs, query, runTransaction, where } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { esOperacionPrueba } from './operacionPrueba';
-import { cargarCtxCobroPuente, cobroPuenteDeOperacion, type CtxCobroPuente } from './puenteColombia';
+import { aduanaDeOperacionCtx, cargarCtxCobroPuente, cobroPuenteDeOperacion, esAduanaColombia, type CtxCobroPuente } from './puenteColombia';
 
 export const COL_REF_AUTO = 'referencias_puentes_auto';
 type GrupoRef = 'AVI' | 'PT3' | 'PTC';
@@ -41,13 +41,20 @@ const ctxCobro = async () => {
 
 /** Montos de puente de la operación (los ya cobrados o, si aún no, los calculados). */
 const montosPuente = async (op: Record<string, unknown>) => {
+  // ✅ V00412: el PUENTE lo decide la ADUANA de la tarifa — Colombia siempre va
+  //   a PTC (caseta + puente) aunque la operación tenga cobrada otra caseta;
+  //   y una caseta de Colombia en otra aduana se vuelve a calcular.
+  const ctx = await ctxCobro();
+  const esCol = esAduanaColombia(aduanaDeOperacionCtx(ctx, op)) || norm(op.convenioNombre).includes('colombia');
+  const nomActual = norm(`${String(op.saldoPuentePuente || '')} ${String(op.saldoPuentePisoPuente || '')}`);
   let x: Record<string, unknown> = op;
-  if (!(Number(op.saldoPuente) > 0)) x = { ...op, ...cobroPuenteDeOperacion(await ctxCobro(), op) };
+  const recalcular = !(Number(op.saldoPuente) > 0) || (esCol !== nomActual.includes('colombia'));
+  if (recalcular) { const limpio = { ...op, saldoPuente: 0, saldoPuentePiso: 0 }; x = { ...limpio, ...cobroPuenteDeOperacion(ctx, limpio) }; }
   if (!(Number(x.saldoPuente) > 0)) return null;
   const casetaNom = String(x.saldoPuentePuente || '');
   const pisoNom = Number(x.saldoPuentePiso) > 0 ? String(x.saldoPuentePisoPuente || '') : '';
   const n = norm(`${casetaNom} ${pisoNom}`);
-  const grupo: GrupoRef = n.includes('colombia') ? 'PTC' : n.includes('avi') ? 'AVI' : 'PT3';
+  const grupo: GrupoRef = esCol ? 'PTC' : n.includes('avi') ? 'AVI' : 'PT3';
   return {
     grupo,
     caseta: Number(x.saldoPuente) || 0, casetaMoneda: String(x.saldoPuenteMoneda || ''),
@@ -81,6 +88,7 @@ export const filaDeOperacion = async (op: Record<string, unknown>, horaVerde: st
     grupo: m.grupo,
     fila: {
       id: opId,
+      grupo: m.grupo, // ✅ V00412: para no mezclar puentes
       ref: String(op.ref || opId),
       fecha: String(op.fechaServicio || '').slice(0, 10),
       horaVerde,
@@ -104,7 +112,8 @@ export const upsertReferenciaAuto = async (docId: string, grupo: GrupoRef, fecha
     const snap = await tx.get(ref);
     const d = (snap.exists() ? snap.data() : {}) as Record<string, unknown>;
     const ids = (Array.isArray(d.operacionesIds) ? d.operacionesIds : []) as string[];
-    const nuevas = filas.filter((f) => !ids.includes(String(f.id)));
+    // ✅ V00412: NO se mezclan puentes — solo entran filas del mismo puente que la referencia
+    const nuevas = filas.filter((f) => !ids.includes(String(f.id)) && (!f.grupo || f.grupo === grupo));
     if (nuevas.length === 0 && snap.exists()) return;
     const guardadas = [...((Array.isArray(d.operacionesGuardadas) ? d.operacionesGuardadas : []) as Record<string, unknown>[]), ...nuevas];
     const porMoneda: Record<string, number> = {};
@@ -167,4 +176,38 @@ export const recalcularHistorialCalculadoHoy = async (): Promise<number> => {
     n += 1;
   }
   return n;
+};
+
+/** ✅ V00412: SACA una operación de la referencia (regresa a "Operaciones sin asignar"). Si queda vacía, se elimina. */
+export const quitarOperacionDeReferenciaAuto = async (docId: string, opId: string): Promise<'quitada' | 'eliminada'> => {
+  const ref = doc(db, COL_REF_AUTO, docId);
+  let res: 'quitada' | 'eliminada' = 'quitada';
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) return;
+    const d = snap.data() as Record<string, unknown>;
+    const guardadas = ((Array.isArray(d.operacionesGuardadas) ? d.operacionesGuardadas : []) as Record<string, unknown>[]).filter((o) => String(o.id) !== String(opId));
+    if (guardadas.length === 0) { tx.delete(ref); res = 'eliminada'; return; }
+    const porMoneda: Record<string, number> = {};
+    guardadas.forEach((o) => {
+      if (Number(o.caseta) > 0) porMoneda[String(o.casetaMoneda || 'Sin moneda')] = (porMoneda[String(o.casetaMoneda || 'Sin moneda')] || 0) + Number(o.caseta);
+      if (Number(o.piso) > 0) porMoneda[String(o.pisoMoneda || 'Sin moneda')] = (porMoneda[String(o.pisoMoneda || 'Sin moneda')] || 0) + Number(o.piso);
+    });
+    tx.update(ref, {
+      operacionesIds: guardadas.map((o) => String(o.id)),
+      operaciones: guardadas.map((o) => String(o.ref)),
+      operacionesGuardadas: guardadas,
+      subtotalPuentes: guardadas.reduce((a, o) => a + (Number(o.puente) || 0), 0),
+      totalesPorMoneda: porMoneda,
+      actualizadoEn: new Date().toISOString(),
+    });
+  });
+  return res;
+};
+
+/** Grupo de puente que le corresponde a una fila guardada (por su puente / convenio). */
+export const grupoDeFila = (o: Record<string, unknown>): GrupoRef => {
+  if (o.grupo === 'AVI' || o.grupo === 'PT3' || o.grupo === 'PTC') return o.grupo;
+  const n = norm(`${String(o.puenteNombre || '')} ${String(o.convenio || '')}`);
+  return n.includes('colombia') ? 'PTC' : n.includes('avi') ? 'AVI' : 'PT3';
 };

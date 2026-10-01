@@ -9,6 +9,7 @@ import {
   limit,
   orderBy,
   getDocs,
+  getDoc,
   where
 } from 'firebase/firestore';
 import { db, auth } from '../../../config/firebase';
@@ -18,7 +19,8 @@ import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 import { esOperacionPrueba } from '../../../utils/operacionPrueba';
 import { cargarCtxCobroPuente, cobroPuenteDeOperacion } from '../../../utils/puenteColombia';
-import { COL_REF_AUTO, filaDeOperacion, recalcularHistorialCalculadoHoy, upsertReferenciaAuto } from '../../../utils/historialCalculadoPuentes';
+import { COL_REF_AUTO, filaDeOperacion, grupoDeFila, quitarOperacionDeReferenciaAuto, recalcularHistorialCalculadoHoy, upsertReferenciaAuto } from '../../../utils/historialCalculadoPuentes';
+import { FormularioOperacion } from '../../operaciones/components/FormularioOperacion';
 
 // ⚠ Si tu colección de convenios de clientes tiene otro nombre, cámbialo aquí.
 const COLECCION_CONVENIOS = 'convenios_clientes';
@@ -61,6 +63,56 @@ export const ReferenciasPuentesDashboard = () => {
   const [filtroUnidad, setFiltroUnidad] = useState<string>('todas');
   const [unidadesList, setUnidadesList] = useState<Record<string, unknown>[]>([]);
   const [asignandoMontos, setAsignandoMontos] = useState(false);
+  // ✅ V00412: detalle de la operación (formulario) y sacar operaciones de una referencia
+  const [opDetalle, setOpDetalle] = useState<Record<string, unknown> | null>(null);
+  const [catalogosFormulario, setCatalogosFormulario] = useState<Record<string, unknown[]> | null>(null);
+  const [cargandoDetalleOp, setCargandoDetalleOp] = useState(false);
+  const [quitandoOp, setQuitandoOp] = useState('');
+  const cargarCatalogosFormulario = async () => {
+    if (catalogosFormulario) return catalogosFormulario;
+    const ALIAS: Record<string, string> = {
+      empresas: 'empresas', tiposOperacion: 'catalogo_tipo_operacion', embalajes: 'catalogo_embalaje',
+      remolques: 'remolques', tarifas: 'catalogo_tarifas_referencia', conveniosProv: 'convenios_proveedores',
+      catalogoConvProvDetalles: 'convenios_proveedores_detalles', catalogoTC: 'tipo_cambio',
+      catalogoConvClientes: 'convenios_clientes', catalogoConvDetalles: 'convenios_clientes_detalles',
+      unidades: 'unidades', empleados: 'empleados', statusServicio: 'catalogo_status_servicio',
+      unidades_proveedor: 'unidades_proveedor', proveedores_unidad: 'proveedores_unidad', catalogoMoneda: 'catalogo_moneda',
+    };
+    const resultado: Record<string, unknown[]> = {};
+    await Promise.all(Object.entries(ALIAS).map(async ([alias, col]) => {
+      try { const snap = await getDocs(collection(db, col)); resultado[alias] = snap.docs.map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) })); }
+      catch { resultado[alias] = []; }
+    }));
+    setCatalogosFormulario(resultado);
+    return resultado;
+  };
+  const abrirDetalleOperacion = async (opId: string) => {
+    if (!opId || cargandoDetalleOp) return;
+    setCargandoDetalleOp(true);
+    try {
+      await cargarCatalogosFormulario();
+      const snap = await getDoc(doc(db, 'operaciones', opId));
+      if (!snap.exists()) { alert('No se encontró la operación en la base de datos.'); return; }
+      setOpDetalle({ id: snap.id, ...(snap.data() as Record<string, unknown>) });
+    } catch (e) {
+      console.error(e);
+      alert('No se pudo abrir el detalle de la operación.');
+    } finally { setCargandoDetalleOp(false); }
+  };
+  const sacarDeReferencia = async (ref: { id?: unknown; consecutivo?: unknown }, op: { id?: unknown; ref?: unknown }) => {
+    if (!window.confirm(`¿Sacar ${String(op.ref || op.id)} de ${String(ref.consecutivo || '')}? Regresará a "Operaciones sin asignar".`)) return;
+    setQuitandoOp(String(op.id));
+    try {
+      const r = await quitarOperacionDeReferenciaAuto(String(ref.id), String(op.id));
+      if (r === 'eliminada') { setReferenciaViendo(null); alert('La referencia se quedó sin operaciones y se eliminó.'); }
+      else setReferenciaViendo((prev: Record<string, unknown> | null) => prev ? {
+        ...prev,
+        operacionesIds: ((prev.operacionesIds as string[]) || []).filter(x => String(x) !== String(op.id)),
+        operacionesGuardadas: ((prev.operacionesGuardadas as Record<string, unknown>[]) || []).filter(o => String(o.id) !== String(op.id)),
+      } : prev);
+    } catch (e) { alert(`No se pudo sacar la operación: ${(e as Error)?.message || e}`); }
+    finally { setQuitandoOp(''); }
+  };
   // ✅ V00404: a qué referencia del Historial va cada grupo (puente + fecha de servicio)
   const [destinoPorGrupo, setDestinoPorGrupo] = useState<Record<string, string>>({});
   // ✅ V00402: HISTORIAL CALCULADO (referencias automáticas al marcar Verde)
@@ -690,6 +742,8 @@ export const ReferenciasPuentesDashboard = () => {
   type GrupoRef = 'AVI' | 'PT3' | 'PTC';
   const NOMBRE_GRUPO: Record<GrupoRef, string> = { AVI: 'Puente AVI', PT3: 'Puente III', PTC: 'Puente Colombia' };
   const grupoPuenteOp = (op: OpPuente): GrupoRef | null => {
+    // ✅ V00412: la aduana Colombia (por su convenio) siempre es PTC — no se mezclan puentes
+    if (sinAcentos(getConvenio(op)).includes('colombia')) return 'PTC';
     if (!(Number(op.saldoPuente) > 0)) return null;
     const n = sinAcentos(`${String(op.saldoPuentePuente || '')} ${String(op.saldoPuentePisoPuente || '')}`);
     if (n.includes('colombia')) return 'PTC';
@@ -1682,9 +1736,22 @@ export const ReferenciasPuentesDashboard = () => {
       )}
 
       {/* MODAL FICHA / DETALLE */}
-      {referenciaViendo && (
+      {/* ✅ V00412: detalle de la operación al hacer clic en su fila (mismo formulario de Operaciones) */}
+      {opDetalle && (
+        <FormularioOperacion
+          estado="abierto"
+          initialData={opDetalle}
+          catalogosCacheados={catalogosFormulario || {}}
+          onClose={() => setOpDetalle(null)}
+          onMinimize={() => {}}
+          onRestore={() => {}}
+          onSave={() => {}}
+        />
+      )}
+      {/* mientras se ve la operación, el detalle de la referencia se oculta y vuelve al cerrar */}
+      {referenciaViendo && !opDetalle && (
         <div className="modal-overlay rpd-x86">
-          <div className="rpd-x87">
+          <div className="rpd-x87 rpd-modal--detalle">
             <div className="rpd-x88">
               <h2 className="rpd-x89">Detalle de Referencia</h2>
               <button className="rpd-x62" onClick={() => setReferenciaViendo(null)}>✕</button>
@@ -1737,6 +1804,7 @@ export const ReferenciasPuentesDashboard = () => {
                 <table className="rpd-x100">
                   <thead className="rpd-x101">
                     <tr>
+                      {referenciaViendo.automatico && <th className="rpd-x102"></th>}
                       <th className="rpd-x102">#</th>
                       <th className="rpd-x102">REFERENCIA</th>
                       <th className="rpd-x102">FECHA</th>
@@ -1748,10 +1816,18 @@ export const ReferenciasPuentesDashboard = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {(referenciaViendo.operacionesGuardadas || []).map((op: any, i: number) => (
-                      <tr className="rpd-x46" key={op.id}>
+                    {(referenciaViendo.operacionesGuardadas || []).map((op: any, i: number) => {
+                      const noCorresponde = !!referenciaViendo.grupoPuente && grupoDeFila(op) !== referenciaViendo.grupoPuente;
+                      return (
+                      <tr className={`rpd-x46 rpd-fila-clic${noCorresponde ? ' rpd-fila--mal' : ''}`} key={op.id} title="Ver el detalle de la operación" onClick={() => abrirDetalleOperacion(String(op.id))}>
+                        {referenciaViendo.automatico && (
+                          <td className="rpd-x104">
+                            <button type="button" className="rpd-btn-sacar" disabled={quitandoOp === String(op.id)} title="Sacar de esta referencia (regresa a Operaciones sin asignar)"
+                              onClick={(e) => { e.stopPropagation(); sacarDeReferencia(referenciaViendo, op); }}>{quitandoOp === String(op.id) ? '…' : 'Sacar'}</button>
+                          </td>
+                        )}
                         <td className="rpd-x104 rpd-num-fila">{i + 1}</td>{/* ✅ V00410 */}
-                        <td className="rpd-x103">{op.ref}</td>
+                        <td className="rpd-x103">{op.ref}{noCorresponde && <span className="rpd-chip-mal" title="Esta operación es de otro puente: sácala y vuelve a enviarla para que vaya a su referencia">Otro puente</span>}</td>
                         <td className="rpd-x104">{formatearFechaSpanish(op.fecha)}</td>
                         <td className="rpd-x104">{op.horaVerde || '-'}</td>
                         <td className="rpd-x104">{op.unidad || '-'}</td>
@@ -1762,9 +1838,10 @@ export const ReferenciasPuentesDashboard = () => {
                           {op.piso > 0 && <div>{formatoMoneda(op.piso)} <span className="rpd-moneda">{op.pisoMoneda}</span></div>}
                         </> : formatoMoneda(op.puente)}</td>
                       </tr>
-                    ))}
+                      );
+                    })}
                     {(!referenciaViendo.operacionesGuardadas || referenciaViendo.operacionesGuardadas.length === 0) && (
-                      <tr><td className="rpd-x106" colSpan={8}>Sin detalle de operaciones.</td></tr>
+                      <tr><td className="rpd-x106" colSpan={referenciaViendo.automatico ? 9 : 8}>Sin detalle de operaciones.</td></tr>
                     )}
                   </tbody>
                   {/* ✅ V00410: totales — cantidad de operaciones y monto por moneda */}
@@ -1780,7 +1857,7 @@ export const ReferenciasPuentesDashboard = () => {
                     return (
                       <tfoot>
                         <tr className="rpd-total-fila">
-                          <td colSpan={7}><b>{ops.length}</b> {ops.length === 1 ? 'operación' : 'operaciones'} · {conVerde} con verde · {ops.length - conVerde} sin verde</td>
+                          <td colSpan={referenciaViendo.automatico ? 8 : 7}><b>{ops.length}</b> {ops.length === 1 ? 'operación' : 'operaciones'} · {conVerde} con verde · {ops.length - conVerde} sin verde</td>
                           <td className="rpd-x105">{Object.entries(porMoneda).map(([m, t]) => <div key={m}>{formatoMoneda(t)} <span className="rpd-moneda">{m}</span></div>)}</td>
                         </tr>
                       </tfoot>
