@@ -65,13 +65,19 @@ export const ReferenciasPuentesDashboard = () => {
   type RefAuto = { id: string; consecutivo?: string; puenteNombre?: string; fechaGeneracion?: string; horaGeneracion?: string; operaciones?: string[]; operacionesIds?: string[]; totalesPorMoneda?: Record<string, number>; subtotalPuentes?: number; statusPagado?: boolean };
   const [refsAuto, setRefsAuto] = useState<RefAuto[]>([]);
   const [recalculando, setRecalculando] = useState(false);
+  // ✅ V00403: se escucha SIEMPRE — las operaciones que ya están en el Historial
+  //   calculado no se muestran en Asignar Operaciones (si se borra, regresan).
   useEffect(() => {
-    if (activeTab !== 'calculado') return;
-    const u = onSnapshot(query(collection(db, COL_REF_AUTO), orderBy('fechaGeneracion', 'desc'), limit(500)), (snap) => {
+    const u = onSnapshot(query(collection(db, COL_REF_AUTO), orderBy('fechaGeneracion', 'desc'), limit(1000)), (snap) => {
       setRefsAuto(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<RefAuto, 'id'>) })));
     }, () => setRefsAuto([]));
     return () => u();
-  }, [activeTab]);
+  }, []);
+  const idsEnHistorialCalculado = useMemo(() => {
+    const set = new Set<string>();
+    refsAuto.forEach(r => (r.operacionesIds || []).forEach(id => set.add(String(id))));
+    return set;
+  }, [refsAuto]);
   const recalcularHoy = async () => {
     setRecalculando(true);
     try {
@@ -399,6 +405,7 @@ export const ReferenciasPuentesDashboard = () => {
     if (!filtrosCompletos) return [];
     return operacionesGlobales.filter(op => {
       if (!esPuenteRoelca(op) || esOperacionPrueba(op)) return false;
+      if (idsEnHistorialCalculado.has(String(op._docId || op.id)) || idsEnHistorialCalculado.has(String(op.id))) return false; // ✅ V00403
       // ✅ V00393: solo IMPORTACIÓN y EXPORTACIÓN (los movimientos no cruzan puente)
       const trOp = sinAcentos(getTrafico(op));
       if (trOp !== 'importacion' && trOp !== 'exportacion') return false;
@@ -411,7 +418,7 @@ export const ReferenciasPuentesDashboard = () => {
       if (filtroUnidad !== 'todas' && getUnidad(op) !== filtroUnidad) return false;
       return dentroRangoFecha(op);
     });
-  }, [operacionesGlobales, filtroPuente, filtroUnidad, fechaInicio, fechaFin, filtrosCompletos, unidadPorId, traficoPorId, detallePorId, tarifaRefPorId, tipoTarifarioPorId]);
+  }, [operacionesGlobales, filtroPuente, filtroUnidad, fechaInicio, fechaFin, filtrosCompletos, unidadPorId, traficoPorId, detallePorId, tarifaRefPorId, tipoTarifarioPorId, idsEnHistorialCalculado]);
   const unidadesDisponibles = useMemo(() =>
     Array.from(new Set(operacionesGlobales.filter(op => esPuenteRoelca(op) && dentroRangoFecha(op)).map(getUnidad).filter(u => u && u !== '-'))).sort((a, b) => a.localeCompare(b, 'es', { numeric: true })),
   // eslint-disable-next-line react-hooks/exhaustive-deps
