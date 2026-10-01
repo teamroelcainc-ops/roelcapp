@@ -15,6 +15,7 @@ export interface CambioApp {
 }
 
 export const CAMBIOS_APP: CambioApp[] = [
+  { fecha: '2026-10-01', hora: '16:40', version: 'V00409', titulo: 'Completadas hoy por tipo de operación', resumen: 'La tarjeta Completadas hoy de Operaciones Activas muestra cuántas de las operaciones completadas del día son de Logística Cruces, Transfer, Logística Fletes y Renta (y Otros, si hay de algún otro tipo).' },
   { fecha: '2026-10-01', hora: '13:50', version: 'V00408', titulo: 'Botón Actualizar sueldo de Trompo visible siempre', resumen: 'El botón Actualizar sueldo (Trompo = $0) aparece en el formulario de la operación (Operaciones Activas y Servicios Completados) aunque el Sueldo Operador esté bloqueado por Autorizaciones, porque aplica la regla del Trompo y no es una edición libre del sueldo.' },
   { fecha: '2026-10-01', hora: '13:30', version: 'V00407', titulo: 'Guardar flujos de servicios con diagonal en el nombre', resumen: 'El Editor de Flujos ya guarda los flujos de servicios cuyo nombre lleva diagonal, como Rentas (Patio / Equipo). Antes marcaba Invalid document reference al guardar.' },
   { fecha: '2026-10-01', hora: '13:00', version: 'V00406', titulo: 'Trompo: sueldo del operador en $0', resumen: 'Cuando la operación es Trompo, el Sueldo Operador queda en $0; si hace falta pagar un monto, se agrega en Costos Adicionales. Se aplica solo en operaciones nuevas o al cambiar o actualizar el convenio. Las operaciones Trompo ya guardadas con sueldo no cambian solas: muestran el botón Actualizar sueldo (Trompo = $0), que lo pone en cero solo al presionarlo.' },

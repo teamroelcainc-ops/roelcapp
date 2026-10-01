@@ -354,9 +354,10 @@ function ResumenDelDia() {
   const [cargando, setCargando] = useState(true);
   const [datos, setDatos] = useState<{
     totalHoy: number; completadasHoy: number; canceladasHoy: number;
+    completadasPorTipo: { cruces: number; transfer: number; fletes: number; renta: number; otros: number }; // ✅ V00409
     tc: number | null; tcFecha: string;
     diesel: number | null; dieselFecha: string; dieselProveedores: number;
-  }>({ totalHoy: 0, completadasHoy: 0, canceladasHoy: 0, tc: null, tcFecha: '', diesel: null, dieselFecha: '', dieselProveedores: 0 });
+  }>({ totalHoy: 0, completadasHoy: 0, canceladasHoy: 0, completadasPorTipo: { cruces: 0, transfer: 0, fletes: 0, renta: 0, otros: 0 }, tc: null, tcFecha: '', diesel: null, dieselFecha: '', dieselProveedores: 0 });
 
   const hoy = new Date();
   const hoyISO = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
@@ -493,7 +494,7 @@ function ResumenDelDia() {
 
   const cargar = async () => {
     setCargando(true);
-    const nuevo = { totalHoy: 0, completadasHoy: 0, canceladasHoy: 0, tc: null as number | null, tcFecha: '', diesel: null as number | null, dieselFecha: '', dieselProveedores: 0 };
+    const nuevo = { totalHoy: 0, completadasHoy: 0, canceladasHoy: 0, completadasPorTipo: { cruces: 0, transfer: 0, fletes: 0, renta: 0, otros: 0 }, tc: null as number | null, tcFecha: '', diesel: null as number | null, dieselFecha: '', dieselProveedores: 0 };
 
     // 1) Operaciones con fecha de servicio de HOY, clasificadas por status.
     try {
@@ -503,7 +504,16 @@ function ResumenDelDia() {
         const nombre = String(op.statusNombre || '').toLowerCase();
         nuevo.totalHoy += 1;
         if (op.status === RESUMEN_STATUS_CANCELADO || nombre.includes('cancel')) nuevo.canceladasHoy += 1;
-        else if (RESUMEN_STATUS_COMPLETADOS.includes(op.status) || nombre.includes('complet')) nuevo.completadasHoy += 1;
+        else if (RESUMEN_STATUS_COMPLETADOS.includes(op.status) || nombre.includes('complet')) {
+          nuevo.completadasHoy += 1;
+          // ✅ V00409: desglose por tipo de operación
+          const tipo = String(op.tipoOperacionNombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+          if (tipo.includes('flete')) nuevo.completadasPorTipo.fletes += 1;
+          else if (tipo.includes('logistica')) nuevo.completadasPorTipo.cruces += 1;
+          else if (tipo.includes('transfer')) nuevo.completadasPorTipo.transfer += 1;
+          else if (tipo.includes('renta')) nuevo.completadasPorTipo.renta += 1;
+          else nuevo.completadasPorTipo.otros += 1;
+        }
       });
     } catch (e) { console.error('[Resumen del día] operaciones:', e); }
 
@@ -614,6 +624,16 @@ function ResumenDelDia() {
           {!cargando && datos.totalHoy > 0 && (
             <div className="rd-barra" title={`${datos.completadasHoy} de ${datos.totalHoy}`}>
               <div className="rd-barra__lleno" style={{ '--rd-pct': `${Math.min(100, Math.round((datos.completadasHoy / datos.totalHoy) * 100))}%` } as CSSProperties} />
+            </div>
+          )}
+          {/* ✅ V00409: completadas por tipo de operación */}
+          {!cargando && (
+            <div className="rd-control">
+              <span className="rd-control__et">Logística Cruces</span><span className="rd-control__v">{datos.completadasPorTipo.cruces}</span>
+              <span className="rd-control__et">Transfer</span><span className="rd-control__v">{datos.completadasPorTipo.transfer}</span>
+              <span className="rd-control__et">Logística Fletes</span><span className="rd-control__v">{datos.completadasPorTipo.fletes}</span>
+              <span className="rd-control__et">Renta</span><span className="rd-control__v">{datos.completadasPorTipo.renta}</span>
+              {datos.completadasPorTipo.otros > 0 && <><span className="rd-control__et">Otros</span><span className="rd-control__v">{datos.completadasPorTipo.otros}</span></>}
             </div>
           )}
         </div>
