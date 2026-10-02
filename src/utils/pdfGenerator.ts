@@ -798,7 +798,8 @@ export const generarCartaInstruccionesPDF = (datos: DatosCartaInstrucciones) => 
 
       <div style="text-align: center; margin-top: 10px;">
         <span style="font-size: 9pt; font-weight: bold; text-decoration: underline;">DESCRIPCION DE LA MERCANCIA</span>
-        <div style="background-color: yellow; height: 12px; width: 100%; margin: 2px 0 8px 0;"></div>
+        <!-- ✅ V00419: se imprime la descripción de la mercancía (antes solo la barra amarilla) -->
+        <div style="background-color: yellow; min-height: 12px; width: 100%; margin: 2px 0 8px 0; font-size: 8pt; font-weight: bold; padding: 2px 0;">${datos.descripcionMercancia && datos.descripcionMercancia !== 'N/A' ? datos.descripcionMercancia : ''}</div>
       </div>
 
       <table style="width: 100%; border-collapse: collapse;">

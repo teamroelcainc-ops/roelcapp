@@ -24,6 +24,8 @@ import { almacenSesion } from '../../../utils/cacheMemoria';
 import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
 import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
+import { docPorId } from '../../../utils/docPorId';
+import { datosDireccionEmpresaPdf, direccionesParaPdf } from '../../../utils/direccionPdf';
 import { cargarCatalogo, TTL } from '../../../hooks/useCatalogoCache'; // ✅ V00256: catálogos C/V y Aduanas para los filtros nuevos
 
 // ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
@@ -1284,9 +1286,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
     const origen = mostrarDatoMapeado(operacionViendo.origen, 'empresas', 'nombre', operacionViendo.origenNombre);
-    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
+    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
     const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
-    const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
+    const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque) || await docPorId('remolques', operacionViendo.numeroRemolque); // ✅ V00419
 
     const unidadProvVal = operacionViendo.unidadProveedor 
       ? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
@@ -1311,10 +1313,10 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
 
-    const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
-    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
+    const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
+    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
     const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
-    const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
+    const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque) || await docPorId('remolques', operacionViendo.numeroRemolque); // ✅ V00419
 
     const unidadProvVal = operacionViendo.unidadProveedor 
       ? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
@@ -1341,10 +1343,10 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
 
-    const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
-    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
+    const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
+    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
     const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
-    const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
+    const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque) || await docPorId('remolques', operacionViendo.numeroRemolque); // ✅ V00419
 
     const unidadProvVal = operacionViendo.unidadProveedor 
       ? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
@@ -1379,9 +1381,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
 
-    const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
-    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
-    const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
+    const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
+    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
+    const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque) || await docPorId('remolques', operacionViendo.numeroRemolque); // ✅ V00419
 
     const operadorProvVal = operacionViendo.operadorProveedor
       ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
@@ -1413,14 +1415,18 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const handleDescargarCartaInstrucciones = async () => {
     await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
-    const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
-    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
-    const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
+    const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
+    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
+    const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque) || await docPorId('remolques', operacionViendo.numeroRemolque); // ✅ V00419
 
     const operadorProvVal = operacionViendo.operadorProveedor
       ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
 
     const empNombre = operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal);
+
+    const listaDirsCarta = await direccionesParaPdf(); // ✅ V00419
+    const dO = datosDireccionEmpresaPdf(origenObj, listaDirsCarta);
+    const dD = datosDireccionEmpresaPdf(destinoObj, listaDirsCarta);
 
     generarCartaInstruccionesPDF({
       referencia: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'S/R',
@@ -1434,12 +1440,14 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       placas: operacionViendo.remolquePlaca || (remolqueObj ? remolqueObj.placa : 'N/A'),
       operador: empNombre,
       descripcionMercancia: operacionViendo.descripcionMercancia || 'N/A',
-      origenCiudad: 'N/A', 
+      origenCiudad: dO.completa, // ✅ V00419: direcciones reales (catálogo fresco)
       origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
-      origenDireccion: 'N/A', origenColonia: 'N/A', origenCP: 'N/A',
-      destinoCiudad: 'N/A', 
+      origenDireccion: dO.direccion, origenColonia: dO.colonia, origenCP: dO.cp,
+      origenMunicipio: dO.municipio, origenEstado: dO.estado, origenPais: dO.pais,
+      destinoCiudad: dD.completa,
       destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
-      destinoDireccion: 'N/A', destinoColonia: 'N/A', destinoCP: 'N/A',
+      destinoDireccion: dD.direccion, destinoColonia: dD.colonia, destinoCP: dD.cp,
+      destinoMunicipio: dD.municipio, destinoEstado: dD.estado, destinoPais: dD.pais,
     });
   };
 

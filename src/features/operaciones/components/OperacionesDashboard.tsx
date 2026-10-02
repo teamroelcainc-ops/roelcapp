@@ -22,6 +22,7 @@ import { ModalFechaStatus } from './ModalFechaStatus';
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
 import { aduanaDeConvenio, camposPisoColombia, casetaRespaldoColombia, esAduanaColombia, esGastoPisoColombia, normPuente } from '../../../utils/puenteColombia';
 import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
+import { docPorId } from '../../../utils/docPorId';
 
 // ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
 const fmtFechaAuditoria = (iso: any): string => {
@@ -885,6 +886,7 @@ const OperacionesDashboard = () => {
       const [vs, gs] = await Promise.all([getDocs(collection(db, 'tarifas_gastos_incluidos')), getDocs(collection(db, 'catalogo_tipos_gastos'))]);
       const normSP = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
       const gastoPorId = new Map(gs.docs.map((g) => [g.id, g.data() as Record<string, unknown>]));
+      const esColSP = esAduanaColombia(await aduanaDeConvenio(op?.convenio)); // ✅ V00416
       for (const v of vs.docs) {
         const g = v.data() as Record<string, unknown>;
         const ref = String(g.tarifa_referencia_id ?? g.tarifaReferenciaId ?? g.tarifa_referencia ?? g.tarifaReferencia ?? g.ID_SERVICES ?? g.id_services ?? g.idServices ?? g.tarifaId ?? '').trim();
@@ -893,6 +895,7 @@ const OperacionesDashboard = () => {
         const cat = gastoPorId.get(gastoId);
         if (!cat || normSP(cat.categoria_gasto) !== 'puente') continue;
         if (esGastoPisoColombia(cat.nombre_gasto)) continue; // ✅ V00388: el piso de Colombia es el 2º cobro, no la caseta
+        if (esColSP && !normSP(cat.nombre_gasto).includes('colombia')) continue; // ✅ V00416: aduana Colombia = caseta de Colombia
         const monto = Number(g.monto ?? g.importe ?? g.cantidad ?? g.valor ?? 0) || Number(cat.importe) || 0;
         return { nombre: String(cat.nombre_gasto || ''), moneda: cat.moneda, monto };
       }
@@ -1354,7 +1357,7 @@ const OperacionesDashboard = () => {
     await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
     const origen = mostrarDatoMapeado(operacionViendo.origen, 'empresas', 'nombre', operacionViendo.origenNombre);
-    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
+    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
     const remolqueRes = resolverRemolqueParaPDF();
     const unidadRes = resolverUnidadParaPDF();
     const operadorRes = resolverOperadorParaPDF();
@@ -1376,8 +1379,8 @@ const OperacionesDashboard = () => {
   const handleDescargarInstruccionesServicio = async () => {
     await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
-    const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
-    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
+    const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
+    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
     const remolqueRes = resolverRemolqueParaPDF();
     const unidadRes = resolverUnidadParaPDF();
     const operadorRes = resolverOperadorParaPDF();
@@ -1409,9 +1412,9 @@ const OperacionesDashboard = () => {
   const handleDescargarCheckList = async () => {
     await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
-    const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
-    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
-    const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
+    const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
+    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
+    const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque) || await docPorId('remolques', operacionViendo.numeroRemolque); // ✅ V00419
     const unidadRes = resolverUnidadParaPDF();
     const empNombre = resolverOperadorParaPDF();
     const uniNombre = unidadRes.nombre;
@@ -1440,23 +1443,26 @@ const OperacionesDashboard = () => {
   const handleDescargarPruebaEntrega = async () => {
     await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
-    const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
-    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
-    const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
+    const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
+    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
+    const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque) || await docPorId('remolques', operacionViendo.numeroRemolque); // ✅ V00419
     const empNombre = resolverOperadorParaPDF();
+    const listaDirsPE = await obtenerDireccionesFrescas(); // ✅ V00419: direcciones frescas
+    const dOri = datosDireccionEmpresa(origenObj, listaDirsPE);
+    const dDes = datosDireccionEmpresa(destinoObj, listaDirsPE);
 
     generarPruebaEntregaPDF({
       referencia: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'S/R',
       fechaServicio: operacionViendo.fechaServicio || 'N/A',
       fechaCita: operacionViendo.fechaCita ? new Date(operacionViendo.fechaCita).toLocaleString('es-MX') : 'N/A',
       origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
-      origenDireccion: datosDireccionEmpresa(origenObj).direccion,
-      origenCP: datosDireccionEmpresa(origenObj).cp,
-      origenCiudad: datosDireccionEmpresa(origenObj).ciudad,
+      origenDireccion: dOri.direccion,
+      origenCP: dOri.cp,
+      origenCiudad: dOri.ciudad,
       destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
-      destinoDireccion: datosDireccionEmpresa(destinoObj).direccion,
-      destinoCP: datosDireccionEmpresa(destinoObj).cp,
-      destinoCiudad: datosDireccionEmpresa(destinoObj).ciudad,
+      destinoDireccion: dDes.direccion,
+      destinoCP: dDes.cp,
+      destinoCiudad: dDes.ciudad,
       tipoServicio: `${operacionViendo.tipoOperacionNombre || mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion')} ${operacionViendo.trafico || ''}`,
       tipoUnidad: remolqueObj ? (remolqueObj.tipo || remolqueObj.descripcion || 'Remolque') : 'N/A',
       numeroEconomico: operacionViendo.remolqueNombre || (remolqueObj ? remolqueObj.nombre : 'N/A'),
@@ -1560,9 +1566,9 @@ const OperacionesDashboard = () => {
   const handleDescargarCartaInstrucciones = async () => {
     await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
-    const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
-    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
-    const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
+    const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
+    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
+    const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque) || await docPorId('remolques', operacionViendo.numeroRemolque); // ✅ V00419
     const empNombre = resolverOperadorParaPDF();
     const listaDirs = await obtenerDireccionesFrescas();
     const dirOrigen = datosDireccionEmpresa(origenObj, listaDirs);
