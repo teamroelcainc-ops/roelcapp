@@ -141,9 +141,29 @@ export const ReferenciasPuentesDashboard = () => {
     finally { setRecalculando(false); }
   };
   const eliminarRefAuto = async (r: RefAuto) => {
-    if (!window.confirm(`¿Eliminar la referencia automática ${r.consecutivo}? Se volverá a crear si otra operación de ese puente se marca Verde hoy.`)) return;
-    try { const b = writeBatch(db); b.delete(doc(db, COL_REF_AUTO, r.id)); await b.commit(); }
+    if (!window.confirm(`¿Eliminar la referencia ${r.consecutivo}?\n\nSus ${(r.operacionesIds || []).length} operación(es) regresan a "Operaciones sin asignar".`)) return;
+    try { const b = writeBatch(db); b.delete(doc(db, COL_REF_AUTO, r.id)); await b.commit(); setSelRefsAuto(prev => prev.filter(x => x !== r.id)); }
     catch (e) { alert(`No se pudo eliminar: ${(e as Error)?.message || e}`); }
+  };
+  // ✅ V00414: BORRAR varias (o todas) las referencias del Historial — sus operaciones
+  //   regresan a "Operaciones sin asignar".
+  const [selRefsAuto, setSelRefsAuto] = useState<string[]>([]);
+  const [borrandoRefs, setBorrandoRefs] = useState(false);
+  const borrarRefsAuto = async (ids: string[]) => {
+    const lista = refsAuto.filter(r => ids.includes(r.id));
+    if (lista.length === 0) return;
+    const ops = lista.reduce((a, r) => a + (r.operacionesIds || []).length, 0);
+    if (!window.confirm(`¿Eliminar ${lista.length} referencia(s)?\n\n${lista.map(r => `· ${r.consecutivo}`).slice(0, 12).join('\n')}${lista.length > 12 ? '\n…' : ''}\n\nSus ${ops} operación(es) regresan a "Operaciones sin asignar".`)) return;
+    setBorrandoRefs(true);
+    try {
+      for (let i = 0; i < lista.length; i += 400) {
+        const b = writeBatch(db);
+        lista.slice(i, i + 400).forEach(r => b.delete(doc(db, COL_REF_AUTO, r.id)));
+        await b.commit();
+      }
+      setSelRefsAuto([]);
+    } catch (e) { alert(`No se pudieron eliminar: ${(e as Error)?.message || e}`); }
+    finally { setBorrandoRefs(false); }
   };
   // ✅ V00395: OTROS CRUCES (carros particulares, etc.) — van directo al Historial
   const [modalOtro, setModalOtro] = useState(false);
@@ -1081,13 +1101,24 @@ export const ReferenciasPuentesDashboard = () => {
           {/* ✅ V00402: HISTORIAL CALCULADO */}
           <div className="rpd-otros-barra">
             <span className="rpd-otros-nota">Una referencia por puente y día (AVI / PT3 / PTC). Las operaciones entran solas al marcar Verde (MX o USA) o se envían desde Operaciones sin asignar. Es lo que descuenta del Saldo.</span>
-            <button type="button" className="rpd-btn-asignar" onClick={recalcularHoy} disabled={recalculando} title="Revisa la bitácora de hoy y agrega los verdes que falten">{recalculando ? 'Revisando…' : 'Recalcular hoy'}</button>
+            <div className="rpd-acciones-hist">
+              {selRefsAuto.length > 0 && (
+                <button type="button" className="rpd-btn-borrar" onClick={() => borrarRefsAuto(selRefsAuto)} disabled={borrandoRefs}>{borrandoRefs ? 'Eliminando…' : `Eliminar seleccionadas (${selRefsAuto.length})`}</button>
+              )}
+              {refsAuto.length > 0 && (
+                <button type="button" className="rpd-btn-borrar rpd-btn-borrar--todo" onClick={() => borrarRefsAuto(refsAuto.map(r => r.id))} disabled={borrandoRefs} title="Elimina todas las referencias; sus operaciones regresan a Operaciones sin asignar">Eliminar todas</button>
+              )}
+              <button type="button" className="rpd-btn-asignar" onClick={recalcularHoy} disabled={recalculando} title="Revisa la bitácora de hoy y agrega los verdes que falten">{recalculando ? 'Revisando…' : 'Recalcular hoy'}</button>
+            </div>
           </div>
           <div className="table-container rpd-x41">
             <table className="rpd-x27">
               <thead className="rpd-x28">
                 <tr>
-                  <th className="rpd-x42">ACCIONES</th>
+                  <th className="rpd-x42">
+                    <input type="checkbox" className="rpd-x32" title="Seleccionar todas" checked={refsAuto.length > 0 && selRefsAuto.length === refsAuto.length}
+                      onChange={(e) => setSelRefsAuto(e.target.checked ? refsAuto.map(r => r.id) : [])} />
+                  </th>
                   <th className="rpd-x43"># REFERENCIA</th>
                   <th className="rpd-x43">PUENTE</th>
                   <th className="rpd-x43">FECHA</th>
@@ -1102,7 +1133,9 @@ export const ReferenciasPuentesDashboard = () => {
                 ) : refsAuto.map(r => (
                   <tr key={r.id} className="rpd-x46 rpd-fila-clic" title="Ver detalle" onClick={() => setReferenciaViendo(r)}>
                     <td className="rpd-x47">
-                      <button className="rpd-x51" title="Eliminar" onClick={(e) => { e.stopPropagation(); eliminarRefAuto(r); }}>
+                      <input type="checkbox" className="rpd-x32" checked={selRefsAuto.includes(r.id)} onClick={(e) => e.stopPropagation()}
+                        onChange={() => setSelRefsAuto(prev => prev.includes(r.id) ? prev.filter(x => x !== r.id) : [...prev, r.id])} />
+                      <button className="rpd-x51" title="Eliminar (sus operaciones regresan a Operaciones sin asignar)" onClick={(e) => { e.stopPropagation(); eliminarRefAuto(r); }}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                       </button>
                     </td>

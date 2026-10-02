@@ -305,3 +305,9 @@
 .rpd-balance-card__filas b { font-variant-numeric: tabular-nums; color: #e6edf3; }
 .rpd-detalle-puente { color: #f0f6fc; font-weight: 700; font-size: 0.95rem; }
 @media (max-width: 900px) { .rpd-balances { grid-template-columns: 1fr; } }
+/* ✅ V00414: eliminar referencias del Historial */
+.rpd-acciones-hist { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.rpd-btn-borrar { padding: 8px 14px; border-radius: 6px; border: 1px solid #da3633; background: rgba(248, 81, 73, 0.1); color: #ff7b72; font-weight: 700; font-size: 0.82rem; cursor: pointer; white-space: nowrap; }
+.rpd-btn-borrar:hover:not(:disabled) { background: rgba(248, 81, 73, 0.2); }
+.rpd-btn-borrar--todo { background: transparent; }
+.rpd-btn-borrar:disabled { opacity: 0.6; cursor: wait; }
