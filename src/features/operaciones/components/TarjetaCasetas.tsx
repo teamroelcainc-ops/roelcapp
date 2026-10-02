@@ -156,27 +156,22 @@ export const TarjetaCasetas: React.FC = () => {
   //   total consumido (la suma de esos cruces) y saldo restante = agregado − consumido.
   //   Los cruces cuentan desde la PRIMERA recarga del puente, igual que el saldo.
   const statsDe = (filtro: (nombre: string) => boolean) => {
-    // ✅ V00411: IGUAL que la pestaña Saldo — solo cuentan los puentes que tienen
-    //   saldo agregado (por id o por nombre) y sus cruces desde su primer saldo.
-    let agregado = 0, nCruces = 0, consumido = 0;
-    const conSaldo = new Set<string>();
-    puentes.filter((p) => filtro(p.nombre)).forEach((p) => {
-      const recs = recargas.filter((r) => r.puenteId === p.id || norm(r.puenteNombre) === norm(p.nombre)).sort((a, b) => a.fecha.localeCompare(b.fecha));
-      if (recs.length === 0) return;
-      conSaldo.add(norm(p.nombre));
-      const primera = recs[0]?.fecha || '';
-      agregado += recs.reduce((acc, r) => acc + r.saldo, 0);
-      const mios = cruces.filter((x) => norm(x.puenteNombre) === norm(p.nombre) && (!primera || x.fecha >= primera));
-      nCruces += mios.length;
-      consumido += mios.reduce((acc, x) => acc + x.monto, 0);
-    });
-    // ✅ V00398: lo de HOY (por fecha de servicio) — cruces, consumido y recargas del día;
-    //   el saldo al iniciar el día cuadra: inicio + recargas hoy − consumido hoy = restante.
+    // ✅ V00418: IGUAL que la pestaña Saldo — el saldo es por PUENTE (grupo): los
+    //   saldos agregados del grupo descuentan TODOS sus cobros (Puente III = caseta +
+    //   trompo; Colombia = caseta + puente) desde el primer saldo del grupo.
+    const recs = recargas
+      .filter((r) => filtro(r.puenteNombre) || puentes.some((p) => p.id === r.puenteId && filtro(p.nombre)))
+      .sort((a, b) => a.fecha.localeCompare(b.fecha));
+    const primera = recs[0]?.fecha || '';
+    const agregado = recs.reduce((acc, r) => acc + r.saldo, 0);
+    const mios = recs.length ? cruces.filter((x) => filtro(x.puenteNombre) && (!primera || x.fecha >= primera)) : [];
+    const consumido = mios.reduce((acc, x) => acc + x.monto, 0);
+    // ✅ V00398: lo de HOY (por fecha de servicio); inicio + recargas hoy − consumido hoy = restante.
     const restante = agregado - consumido;
-    const delDia = cruces.filter((x) => filtro(x.puenteNombre) && conSaldo.has(norm(x.puenteNombre)) && x.fechaServicio === hoy);
-    const consumidoHoy = delDia.reduce((acc, x) => acc + x.monto, 0);
-    const recargasHoy = recargas.filter((r) => r.fecha === hoy && puentes.some((p) => (p.id === r.puenteId || norm(p.nombre) === norm(r.puenteNombre)) && filtro(p.nombre))).reduce((acc, r) => acc + r.saldo, 0);
-    return { agregado, cruces: nCruces, consumido, restante, crucesHoy: delDia.length, consumidoHoy, recargasHoy, inicioDia: restante + consumidoHoy - recargasHoy };
+    const delDia = cruces.filter((x) => filtro(x.puenteNombre) && x.fechaServicio === hoy);
+    const consumidoHoy = recs.length ? delDia.reduce((acc, x) => acc + x.monto, 0) : 0;
+    const recargasHoy = recs.filter((r) => r.fecha === hoy).reduce((acc, r) => acc + r.saldo, 0);
+    return { agregado, cruces: mios.length, consumido, restante, crucesHoy: delDia.length, consumidoHoy, recargasHoy, inicioDia: restante + consumidoHoy - recargasHoy };
   };
 
   const abrirRecarga = (g: GrupoPuente) => { setGrupoRecarga(g); setPuenteId(''); setMonto(''); setFechaRecarga(hoyISO()); setHoraRecarga(horaAhora()); setModalAbierto(true); };
@@ -205,7 +200,7 @@ export const TarjetaCasetas: React.FC = () => {
                 <React.Fragment key={p.etiqueta}>
                   <div className="rd-filas__f">
                     <span className="rd-filas__et rd-filas__et--fuerte">{p.etiqueta}</span>
-                    <span className={`rd-filas__v${p.st.restante < 0 ? ' rd-filas__v--neg' : ''}`}>{fmtMonto(p.st.restante)}</span>
+                    <span className="rd-filas__v rd-filas__v--cargo" title="Total cruzado de este concepto">−{fmtMonto(p.st.consumido)}</span>
                   </div>
                   <button type="button" className="rd-filas__f rd-filas__f--btn" title="Ver los cruces de hoy" onClick={() => setVerGasto({ titulo: `${g.titulo} — ${p.etiqueta}`, filtro: p.filtro, soloHoy: true })}>
                     <span className="rd-filas__et">Hoy · {p.st.crucesHoy} {p.st.crucesHoy === 1 ? 'cruce' : 'cruces'}</span>

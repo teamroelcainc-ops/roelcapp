@@ -976,7 +976,10 @@ export const ReferenciasPuentesDashboard = () => {
   const asignacionSaldos = useMemo(() => {
     const res: Record<string, { refs: RefSaldo[]; consumido: number; balance: number; cruces: number }> = {};
     const porPuente = new Map<string, Record<string, unknown>[]>();
-    saldosLista.forEach(r => { const k = sinAcentos(r.puenteNombre); porPuente.set(k, [...(porPuente.get(k) || []), r]); });
+    // ✅ V00418: el saldo es por PUENTE (AVI / Puente III / Colombia): descuenta TODOS los
+    //   cobros de ese puente — p. ej. Puente III = Caseta Puente III + Trompo Puente III;
+    //   Colombia = Caseta Mx Colombia + Puente Mx Colombia — así cuadra con el Historial.
+    saldosLista.forEach(r => { const k = grupoDeNombrePuente(String(r.puenteNombre || '')); porPuente.set(k, [...(porPuente.get(k) || []), r]); });
     porPuente.forEach((recs, k) => {
       const orden = [...recs].sort((a, b) => `${String(a.fecha || '')} ${String(a.hora || '')}`.localeCompare(`${String(b.fecha || '')} ${String(b.hora || '')}`));
       const primera = String(orden[0]?.fecha || '');
@@ -989,14 +992,16 @@ export const ReferenciasPuentesDashboard = () => {
         if (primera && fecha < primera) return;
         const hora = String(r.horaGeneracion || r.horaCruce || '');
         if (r.tipo === 'otroCruce') {
-          if (sinAcentos(r.puenteNombre) === k) items.push({ ref: r, fecha, hora, monto: Number(r.monto ?? r.subtotalPuentes) || 0, ops: 1 });
+          if (grupoDeNombrePuente(String(r.puenteNombre || '')) === k) items.push({ ref: r, fecha, hora, monto: Number(r.monto ?? r.subtotalPuentes) || 0, ops: 1 });
           return;
         }
         let monto = 0, ops = 0;
         (Array.isArray(r.operacionesGuardadas) ? r.operacionesGuardadas : []).forEach((o: Record<string, unknown>) => {
           const [nomCaseta, nomPiso] = String(o.puenteNombre || '').split(' + ');
-          if (sinAcentos(nomCaseta) === k) { monto += Number(o.caseta ?? o.puente) || 0; ops += 1; }
-          if (nomPiso && sinAcentos(nomPiso) === k) { monto += Number(o.piso) || 0; ops += 1; }
+          let cuenta = false;
+          if (nomCaseta && grupoDeNombrePuente(nomCaseta) === k) { monto += Number(o.caseta ?? o.puente) || 0; cuenta = true; }
+          if (nomPiso && grupoDeNombrePuente(nomPiso) === k) { monto += Number(o.piso) || 0; cuenta = true; }
+          if (cuenta) ops += 1;
         });
         if (monto > 0) items.push({ ref: r, fecha, hora, monto, ops });
       });
@@ -1009,6 +1014,7 @@ export const ReferenciasPuentesDashboard = () => {
       });
     });
     return res;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- grupoDeNombrePuente es una función pura
   }, [referenciasGlobales, saldosLista, refsAuto]);
   const [refAbierta, setRefAbierta] = useState<string>('');
   const tarifaPuente = (r: Record<string, unknown>) => {
@@ -1358,12 +1364,14 @@ export const ReferenciasPuentesDashboard = () => {
                           const abierta = refAbierta === id;
                           // ✅ V00417: solo las operaciones (y la PARTE) que descuentan de ESTE saldo:
                           //   p. ej. el saldo de "Puente Mx Colombia" lleva el puente ($90) y no la caseta.
-                          const kSaldo = sinAcentos(saldoViendo.puenteNombre);
+                          const kSaldo = grupoDeNombrePuente(String(saldoViendo.puenteNombre || '')); // ✅ V00418: por puente
                           const opsRef = ((Array.isArray(it.ref.operacionesGuardadas) ? it.ref.operacionesGuardadas : []) as Record<string, unknown>[])
                             .map((o): Record<string, unknown> & { _aplica: number; _concepto: string } => {
                               const [nomCaseta, nomPiso] = String(o.puenteNombre || '').split(' + ');
-                              const aplica = (sinAcentos(nomCaseta) === kSaldo ? (Number(o.caseta ?? o.puente) || 0) : 0) + (nomPiso && sinAcentos(nomPiso) === kSaldo ? (Number(o.piso) || 0) : 0);
-                              return { ...o, _aplica: aplica, _concepto: sinAcentos(nomCaseta) === kSaldo ? nomCaseta : (nomPiso || nomCaseta) };
+                              const enCaseta = !!nomCaseta && grupoDeNombrePuente(nomCaseta) === kSaldo;
+                              const enPiso = !!nomPiso && grupoDeNombrePuente(nomPiso) === kSaldo;
+                              const aplica = (enCaseta ? (Number(o.caseta ?? o.puente) || 0) : 0) + (enPiso ? (Number(o.piso) || 0) : 0);
+                              return { ...o, _aplica: aplica, _concepto: [enCaseta ? nomCaseta : '', enPiso ? nomPiso : ''].filter(Boolean).join(' + ') };
                             })
                             .filter(o => o._aplica > 0);
                           return (
