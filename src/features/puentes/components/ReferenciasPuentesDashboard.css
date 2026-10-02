@@ -311,3 +311,11 @@
 .rpd-btn-borrar:hover:not(:disabled) { background: rgba(248, 81, 73, 0.2); }
 .rpd-btn-borrar--todo { background: transparent; }
 .rpd-btn-borrar:disabled { opacity: 0.6; cursor: wait; }
+/* ✅ V00415: cambiar puente, agregar operaciones a la referencia */
+.rpd-select-puente { padding: 5px 8px; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: #e6edf3; font-size: 0.84rem; max-width: 200px; cursor: pointer; }
+.rpd-select-puente:hover:not(:disabled) { border-color: #58a6ff; }
+.rpd-detalle-barra { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.rpd-agregar { border: 1px solid #1f6feb; border-radius: 10px; background: rgba(56, 139, 253, 0.06); padding: 12px 14px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 10px; }
+.rpd-agregar__enc { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #79c0ff; font-weight: 700; font-size: 0.85rem; }
+.rpd-agregar__chk { display: flex; align-items: center; gap: 6px; color: #c9d1d9; font-weight: 600; font-size: 0.8rem; cursor: pointer; }
+.rpd-agregar__pie { display: flex; justify-content: flex-end; }

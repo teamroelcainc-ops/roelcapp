@@ -68,6 +68,42 @@ export const ReferenciasPuentesDashboard = () => {
   const [catalogosFormulario, setCatalogosFormulario] = useState<Record<string, unknown[]> | null>(null);
   const [cargandoDetalleOp, setCargandoDetalleOp] = useState(false);
   const [quitandoOp, setQuitandoOp] = useState('');
+  const [cambiandoPuente, setCambiandoPuente] = useState('');
+  const monedaDeCat = (m: unknown) => (String(m || '') === '7dca62b3' ? 'Dólares' : String(m || '') === 'f95d8894' ? 'Pesos' : String(m || ''));
+  const cambiarPuenteOp = async (op: Record<string, unknown>, puenteId: string) => {
+    const p = puentesCatalogo.find(x => x.id === puenteId);
+    if (!p) return;
+    const nombre = String(nombrePuente(p));
+    const importe = Number(p.importe) || 0;
+    const monedaC = monedaDeCat(p.moneda);
+    const esCol = sinAcentos(nombre).includes('colombia');
+    if (!window.confirm(`¿Cambiar el puente de ${String(op.ref || op.id)} a ${nombre} (${formatoMoneda(importe)} ${monedaC})?${esCol ? '\n\nColombia: también se agrega el Puente Mx Colombia.' : ''}`)) return;
+    const campos: Record<string, unknown> = {
+      saldoPuente: importe, saldoPuentePuente: nombre, saldoPuenteMoneda: monedaC,
+      saldoPuenteFecha: String(op.saldoPuenteFecha || op.fechaServicio || hoyLocalISO()).slice(0, 10),
+      saldoPuenteEvento: String(op.saldoPuenteEvento || 'Cambio manual (Referencias de Puentes)'),
+    };
+    if (esCol) {
+      const piso = puentesCatalogo.find(x => sinAcentos(nombrePuente(x)) === 'puente mx colombia');
+      if (piso && Number(piso.importe) > 0) Object.assign(campos, {
+        saldoPuentePiso: Number(piso.importe), saldoPuentePisoPuente: String(nombrePuente(piso)), saldoPuentePisoMoneda: monedaDeCat(piso.moneda),
+        saldoPuentePisoFecha: campos.saldoPuenteFecha, saldoPuentePisoEvento: campos.saldoPuenteEvento,
+      });
+    } else Object.assign(campos, { saldoPuentePiso: 0, saldoPuentePisoPuente: '', saldoPuentePisoMoneda: '' });
+    setCambiandoPuente(String(op.id));
+    try {
+      const b = writeBatch(db);
+      b.update(doc(db, 'operaciones', String(op._docId || op.id)), campos);
+      await b.commit();
+      setOperacionesGlobales(prev => prev.map(o => o.id === op.id ? { ...o, ...campos } : o));
+    } catch (e) { alert(`No se pudo cambiar el puente: ${(e as Error)?.message || e}`); }
+    finally { setCambiandoPuente(''); }
+  };
+  // ✅ V00415: agregar operaciones a una referencia desde su detalle
+  const [agregarARef, setAgregarARef] = useState(false);
+  const [selAgregar, setSelAgregar] = useState<string[]>([]);
+  const [agregandoOps, setAgregandoOps] = useState(false);
+  const [agregarTodasFechas, setAgregarTodasFechas] = useState(false);
   const cargarCatalogosFormulario = async () => {
     if (catalogosFormulario) return catalogosFormulario;
     const ALIAS: Record<string, string> = {
@@ -98,6 +134,43 @@ export const ReferenciasPuentesDashboard = () => {
       console.error(e);
       alert('No se pudo abrir el detalle de la operación.');
     } finally { setCargandoDetalleOp(false); }
+  };
+  const candidatasParaRef = (ref: Record<string, unknown> | null): OpPuente[] => {
+    if (!ref) return [];
+    const g = String(ref.grupoPuente || '');
+    return operacionesGlobales.filter(op => {
+      if (!esPuenteRoelca(op) || esOperacionPrueba(op)) return false;
+      if (idsEnHistorialCalculado.has(String(op._docId || op.id)) || idsEnHistorialCalculado.has(String(op.id))) return false;
+      const tr = sinAcentos(getTrafico(op));
+      if (tr !== 'importacion' && tr !== 'exportacion') return false;
+      if (!agregarTodasFechas && String(op.fechaServicio || '').slice(0, 10) !== String(ref.fechaGeneracion || '')) return false;
+      return grupoPuenteOp(op) === g;
+    });
+  };
+  const agregarOpsARef = async () => {
+    const ref = referenciaViendo as Record<string, unknown> | null;
+    if (!ref || selAgregar.length === 0) return;
+    setAgregandoOps(true);
+    try {
+      const filas: Record<string, unknown>[] = [];
+      for (const id of selAgregar) {
+        const op = operacionesGlobales.find(o => o.id === id);
+        if (!op) continue;
+        const r = await filaDeOperacion({ ...op, _docId: op._docId || op.id }, textoHoraVerde(op));
+        if (r && r.grupo === ref.grupoPuente) filas.push(r.fila);
+      }
+      if (filas.length === 0) { alert('Ninguna de las seleccionadas corresponde a este puente.'); return; }
+      await upsertReferenciaAuto(String(ref.id), ref.grupoPuente as 'AVI' | 'PT3' | 'PTC', String(ref.fechaGeneracion || hoyLocalISO()), filas, String(ref.horaGeneracion || horaAhora()), 'manual');
+      setReferenciaViendo((prev: Record<string, unknown> | null) => prev ? {
+        ...prev,
+        operacionesIds: [...(((prev.operacionesIds as string[]) || [])), ...filas.map(f => String(f.id))],
+        operacionesGuardadas: [...(((prev.operacionesGuardadas as Record<string, unknown>[]) || [])), ...filas],
+        subtotalPuentes: (Number(prev.subtotalPuentes) || 0) + filas.reduce((a, f) => a + (Number(f.puente) || 0), 0),
+      } : prev);
+      setSelAgregar([]);
+      setAgregarARef(false);
+    } catch (e) { alert(`No se pudieron agregar: ${(e as Error)?.message || e}`); }
+    finally { setAgregandoOps(false); }
   };
   const sacarDeReferencia = async (ref: { id?: unknown; consecutivo?: unknown }, op: { id?: unknown; ref?: unknown }) => {
     if (!window.confirm(`¿Sacar ${String(op.ref || op.id)} de ${String(ref.consecutivo || '')}? Regresará a "Operaciones sin asignar".`)) return;
@@ -170,6 +243,7 @@ export const ReferenciasPuentesDashboard = () => {
   const [otroFecha, setOtroFecha] = useState(hoyLocalISO());
   const [otroHora, setOtroHora] = useState('');
   const [otroPuenteId, setOtroPuenteId] = useState('');
+  const [otroDestino, setOtroDestino] = useState(''); // ✅ V00415: referencia elegida para el otro cruce
   const [otroMonto, setOtroMonto] = useState('');
   const [otroUnidad, setOtroUnidad] = useState('');
   const [guardandoOtro, setGuardandoOtro] = useState(false);
@@ -639,9 +713,18 @@ export const ReferenciasPuentesDashboard = () => {
       case 'unidad': return <td key={key} className="rpd-celda">{getUnidad(op)}</td>;
       case 'convenio': return <td key={key} className="rpd-celda rpd-celda--conv" title={getConvenio(op)}>{getConvenio(op)}</td>;
       case 'puenteNombre': {
-        // ✅ V00392: Colombia muestra caseta y puente
+        // ✅ V00415: se puede CAMBIAR el puente; el monto se actualiza con la tarifa del catálogo
         const nombres = nombresPuenteOp(op);
-        return <td key={key} className="rpd-celda">{nombres.length ? nombres.map((n, i) => <div key={i}>{n}</div>) : <span className="rpd-sin-monto">Sin monto</span>}</td>;
+        const actual = puentesCatalogo.find(p => sinAcentos(nombrePuente(p)) === sinAcentos(op.saldoPuentePuente));
+        return (
+          <td key={key} className="rpd-celda" onClick={(e) => e.stopPropagation()}>
+            <select className="rpd-select-puente" value={actual?.id || ''} disabled={cambiandoPuente === String(op.id)} onChange={(e) => cambiarPuenteOp(op, e.target.value)} title="Cambiar el puente (el monto se toma del catálogo)">
+              {!actual && <option value="">{nombres.length ? nombres.join(' + ') : 'Sin monto — elegir puente'}</option>}
+              {puentesCatalogo.filter(p => !sinAcentos(nombrePuente(p)).includes('puente mx colombia')).map(p => <option key={p.id} value={p.id}>{String(nombrePuente(p))}</option>)}
+            </select>
+            {Number(op.saldoPuentePiso) > 0 && <div className="rpd-moneda">+ {String(op.saldoPuentePisoPuente || 'Puente Mx Colombia')}</div>}
+          </td>
+        );
       }
       case 'puente': return (
         <td className="rpd-x3" key={key}>
@@ -800,50 +883,44 @@ export const ReferenciasPuentesDashboard = () => {
   const usuarioActual = () => auth.currentUser?.displayName || auth.currentUser?.email || 'Usuario';
   const horaAhora = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
   const monedaCatalogo = (m: unknown) => (String(m || '') === '7dca62b3' ? 'Dólares' : String(m || '') === 'f95d8894' ? 'Pesos' : String(m || ''));
-  const otrosCruces = useMemo(() => referenciasGlobales.filter(r => r.tipo === 'otroCruce'), [referenciasGlobales]);
+  const otrosCruces = useMemo(() => {
+    // ✅ V00415: los otros cruces nuevos viven DENTRO de una referencia del Historial
+    const dentro = refsAuto.flatMap(r => ((r as { operacionesGuardadas?: Record<string, unknown>[] }).operacionesGuardadas || [])
+      .filter(o => o.esOtroCruce)
+      .map(o => ({ id: `${r.id}::${String(o.id)}`, tipo: 'otroCruce', consecutivo: r.consecutivo, fechaCruce: o.fecha, horaCruce: o.horaVerde, puenteNombre: o.puenteNombre, monto: o.caseta, moneda: o.casetaMoneda, unidad: o.unidad, registradoPor: o.registradoPor, _refId: r.id, _filaId: String(o.id) })));
+    return [...dentro, ...referenciasGlobales.filter(r => r.tipo === 'otroCruce')];
+  }, [referenciasGlobales, refsAuto]);
   const abrirOtroCruce = () => {
-    setOtroFecha(hoyLocalISO()); setOtroHora(horaAhora()); setOtroPuenteId(''); setOtroMonto(''); setOtroUnidad('');
+    setOtroFecha(hoyLocalISO()); setOtroHora(horaAhora()); setOtroPuenteId(''); setOtroMonto(''); setOtroUnidad(''); setOtroDestino('');
     setModalOtro(true);
   };
   const puenteOtro = puentesCatalogo.find(p => p.id === otroPuenteId) || null;
+  // ✅ V00415: el OTRO CRUCE entra a la referencia del Historial que el usuario ELIJA
+  //   (de ese puente) o a una nueva; ya no se crea sola.
+  const refsDestinoOtro = puenteOtro ? refsAuto.filter(r => String((r as { grupoPuente?: string }).grupoPuente || '') === grupoDeNombrePuente(String(nombrePuente(puenteOtro)))) : [];
   const guardarOtroCruce = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!puenteOtro) return alert('Elige el puente por donde cruzó.');
     const monto = Number(otroMonto);
     if (!(monto > 0)) return alert('Captura el monto del cruce.');
     if (!otroFecha || !otroHora) return alert('Captura la fecha y la hora del cruce.');
+    if (!otroDestino) return alert('Elige la referencia a la que va este cruce (o crea una nueva).');
     setGuardandoOtro(true);
     try {
       const nombre = String(nombrePuente(puenteOtro));
       const grupo = grupoDeNombrePuente(nombre);
-      const consecutivo = consecutivoPorPuente(grupo);
       const moneda = monedaCatalogo(puenteOtro.moneda);
-      const nuevoId = doc(collection(db, 'referencias_puentes')).id;
-      const batch = writeBatch(db);
-      batch.set(doc(db, 'referencias_puentes', nuevoId), {
-        tipo: 'otroCruce',
-        consecutivo,
-        grupoPuente: grupo,
-        puenteNombre: nombre,
-        puenteId: puenteOtro.id,
-        fechaGeneracion: otroFecha,
-        horaGeneracion: otroHora,
-        fechaCruce: otroFecha,
-        horaCruce: otroHora,
-        unidad: otroUnidad.trim() || '—',
+      const fila = {
+        id: `otro_${Date.now()}`, esOtroCruce: true, grupo,
+        ref: `Otro cruce${otroUnidad.trim() ? ` · ${otroUnidad.trim()}` : ''}`,
+        fecha: otroFecha, horaVerde: otroHora, unidad: otroUnidad.trim() || '—', convenio: 'Otro cruce (sin operación)',
+        puenteNombre: nombre, caseta: monto, casetaMoneda: moneda, piso: 0, pisoMoneda: '', puente: monto,
         registradoPor: usuarioActual(),
-        operacionesIds: [],
-        operaciones: [],
-        operacionesGuardadas: [],
-        subtotalPuentes: monto,
-        totalesPorMoneda: { [moneda || 'Sin moneda']: monto },
-        monto,
-        moneda,
-        statusPagado: false,
-        observaciones: 'Otro cruce (sin operación)',
-        createdAt: new Date().toISOString(),
-      });
-      await batch.commit();
+      };
+      const existentesDia = refsAuto.filter(r => String((r as { grupoPuente?: string }).grupoPuente || '') === grupo && String(r.fechaGeneracion || '') === otroFecha);
+      const docId = otroDestino !== '__nuevo__' ? otroDestino
+        : (existentesDia.length === 0 ? `${grupo}_${otroFecha}` : `${grupo}_${otroFecha}_${Date.now()}`);
+      await upsertReferenciaAuto(docId, grupo, otroFecha, [fila], otroHora, 'manual');
       setModalOtro(false);
     } catch (err) {
       console.error(err);
@@ -1396,7 +1473,7 @@ export const ReferenciasPuentesDashboard = () => {
                     <td className="rpd-x3">{formatoMoneda(Number(r.monto ?? r.subtotalPuentes) || 0)} <span className="rpd-moneda">{r.moneda || ''}</span></td>
                     <td className="rpd-celda">{r.unidad || '—'}</td>
                     <td className="rpd-celda">
-                      <button className="rpd-x51" title="Eliminar" onClick={(e) => handleEliminarReferencia(e, r)}>
+                      <button className="rpd-x51" title="Eliminar" onClick={(e) => { const rr = r as { _refId?: string; _filaId?: string }; if (rr._refId) { e.stopPropagation(); if (window.confirm('¿Eliminar este otro cruce de su referencia?')) quitarOperacionDeReferenciaAuto(String(rr._refId), String(rr._filaId)); } else handleEliminarReferencia(e, r); }}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                       </button>
                     </td>
@@ -1417,12 +1494,16 @@ export const ReferenciasPuentesDashboard = () => {
                 <form onSubmit={guardarOtroCruce} className="rpd-otro-form">
                   <div className="rpd-otro-grid">
                     <div className="rpd-otro-campo">
-                      <label className="rpd-otro-label">Referencia</label>
-                      <input className="rpd-otro-input rpd-otro-input--ref" readOnly value={puenteOtro ? consecutivoPorPuente(grupoDeNombrePuente(String(nombrePuente(puenteOtro)))) : 'Elige el puente'} />
+                      <label className="rpd-otro-label">Enviar a la referencia</label>
+                      <select className="rpd-otro-input" required value={otroDestino} onChange={(e) => setOtroDestino(e.target.value)} disabled={!puenteOtro}>
+                        <option value="">{puenteOtro ? 'Elegir referencia…' : 'Primero elige el puente'}</option>
+                        {refsDestinoOtro.map(r => <option key={r.id} value={r.id}>{r.consecutivo} · {formatearFechaSpanish(r.fechaGeneracion || '')} · {(r.operacionesIds || []).length} op.</option>)}
+                        {puenteOtro && <option value="__nuevo__">+ Crear referencia nueva ({consecutivoPorPuente(grupoDeNombrePuente(String(nombrePuente(puenteOtro))), [], otroFecha)})</option>}
+                      </select>
                     </div>
                     <div className="rpd-otro-campo">
                       <label className="rpd-otro-label">Puente</label>
-                      <select className="rpd-otro-input" required value={otroPuenteId} onChange={(e) => { setOtroPuenteId(e.target.value); const p = puentesCatalogo.find(x => x.id === e.target.value); if (p) setOtroMonto(String(Number(p.importe) || '')); }}>
+                      <select className="rpd-otro-input" required value={otroPuenteId} onChange={(e) => { setOtroPuenteId(e.target.value); setOtroDestino(''); const p = puentesCatalogo.find(x => x.id === e.target.value); if (p) setOtroMonto(String(Number(p.importe) || '')); }}>
                         <option value="">Seleccionar puente…</option>
                         {puentesCatalogo.map(p => <option key={p.id} value={p.id}>{String(nombrePuente(p))}</option>)}
                       </select>
@@ -1852,9 +1933,48 @@ export const ReferenciasPuentesDashboard = () => {
               </div>
               )}
 
-              <span className="rpd-x98">
-                Operaciones incluidas ({referenciaViendo.operacionesGuardadas?.length || 0})
-              </span>
+              <div className="rpd-detalle-barra">
+                <span className="rpd-x98">Operaciones incluidas ({referenciaViendo.operacionesGuardadas?.length || 0})</span>
+                {referenciaViendo.automatico && (
+                  <button type="button" className="rpd-btn-asignar" onClick={() => { setSelAgregar([]); setAgregarARef(v => !v); }}>{agregarARef ? 'Cerrar' : '+ Agregar operaciones'}</button>
+                )}
+              </div>
+              {/* ✅ V00415: agregar operaciones SIN ASIGNAR del mismo puente */}
+              {referenciaViendo.automatico && agregarARef && (() => {
+                const cands = candidatasParaRef(referenciaViendo);
+                return (
+                  <div className="rpd-agregar">
+                    <div className="rpd-agregar__enc">
+                      <span>Operaciones sin asignar de {referenciaViendo.puenteNombre}{agregarTodasFechas ? '' : ` del ${formatearFechaSpanish(referenciaViendo.fechaGeneracion)}`} ({cands.length})</span>
+                      <label className="rpd-agregar__chk"><input type="checkbox" checked={agregarTodasFechas} onChange={(e) => setAgregarTodasFechas(e.target.checked)} /> Todas las fechas</label>
+                    </div>
+                    {cands.length === 0 ? <div className="rpd-moneda">No hay operaciones sin asignar de este puente{agregarTodasFechas ? '' : ' en esa fecha'}.</div> : (
+                      <div className="rpd-grupo__tabla">
+                        <table>
+                          <thead><tr><th><input type="checkbox" checked={selAgregar.length === cands.length} onChange={(e) => setSelAgregar(e.target.checked ? cands.map(c => String(c.id)) : [])} /></th><th>Ref. Operación</th><th>Fecha servicio</th><th>Hora (verde)</th><th>Unidad</th><th>Convenio</th><th>Puente</th><th className="rpd-num">Monto</th></tr></thead>
+                          <tbody>
+                            {cands.map(o => (
+                              <tr key={String(o.id)}>
+                                <td><input type="checkbox" checked={selAgregar.includes(String(o.id))} onChange={() => setSelAgregar(prev => prev.includes(String(o.id)) ? prev.filter(x => x !== String(o.id)) : [...prev, String(o.id)])} /></td>
+                                <td className="rpd-x52">{String(o.ref || o.id)}</td>
+                                <td>{formatearFechaSpanish(String(o.fechaServicio || ''))}</td>
+                                <td>{textoHoraVerde(o) || '—'}</td>
+                                <td>{getUnidad(o)}</td>
+                                <td className="rpd-grupo__conv" title={getConvenio(o)}>{getConvenio(o)}</td>
+                                <td>{nombresPuenteOp(o).join(' + ') || '—'}</td>
+                                <td className="rpd-num">{getPuente(o) ? formatoMoneda(getPuente(o)) : 'Se calcula'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                    <div className="rpd-agregar__pie">
+                      <button type="button" className="rpd-x85" disabled={agregandoOps || selAgregar.length === 0} onClick={agregarOpsARef}>{agregandoOps ? 'Agregando…' : `Agregar ${selAgregar.length || ''} a ${referenciaViendo.consecutivo}`}</button>
+                    </div>
+                  </div>
+                );
+              })()}
               <div className="table-container rpd-x99">
                 <table className="rpd-x100">
                   <thead className="rpd-x101">
@@ -1874,7 +1994,7 @@ export const ReferenciasPuentesDashboard = () => {
                     {(referenciaViendo.operacionesGuardadas || []).map((op: any, i: number) => {
                       const noCorresponde = !!referenciaViendo.grupoPuente && !!String(op.puenteNombre || '').trim() && grupoDeFila(op) !== referenciaViendo.grupoPuente; // ✅ V00413: por la caseta
                       return (
-                      <tr className={`rpd-x46 rpd-fila-clic${noCorresponde ? ' rpd-fila--mal' : ''}`} key={op.id} title="Ver el detalle de la operación" onClick={() => abrirDetalleOperacion(String(op.id))}>
+                      <tr className={`rpd-x46 rpd-fila-clic${noCorresponde ? ' rpd-fila--mal' : ''}`} key={op.id} title={op.esOtroCruce ? 'Otro cruce (sin operación)' : 'Ver el detalle de la operación'} onClick={() => { if (!op.esOtroCruce) abrirDetalleOperacion(String(op.id)); }}>
                         {referenciaViendo.automatico && (
                           <td className="rpd-x104">
                             <button type="button" className="rpd-btn-sacar" disabled={quitandoOp === String(op.id)} title="Sacar de esta referencia (regresa a Operaciones sin asignar)"
