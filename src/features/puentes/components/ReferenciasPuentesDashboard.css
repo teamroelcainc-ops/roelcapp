@@ -263,3 +263,45 @@
 .rpd-btn-sacar:hover:not(:disabled) { background: rgba(248, 81, 73, 0.12); }
 .rpd-fila--mal td { background: rgba(248, 81, 73, 0.07); }
 .rpd-chip-mal { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; border: 1px solid #da3633; color: #ff7b72; font-size: 0.64rem; font-weight: 700; font-family: inherit; }
+
+/* ✅ V00413: detalle de saldo (asiento) más ancho y claro — verde = saldo, rojo = descuentos */
+.rpd-asiento { width: min(1300px, 96vw) !important; max-width: 96vw !important; }
+.rpd-asiento__resumen { gap: 12px; }
+.rpd-asiento__k { border-radius: 10px !important; border-left: 4px solid #30363d !important; }
+.rpd-asiento__k em { font-style: normal; font-size: 0.72rem; color: #8b949e; font-weight: 600; }
+.rpd-asiento__k--abono { border-left-color: #3fb950 !important; background: rgba(46, 160, 67, 0.08) !important; }
+.rpd-asiento__k--abono b { color: #56d364 !important; }
+.rpd-asiento__k--cargo { border-left-color: #f85149 !important; background: rgba(248, 81, 73, 0.07) !important; }
+.rpd-asiento__k--cargo b { color: #ff7b72 !important; }
+.rpd-asiento__k--balance { border-left-color: #388bfd !important; background: rgba(56, 139, 253, 0.08) !important; }
+.rpd-asiento__k--balance b { color: #f0f6fc !important; }
+.rpd-asiento__k--neg { border-left-color: #f85149 !important; }
+.rpd-asiento__k--neg b { color: #ff7b72 !important; }
+.rpd-asiento__tabla { font-size: 0.9rem; }
+.rpd-asiento__tabla td { padding: 10px 14px; }
+.rpd-asiento__abono td { background: rgba(46, 160, 67, 0.12) !important; color: #e6edf3; font-weight: 600; }
+.rpd-asiento__abono td:first-child { box-shadow: inset 4px 0 0 #3fb950; }
+.rpd-asiento__cargo td { background: rgba(248, 81, 73, 0.05); }
+.rpd-asiento__cargo td:first-child { box-shadow: inset 4px 0 0 #f85149; }
+.rpd-asiento__cargo:hover td { background: rgba(248, 81, 73, 0.1); }
+.rpd-asiento__marco { max-height: 60vh; }
+
+/* ✅ V00413: tarjetas de balance de los tres puentes (pestaña Saldo) */
+.rpd-balances { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 16px; }
+.rpd-balance-card { --c: #a371f7; position: relative; display: flex; flex-direction: column; gap: 3px; padding: 14px 16px 12px 18px; border: 1px solid #262d38; border-radius: 12px; background: radial-gradient(120% 80% at 0% 0%, color-mix(in srgb, var(--c) 12%, transparent) 0%, transparent 60%), #0d1117; overflow: hidden; }
+.rpd-balance-card::before { content: ''; position: absolute; left: 0; top: 12px; bottom: 12px; width: 4px; border-radius: 0 3px 3px 0; background: var(--c); }
+.rpd-balance-card--avi { --c: #58a6ff; }
+.rpd-balance-card--pt3 { --c: #fb923c; }
+.rpd-balance-card--ptc { --c: #a371f7; }
+.rpd-balance-card__enc { display: flex; align-items: center; justify-content: space-between; }
+.rpd-balance-card__enc span { color: #a3adb9; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+.rpd-balance-card__enc em { font-style: normal; padding: 1px 8px; border-radius: 999px; border: 1px solid #323a47; color: #c3ccd6; font-size: 0.64rem; font-weight: 700; }
+.rpd-balance-card__v { color: #f0f6fc; font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 4px; }
+.rpd-balance-card--neg .rpd-balance-card__v { color: #ff7b72; }
+.rpd-balance-card__sub { color: #8d97a3; font-size: 0.74rem; }
+.rpd-balance-card__filas { display: flex; flex-direction: column; gap: 3px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #1f2630; }
+.rpd-balance-card__filas div { display: flex; justify-content: space-between; gap: 8px; font-size: 0.8rem; }
+.rpd-balance-card__filas span { color: #8d97a3; }
+.rpd-balance-card__filas b { font-variant-numeric: tabular-nums; color: #e6edf3; }
+.rpd-detalle-puente { color: #f0f6fc; font-weight: 700; font-size: 0.95rem; }
+@media (max-width: 900px) { .rpd-balances { grid-template-columns: 1fr; } }
