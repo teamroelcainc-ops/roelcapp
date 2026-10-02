@@ -723,6 +723,7 @@ export const ReferenciasPuentesDashboard = () => {
               {puentesCatalogo.filter(p => !sinAcentos(nombrePuente(p)).includes('puente mx colombia')).map(p => <option key={p.id} value={p.id}>{String(nombrePuente(p))}</option>)}
             </select>
             {Number(op.saldoPuentePiso) > 0 && <div className="rpd-moneda">+ {String(op.saldoPuentePisoPuente || 'Puente Mx Colombia')}</div>}
+            {colombiaMalCobrada(op) && <div className="rpd-chip-mal" title="La aduana es Colombia: debe cruzar por Puente Colombia (caseta + puente). Usa 'Asignar monto del puente' o elige la caseta de Colombia.">Debe ser Colombia</div>}
           </td>
         );
       }
@@ -802,12 +803,13 @@ export const ReferenciasPuentesDashboard = () => {
   // ✅ V00392: ASIGNAR el monto correcto del puente a las operaciones que no lo
   //   tienen (caseta de la tarifa / por tráfico; Colombia = caseta + puente).
   const asignarMontosPuente = async () => {
-    const candidatas = operacionesBaseFiltro.filter(op => !tieneMontoPuente(op) || (Number(op.saldoPuente) > 0 && !(Number(op.saldoPuentePiso) > 0)));
+    const candidatas = operacionesBaseFiltro.filter(op => !tieneMontoPuente(op) || colombiaMalCobrada(op) || (Number(op.saldoPuente) > 0 && !(Number(op.saldoPuentePiso) > 0)));
     if (candidatas.length === 0) { alert('Todas las operaciones del filtro ya tienen su monto de puente.'); return; }
     setAsignandoMontos(true);
     try {
       const ctx = await cargarCtxCobroPuente();
-      const cambios = candidatas.map(op => ({ op, campos: cobroPuenteDeOperacion(ctx, op) })).filter(x => Object.keys(x.campos).length > 0);
+      // ✅ V00416: las de aduana Colombia con otra caseta se recalculan (caseta + puente de Colombia)
+      const cambios = candidatas.map(op => ({ op, campos: colombiaMalCobrada(op) ? cobroPuenteDeOperacion(ctx, { ...op, saldoPuente: 0, saldoPuentePiso: 0 }) : cobroPuenteDeOperacion(ctx, op) })).filter(x => Object.keys(x.campos).length > 0);
       const sinRegla = candidatas.filter(op => !tieneMontoPuente(op)).length - cambios.filter(x => x.campos.saldoPuente !== undefined).length;
       if (cambios.length === 0) { alert(`No se pudo determinar el puente de ${candidatas.filter(op => !tieneMontoPuente(op)).length} operación(es): revisa su convenio (caseta en Gastos Incluidos) o su tráfico.`); return; }
       const casetas = cambios.filter(x => x.campos.saldoPuente !== undefined).length;
@@ -844,7 +846,11 @@ export const ReferenciasPuentesDashboard = () => {
   //   La fecha del consecutivo es la de GENERACIÓN.
   type GrupoRef = 'AVI' | 'PT3' | 'PTC';
   const NOMBRE_GRUPO: Record<GrupoRef, string> = { AVI: 'Puente AVI', PT3: 'Puente III', PTC: 'Puente Colombia' };
+  // ✅ V00416: aduana Colombia (por su convenio) → Puente Colombia; la caseta cobrada debe ser de Colombia
+  const esColombiaOp = (op: OpPuente) => sinAcentos(getConvenio(op)).includes('colombia');
+  const colombiaMalCobrada = (op: OpPuente) => esColombiaOp(op) && Number(op.saldoPuente) > 0 && !sinAcentos(op.saldoPuentePuente).includes('colombia');
   const grupoPuenteOp = (op: OpPuente): GrupoRef | null => {
+    if (esColombiaOp(op)) return 'PTC';
     if (!(Number(op.saldoPuente) > 0)) return null;
     const n = sinAcentos(`${String(op.saldoPuentePuente || '')} ${String(op.saldoPuentePisoPuente || '')}`);
     if (n.includes('colombia')) return 'PTC';
@@ -1350,7 +1356,16 @@ export const ReferenciasPuentesDashboard = () => {
                           corrido -= it.monto;
                           const id = String(it.ref.id);
                           const abierta = refAbierta === id;
-                          const opsRef = (Array.isArray(it.ref.operacionesGuardadas) ? it.ref.operacionesGuardadas : []) as Record<string, unknown>[];
+                          // ✅ V00417: solo las operaciones (y la PARTE) que descuentan de ESTE saldo:
+                          //   p. ej. el saldo de "Puente Mx Colombia" lleva el puente ($90) y no la caseta.
+                          const kSaldo = sinAcentos(saldoViendo.puenteNombre);
+                          const opsRef = ((Array.isArray(it.ref.operacionesGuardadas) ? it.ref.operacionesGuardadas : []) as Record<string, unknown>[])
+                            .map((o): Record<string, unknown> & { _aplica: number; _concepto: string } => {
+                              const [nomCaseta, nomPiso] = String(o.puenteNombre || '').split(' + ');
+                              const aplica = (sinAcentos(nomCaseta) === kSaldo ? (Number(o.caseta ?? o.puente) || 0) : 0) + (nomPiso && sinAcentos(nomPiso) === kSaldo ? (Number(o.piso) || 0) : 0);
+                              return { ...o, _aplica: aplica, _concepto: sinAcentos(nomCaseta) === kSaldo ? nomCaseta : (nomPiso || nomCaseta) };
+                            })
+                            .filter(o => o._aplica > 0);
                           return (
                             <React.Fragment key={id}>
                               <tr className="rpd-fila-clic rpd-asiento__cargo" title="Ver las operaciones de esta referencia" onClick={() => setRefAbierta(abierta ? '' : id)}>
@@ -1368,7 +1383,7 @@ export const ReferenciasPuentesDashboard = () => {
                                       <div className="rpd-asiento__sub-vacio">Cruce sin operación · {String(it.ref.puenteNombre || '')} · registrado por {String(it.ref.registradoPor || '—')}</div>
                                     ) : (
                                       <table>
-                                        <thead><tr><th>Ref. Operación</th><th>Fecha servicio</th><th>Hora (verde)</th><th>Unidad</th><th>Convenio</th><th>Puente</th><th className="rpd-num">Monto</th></tr></thead>
+                                        <thead><tr><th>Ref. Operación</th><th>Fecha servicio</th><th>Hora (verde)</th><th>Unidad</th><th>Convenio</th><th>Concepto (este saldo)</th><th className="rpd-num">Monto</th><th className="rpd-num">Total del cruce</th></tr></thead>
                                         <tbody>
                                           {opsRef.map((o, j) => (
                                             <tr key={j}>
@@ -1377,8 +1392,9 @@ export const ReferenciasPuentesDashboard = () => {
                                               <td>{String(o.horaVerde || '—')}</td>
                                               <td>{String(o.unidad || '—')}</td>
                                               <td>{String(o.convenio || '—')}</td>
-                                              <td>{String(o.puenteNombre || '—')}</td>
-                                              <td className="rpd-num">{formatoMoneda(Number(o.puente) || 0)}</td>
+                                              <td>{String(o._concepto || '—')}</td>
+                                              <td className="rpd-num rpd-cargo">{formatoMoneda(o._aplica)}</td>
+                                              <td className="rpd-num rpd-moneda" title={String(o.puenteNombre || '')}>{formatoMoneda(Number(o.puente) || 0)}</td>
                                             </tr>
                                           ))}
                                         </tbody>
@@ -1585,7 +1601,7 @@ export const ReferenciasPuentesDashboard = () => {
             <div className="rpd-x17">
               <button type="button" className="rpd-btn-asignar" onClick={asignarMontosPuente} disabled={asignandoMontos}
                 title="Pone el monto correcto del puente a las operaciones del filtro que no lo tienen (Colombia: caseta + puente)">
-                {asignandoMontos ? 'Asignando…' : `Asignar monto del puente (${operacionesBaseFiltro.filter(op => !tieneMontoPuente(op)).length} sin monto)`}
+                {asignandoMontos ? 'Asignando…' : `Asignar monto del puente (${operacionesBaseFiltro.filter(op => !tieneMontoPuente(op)).length} sin monto${operacionesBaseFiltro.some(colombiaMalCobrada) ? ` · ${operacionesBaseFiltro.filter(colombiaMalCobrada).length} de Colombia por corregir` : ''})`}
               </button>
               <button onClick={() => setModalColumnasOps(true)} style={btnDirStyle} title="Elegir y reordenar columnas">⚙ Configurar Columnas</button>
               <button onClick={exportarExcelOps} disabled={operacionesMostradas.length === 0}
