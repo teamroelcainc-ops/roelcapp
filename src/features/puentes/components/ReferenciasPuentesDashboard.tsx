@@ -19,7 +19,7 @@ import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 import { esOperacionPrueba } from '../../../utils/operacionPrueba';
 import { cargarCtxCobroPuente, cobroPuenteDeOperacion } from '../../../utils/puenteColombia';
-import { COL_REF_AUTO, filaDeOperacion, grupoDeFila, quitarOperacionDeReferenciaAuto, recalcularHistorialCalculadoHoy, upsertReferenciaAuto } from '../../../utils/historialCalculadoPuentes';
+import { COL_REF_AUTO, filaDeOperacion, grupoDeFila, quitarOperacionDeReferenciaAuto, upsertReferenciaAuto } from '../../../utils/historialCalculadoPuentes';
 import { FormularioOperacion } from '../../operaciones/components/FormularioOperacion';
 
 // ⚠ Si tu colección de convenios de clientes tiene otro nombre, cámbialo aquí.
@@ -156,7 +156,7 @@ export const ReferenciasPuentesDashboard = () => {
       for (const id of selAgregar) {
         const op = operacionesGlobales.find(o => o.id === id);
         if (!op) continue;
-        const r = await filaDeOperacion({ ...op, _docId: op._docId || op.id }, textoHoraVerde(op));
+        const r = await filaDeOperacion({ ...op, _docId: op._docId || op.id, convenioNombre: op.convenioNombre || getConvenio(op) }, textoHoraVerde(op));
         if (r && r.grupo === ref.grupoPuente) filas.push(r.fila);
       }
       if (filas.length === 0) { alert('Ninguna de las seleccionadas corresponde a este puente.'); return; }
@@ -191,7 +191,6 @@ export const ReferenciasPuentesDashboard = () => {
   // ✅ V00402: HISTORIAL CALCULADO (referencias automáticas al marcar Verde)
   type RefAuto = { id: string; consecutivo?: string; puenteNombre?: string; fechaGeneracion?: string; horaGeneracion?: string; operaciones?: string[]; operacionesIds?: string[]; totalesPorMoneda?: Record<string, number>; subtotalPuentes?: number; statusPagado?: boolean };
   const [refsAuto, setRefsAuto] = useState<RefAuto[]>([]);
-  const [recalculando, setRecalculando] = useState(false);
   // ✅ V00403: se escucha SIEMPRE — las operaciones que ya están en el Historial
   //   calculado no se muestran en Asignar Operaciones (si se borra, regresan).
   useEffect(() => {
@@ -205,17 +204,10 @@ export const ReferenciasPuentesDashboard = () => {
     refsAuto.forEach(r => (r.operacionesIds || []).forEach(id => set.add(String(id))));
     return set;
   }, [refsAuto]);
-  const recalcularHoy = async () => {
-    setRecalculando(true);
-    try {
-      const n = await recalcularHistorialCalculadoHoy();
-      alert(n ? `Se revisaron ${n} operación(es) con Verde de hoy.` : 'No hay operaciones marcadas Verde hoy.');
-    } catch (e) { alert(`No se pudo recalcular: ${(e as Error)?.message || e}`); }
-    finally { setRecalculando(false); }
-  };
+
   const eliminarRefAuto = async (r: RefAuto) => {
     if (!window.confirm(`¿Eliminar la referencia ${r.consecutivo}?\n\nSus ${(r.operacionesIds || []).length} operación(es) regresan a "Operaciones sin asignar".`)) return;
-    try { const b = writeBatch(db); b.delete(doc(db, COL_REF_AUTO, r.id)); await b.commit(); setSelRefsAuto(prev => prev.filter(x => x !== r.id)); }
+    try { const b = writeBatch(db); b.delete(doc(db, COL_REF_AUTO, r.id)); b.commit().catch(e => console.warn('[referencias] sincronización pendiente:', e)); setSelRefsAuto(prev => prev.filter(x => x !== r.id)); }
     catch (e) { alert(`No se pudo eliminar: ${(e as Error)?.message || e}`); }
   };
   // ✅ V00414: BORRAR varias (o todas) las referencias del Historial — sus operaciones
@@ -232,7 +224,7 @@ export const ReferenciasPuentesDashboard = () => {
       for (let i = 0; i < lista.length; i += 400) {
         const b = writeBatch(db);
         lista.slice(i, i + 400).forEach(r => b.delete(doc(db, COL_REF_AUTO, r.id)));
-        await b.commit();
+        b.commit().catch(e => console.warn('[referencias] sincronización pendiente:', e)); // ✅ V00420: no bloquea la pantalla
       }
       setSelRefsAuto([]);
     } catch (e) { alert(`No se pudieron eliminar: ${(e as Error)?.message || e}`); }
@@ -1054,7 +1046,7 @@ export const ReferenciasPuentesDashboard = () => {
         const destino = destinoPorGrupo[g.clave] || (g.existentes[0]?.id ?? '__nuevo__');
         const filas: Record<string, unknown>[] = [];
         for (const op of g.ops) {
-          const r = await filaDeOperacion({ ...op, _docId: op._docId || op.id }, textoHoraVerde(op));
+          const r = await filaDeOperacion({ ...op, _docId: op._docId || op.id, convenioNombre: op.convenioNombre || getConvenio(op) }, textoHoraVerde(op));
           if (r) filas.push(r.fila); else omitidas += 1;
         }
         if (filas.length === 0) continue;
@@ -1189,7 +1181,7 @@ export const ReferenciasPuentesDashboard = () => {
         <div className="animation-fade-in">
           {/* ✅ V00402: HISTORIAL CALCULADO */}
           <div className="rpd-otros-barra">
-            <span className="rpd-otros-nota">Una referencia por puente y día (AVI / PT3 / PTC). Las operaciones entran solas al marcar Verde (MX o USA) o se envían desde Operaciones sin asignar. Es lo que descuenta del Saldo.</span>
+            <span className="rpd-otros-nota">Una referencia por puente (AVI / PT3 / PTC). Las operaciones marcadas Verde quedan en Operaciones sin asignar y desde ahí se envían a la referencia que elijas. Es lo que descuenta del Saldo.</span>
             <div className="rpd-acciones-hist">
               {selRefsAuto.length > 0 && (
                 <button type="button" className="rpd-btn-borrar" onClick={() => borrarRefsAuto(selRefsAuto)} disabled={borrandoRefs}>{borrandoRefs ? 'Eliminando…' : `Eliminar seleccionadas (${selRefsAuto.length})`}</button>
@@ -1197,7 +1189,6 @@ export const ReferenciasPuentesDashboard = () => {
               {refsAuto.length > 0 && (
                 <button type="button" className="rpd-btn-borrar rpd-btn-borrar--todo" onClick={() => borrarRefsAuto(refsAuto.map(r => r.id))} disabled={borrandoRefs} title="Elimina todas las referencias; sus operaciones regresan a Operaciones sin asignar">Eliminar todas</button>
               )}
-              <button type="button" className="rpd-btn-asignar" onClick={recalcularHoy} disabled={recalculando} title="Revisa la bitácora de hoy y agrega los verdes que falten">{recalculando ? 'Revisando…' : 'Recalcular hoy'}</button>
             </div>
           </div>
           <div className="table-container rpd-x41">
@@ -1960,7 +1951,25 @@ export const ReferenciasPuentesDashboard = () => {
               <div className="rpd-detalle-barra">
                 <span className="rpd-x98">Operaciones incluidas ({referenciaViendo.operacionesGuardadas?.length || 0})</span>
                 {referenciaViendo.automatico && (
-                  <button type="button" className="rpd-btn-asignar" onClick={() => { setSelAgregar([]); setAgregarARef(v => !v); }}>{agregarARef ? 'Cerrar' : '+ Agregar operaciones'}</button>
+                  <div className="rpd-acciones-hist">
+                    {(() => {
+                      const malas = ((referenciaViendo.operacionesGuardadas || []) as Record<string, unknown>[]).filter(o => !!String(o.puenteNombre || '').trim() && grupoDeFila(o) !== referenciaViendo.grupoPuente);
+                      return malas.length > 0 ? (
+                        <button type="button" className="rpd-btn-borrar" title="Las saca de esta referencia; regresan a Operaciones sin asignar para enviarlas a su puente"
+                          onClick={async () => {
+                            if (!window.confirm(`¿Sacar ${malas.length} operación(es) que son de otro puente? Regresan a Operaciones sin asignar.`)) return;
+                            for (const o of malas) await quitarOperacionDeReferenciaAuto(String(referenciaViendo.id), String(o.id));
+                            const ids = malas.map(o => String(o.id));
+                            setReferenciaViendo((prev: Record<string, unknown> | null) => prev ? {
+                              ...prev,
+                              operacionesIds: ((prev.operacionesIds as string[]) || []).filter(x => !ids.includes(String(x))),
+                              operacionesGuardadas: ((prev.operacionesGuardadas as Record<string, unknown>[]) || []).filter(o => !ids.includes(String(o.id))),
+                            } : prev);
+                          }}>Sacar las de otro puente ({malas.length})</button>
+                      ) : null;
+                    })()}
+                    <button type="button" className="rpd-btn-asignar" onClick={() => { setSelAgregar([]); setAgregarARef(v => !v); }}>{agregarARef ? 'Cerrar' : '+ Agregar operaciones'}</button>
+                  </div>
                 )}
               </div>
               {/* ✅ V00415: agregar operaciones SIN ASIGNAR del mismo puente */}
