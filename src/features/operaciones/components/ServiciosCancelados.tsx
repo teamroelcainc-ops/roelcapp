@@ -26,8 +26,11 @@ import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
 import { ModalFechaStatus } from './ModalFechaStatus';
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
 import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
-import { docPorId } from '../../../utils/docPorId';
+import { docPorId, nombreEmpresaPdf } from '../../../utils/docPorId';
 import { datosDireccionEmpresaPdf, direccionesParaPdf } from '../../../utils/direccionPdf';
+import { mostrarCartaPara, useConfigCarta } from '../../../utils/configCartaInstrucciones';
+import { ConfigCartaModal } from './ConfigCartaModal';
+import { usePermisoFormularios } from '../../formularios/configFormularios';
 
 // ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
 const fmtFechaAuditoria = (iso: any): string => {
@@ -164,6 +167,10 @@ const ServiciosCancelados = () => {
   };
   const [cargandoOperaciones, setCargandoOperaciones] = useState(false);
   const [operacionViendo, setOperacionViendo] = useState<any | null>(null);
+  // ✅ V00421: cuándo se muestra la Carta de Instrucciones (configurable)
+  const cfgCarta = useConfigCarta();
+  const [cfgCartaAbierto, setCfgCartaAbierto] = useState(false);
+  const { puedeEditar: puedeCfgCarta } = usePermisoFormularios();
   // ✅ NUEVO: modal de auditoría de la referencia (solo lectura).
   const [mostrarAuditoria, setMostrarAuditoria] = useState(false);
   // ✅ NUEVO: mapa uid → nombre para mostrar SIEMPRE el nombre del usuario en la
@@ -975,7 +982,17 @@ const ServiciosCancelados = () => {
     const dO = datosDireccionEmpresaPdf(origenObj, listaDirsCarta);
     const dD = datosDireccionEmpresaPdf(destinoObj, listaDirsCarta);
 
+    // ✅ V00421: datos del cliente y bultos para la carta
+    const [cliPagaCarta, cliMercCarta] = await Promise.all([
+      nombreEmpresaPdf(operacionViendo.clientePaga, operacionViendo.clientePagaNombre),
+      nombreEmpresaPdf(operacionViendo.clienteMercancia, operacionViendo.clienteMercanciaNombre),
+    ]);
+    const bultosCarta = [operacionViendo.cantidad, operacionViendo.embalajeNombre || ''].map((x: unknown) => String(x ?? '').trim()).filter(Boolean).join(' ');
     generarCartaInstruccionesPDF({
+      refCliente: operacionViendo.refCliente || 'N/A',
+      clientePaga: cliPagaCarta,
+      clienteMercancia: cliMercCarta,
+      bultos: bultosCarta,
       referencia: operacionViendo.ref || operacionViendo.id?.substring(0, 6) || 'S/R',
       consecutivo: operacionViendo.ref || operacionViendo.id?.substring(0, 6) || 'S/R',
       fechaServicio: operacionViendo.fechaServicio || 'N/A',
@@ -1759,11 +1776,26 @@ const ServiciosCancelados = () => {
               </h2>
               <div className="sc-x82">
 
-                {evalIsFletes && (
+                {mostrarCartaPara(operacionViendo, cfgCarta) && (
                   <>
                     <button className="sc-x83" onClick={handleDescargarCartaInstrucciones} title="Descargar Carta de Instrucciones">
                       Carta Instrucciones
                     </button>
+                  </>
+                )}
+                {puedeCfgCarta && (
+                  <button type="button" className="ccm-engrane" title="Configurar cuándo se muestra la Carta de Instrucciones" onClick={() => setCfgCartaAbierto(true)}>⚙ Carta</button>
+                )}
+                {cfgCartaAbierto && (
+                  <ConfigCartaModal
+                    config={cfgCarta}
+                    tipos={(catalogosGlobales.tiposOperacion || []).map((t: { id: string; tipo_operacion?: string; nombre?: string }) => ({ id: String(t.id), nombre: String(t.tipo_operacion || t.nombre || t.id) }))}
+                    destinos={(catalogosGlobales.empresas || []).map((e: { id: string; nombre?: string; razonSocial?: string }) => ({ id: String(e.id), nombre: String(e.nombre || e.razonSocial || e.id) }))}
+                    onClose={() => setCfgCartaAbierto(false)}
+                  />
+                )}
+                {evalIsFletes && (
+                  <>
                     <button className="sc-x83" onClick={handleDescargarPruebaEntrega} title="Descargar Prueba de Entrega">
                       Prueba Entrega
                     </button>

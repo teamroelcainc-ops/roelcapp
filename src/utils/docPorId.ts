@@ -18,3 +18,10 @@ export const docPorId = async (coleccion: string, id: unknown): Promise<DocLibre
     return null;
   }
 };
+
+/** ✅ V00421: razón social / nombre de una empresa por id (con su nombre guardado como respaldo). */
+export const nombreEmpresaPdf = async (id: unknown, guardado?: unknown): Promise<string> => {
+  const g = String(guardado ?? '').trim();
+  const e = await docPorId('empresas', id);
+  return String(e?.razonSocial || e?.nombre || g || 'N/A');
+};

@@ -705,6 +705,11 @@ export interface DatosCartaInstrucciones {
   destinoMunicipio?: string;
   destinoEstado?: string;
   destinoPais?: string;
+  // ✅ V00421: datos del cliente y bultos
+  refCliente?: string;
+  clientePaga?: string;
+  clienteMercancia?: string;
+  bultos?: string;
   logoBase64?: string;
 }
 
@@ -750,6 +755,10 @@ export const generarCartaInstruccionesPDF = (datos: DatosCartaInstrucciones) => 
             <td style="padding: 1px 4px;">${datos.consecutivo}</td>
           </tr>
           <tr>
+            <td style="font-weight: bold; text-align: right; padding: 1px 4px;">REFERENCIA CLIENTE:</td>
+            <td style="padding: 1px 6px; font-weight: bold; font-size: 9.5pt; background-color: #fff2cc; border: 1px solid #f1c232;">${datos.refCliente || 'N/A'}</td>
+          </tr>
+          <tr>
             <td style="font-weight: bold; text-align: right; padding: 1px 4px;">FECHA DE EMBARQUE:</td>
             <td style="padding: 1px 4px;">${datos.fechaServicio}</td>
           </tr>
@@ -763,6 +772,23 @@ export const generarCartaInstruccionesPDF = (datos: DatosCartaInstrucciones) => 
           </tr>
         </table>
       </div>
+
+      <!-- ✅ V00421: cliente -->
+      <div style="font-size: 9pt; font-weight: bold; text-decoration: underline; margin: 5px 0; text-transform: uppercase;">CLIENTE</div>
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 6px;">
+        <tr>
+          <td style="font-weight: bold; width: 130px; text-align: right; padding: 2px 10px 2px 2px;">CLIENTE PAGA:</td>
+          <td style="border-bottom: 0.5pt solid #eee; padding: 2px;">${datos.clientePaga || 'N/A'}</td>
+        </tr>
+        <tr>
+          <td style="font-weight: bold; width: 130px; text-align: right; padding: 2px 10px 2px 2px;">CLIENTE MERCANCÍA:</td>
+          <td style="border-bottom: 0.5pt solid #eee; padding: 2px;">${datos.clienteMercancia || 'N/A'}</td>
+        </tr>
+        <tr>
+          <td style="font-weight: bold; width: 130px; text-align: right; padding: 2px 10px 2px 2px;">REF. CLIENTE:</td>
+          <td style="border-bottom: 0.5pt solid #eee; padding: 2px; font-weight: bold;">${datos.refCliente || 'N/A'}</td>
+        </tr>
+      </table>
 
       <div style="font-size: 9pt; font-weight: bold; text-decoration: underline; margin: 5px 0; text-transform: uppercase;">
         TRANSPORTE
@@ -799,13 +825,13 @@ export const generarCartaInstruccionesPDF = (datos: DatosCartaInstrucciones) => 
       <div style="text-align: center; margin-top: 10px;">
         <span style="font-size: 9pt; font-weight: bold; text-decoration: underline;">DESCRIPCION DE LA MERCANCIA</span>
         <!-- ✅ V00419: se imprime la descripción de la mercancía (antes solo la barra amarilla) -->
-        <div style="background-color: yellow; min-height: 12px; width: 100%; margin: 2px 0 8px 0; font-size: 8pt; font-weight: bold; padding: 2px 0;">${datos.descripcionMercancia && datos.descripcionMercancia !== 'N/A' ? datos.descripcionMercancia : ''}</div>
+        <div style="background-color: yellow; min-height: 12px; width: 100%; margin: 2px 0 8px 0; font-size: 8pt; font-weight: bold; padding: 2px 0;">${[datos.descripcionMercancia && datos.descripcionMercancia !== 'N/A' ? datos.descripcionMercancia : '', datos.bultos ? `BULTOS: ${datos.bultos}` : ''].filter(Boolean).join(' · ')}</div>
       </div>
 
       <table style="width: 100%; border-collapse: collapse;">
         <tr>
           <td style="width: 48%; vertical-align: top; border: 0.5pt solid #eee; padding: 5px;">
-            <div style="text-align:center; font-weight:bold; text-decoration:underline; margin-bottom:3px;">ORIGEN</div>
+            <div style="text-align:center; font-weight:bold; text-decoration:underline; margin-bottom:3px;">ORIGEN (DONDE SE ENGANCHA)</div>
             <div style="color: red; font-weight: bold; font-size: 7.5pt; text-align: center; padding-bottom: 4px; line-height: 1.3;">${datos.origenCiudad}</div>
             <table style="width: 100%; border-collapse: collapse;">
               <tr>
@@ -840,7 +866,7 @@ export const generarCartaInstruccionesPDF = (datos: DatosCartaInstrucciones) => 
           </td>
           <td style="width: 4%;"></td>
           <td style="width: 48%; vertical-align: top; border: 0.5pt solid #eee; padding: 5px;">
-            <div style="text-align:center; font-weight:bold; text-decoration:underline; margin-bottom:3px;">DESTINO</div>
+            <div style="text-align:center; font-weight:bold; text-decoration:underline; margin-bottom:3px;">DESTINO (DONDE SE ENTREGA)</div>
             <div style="color: red; font-weight: bold; font-size: 7.5pt; text-align: center; padding-bottom: 4px; line-height: 1.3;">${datos.destinoCiudad}</div>
             <table style="width: 100%; border-collapse: collapse;">
               <tr>

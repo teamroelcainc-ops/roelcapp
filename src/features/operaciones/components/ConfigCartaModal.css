@@ -1,0 +1,22 @@
+/* ✅ V00421 */
+.ccm-fondo { z-index: 4000; }
+.ccm-caja { width: min(680px, 94vw); max-height: 88vh; overflow: auto; background: #0d1117; border: 1px solid #30363d; border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; color: #c9d1d9; }
+.ccm-enc { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #30363d; padding-bottom: 10px; }
+.ccm-enc h3 { margin: 0; color: #f0f6fc; font-size: 1.05rem; }
+.ccm-cerrar { background: none; border: none; color: #8b949e; font-size: 1.1rem; cursor: pointer; }
+.ccm-opcion { display: flex; gap: 8px; align-items: flex-start; font-size: 0.9rem; cursor: pointer; }
+.ccm-filtros { display: grid; grid-template-columns: 1fr 1.3fr; gap: 12px; }
+.ccm-bloque { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.ccm-titulo { color: #8b949e; font-size: 0.74rem; font-weight: 700; text-transform: uppercase; }
+.ccm-lista { border: 1px solid #30363d; border-radius: 8px; padding: 6px 8px; max-height: 300px; overflow: auto; display: flex; flex-direction: column; gap: 3px; background: #161b22; }
+.ccm-lista--corta { max-height: 260px; }
+.ccm-item { display: flex; gap: 6px; align-items: center; font-size: 0.84rem; cursor: pointer; }
+.ccm-busca { padding: 7px 10px; border-radius: 6px; border: 1px solid #30363d; background: #161b22; color: #f0f6fc; }
+.ccm-nota { grid-column: 1 / -1; margin: 0; color: #8b949e; font-size: 0.78rem; }
+.ccm-pie { display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #30363d; padding-top: 10px; }
+.ccm-btn { padding: 8px 16px; border-radius: 6px; border: 1px solid #30363d; background: transparent; color: #c9d1d9; font-weight: 600; cursor: pointer; }
+.ccm-btn--prim { background: #238636; border-color: #238636; color: #fff; }
+.ccm-btn--prim:disabled { opacity: 0.6; }
+.ccm-engrane { padding: 6px 9px; border-radius: 6px; border: 1px dashed #30363d; background: transparent; color: #8b949e; cursor: pointer; font-size: 0.8rem; }
+.ccm-engrane:hover { color: #f0f6fc; border-color: #58a6ff; }
+@media (max-width: 640px) { .ccm-filtros { grid-template-columns: 1fr; } }

@@ -24,8 +24,11 @@ import { almacenSesion } from '../../../utils/cacheMemoria';
 import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
 import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
-import { docPorId } from '../../../utils/docPorId';
+import { docPorId, nombreEmpresaPdf } from '../../../utils/docPorId';
 import { datosDireccionEmpresaPdf, direccionesParaPdf } from '../../../utils/direccionPdf';
+import { mostrarCartaPara, useConfigCarta } from '../../../utils/configCartaInstrucciones';
+import { ConfigCartaModal } from './ConfigCartaModal';
+import { usePermisoFormularios } from '../../formularios/configFormularios';
 import { cargarCatalogo, TTL } from '../../../hooks/useCatalogoCache'; // ✅ V00256: catálogos C/V y Aduanas para los filtros nuevos
 
 // ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
@@ -333,6 +336,10 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     setSincronizandoNombres(false);
   };
   const [operacionViendo, setOperacionViendo] = useState<any | null>(null);
+  // ✅ V00421: cuándo se muestra la Carta de Instrucciones (configurable)
+  const cfgCarta = useConfigCarta();
+  const [cfgCartaAbierto, setCfgCartaAbierto] = useState(false);
+  const { puedeEditar: puedeCfgCarta } = usePermisoFormularios();
 
   // ✅ V00225: si el catálogo pidió abrir una operación, se abre su FICHA aquí.
   useEffect(() => {
@@ -668,8 +675,11 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     //   nuevas) + fechaServicioISO (escrita por ⚡ en las migradas), unidas y
     //   filtradas a los 2 status completados. Cachea POR RANGO (dataset chico:
     //   sí cabe en localStorage → "Ver en nueva pestaña" abre al instante).
-    let fechasListas = false;
-    try { fechasListas = localStorage.getItem(CLAVE_FECHAS_INDEXADAS) === '1'; } catch { /* sin localStorage */ }
+    // ✅ V00421: la ruta RÁPIDA (solo el rango de fechas) es la de siempre; antes
+    //   dependía de una marca guardada en ESE navegador y, si no estaba, se
+    //   descargaban TODOS los completados (miles) → "tarda una eternidad".
+    let fechasListas = !!(fechaInicio && fechaFin);
+    try { if (!fechasListas) fechasListas = localStorage.getItem(CLAVE_FECHAS_INDEXADAS) === '1'; } catch { /* sin localStorage */ }
     if (fechasListas) {
       const claveRango = `${CACHE_PREFIX}rango_${fechaInicio}_${fechaFin}`;
       if (!opciones.ignorarCache) {
@@ -1428,7 +1438,17 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     const dO = datosDireccionEmpresaPdf(origenObj, listaDirsCarta);
     const dD = datosDireccionEmpresaPdf(destinoObj, listaDirsCarta);
 
+    // ✅ V00421: datos del cliente y bultos para la carta
+    const [cliPagaCarta, cliMercCarta] = await Promise.all([
+      nombreEmpresaPdf(operacionViendo.clientePaga, operacionViendo.clientePagaNombre),
+      nombreEmpresaPdf(operacionViendo.clienteMercancia, operacionViendo.clienteMercanciaNombre),
+    ]);
+    const bultosCarta = [operacionViendo.cantidad, operacionViendo.embalajeNombre || ''].map((x: unknown) => String(x ?? '').trim()).filter(Boolean).join(' ');
     generarCartaInstruccionesPDF({
+      refCliente: operacionViendo.refCliente || 'N/A',
+      clientePaga: cliPagaCarta,
+      clienteMercancia: cliMercCarta,
+      bultos: bultosCarta,
       referencia: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'S/R',
       consecutivo: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'S/R',
       fechaServicio: operacionViendo.fechaServicio || 'N/A',
@@ -3130,12 +3150,27 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
               <div className="sc-x130">
                 <span className="sc-x131">GENERAR DOCUMENTOS:</span>
                 
-                {evalIsFletes && (
+                {mostrarCartaPara(operacionViendo, cfgCarta) && (
                   <>
                     <button onClick={handleDescargarCartaInstrucciones} style={btnDocStyle}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                       Carta Instrucciones
                     </button>
+                  </>
+                )}
+                {puedeCfgCarta && (
+                  <button type="button" className="ccm-engrane" title="Configurar cuándo se muestra la Carta de Instrucciones" onClick={() => setCfgCartaAbierto(true)}>⚙ Carta</button>
+                )}
+                {cfgCartaAbierto && (
+                  <ConfigCartaModal
+                    config={cfgCarta}
+                    tipos={(catalogosGlobales.tiposOperacion || []).map((t: { id: string; tipo_operacion?: string; nombre?: string }) => ({ id: String(t.id), nombre: String(t.tipo_operacion || t.nombre || t.id) }))}
+                    destinos={(catalogosGlobales.empresas || []).map((e: { id: string; nombre?: string; razonSocial?: string }) => ({ id: String(e.id), nombre: String(e.nombre || e.razonSocial || e.id) }))}
+                    onClose={() => setCfgCartaAbierto(false)}
+                  />
+                )}
+                {evalIsFletes && (
+                  <>
                     <button onClick={handleDescargarPruebaEntrega} style={btnDocStyle}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                       Prueba Entrega

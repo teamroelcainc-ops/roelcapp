@@ -22,7 +22,10 @@ import { ModalFechaStatus } from './ModalFechaStatus';
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
 import { aduanaDeConvenio, camposPisoColombia, casetaRespaldoColombia, esAduanaColombia, esGastoPisoColombia, normPuente } from '../../../utils/puenteColombia';
 import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
-import { docPorId } from '../../../utils/docPorId';
+import { docPorId, nombreEmpresaPdf } from '../../../utils/docPorId';
+import { mostrarCartaPara, useConfigCarta } from '../../../utils/configCartaInstrucciones';
+import { ConfigCartaModal } from './ConfigCartaModal';
+import { usePermisoFormularios } from '../../formularios/configFormularios';
 
 // ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
 const fmtFechaAuditoria = (iso: any): string => {
@@ -226,6 +229,10 @@ const OperacionesDashboard = () => {
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
   const [cargandoOperaciones, setCargandoOperaciones] = useState(true);
   const [operacionViendo, setOperacionViendo] = useState<any | null>(null);
+  // ✅ V00421: cuándo se muestra la Carta de Instrucciones (configurable)
+  const cfgCarta = useConfigCarta();
+  const [cfgCartaAbierto, setCfgCartaAbierto] = useState(false);
+  const { puedeEditar: puedeCfgCarta } = usePermisoFormularios();
   // ✅ V00344: (1) documentos de la operación en la ficha; (2) personalizar la
   //   vista (ocultar/mostrar los botones agregados; guardado GLOBAL en Firestore
   //   config_vista/operacionesActivas — el permiso llega desde Roles/Admin);
@@ -1574,7 +1581,17 @@ const OperacionesDashboard = () => {
     const dirOrigen = datosDireccionEmpresa(origenObj, listaDirs);
     const dirDestino = datosDireccionEmpresa(destinoObj, listaDirs);
 
+    // ✅ V00421: datos del cliente y bultos para la carta
+    const [cliPagaCarta, cliMercCarta] = await Promise.all([
+      nombreEmpresaPdf(operacionViendo.clientePaga, operacionViendo.clientePagaNombre),
+      nombreEmpresaPdf(operacionViendo.clienteMercancia, operacionViendo.clienteMercanciaNombre),
+    ]);
+    const bultosCarta = [operacionViendo.cantidad, operacionViendo.embalajeNombre || ''].map((x: unknown) => String(x ?? '').trim()).filter(Boolean).join(' ');
     generarCartaInstruccionesPDF({
+      refCliente: operacionViendo.refCliente || 'N/A',
+      clientePaga: cliPagaCarta,
+      clienteMercancia: cliMercCarta,
+      bultos: bultosCarta,
       referencia: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'S/R',
       consecutivo: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'S/R',
       fechaServicio: operacionViendo.fechaServicio || 'N/A',
@@ -2367,11 +2384,22 @@ const OperacionesDashboard = () => {
               )}
               <div className="od-x84">
                 <span className="od-x85">GENERAR DOCUMENTOS:</span>
-                {(docsPermitidos ? puedeMostrarDoc('carta') : evalIsFletes) && (
+                {mostrarCartaPara(operacionViendo, cfgCarta) && ( /* ✅ V00421 */
                   <button onClick={handleDescargarCartaInstrucciones} style={btnDocStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#161b22'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
                     Carta Instrucciones
                   </button>
+                )}
+                {puedeCfgCarta && (
+                  <button type="button" className="ccm-engrane" title="Configurar cuándo se muestra la Carta de Instrucciones" onClick={() => setCfgCartaAbierto(true)}>⚙ Carta</button>
+                )}
+                {cfgCartaAbierto && (
+                  <ConfigCartaModal
+                    config={cfgCarta}
+                    tipos={(catalogosGlobales.tiposOperacion || []).map((t: { id: string; tipo_operacion?: string; nombre?: string }) => ({ id: String(t.id), nombre: String(t.tipo_operacion || t.nombre || t.id) }))}
+                    destinos={(catalogosGlobales.empresas || []).map((e: { id: string; nombre?: string; razonSocial?: string }) => ({ id: String(e.id), nombre: String(e.nombre || e.razonSocial || e.id) }))}
+                    onClose={() => setCfgCartaAbierto(false)}
+                  />
                 )}
                 {(docsPermitidos ? puedeMostrarDoc('prueba') : evalIsFletes) && (
                   <button onClick={handleDescargarPruebaEntrega} style={btnDocStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#161b22'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
