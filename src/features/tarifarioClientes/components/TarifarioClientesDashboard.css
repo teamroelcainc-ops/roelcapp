@@ -471,3 +471,7 @@
 /* ✅ V00425: líneas sin convenio */
 .tc-chip-huerfana { display: inline-block; padding: 2px 8px; border-radius: 999px; border: 1px solid #da3633; color: #ff7b72; font-size: 0.68rem; font-weight: 700; white-space: nowrap; }
 .tc-btn-huerfanas { margin-left: 10px; padding: 5px 10px; border-radius: 6px; border: 1px solid #da3633; background: rgba(248, 81, 73, 0.1); color: #ff7b72; font-size: 0.74rem; font-weight: 700; cursor: pointer; }
+/* ✅ V00426: operaciones del cliente fuera del tarifario */
+.tc-btn-fuera { background: none; border: none; padding: 0; color: #e3b341; font-weight: 700; cursor: pointer; text-decoration: underline dotted; font-family: inherit; font-size: inherit; }
+.tc-fuera { margin-top: 12px; padding: 10px 12px; border: 1px solid #9e6a03; border-radius: 8px; background: rgba(187, 128, 9, 0.06); display: flex; flex-direction: column; gap: 8px; }
+.tc-fuera__enc { color: #e3b341; font-weight: 700; font-size: 0.85rem; }

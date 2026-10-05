@@ -211,6 +211,10 @@ export function TarifarioClientesDashboard() {
   const [detalleId, setDetalleId] = useState('');
   // ✅ V00424: operaciones hechas por cada convenio (línea) del tarifario abierto
   const [opsPorDetalle, setOpsPorDetalle] = useState<Record<string, number> | null>(null);
+  // ✅ V00426: operaciones del CLIENTE con convenios que NO están en este tarifario
+  type OpFuera = { ref: string; fecha: string; convenioId: string; convenioNombre: string; motivo: string };
+  const [opsFuera, setOpsFuera] = useState<{ totalCliente: number; lista: OpFuera[] } | null>(null);
+  const [verFuera, setVerFuera] = useState(false);
 
   // ✅ V00195: reglas de Configuración → Autorizaciones para este módulo.
   const aut = useAutorizacionesCampos('tarifarioClientes');
@@ -1457,12 +1461,13 @@ export function TarifarioClientesDashboard() {
   // ✅ V00424: al abrir el detalle se cuentan las operaciones de cada convenio
   //   (op.convenio = id del detalle; sin operaciones de prueba).
   useEffect(() => {
-    if (!detalleId) { setOpsPorDetalle(null); return; }
+    if (!detalleId) { setOpsPorDetalle(null); setOpsFuera(null); setVerFuera(false); return; }
     const r = registros.find((x) => x.id === detalleId);
     if (!r) return;
     const ids = Array.from(new Set(lineasConConsecutivo(r).map((t) => String(detalleDeLinea(r, t)?.id || '')).filter(Boolean)));
     let activo = true;
     setOpsPorDetalle(null);
+    setOpsFuera(null);
     (async () => {
       const conteo: Record<string, number> = {};
       ids.forEach((id) => { conteo[id] = 0; });
@@ -1478,6 +1483,31 @@ export function TarifarioClientesDashboard() {
         } catch (e) { console.warn('[tarifario] conteo de operaciones:', e); }
       }
       if (activo) setOpsPorDetalle(conteo);
+      // ✅ V00426: cruce con TODAS las operaciones del cliente (Cliente Paga)
+      try {
+        const cli = String(r.clienteId || '').trim();
+        if (cli) {
+          const snapCli = await getDocs(query(collection(db, 'operaciones'), where('clientePaga', '==', cli)));
+          const idsSet = new Set(ids);
+          const lista: OpFuera[] = [];
+          let total = 0;
+          snapCli.docs.forEach((d) => {
+            const x = d.data() as Record<string, unknown>;
+            if (esOperacionPrueba(x)) return;
+            total += 1;
+            const conv = String(x.convenio || '').trim();
+            if (conv && idsSet.has(conv)) return;
+            const det = conv ? detallesConv.find((dd) => String(dd.id) === conv) : undefined;
+            const motivo = !conv ? 'Sin convenio'
+              : !det ? 'Convenio borrado o inexistente'
+              : (String(det.tarifarioId || '') && String(det.tarifarioId) !== String(r.id)) ? 'Convenio de otro tarifario'
+              : 'Convenio no ligado a este tarifario';
+            lista.push({ ref: String(x.ref || d.id.slice(0, 6)), fecha: String(x.fechaServicio || ''), convenioId: conv, convenioNombre: String(x.convenioNombre || det?.tipoConvenioNombre || ''), motivo });
+          });
+          lista.sort((a, b) => b.fecha.localeCompare(a.fecha));
+          if (activo) setOpsFuera({ totalCliente: total, lista });
+        } else if (activo) setOpsFuera(null);
+      } catch (e) { console.warn('[tarifario] operaciones del cliente:', e); }
     })();
     return () => { activo = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1921,10 +1951,36 @@ export function TarifarioClientesDashboard() {
 
               <div className="tc-marco tc-modal-marco">
                 {tablaTarifasDe(r, true, opsPorDetalle)}
+                {/* ✅ V00426: operaciones del cliente que NO se cuentan aquí y por qué */}
+                {verFuera && opsFuera && opsFuera.lista.length > 0 && (
+                  <div className="tc-fuera">
+                    <div className="tc-fuera__enc">Operaciones de este cliente con un convenio que no es de este tarifario ({opsFuera.lista.length})</div>
+                    <table className="tc-tabla-interna">
+                      <thead><tr><th>REFERENCIA</th><th>FECHA</th><th>CONVENIO EN LA OPERACIÓN</th><th>MOTIVO</th></tr></thead>
+                      <tbody>
+                        {opsFuera.lista.map((o, i) => (
+                          <tr key={`${o.ref}-${i}`}>
+                            <td className="tc-td-consecutivo">{o.ref}</td>
+                            <td>{o.fecha || '—'}</td>
+                            <td>{o.convenioNombre || '—'}{o.convenioId && <div className="tc-sub-linea">id {o.convenioId}</div>}</td>
+                            <td><span className="tc-chip-huerfana">{o.motivo}</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div className="tc-sub-linea">Corrígelas asignándoles el convenio correcto en la operación (pestaña Información General) o con "Unir" en Convenio de Clientes si el convenio está duplicado.</div>
+                  </div>
+                )}
               </div>
 
               <div className="tc-modal-pie">
-                <span className="tc-conteo-sel">{Array.isArray(r.tarifas) ? r.tarifas.length : 0} tarifa(s) en este pre convenio · <b className="tc-total-ops">{opsPorDetalle === null ? '…' : Object.values(opsPorDetalle).reduce((a, n) => a + n, 0)}</b> operaciones hechas</span>{/* ✅ V00424 */}
+                <span className="tc-conteo-sel">{Array.isArray(r.tarifas) ? r.tarifas.length : 0} tarifa(s) en este pre convenio · <b className="tc-total-ops">{opsPorDetalle === null ? '…' : Object.values(opsPorDetalle).reduce((a, n) => a + n, 0)}</b> operaciones hechas con estos convenios</span>{/* ✅ V00424 */}
+                {opsFuera && (
+                  <span className="tc-conteo-sel">
+                    · el cliente tiene <b>{opsFuera.totalCliente}</b> en total
+                    {opsFuera.lista.length > 0 && <> · <button type="button" className="tc-btn-fuera" onClick={() => setVerFuera((v) => !v)}>{opsFuera.lista.length} con otro convenio {verFuera ? '▴' : '▾'}</button></>}
+                  </span>
+                )}
                 {(() => { // ✅ V00425: líneas cuyo convenio ya no existe
                   const huerfanas = lineasConConsecutivo(r).filter((t) => !detalleDeLinea(r, t));
                   return huerfanas.length > 0 ? (
