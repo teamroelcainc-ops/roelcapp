@@ -1726,11 +1726,30 @@ const OperacionesDashboard = () => {
   const hayFiltrosActivos = !!(filtroTipoOperacion || filtroStatus || filtroUnidad || filtroRemolque);
   const limpiarFiltros = () => { setFiltroTipoOperacion(''); setFiltroStatus(''); setFiltroUnidad(''); setFiltroRemolque(''); };
 
+  // ✅ V00422: PESTAÑAS por tipo de operación (Todos · Transfer · Logística Cruces · Logística Fletes · Rentas)
+  type TabTipoOp = 'todos' | 'transfer' | 'cruces' | 'fletes' | 'rentas' | 'otros';
+  const [tabTipoOp, setTabTipoOp] = useState<TabTipoOp>('todos');
+  const grupoTipoOp = (op: Record<string, unknown>): TabTipoOp => {
+    const t = String(valorTextoColumna(op, 'tipoOperacion') || op?.tipoOperacionNombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    if (t.includes('flete')) return 'fletes';
+    if (t.includes('logistica')) return 'cruces';
+    if (t.includes('transfer')) return 'transfer';
+    if (t.includes('renta')) return 'rentas';
+    return 'otros';
+  };
+  const conteoTabsTipo = useMemo(() => {
+    const c: Record<string, number> = { todos: operacionesGlobales.length, transfer: 0, cruces: 0, fletes: 0, rentas: 0, otros: 0 };
+    operacionesGlobales.forEach(op => { c[grupoTipoOp(op)] += 1; });
+    return c;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [operacionesGlobales, catalogosGlobales]);
+
   const operacionesFiltradas = useMemo(() => {
     const b = busqueda.trim().toLowerCase();
     const tokens = b.split(/\s+/).filter(Boolean);
 
     let base = operacionesGlobales;
+    if (tabTipoOp !== 'todos') base = base.filter(op => grupoTipoOp(op) === tabTipoOp); // ✅ V00422: pestaña por tipo
     if (filtroTipoOperacion) base = base.filter(op => valorTextoColumna(op, 'tipoOperacion') === filtroTipoOperacion);
     if (filtroStatus)   base = base.filter(op => valorTextoColumna(op, 'status')   === filtroStatus);
     if (filtroUnidad)   base = base.filter(op => valorTextoColumna(op, 'unidad')   === filtroUnidad);
@@ -1752,7 +1771,7 @@ const OperacionesDashboard = () => {
       if (ta !== tb) return tb - ta;
       return obtenerConsecutivoRef(b2) - obtenerConsecutivoRef(a);
     });
-  }, [busqueda, operacionesGlobales, catalogosGlobales, columnasTabla, filtroTipoOperacion, filtroStatus, filtroUnidad, filtroRemolque]);
+  }, [busqueda, operacionesGlobales, catalogosGlobales, columnasTabla, filtroTipoOperacion, filtroStatus, filtroUnidad, filtroRemolque, tabTipoOp]);
 
   // ✅ NUEVO: valor de una celda para ORDENAR. Reusa valorTextoColumna, pero las
   //   fechas se convierten a un valor cronológico real (timestamp) para que el
@@ -2136,6 +2155,22 @@ const OperacionesDashboard = () => {
             <span className="od-x29">
               {operacionesFiltradas.length} {operacionesFiltradas.length === 1 ? 'resultado' : 'resultados'}
             </span>
+          )}
+        </div>
+
+        {/* ✅ V00422: pestañas por tipo de operación */}
+        <div className="od-tabs-tipo" role="tablist">
+          {([['todos', 'Todos'], ['transfer', 'Transfer'], ['cruces', 'Logística Cruces'], ['fletes', 'Logística Fletes'], ['rentas', 'Rentas']] as [TabTipoOp, string][]).map(([k, et]) => (
+            <button key={k} type="button" role="tab" aria-selected={tabTipoOp === k}
+              className={`od-tab-tipo${tabTipoOp === k ? ' od-tab-tipo--activa' : ''}`}
+              onClick={() => { setTabTipoOp(k); setPaginaActual(1); }}>
+              {et}<span className="od-tab-tipo__n">{conteoTabsTipo[k] || 0}</span>
+            </button>
+          ))}
+          {conteoTabsTipo.otros > 0 && (
+            <button type="button" role="tab" aria-selected={tabTipoOp === 'otros'} className={`od-tab-tipo${tabTipoOp === 'otros' ? ' od-tab-tipo--activa' : ''}`} onClick={() => { setTabTipoOp('otros'); setPaginaActual(1); }}>
+              Otros<span className="od-tab-tipo__n">{conteoTabsTipo.otros}</span>
+            </button>
           )}
         </div>
 

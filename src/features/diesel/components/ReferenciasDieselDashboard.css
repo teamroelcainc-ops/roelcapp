@@ -392,3 +392,8 @@
 .rdd-saldo-campo label { color: #8b949e; font-size: 0.78rem; font-weight: 700; text-transform: uppercase; }
 .rdd-saldo-campo input, .rdd-saldo-campo select { width: 100%; box-sizing: border-box; padding: 9px 10px; border-radius: 6px; border: 1px solid #30363d; background: #161b22; color: #f0f6fc; font-size: 0.9rem; color-scheme: dark; }
 @media (max-width: 640px) { .rdd-asiento__resumen { grid-template-columns: repeat(2, minmax(0, 1fr)); } .rdd-saldo-grid { grid-template-columns: 1fr; } }
+/* ✅ V00422 */
+.rdd-saldo-todos { display: flex; align-items: center; gap: 8px; color: #c9d1d9; font-size: 0.85rem; text-transform: none !important; font-weight: 600 !important; cursor: pointer; margin-bottom: 6px; }
+.rdd-asiento__cargo td { background: rgba(248, 81, 73, 0.05); }
+.rdd-asiento__cargo td:first-child { box-shadow: inset 4px 0 0 #f85149; }
+.rdd-asiento__abono td:first-child { box-shadow: inset 4px 0 0 #3fb950; }

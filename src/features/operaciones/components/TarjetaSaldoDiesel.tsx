@@ -27,7 +27,8 @@ export const TarjetaSaldoDiesel: React.FC = () => {
     return Array.from(porProv.entries()).map(([k, lista]) => {
       const primera = lista.map((s) => String(s.fecha || '')).sort()[0] || '';
       const nombre = String(lista[0].proveedorNombre || k);
-      const mias = refs.filter((r) => (String(r.proveedorId || r.proveedor || '') === k || String(r.proveedorNombre || '').trim().toLowerCase() === nombre.trim().toLowerCase()) && cargado(r) > 0 && (!primera || String(r.fecha || '') >= primera));
+      const general = k === '__todos__'; // ✅ V00422: saldo general = todas las cargas
+      const mias = refs.filter((r) => (general || String(r.proveedorId || r.proveedor || '') === k || String(r.proveedorNombre || '').trim().toLowerCase() === nombre.trim().toLowerCase()) && cargado(r) > 0 && (!primera || String(r.fecha || '') >= primera));
       const agregado = lista.reduce((a, s) => a + (Number(s.saldo) || 0), 0);
       const consumido = mias.reduce((a, r) => a + cargado(r), 0);
       const hoyRefs = mias.filter((r) => String(r.fecha || '') === hoy);
@@ -41,7 +42,7 @@ export const TarjetaSaldoDiesel: React.FC = () => {
   const cargadoHoy = cuentas.reduce((a, c) => a + c.cargadoHoy, 0);
 
   return (
-    <div className="rd-card rd-card--naranja" title="Saldo de diesel por proveedor (Referencias del Diesel → Saldos): saldos agregados menos lo cargado en sus referencias">
+    <div className="rd-card rd-card--naranja" title="Saldo de diesel (Referencias del Diesel → Saldos): saldos agregados menos el total cargado por día">
       <div className="rd-card__head">
         <span className="rd-card__label">Saldo Diesel</span>
         {monedas.length === 1 && <span className="rd-card__chip">{monedas[0] === 'Dólares' ? 'USD' : monedas[0] === 'Pesos' ? 'MXN' : monedas[0]}</span>}

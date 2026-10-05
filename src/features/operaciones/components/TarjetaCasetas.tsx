@@ -155,12 +155,12 @@ export const TarjetaCasetas: React.FC = () => {
   // ✅ V00392: CONTROL por cuenta — saldo agregado (recargas), cruces hechos,
   //   total consumido (la suma de esos cruces) y saldo restante = agregado − consumido.
   //   Los cruces cuentan desde la PRIMERA recarga del puente, igual que el saldo.
-  const statsDe = (filtro: (nombre: string) => boolean) => {
+  const statsDe = (filtro: (nombre: string) => boolean, filtroSaldo: (nombre: string) => boolean = filtro) => {
     // ✅ V00418: IGUAL que la pestaña Saldo — el saldo es por PUENTE (grupo): los
     //   saldos agregados del grupo descuentan TODOS sus cobros (Puente III = caseta +
     //   trompo; Colombia = caseta + puente) desde el primer saldo del grupo.
     const recs = recargas
-      .filter((r) => filtro(r.puenteNombre) || puentes.some((p) => p.id === r.puenteId && filtro(p.nombre)))
+      .filter((r) => filtroSaldo(r.puenteNombre) || puentes.some((p) => p.id === r.puenteId && filtroSaldo(p.nombre))) // ✅ V00422: el saldo es del PUENTE completo
       .sort((a, b) => a.fecha.localeCompare(b.fecha));
     const primera = recs[0]?.fecha || '';
     const agregado = recs.reduce((acc, r) => acc + r.saldo, 0);
@@ -186,7 +186,7 @@ export const TarjetaCasetas: React.FC = () => {
         const filtroTodo = (n: string) => lineas.some((l) => l.filtro(n));
         const total = statsDe(filtroTodo);
         const mon = monedaDe(filtroTodo);
-        const partes = lineas.map((l) => ({ ...l, st: statsDe(l.filtro) }));
+        const partes = lineas.map((l) => ({ ...l, st: statsDe(l.filtro, filtroTodo) })); // ✅ V00422: cada concepto contra el saldo del puente
         return (
           <div key={g.clave} className="rd-card rd-card--morado" title={`${g.titulo}: saldos agregados menos el Historial de referencias (Referencias de Puentes → Saldo)`}>
             <div className="rd-card__head">
