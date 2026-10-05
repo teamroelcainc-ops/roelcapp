@@ -94,6 +94,7 @@ import { valoresEquivalentesAut } from '../../autorizaciones/autorizaciones';
 import { reservarConsecutivosDetalle, reservarConsecutivosTarifario } from '../../conveniosDetalles/consecutivos'; // ✅ V00199/V00203
 import { urlVerEnPestana, filtrosDeUrl } from '../../../utils/verEnPestana'; // ✅ V00312
 import { cargarObligatoriosTarifa, guardarObligatoriosTarifa, ETIQUETAS_CAMPOS_TARIFA, OBLIGATORIOS_TARIFA_DEFAULT, type CamposObligatoriosTarifa } from '../../../utils/camposObligatoriosTarifa'; // ✅ V00286
+import { esOperacionPrueba } from '../../../utils/operacionPrueba';
 import './TarifarioClientesDashboard.css';
 
 const ID_USD = '7dca62b3';
@@ -207,6 +208,8 @@ export function TarifarioClientesDashboard() {
   const [registros, setRegistros] = useState<Doc[]>([]);
   // ✅ V00195: el detalle es un modal — aquí vive el id del registro abierto.
   const [detalleId, setDetalleId] = useState('');
+  // ✅ V00424: operaciones hechas por cada convenio (línea) del tarifario abierto
+  const [opsPorDetalle, setOpsPorDetalle] = useState<Record<string, number> | null>(null);
 
   // ✅ V00195: reglas de Configuración → Autorizaciones para este módulo.
   const aut = useAutorizacionesCampos('tarifarioClientes');
@@ -1450,6 +1453,35 @@ export function TarifarioClientesDashboard() {
     });
   };
 
+  // ✅ V00424: al abrir el detalle se cuentan las operaciones de cada convenio
+  //   (op.convenio = id del detalle; sin operaciones de prueba).
+  useEffect(() => {
+    if (!detalleId) { setOpsPorDetalle(null); return; }
+    const r = registros.find((x) => x.id === detalleId);
+    if (!r) return;
+    const ids = Array.from(new Set(lineasConConsecutivo(r).map((t) => String(detalleDeLinea(r, t)?.id || '')).filter(Boolean)));
+    let activo = true;
+    setOpsPorDetalle(null);
+    (async () => {
+      const conteo: Record<string, number> = {};
+      ids.forEach((id) => { conteo[id] = 0; });
+      for (let i = 0; i < ids.length; i += 30) {
+        try {
+          const snap = await getDocs(query(collection(db, 'operaciones'), where('convenio', 'in', ids.slice(i, i + 30))));
+          snap.docs.forEach((d) => {
+            const x = d.data() as Record<string, unknown>;
+            if (esOperacionPrueba(x)) return;
+            const k = String(x.convenio || '');
+            conteo[k] = (conteo[k] || 0) + 1;
+          });
+        } catch (e) { console.warn('[tarifario] conteo de operaciones:', e); }
+      }
+      if (activo) setOpsPorDetalle(conteo);
+    })();
+    return () => { activo = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detalleId, registros, detallesConv]);
+
   /** ✅ V00202: detalle del convenio que corresponde a una línea (por consecutivo,
    *  por tarifarioId o por convenioId + tipo). */
   const detalleDeLinea = (r: Doc, t: Doc): Doc | undefined => {
@@ -1652,10 +1684,10 @@ export function TarifarioClientesDashboard() {
 
   /** Tabla interna de tarifas de un registro (formulario y detalle — ✅ V00194).
    *  ✅ V00198: con `editable` el STATUS de cada línea es un select (4 estados). */
-  const tablaTarifasDe = (r: Doc, editable = false) => (
+  const tablaTarifasDe = (r: Doc, editable = false, conteoOps: Record<string, number> | null | undefined = undefined) => (
     <table className="tc-tabla-interna">
       <thead>
-        <tr><th>CONSECUTIVO</th><th>TARIFAS</th><th>ORIGEN — DESTINO</th><th>TARIFAS SUGERIDAS</th><th>TARIFA</th><th>COTIZADO EN</th><th>STATUS</th>{editable && <th>ACCIONES</th>}</tr>{/* ✅ V00200 · ✅ V00283 */}
+        <tr><th>CONSECUTIVO</th><th>TARIFAS</th><th>ORIGEN — DESTINO</th><th>TARIFAS SUGERIDAS</th><th>TARIFA</th><th>COTIZADO EN</th><th>STATUS</th>{conteoOps !== undefined && <th className="tc-th-ops">OPERACIONES</th>}{editable && <th>ACCIONES</th>}</tr>{/* ✅ V00200 · ✅ V00283 · ✅ V00424 */}
       </thead>
       <tbody>
         {lineasConConsecutivo(r).map((t: Doc, i: number) => (
@@ -1701,6 +1733,9 @@ export function TarifarioClientesDashboard() {
                 <span className={chipStatus(t.status)}>{t.status || 'Pendiente'}</span>
               )}
             </td>
+            {conteoOps !== undefined && (
+              <td className="tc-td-ops">{conteoOps === null ? '…' : (conteoOps[String(detalleDeLinea(r, t)?.id || '')] ?? 0)}</td>
+            )}
             {editable && (
               <td className="tc-td-acciones-linea">{/* ✅ V00283: editar/eliminar la línea */}
                 <button type="button" className="tc-btn-linea tc-btn-linea--editar" title="Editar esta tarifa (costo, moneda y status)"
@@ -1881,11 +1916,11 @@ export function TarifarioClientesDashboard() {
               </div>
 
               <div className="tc-marco tc-modal-marco">
-                {tablaTarifasDe(r, true)}
+                {tablaTarifasDe(r, true, opsPorDetalle)}
               </div>
 
               <div className="tc-modal-pie">
-                <span className="tc-conteo-sel">{Array.isArray(r.tarifas) ? r.tarifas.length : 0} tarifa(s) en este pre convenio</span>
+                <span className="tc-conteo-sel">{Array.isArray(r.tarifas) ? r.tarifas.length : 0} tarifa(s) en este pre convenio · <b className="tc-total-ops">{opsPorDetalle === null ? '…' : Object.values(opsPorDetalle).reduce((a, n) => a + n, 0)}</b> operaciones hechas</span>{/* ✅ V00424 */}
                 <button type="button" className="tc-btn-sincronizar-conv" title="Ligar las líneas sin # de convenio con su detalle en Convenios (o crearlo)" disabled={sincronizandoConv} onClick={() => sincronizarConvenios(r)}>{sincronizandoConv ? 'Sincronizando…' : '⟳ Sincronizar convenios'}</button>{/* ✅ V00289 */}
                 <div className="tc-modal-botones">
                   {/* ✅ V00199: en el detalle, los botones llevan su NOMBRE */}

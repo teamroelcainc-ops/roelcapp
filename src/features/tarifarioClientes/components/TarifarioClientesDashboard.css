@@ -464,3 +464,7 @@
 .tc-mostrar-mas { display: flex; align-items: center; gap: 10px; margin-top: 10px; color: #8b949e; font-size: 0.82rem; }
 .tc-btn-mas { padding: 4px 12px; border: 1px solid #1f6feb; border-radius: 999px; background: transparent; color: #58a6ff; font-size: 0.78rem; font-weight: 700; cursor: pointer; }
 .tc-btn-mas:hover { background-color: rgba(31, 111, 235, 0.15); }
+/* ✅ V00424: operaciones por convenio en el detalle del tarifario */
+.tc-th-ops, .tc-td-ops { text-align: center; }
+.tc-td-ops { font-weight: 700; color: #f0f6fc; font-variant-numeric: tabular-nums; }
+.tc-total-ops { color: #3fb950; }
