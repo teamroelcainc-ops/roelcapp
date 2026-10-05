@@ -95,6 +95,7 @@ import { reservarConsecutivosDetalle, reservarConsecutivosTarifario } from '../.
 import { urlVerEnPestana, filtrosDeUrl } from '../../../utils/verEnPestana'; // ✅ V00312
 import { cargarObligatoriosTarifa, guardarObligatoriosTarifa, ETIQUETAS_CAMPOS_TARIFA, OBLIGATORIOS_TARIFA_DEFAULT, type CamposObligatoriosTarifa } from '../../../utils/camposObligatoriosTarifa'; // ✅ V00286
 import { esOperacionPrueba } from '../../../utils/operacionPrueba';
+import { mismoConsecutivo } from '../../../utils/claveConsecutivo';
 import './TarifarioClientesDashboard.css';
 
 const ID_USD = '7dca62b3';
@@ -1167,7 +1168,7 @@ export function TarifarioClientesDashboard() {
       for (const t of tarifas) {
         const cc = String(t.consecutivo || '').trim();
         if (!cc) continue;
-        if (detalles.some((d) => String(d.consecutivo || d.id) === cc)) continue;
+        if (detalles.some((d) => (String(d.consecutivo || d.id) === cc || mismoConsecutivo(d.consecutivo || d.id, cc)))) continue;
         try {
           await setDoc(doc(db, 'convenios_clientes_detalles', cc), {
             convenioId: convId,
@@ -1188,7 +1189,7 @@ export function TarifarioClientesDashboard() {
         const t = tarifas[i];
         const cc = String(t.consecutivo || '').trim();
         if (!cc) continue;
-        const propio = detalles.find((d) => String(d.consecutivo || d.id) === cc);
+        const propio = detalles.find((d) => (String(d.consecutivo || d.id) === cc || mismoConsecutivo(d.consecutivo || d.id, cc)));
         // solo se consideran duplicados los detalles CREADOS por la sincronización
         if (!propio || String(propio.tarifarioId || '') !== String(r.id)) continue;
         usados.delete(cc);
@@ -1331,7 +1332,7 @@ export function TarifarioClientesDashboard() {
       let tari = tariPorConsec.get(cc);
       let lineaAlinear: Doc | null = null;
       if (tari) {
-        lineaAlinear = (Array.isArray(tari.tarifas) ? (tari.tarifas as Doc[]) : []).find((t) => String(t.consecutivo || '') === cc) || null;
+        lineaAlinear = (Array.isArray(tari.tarifas) ? (tari.tarifas as Doc[]) : []).find((t) => mismoConsecutivo(t.consecutivo, cc)) || null;
       }
       // (b) único tarifario del mismo convenio maestro
       if (!tari) {
@@ -1486,7 +1487,8 @@ export function TarifarioClientesDashboard() {
    *  por tarifarioId o por convenioId + tipo). */
   const detalleDeLinea = (r: Doc, t: Doc): Doc | undefined => {
     const cons = String(t.consecutivo || '').trim();
-    if (cons) return detallesConv.find((d) => String(d.consecutivo || d.id) === cons);
+    // ✅ V00425: llave foránea por NÚMERO de consecutivo ("CONV-054" = "054" = 54) o por id
+    if (cons) return detallesConv.find((d) => String(d.id) === cons || mismoConsecutivo(d.consecutivo || d.id, cons));
     return detallesConv.find((d) =>
       String(d.tipoConvenioId || '') === String(t.tarifaReferenciaId || '') &&
       ((String(d.tarifarioId || '') !== '' && String(d.tarifarioId) === String(r.id)) ||
@@ -1734,7 +1736,9 @@ export function TarifarioClientesDashboard() {
               )}
             </td>
             {conteoOps !== undefined && (
-              <td className="tc-td-ops">{conteoOps === null ? '…' : (conteoOps[String(detalleDeLinea(r, t)?.id || '')] ?? 0)}</td>
+              <td className="tc-td-ops">{!detalleDeLinea(r, t)
+                ? <span className="tc-chip-huerfana" title="Esta línea ya no tiene su convenio en Convenio de Clientes (se borró). Quítala o usa Sincronizar convenios para volver a crearlo.">Sin convenio</span>
+                : (conteoOps === null ? '…' : (conteoOps[String(detalleDeLinea(r, t)?.id || '')] ?? 0))}</td>
             )}
             {editable && (
               <td className="tc-td-acciones-linea">{/* ✅ V00283: editar/eliminar la línea */}
@@ -1921,6 +1925,20 @@ export function TarifarioClientesDashboard() {
 
               <div className="tc-modal-pie">
                 <span className="tc-conteo-sel">{Array.isArray(r.tarifas) ? r.tarifas.length : 0} tarifa(s) en este pre convenio · <b className="tc-total-ops">{opsPorDetalle === null ? '…' : Object.values(opsPorDetalle).reduce((a, n) => a + n, 0)}</b> operaciones hechas</span>{/* ✅ V00424 */}
+                {(() => { // ✅ V00425: líneas cuyo convenio ya no existe
+                  const huerfanas = lineasConConsecutivo(r).filter((t) => !detalleDeLinea(r, t));
+                  return huerfanas.length > 0 ? (
+                    <button type="button" className="tc-btn-huerfanas" title="Quita del tarifario las líneas cuyo convenio fue borrado en Convenio de Clientes"
+                      onClick={async () => {
+                        if (!window.confirm(`Hay ${huerfanas.length} tarifa(s) sin convenio (borrado en Convenio de Clientes):\n\n${huerfanas.map((t) => `· ${t.consecutivo || '—'} ${t.descripcion || ''}`).join('\n')}\n\n¿Quitarlas del tarifario?`)) return;
+                        try {
+                          const quitar = new Set(huerfanas.map((t) => String(t.consecutivo || '') + '|' + String(t.descripcion || '')));
+                          const nuevas = lineasConConsecutivo(r).filter((t) => !quitar.has(String(t.consecutivo || '') + '|' + String(t.descripcion || '')));
+                          await updateDoc(doc(db, 'tarifario_clientes', r.id), { tarifas: nuevas });
+                        } catch (e) { alert(`No se pudieron quitar: ${(e as Error)?.message || e}`); }
+                      }}>Quitar {huerfanas.length} sin convenio</button>
+                  ) : null;
+                })()}
                 <button type="button" className="tc-btn-sincronizar-conv" title="Ligar las líneas sin # de convenio con su detalle en Convenios (o crearlo)" disabled={sincronizandoConv} onClick={() => sincronizarConvenios(r)}>{sincronizandoConv ? 'Sincronizando…' : '⟳ Sincronizar convenios'}</button>{/* ✅ V00289 */}
                 <div className="tc-modal-botones">
                   {/* ✅ V00199: en el detalle, los botones llevan su NOMBRE */}

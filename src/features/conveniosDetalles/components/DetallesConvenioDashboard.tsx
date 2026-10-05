@@ -47,6 +47,7 @@ import { obtenerCacheMemoria, guardarCacheMemoria } from '../../../utils/cacheMe
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos'; // ✅ V00198
 import { FormularioOperacion } from '../../operaciones/components/FormularioOperacion'; // ✅ V00236
 import './DetallesConvenioDashboard.css';
+import { mismoConsecutivo } from '../../../utils/claveConsecutivo';
 
 /** ✅ V00231: campo de BÚSQUEDA para elegir de una lista (no desplegable). */
 const BuscadorSimple = ({ etiqueta, opciones, valor, onElegir }: {
@@ -450,7 +451,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         if (tSnap.exists()) {
           const dataT = tSnap.data() as Record<string, unknown>;
           const ts: Record<string, unknown>[] = Array.isArray(dataT.tarifas) ? [...(dataT.tarifas as Record<string, unknown>[])] : [];
-          if (!ts.some((l) => String((l as Record<string, unknown>)?.consecutivo || '') === consec)) {
+          if (!ts.some((l) => mismoConsecutivo((l as Record<string, unknown>)?.consecutivo, consec))) { // ✅ V00425
             const esUSDAlta = alta.moneda.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().includes('DOLAR') || alta.moneda.toUpperCase().includes('USD');
             ts.push({
               tarifaReferenciaId: String(tarifa.id),
@@ -784,7 +785,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
           if (snapTarDoc.exists()) {
             const dataTar = snapTarDoc.data() as Record<string, unknown>;
             const tarifasArr = Array.isArray(dataTar.tarifas) ? [...(dataTar.tarifas as Record<string, unknown>[])] : [];
-            const idx = tarifasArr.findIndex((t) => String(t.consecutivo || '') === consDet);
+            const idx = tarifasArr.findIndex((t) => mismoConsecutivo(t.consecutivo, consDet)); // ✅ V00425
             if (idx >= 0) {
               const lineaAntes = tarifasArr[idx];
               const monedaCorta = String(editForm.moneda || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes('dolar') ? 'USD' : 'MXN';
@@ -1056,12 +1057,13 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         let cambio = false;
         let nuevas = (ts as Record<string, unknown>[]).filter((l) => {
           const c = String((l as Record<string, unknown>)?.consecutivo || '');
-          if (c && consDescartados.includes(c)) { cambio = true; return false; }
+          // ✅ V00425: por NÚMERO ("CONV-515" = "515") — antes no coincidía y la línea quedaba huérfana
+          if (c && consDescartados.some((x) => mismoConsecutivo(x, c))) { cambio = true; return false; }
           return true;
         });
         if (consConservado && montosUnion && montosUnion.length > 1) {
           nuevas = nuevas.map((l) => {
-            if (String((l as Record<string, unknown>)?.consecutivo || '') !== consConservado) return l;
+            if (!mismoConsecutivo((l as Record<string, unknown>)?.consecutivo, consConservado)) return l;
             cambio = true;
             return { ...l, montos: montosUnion };
           });
@@ -1221,7 +1223,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         for (const d of snap.docs) {
           const ts = (d.data() as Record<string, unknown>).tarifas;
           if (!Array.isArray(ts)) continue;
-          const idx = (ts as Record<string, unknown>[]).findIndex((l) => String((l as Record<string, unknown>)?.consecutivo || '') === (f.consecutivo || f.id));
+          const idx = (ts as Record<string, unknown>[]).findIndex((l) => mismoConsecutivo((l as Record<string, unknown>)?.consecutivo, f.consecutivo || f.id)); // ✅ V00425
           if (idx < 0) continue;
           const nuevas = [...(ts as Record<string, unknown>[])];
           nuevas[idx] = { ...nuevas[idx], tarifa: monto };

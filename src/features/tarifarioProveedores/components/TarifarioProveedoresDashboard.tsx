@@ -91,6 +91,7 @@ import html2pdf from 'html2pdf.js'; // ✅ V00250: descarga directa (como Operac
 import { LOGO_CTPAT_SRC } from '../../../utils/logoCtpat'; // ✅ V00250/V00251
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import { valoresEquivalentesAut } from '../../autorizaciones/autorizaciones';
+import { mismoConsecutivo } from '../../../utils/claveConsecutivo';
 import { reservarConsecutivosDetalleProveedor, reservarConsecutivosTarifarioProveedor } from '../../conveniosDetalles/consecutivos'; // ✅ V00199/V00203
 import { urlVerEnPestana, filtrosDeUrl } from '../../../utils/verEnPestana'; // ✅ V00312
 import { cargarObligatoriosTarifa, guardarObligatoriosTarifa, ETIQUETAS_CAMPOS_TARIFA, OBLIGATORIOS_TARIFA_DEFAULT, type CamposObligatoriosTarifa } from '../../../utils/camposObligatoriosTarifa'; // ✅ V00286
@@ -1160,7 +1161,7 @@ export function TarifarioProveedoresDashboard() {
       for (const t of tarifas) {
         const cc = String(t.consecutivo || '').trim();
         if (!cc) continue;
-        if (detalles.some((d) => String(d.consecutivo || d.id) === cc)) continue;
+        if (detalles.some((d) => (String(d.consecutivo || d.id) === cc || mismoConsecutivo(d.consecutivo || d.id, cc)))) continue;
         try {
           await setDoc(doc(db, 'convenios_proveedores_detalles', cc), {
             convenioId: convId,
@@ -1181,7 +1182,7 @@ export function TarifarioProveedoresDashboard() {
         const t = tarifas[i];
         const cc = String(t.consecutivo || '').trim();
         if (!cc) continue;
-        const propio = detalles.find((d) => String(d.consecutivo || d.id) === cc);
+        const propio = detalles.find((d) => (String(d.consecutivo || d.id) === cc || mismoConsecutivo(d.consecutivo || d.id, cc)));
         // solo se consideran duplicados los detalles CREADOS por la sincronización
         if (!propio || String(propio.tarifarioId || '') !== String(r.id)) continue;
         usados.delete(cc);
@@ -1324,7 +1325,7 @@ export function TarifarioProveedoresDashboard() {
       let tari = tariPorConsec.get(cc);
       let lineaAlinear: Doc | null = null;
       if (tari) {
-        lineaAlinear = (Array.isArray(tari.tarifas) ? (tari.tarifas as Doc[]) : []).find((t) => String(t.consecutivo || '') === cc) || null;
+        lineaAlinear = (Array.isArray(tari.tarifas) ? (tari.tarifas as Doc[]) : []).find((t) => mismoConsecutivo(t.consecutivo, cc)) || null;
       }
       // (b) único tarifario del mismo convenio maestro
       if (!tari) {
@@ -1450,7 +1451,7 @@ export function TarifarioProveedoresDashboard() {
    *  por tarifarioId o por convenioId + tipo). */
   const detalleDeLinea = (r: Doc, t: Doc): Doc | undefined => {
     const cons = String(t.consecutivo || '').trim();
-    if (cons) return detallesConv.find((d) => String(d.consecutivo || d.id) === cons);
+    if (cons) return detallesConv.find((d) => String(d.id) === cons || mismoConsecutivo(d.consecutivo || d.id, cons)); // ✅ V00425
     return detallesConv.find((d) =>
       String(d.tipoConvenioId || '') === String(t.tarifaReferenciaId || '') &&
       ((String(d.tarifarioId || '') !== '' && String(d.tarifarioId) === String(r.id)) ||
