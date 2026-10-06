@@ -719,6 +719,15 @@ export const generarCartaInstruccionesPDF = (datos: DatosCartaInstrucciones) => 
     ? `<img src="${logoSrc}" style="max-width: 110px; height: auto; display: block;" />`
     : '';
 
+  // ✅ V00427: FACTURAR A, FECHA/HORA DE CITA e INSTRUCCIONES solo en LOGÍSTICA FLETES
+  const esFletes = String(datos.tipoServicio || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes('flete');
+  // ✅ V00427: "672243 PA45396" → Número económico = antes del espacio; Placas = después
+  const ecoTxt = String(datos.numeroEconomico ?? '').trim();
+  const [ecoNum, ...ecoResto] = ecoTxt.split(/\s+/);
+  const placasGuardadas = String(datos.placas ?? '').trim();
+  const numeroEconomicoCarta = ecoNum || 'N/A';
+  const placasCarta = placasGuardadas && placasGuardadas !== 'undefined' && placasGuardadas !== 'N/A' ? placasGuardadas : (ecoResto.join(' ') || 'N/A');
+
   const htmlTemplate = `
     <div style="width: 100%; max-width: 750px; margin: 0 auto; font-family: Arial, Helvetica, sans-serif; font-size: 8pt; color: #333; line-height: 1.1; background-color: #fff; box-sizing: border-box; padding: 20px;">
       
@@ -741,12 +750,12 @@ export const generarCartaInstruccionesPDF = (datos: DatosCartaInstrucciones) => 
         </tr>
       </table>
 
-      <div style="text-align: center; margin: 5px 0; font-size: 7.5pt;">
+      ${esFletes ? `<div style="text-align: center; margin: 5px 0; font-size: 7.5pt;">
         <span style="color: red; font-weight: bold; text-decoration: underline;">FACTURAR A:</span><br />
         <strong>ROELCAINC SA DE CV</strong> | <strong>ROE180119IV4</strong><br />
         MAR DE LAS ANTILLAS #947 COL. LA PAZ, 88290 NUEVO LAREDO, TAMPS<br />
         email: proveedores@roelca.com
-      </div>
+      </div>` : '<div style="height: 10px;"></div>'}
 
       <div style="margin-bottom: 8px;">
         <table style="margin-left: auto; width: auto; border-collapse: collapse;">
@@ -762,14 +771,14 @@ export const generarCartaInstruccionesPDF = (datos: DatosCartaInstrucciones) => 
             <td style="font-weight: bold; text-align: right; padding: 1px 4px;">FECHA DE EMBARQUE:</td>
             <td style="padding: 1px 4px;">${datos.fechaServicio}</td>
           </tr>
-          <tr>
+          ${esFletes ? `<tr>
             <td style="font-weight: bold; text-align: right; padding: 1px 4px;">FECHA DE CITA:</td>
             <td style="color: red; font-weight: bold; padding: 1px 4px;">${datos.fechaCita}</td>
           </tr>
           <tr>
             <td style="font-weight: bold; text-align: right; padding: 1px 4px;">HORA DE CITA:</td>
             <td style="color: red; font-weight: bold; padding: 1px 4px;">DIRECTO</td>
-          </tr>
+          </tr>` : ''}
         </table>
       </div>
 
@@ -807,12 +816,12 @@ export const generarCartaInstruccionesPDF = (datos: DatosCartaInstrucciones) => 
         </tr>
         <tr>
           <td style="font-weight: bold; width: 130px; text-align: right; padding: 2px 10px 2px 2px;">NUMERO ECONÓMICO:</td>
-          <td style="width: 180px; text-align: center; border-bottom: 0.5pt solid #eee; padding: 2px;">${datos.numeroEconomico}</td>
+          <td style="width: 180px; text-align: center; border-bottom: 0.5pt solid #eee; padding: 2px;">${numeroEconomicoCarta}</td>
           <td></td>
         </tr>
         <tr>
           <td style="font-weight: bold; width: 130px; text-align: right; padding: 2px 10px 2px 2px;">PLACAS:</td>
-          <td style="width: 180px; text-align: center; border-bottom: 0.5pt solid #eee; padding: 2px;">${datos.placas}</td>
+          <td style="width: 180px; text-align: center; border-bottom: 0.5pt solid #eee; padding: 2px;">${placasCarta}</td>
           <td></td>
         </tr>
         <tr>
@@ -902,7 +911,7 @@ export const generarCartaInstruccionesPDF = (datos: DatosCartaInstrucciones) => 
         </tr>
       </table>
 
-      <div style="text-align:center; font-weight:bold; text-decoration:underline; font-size:10pt; margin-top:10px;">INSTRUCCIONES</div>
+      ${esFletes ? `<div style="text-align:center; font-weight:bold; text-decoration:underline; font-size:10pt; margin-top:10px;">INSTRUCCIONES</div>
       <div style="background-color: red; color: white; font-weight: bold; text-align: center; padding: 4px; font-size: 9pt; margin-top: 5px;">MUY IMPORTANTE NO MOSTRAR NINGÚN TALÓN O CARTA PORTE</div>
       <div style="background-color: yellow; height: 8px; margin: 4px 0;"></div>
       <div style="text-align: center; font-weight: bold; font-size: 8pt; margin: 8px 0; line-height: 1.3;">
@@ -910,7 +919,7 @@ export const generarCartaInstruccionesPDF = (datos: DatosCartaInstrucciones) => 
         CUALQUIER CONTACTO CON EL CLIENTE, FAVOR DE REPORTARSE COMO <span style="color: red;">ROELCA</span><br />
         PARA CUALQUIER DUDA FAVOR DE COMUNICARSE AL (867)579 12 42
       </div>
-      <div style="background-color: yellow; height: 8px; margin: 4px 0;"></div>
+      <div style="background-color: yellow; height: 8px; margin: 4px 0;"></div>` : ''}
 
       <div style="text-align: center; margin-top: 15px;">
         <p style="margin: 2px;"><strong>Atentamente:</strong></p>
