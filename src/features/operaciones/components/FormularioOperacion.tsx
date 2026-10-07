@@ -6,6 +6,7 @@ import { db, storage, auth } from '../../../config/firebase';
 import { DocumentosLista } from '../../documentos/DocumentosLista'; // ✅ V00341: consultar los documentos guardados
 import { EditorTarifaOrigenDestino } from './EditorTarifaOrigenDestino'; // ✅ V00224
 import { puedeClave } from '../../../utils/permisos'; // ✅ V00224
+import { claveConsecutivo } from '../../../utils/claveConsecutivo'; // ✅ V00428
 import { useUsuarioStore } from '../../../stores/useUsuarioStore';
 import { guardarOperacionSegura } from '../services/operacionesService';
 // ✅ AUTORIZACIONES: interceptar guardado cuando la acción/campo lo requiere.
@@ -1637,13 +1638,16 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       (Array.isArray(t.tarifas) ? t.tarifas : []).forEach((lt) => {
         const cc = String((lt as Record<string, unknown>)?.consecutivo || '').trim();
         if (cc && !tariPorConsecConvenio.has(cc)) tariPorConsecConvenio.set(cc, consec);
+        const kc = claveConsecutivo(cc); // ✅ V00428: "CONV-173" = "173" = 173
+        if (kc && !tariPorConsecConvenio.has(`#${kc}`)) tariPorConsecConvenio.set(`#${kc}`, consec);
       });
       if (String(t.clienteId || '').trim() === cid && String(t.status || '').trim() === 'Aprobado') tarisDelCliente.push(consec);
     });
     const resolverTariDetalle = (d: { tarifarioId?: unknown; tarifario_id?: unknown; tarifario?: unknown; convenioId?: unknown; consecutivo?: unknown }, maestroId: unknown): string => {
       const directo = String(d?.tarifarioId || d?.tarifario_id || d?.tarifario || '').trim();
       if (directo) return consecPorTariId.get(directo) || directo; // ✅ V00313: el FK guarda el ID del doc — se muestra su TARI-###
-      const porConsec = tariPorConsecConvenio.get(String(d?.consecutivo || '').trim()); // ✅ V00281
+      const porConsec = tariPorConsecConvenio.get(String(d?.consecutivo || '').trim()) // ✅ V00281
+        || tariPorConsecConvenio.get(`#${claveConsecutivo(d?.consecutivo)}`); // ✅ V00428: por número
       if (porConsec) return porConsec;
       const porMaestro = tariPorConvenioId.get(String(d?.convenioId || maestroId || '').trim());
       if (porMaestro) return porMaestro;
@@ -1668,6 +1672,45 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         union.set(String(d.id), d);
       }
     });
+    // ✅ V00428: EL TARIFARIO DEL CLIENTE TAMBIÉN ES FUENTE. Antes solo se
+    //   ofrecían los detalles cuyo convenioId apuntaba a un convenio maestro
+    //   VIVO del cliente; si el maestro se unió/borró (o el detalle quedó
+    //   colgado de otro), la línea seguía en el tarifario pero NO salía aquí
+    //   (caso Trompo de C.H. Robinson). Ahora también entran:
+    //   (a) los detalles que alguna línea de un tarifario del cliente referencia
+    //       por su consecutivo (comparado por NÚMERO: CONV-173 = 173), y
+    //   (b) los detalles cuyo tarifarioId es un tarifario del cliente.
+    //   El STATUS de la línea manda sobre el del detalle (regla V00202).
+    const statusPorLinea = new Map<string, string>();
+    {
+      type DetConv = { id?: unknown; consecutivo?: unknown; tarifarioId?: unknown };
+      const porId = new Map<string, DetConv>();
+      const porNumero = new Map<string, DetConv>();
+      (catalogoConvDetalles as DetConv[]).forEach((d) => {
+        porId.set(String(d.id).trim(), d);
+        const k = claveConsecutivo(d.consecutivo || d.id);
+        if (k && !porNumero.has(k)) porNumero.set(k, d);
+      });
+      const tarisCli = (tarifariosLocal || []).filter((t: { clienteId?: unknown; status?: unknown }) =>
+        String(t.clienteId || '').trim() === cid && !['Inactivo', 'Cancelado'].includes(String(t.status || '').trim()));
+      const idsTarisCli = new Set<string>();
+      tarisCli.forEach((t: { id?: unknown; consecutivo?: unknown; tarifas?: unknown }) => {
+        idsTarisCli.add(String(t.id || '').trim());
+        if (String(t.consecutivo || '').trim()) idsTarisCli.add(String(t.consecutivo).trim());
+        (Array.isArray(t.tarifas) ? t.tarifas : []).forEach((lt: Record<string, unknown>) => {
+          const cc = String(lt?.consecutivo || '').trim();
+          if (!cc) return;
+          const det = porId.get(cc) || porNumero.get(claveConsecutivo(cc));
+          if (!det) return;
+          union.set(String(det.id), det);
+          const stL = String(lt?.status || '').trim();
+          if (stL) statusPorLinea.set(String(det.id), stL);
+        });
+      });
+      (catalogoConvDetalles as DetConv[]).forEach((d) => {
+        if (idsTarisCli.has(String(d.tarifarioId || '').trim())) union.set(String(d.id), d);
+      });
+    }
     const detallesAsociados = Array.from(union.values());
 
     let lista = detallesAsociados.map((d: any) => {
@@ -1691,7 +1734,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         // ✅ V00313: montos alternos del convenio (V00304) — habilitan el desplegable Tarifa A/B.
         montosAlt: (Array.isArray(d.montos) ? d.montos.map((x: unknown) => Number(x)).filter((n: number) => Number.isFinite(n) && n > 0) : []),
         tarifarioConsec: resolverTariDetalle(d, maestroAsociado?.id), // ✅ V00272: # de tarifario resuelto
-        statusDetalle: String(d.status || ''), // ✅ V00214
+        statusDetalle: statusPorLinea.get(String(d.id)) || String(d.status || ''), // ✅ V00214 · V00428: la línea del tarifario manda
         // ✅ V00126: la moneda del DETALLE manda (se resuelve a id de catálogo aunque venga como texto "Pesos"/"Dólares")
         monedaMaestro: resolverMonedaIdDeEmpresa({ moneda: d.moneda }) || maestroAsociado?.monedaId || maestroAsociado?.moneda || ID_USD,
         tarifaMonto: montoDetalle(d),
@@ -1718,6 +1761,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       });
     }
 
+    // ✅ V00428: orden por # de convenio (como en el tarifario)
+    const numDe = (c: { consecutivo?: unknown; id?: unknown }) => Number(claveConsecutivo(c.consecutivo || c.id)) || Number.MAX_SAFE_INTEGER;
+    lista.sort((a: { consecutivo?: unknown; id?: unknown }, b: { consecutivo?: unknown; id?: unknown }) => numDe(a) - numDe(b));
     return lista;
   }, [formData.clientePaga, searchClientePaga, catalogoConvClientes, catalogoConvDetalles, tarifas, empresas, initialData, tarifariosLocal]); // ✅ V00272
 

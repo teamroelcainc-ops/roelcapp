@@ -95,7 +95,7 @@ import { reservarConsecutivosDetalle, reservarConsecutivosTarifario } from '../.
 import { urlVerEnPestana, filtrosDeUrl } from '../../../utils/verEnPestana'; // ✅ V00312
 import { cargarObligatoriosTarifa, guardarObligatoriosTarifa, ETIQUETAS_CAMPOS_TARIFA, OBLIGATORIOS_TARIFA_DEFAULT, type CamposObligatoriosTarifa } from '../../../utils/camposObligatoriosTarifa'; // ✅ V00286
 import { esOperacionPrueba } from '../../../utils/operacionPrueba';
-import { mismoConsecutivo } from '../../../utils/claveConsecutivo';
+import { mismoConsecutivo, claveConsecutivo } from '../../../utils/claveConsecutivo'; // ✅ V00428: claveConsecutivo
 import './TarifarioClientesDashboard.css';
 
 const ID_USD = '7dca62b3';
@@ -131,6 +131,13 @@ const claveDe = (t: Doc): string =>
 const nombreMoneda = (m: unknown): string => (canonMoneda(m) === 'MXN' ? 'Pesos' : 'Dólares');
 const idMoneda = (m: unknown): string => (canonMoneda(m) === 'MXN' ? ID_MXN : ID_USD);
 const pad3 = (n: number): string => String(n).padStart(3, '0');
+
+/** ✅ V00428: resultado vacío de la sincronización de convenios. */
+const SYNC_CERO = { ligadas: 0, reparadas: 0, creadas: 0, huerfanos: 0, realineadas: 0, statusAlineados: 0, adoptadas: 0, maestros: 0, reconstruidos: 0 };
+/** ✅ V00428: empresa dueña de un convenio maestro (mismas variantes que Operaciones). */
+const clienteDeConvenio = (c: Doc): string => String(
+  c?.clienteId ?? c?.cliente ?? c?.id_cliente ?? c?.clientePaga ?? c?.empresaId ?? c?.empresa ?? ''
+).trim();
 
 // ✅ V00198: mismos iconos azul/rojo que el resto de la app.
 const IconoEditar = () => (
@@ -283,6 +290,9 @@ export function TarifarioClientesDashboard() {
 
   // ✅ V00201: detalles del convenio en vivo — de aquí sale el consecutivo real.
   const [detallesConv, setDetallesConv] = useState<Doc[]>([]);
+  // ✅ V00428: convenios maestros EN VIVO (id → empresa dueña) para saber si un
+  //   detalle se verá en Operaciones / Convenio de Clientes.
+  const [clientePorMaestro, setClientePorMaestro] = useState<Map<string, string>>(new Map());
 
   useEffect(() => {
     let activo = true;
@@ -320,7 +330,13 @@ export function TarifarioClientesDashboard() {
       (snap) => setDetallesConv(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
       () => setDetallesConv([])
     );
-    return () => { activo = false; unsub(); unsubDet(); };
+    // ✅ V00428: maestros en vivo
+    const unsubMaestros = onSnapshot(
+      collection(db, 'convenios_clientes'),
+      (snap) => setClientePorMaestro(new Map(snap.docs.map((d) => [d.id, clienteDeConvenio(d.data() as Doc)]))),
+      () => setClientePorMaestro(new Map())
+    );
+    return () => { activo = false; unsub(); unsubDet(); unsubMaestros(); };
   }, []);
 
   /** Etiquetas de tipo de la empresa (tiposEmpresa guarda ids del catálogo). */
@@ -1123,31 +1139,106 @@ export function TarifarioClientesDashboard() {
     setSincronizandoConv(true);
     try {
       const tarifas: Doc[] = Array.isArray(r.tarifas) ? [...(r.tarifas as Doc[])] : [];
-      const convId = String(r.convenioId || '');
-      if (!convId) { if (!opciones?.silencioso) alert('Este tarifario aún no tiene convenio (se asigna al aprobar).'); setSincronizandoConv(false); return { ligadas: 0, reparadas: 0, creadas: 0, huerfanos: 0 }; }
+      let convId = String(r.convenioId || '');
+      if (!convId) { if (!opciones?.silencioso) alert('Este tarifario aún no tiene convenio (se asigna al aprobar).'); setSincronizandoConv(false); return { ...SYNC_CERO }; }
       // ✅ V00296: los detalles equivalentes pueden vivir en OTRO convenio
       //   maestro del MISMO cliente/proveedor (p. ej. CONV-489 de UnitedLink en
       //   un convenio anterior). La búsqueda ahora abarca TODOS los convenios
       //   de la misma empresa, no solo el ligado al tarifario.
+      // ✅ V00428: se leen TODOS los maestros y TODOS los detalles una sola vez —
+      //   así se detectan los detalles que la línea referencia pero que quedaron
+      //   colgados de un convenio maestro BORRADO/UNIDO o ajeno (no salían en
+      //   Operaciones ni en Convenio de Clientes) y el tarifario cuyo convenioId
+      //   apunta a un maestro que ya no existe.
       const entId = String(r.clienteId || '').trim();
-      const idsConvenios = new Set<string>([convId]);
-      if (entId) {
+      const [snapMaestrosTodos, snapDetTodos] = await Promise.all([
+        getDocs(collection(db, 'convenios_clientes')),
+        getDocs(collection(db, 'convenios_clientes_detalles')),
+      ]);
+      const clienteDeMaestro = new Map<string, string>();
+      snapMaestrosTodos.docs.forEach((d) => clienteDeMaestro.set(d.id, clienteDeConvenio(d.data() as Doc)));
+      const maestrosCli = snapMaestrosTodos.docs.filter((d) => entId && clienteDeMaestro.get(d.id) === entId);
+      let maestroReparado = false;
+      // vivo = existe y es de este cliente (o el maestro legacy no dice de quién es)
+      const duenioMaestroActual = clienteDeMaestro.get(convId);
+      const maestroVivo = duenioMaestroActual !== undefined && (duenioMaestroActual === entId || duenioMaestroActual === '');
+      if (entId && !maestroVivo) {
+        // El convenio maestro del tarifario ya no existe (o es de otra empresa):
+        // se liga al maestro VIVO del cliente (regla: un convenio por cliente);
+        // si el cliente no tiene ninguno, se crea.
+        const elegido = maestrosCli.find((d) => String((d.data() as Doc).creadoDesdeTarifario || '') === String(r.id))
+          || [...maestrosCli].sort((a, b) => numConsec(String((a.data() as Doc).numeroConvenio || '')) - numConsec(String((b.data() as Doc).numeroConvenio || '')))[0];
+        let numeroConvenio = '';
+        if (elegido) {
+          convId = elegido.id;
+          numeroConvenio = String((elegido.data() as Doc).numeroConvenio || '');
+        } else {
+          const { sigConvenio } = await siguientes();
+          const nuevoRef = doc(collection(db, 'convenios_clientes'));
+          numeroConvenio = pad3(sigConvenio);
+          await setDoc(nuevoRef, {
+            numeroConvenio,
+            clienteId: entId,
+            clienteNombre: String(r.clienteNombre || ''),
+            monedaId: idMoneda(r.moneda),
+            monedaNombre: nombreMoneda(r.moneda),
+            credito: Number(r.creditoDias) || 0,
+            fechaConvenio: String(r.fecha || hoyLocalISO()),
+            fechaVencimiento: vencimientoDe(r),
+            creadoDesdeTarifario: String(r.id),
+          });
+          convId = nuevoRef.id;
+          clienteDeMaestro.set(convId, entId);
+        }
+        await updateDoc(doc(db, 'tarifario_clientes', r.id), { convenioId: convId, numeroConvenio });
+        maestroReparado = true;
+      }
+      const idsConvenios = new Set<string>([convId, String(r.convenioId || ''), ...maestrosCli.map((d) => d.id)].filter(Boolean));
+      const todosDetalles: (Doc & { id: string })[] = snapDetTodos.docs.map((d) => ({ id: d.id, ...(d.data() as Doc) }));
+      const detalles: (Doc & { id: string })[] = todosDetalles.filter((d) => idsConvenios.has(String(d.convenioId || '').trim()));
+      // ✅ V00428 FASE A: la línea tiene su # pero su detalle vive FUERA de los
+      //   convenios del cliente (maestro borrado/unido o sin maestro) → se
+      //   REAPUNTA al convenio vivo. Si el detalle es de OTRA empresa no se toca
+      //   y se reporta.
+      let realineadas = 0;
+      const conflictos: string[] = [];
+      const ccConflicto = new Set<string>();
+      for (const t of tarifas) {
+        const cc = String(t.consecutivo || '').trim();
+        if (!cc) continue;
+        if (detalles.some((d) => String(d.id) === cc || mismoConsecutivo(d.consecutivo || d.id, cc))) continue;
+        const ajeno = todosDetalles.find((d) => String(d.id) === cc) || todosDetalles.find((d) => mismoConsecutivo(d.consecutivo || d.id, cc));
+        if (!ajeno) continue; // no existe: lo reconstruye la FASE 0
+        const duenio = clienteDeMaestro.get(String(ajeno.convenioId || '').trim()) || '';
+        if (duenio && entId && duenio !== entId) { conflictos.push(`${cc} ${String(t.descripcion || '')}`.trim()); ccConflicto.add(cc); continue; }
         try {
-          const snapMaestros = await getDocs(query(collection(db, 'convenios_clientes'), where('clienteId', '==', entId)));
-          snapMaestros.docs.forEach((d) => idsConvenios.add(d.id));
-        } catch { /* sin permiso o índice: se sigue solo con el convenio del tarifario */ }
+          await updateDoc(doc(db, 'convenios_clientes_detalles', String(ajeno.id)), { convenioId: convId, tarifarioId: String(r.id) });
+          ajeno.convenioId = convId;
+          ajeno.tarifarioId = String(r.id);
+          detalles.push(ajeno);
+          realineadas += 1;
+        } catch { /* mejor esfuerzo */ }
       }
-      const listaIds = Array.from(idsConvenios);
-      const detalles: (Doc & { id: string })[] = [];
-      for (let i = 0; i < listaIds.length; i += 10) {
-        const chunk = listaIds.slice(i, i + 10);
-        const snapDet = chunk.length === 1
-          ? await getDocs(query(collection(db, 'convenios_clientes_detalles'), where('convenioId', '==', chunk[0])))
-          : await getDocs(query(collection(db, 'convenios_clientes_detalles'), where('convenioId', 'in', chunk)));
-        snapDet.docs.forEach((d) => detalles.push({ id: d.id, ...(d.data() as Doc) }));
-      }
-      const usados = new Set(tarifas.map((t) => String(t.consecutivo || '')).filter(Boolean));
-      const buscarDetalle = (t: Doc): (Doc & { id: string }) | undefined => {
+      // ✅ V00428: "usados" compara por NÚMERO (CONV-173 = 173). Antes comparaba
+      //   texto: tras quitar el prefijo CONV- (V00346) una línea "CONV-173" no
+      //   reconocía a su detalle "173" como usado → la FASE 3 lo tomaba por
+      //   huérfano gemelo (misma descripción que otro, p. ej. dos Trompo) y lo
+      //   BORRABA, dejando la línea "Sin convenio".
+      const usadosSet = new Set<string>();
+      const kUso = (x: unknown): string => claveConsecutivo(x) || String(x ?? '').trim();
+      const usados = {
+        has: (x: unknown): boolean => usadosSet.has(kUso(x)),
+        add: (x: unknown): void => { usadosSet.add(kUso(x)); },
+        delete: (x: unknown): void => { usadosSet.delete(kUso(x)); },
+      };
+      tarifas.forEach((t) => { const c = String(t.consecutivo || '').trim(); if (c) usados.add(c); });
+      // ✅ V00428: ¿alguna operación usa este convenio? (un convenio con
+      //   operaciones JAMÁS se borra en la sincronización)
+      const tieneOperaciones = async (idDet: string): Promise<boolean> => {
+        try { return !(await getDocs(query(collection(db, 'operaciones'), where('convenio', '==', idDet), limit(1)))).empty; }
+        catch { return true; } // ante la duda, no se borra
+      };
+      const buscarDetalle = (t: Doc, exigirMonto = false): (Doc & { id: string }) | undefined => {
         const libres = detalles.filter((d) => !usados.has(String(d.consecutivo || d.id)));
         const idRef = String(t.tarifaReferenciaId || '');
         const monto = Number(t.tarifa) || 0;
@@ -1157,7 +1248,7 @@ export function TarifarioClientesDashboard() {
         // 2) descripción + monto (la relación REAL para migrados)
         if (cand.length === 0 && desc) cand = libres.filter((d) => normDesc(d.tipoConvenioNombre) === desc && Math.abs((Number(d.tarifa) || 0) - monto) < 0.005);
         // 3) descripción única (aunque el monto difiera: la línea manda y se alinea)
-        if (cand.length === 0 && desc) {
+        if (cand.length === 0 && desc && !exigirMonto) { // ✅ V00428: en reparación de duplicados se exige el mismo monto
           const porDesc = libres.filter((d) => normDesc(d.tipoConvenioNombre) === desc);
           if (porDesc.length === 1) cand = porDesc;
         }
@@ -1166,6 +1257,7 @@ export function TarifarioClientesDashboard() {
         return cand[0] as (Doc & { id: string }) | undefined;
       };
       let ligadas = 0, creadas = 0, reparadas = 0, reconstruidos = 0, vacias = 0;
+      const borrados = new Set<string>(); // ✅ V00428: lo borrado aquí no se re-adopta ni se re-cuenta
       // ── FASE 0 ✅ V00301: si una línea YA tiene consecutivo pero su detalle no
       //   existe (quedó a medias en una sincronización anterior), el detalle se
       //   RECONSTRUYE con ESA MISMA clave — jamás se reserva un número nuevo.
@@ -1173,6 +1265,7 @@ export function TarifarioClientesDashboard() {
         const cc = String(t.consecutivo || '').trim();
         if (!cc) continue;
         if (detalles.some((d) => (String(d.consecutivo || d.id) === cc || mismoConsecutivo(d.consecutivo || d.id, cc)))) continue;
+        if (ccConflicto.has(cc)) continue; // ✅ V00428: jamás pisar el detalle de otra empresa
         try {
           await setDoc(doc(db, 'convenios_clientes_detalles', cc), {
             convenioId: convId,
@@ -1197,15 +1290,15 @@ export function TarifarioClientesDashboard() {
         // solo se consideran duplicados los detalles CREADOS por la sincronización
         if (!propio || String(propio.tarifarioId || '') !== String(r.id)) continue;
         usados.delete(cc);
-        const original = buscarDetalle(t);
+        const original = buscarDetalle(t, true); // ✅ V00428: mismo monto (dos Trompo a $50 y $100 NO son duplicados)
         usados.add(cc);
-        if (original && numConsec(String(original.consecutivo || original.id)) < numConsec(cc)) {
+        if (original && numConsec(String(original.consecutivo || original.id)) < numConsec(cc) && !(await tieneOperaciones(String(propio.id)))) {
           const ccOrig = String(original.consecutivo || original.id);
           tarifas[i] = { ...t, consecutivo: ccOrig };
           usados.delete(cc);
           usados.add(ccOrig);
           await updateDoc(doc(db, 'convenios_clientes_detalles', String(original.id)), { status: String(t.status || 'Aprobado'), tarifa: Number(t.tarifa) || 0, tarifarioId: String(r.id) });
-          try { await deleteDoc(doc(db, 'convenios_clientes_detalles', String(propio.id))); } catch { /* mejor esfuerzo */ }
+          try { await deleteDoc(doc(db, 'convenios_clientes_detalles', String(propio.id))); borrados.add(String(propio.id)); } catch { /* mejor esfuerzo */ }
           reparadas += 1;
         }
       }
@@ -1266,25 +1359,97 @@ export function TarifarioClientesDashboard() {
       let huerfanos = 0;
       for (const dDet of detalles) {
         const cc = String(dDet.consecutivo || dDet.id);
+        if (borrados.has(String(dDet.id))) continue;
         if (usados.has(cc)) continue;
         if (String(dDet.tarifarioId || '') !== String(r.id)) continue;
         const gemelo = detalles.find((o) => String(o.id) !== String(dDet.id) && normDesc(o.tipoConvenioNombre) === normDesc(dDet.tipoConvenioNombre) && usados.has(String(o.consecutivo || o.id)));
         const vacioPropio = !normDesc(dDet.tipoConvenioNombre) && !String(dDet.tipoConvenioId || '').trim(); // ✅ V00301: residuo sin contenido
         if (!gemelo && !vacioPropio) continue;
-        try { await deleteDoc(doc(db, 'convenios_clientes_detalles', String(dDet.id))); huerfanos += 1; } catch { /* mejor esfuerzo */ }
+        if (await tieneOperaciones(String(dDet.id))) continue; // ✅ V00428
+        try { await deleteDoc(doc(db, 'convenios_clientes_detalles', String(dDet.id))); borrados.add(String(dDet.id)); huerfanos += 1; } catch { /* mejor esfuerzo */ }
       }
-      if (ligadas + creadas + reparadas + huerfanos + reconstruidos > 0) {
+      // ── FASE B ✅ V00428: el STATUS de la línea manda (V00202). Si la línea
+      //   dice Aprobado pero su detalle quedó Inactivo/Cancelado, Operaciones no
+      //   lo ofrecía aunque el tarifario lo mostrara aprobado.
+      let statusAlineados = 0;
+      for (const t of tarifas) {
+        const cc = String(t.consecutivo || '').trim();
+        const stL = String(t.status || '').trim();
+        if (!cc || !stL) continue;
+        const det = detalles.find((d) => String(d.id) === cc && !borrados.has(String(d.id))) || detalles.find((d) => !borrados.has(String(d.id)) && mismoConsecutivo(d.consecutivo || d.id, cc));
+        if (!det || String(det.status || '').trim() === stL) continue;
+        try { await updateDoc(doc(db, 'convenios_clientes_detalles', String(det.id)), { status: stL }); det.status = stL; statusAlineados += 1; } catch { /* mejor esfuerzo */ }
+      }
+      // ── FASE 4 ✅ V00428: convenios del cliente que NO están en ningún
+      //   tarifario (p. ej. dados de alta directo en Convenio de Clientes) →
+      //   se AGREGAN como línea de este tarifario con SU MISMO # (nunca se
+      //   inventa número). Así Tarifario, Convenios y Operaciones dicen lo
+      //   mismo. Solo se adoptan los que son de ESTE tarifario: sin tarifario,
+      //   con tarifarioId = este, o colgados del convenio maestro de este.
+      let adoptadas = 0;
+      if (entId) {
+        let tarisCli: (Doc & { id: string })[] = [];
+        try {
+          tarisCli = (await getDocs(query(collection(db, 'tarifario_clientes'), where('clienteId', '==', entId)))).docs.map((d) => ({ id: d.id, ...(d.data() as Doc) }));
+        } catch { tarisCli = []; }
+        const idsTarisCli = new Set<string>();
+        const referenciados = new Set<string>();
+        tarisCli.forEach((tc) => {
+          idsTarisCli.add(String(tc.id));
+          if (String(tc.consecutivo || '').trim()) idsTarisCli.add(String(tc.consecutivo).trim());
+          if (String(tc.id) === String(r.id)) return; // las de ESTE se toman de "tarifas" (ya actualizadas)
+          (Array.isArray(tc.tarifas) ? (tc.tarifas as Doc[]) : []).forEach((lt) => { const k = claveConsecutivo(lt?.consecutivo); if (k) referenciados.add(k); });
+        });
+        tarifas.forEach((lt) => { const k = claveConsecutivo(lt?.consecutivo); if (k) referenciados.add(k); });
+        const tarisVigentes = tarisCli.filter((tc) => !['Inactivo', 'Cancelado'].includes(String(tc.status || '').trim()));
+        const esElUnico = tarisVigentes.length <= 1;
+        const candidatos = detalles
+          .filter((d) => {
+            if (borrados.has(String(d.id))) return false;
+            const k = claveConsecutivo(d.consecutivo || d.id);
+            if (!k || referenciados.has(k)) return false;
+            if (!normDesc(d.tipoConvenioNombre) && !String(d.tipoConvenioId || '').trim()) return false; // vacío
+            const tid = String(d.tarifarioId || '').trim();
+            if (tid && tid !== String(r.id) && tid !== String(r.consecutivo || '') && idsTarisCli.has(tid)) return false; // es de OTRO tarifario
+            return tid === String(r.id) || String(d.convenioId || '') === convId || esElUnico;
+          })
+          .sort((a, b) => numConsec(String(a.consecutivo || a.id)) - numConsec(String(b.consecutivo || b.id)));
+        for (const d of candidatos) {
+          const cc = String(d.consecutivo || d.id);
+          const ref = tarifasRef.find((x) => String(x.id) === String(d.tipoConvenioId || ''));
+          const montos = Array.isArray(d.montos) ? (d.montos as unknown[]).map(Number).filter((n) => Number.isFinite(n) && n > 0) : [];
+          tarifas.push({
+            tarifaReferenciaId: String(d.tipoConvenioId || ''),
+            descripcion: String(d.tipoConvenioNombre || ref?.descripcion || ''),
+            clave: ref ? claveDe(ref) : '',
+            origen: String(d.origenNombre || d.origen || ''),
+            destino: String(d.destinoNombre || d.destino || ''),
+            costosSugeridos: ref ? costosDe(ref) : [],
+            tarifa: Number(d.tarifa) || 0,
+            ...(montos.length > 1 ? { montos } : {}),
+            cotizadoEn: canonMoneda(d.moneda) || canonMoneda(r.moneda) || 'USD',
+            status: String(d.status || 'Aprobado'),
+            consecutivo: cc,
+          });
+          referenciados.add(claveConsecutivo(cc));
+          try { await updateDoc(doc(db, 'convenios_clientes_detalles', String(d.id)), { tarifarioId: String(r.id) }); } catch { /* mejor esfuerzo */ }
+          adoptadas += 1;
+        }
+      }
+      const totalCambios = ligadas + creadas + reparadas + huerfanos + reconstruidos + realineadas + statusAlineados + adoptadas + (maestroReparado ? 1 : 0);
+      const avisoConflictos = conflictos.length > 0 ? `\n\n⚠ ${conflictos.length} línea(s) con un # que pertenece a OTRA empresa (no se tocaron — revísalas):\n${conflictos.map((x) => `· ${x}`).join('\n')}` : '';
+      if (totalCambios > 0) {
         await updateDoc(doc(db, 'tarifario_clientes', r.id), { tarifas });
-        await registrarLog('Tarifario Clientes', 'Edición', `Sincronizó convenios del pre convenio de "${razonSocialDe(r)}": ${ligadas} ligada(s), ${reparadas} duplicado(s) reparado(s), ${creadas} creada(s), ${huerfanos} huérfano(s) eliminado(s).`);
-        if (!opciones?.silencioso) alert(`Sincronización completa. ✅\n\n· Líneas ligadas a su convenio original: ${ligadas}\n· Duplicados reparados (la línea volvió a su CONV original): ${reparadas}\n· Convenios creados (no existían): ${creadas}\n· Detalles reconstruidos (línea ya tenía su #): ${reconstruidos}\n· Duplicados huérfanos eliminados: ${huerfanos}${vacias > 0 ? `\n\n⚠ ${vacias} línea(s) VACÍA(S) (sin tarifa ni descripción): no generan convenio — complétalas o elimínalas con 🗑.` : ''}`);
+        await registrarLog('Tarifario Clientes', 'Edición', `Sincronizó convenios del pre convenio de "${razonSocialDe(r)}": ${ligadas} ligada(s), ${reparadas} duplicado(s) reparado(s), ${creadas} creada(s), ${reconstruidos} reconstruido(s), ${realineadas} reapuntado(s) al convenio vivo, ${statusAlineados} status alineado(s), ${adoptadas} convenio(s) agregado(s) al tarifario, ${huerfanos} huérfano(s) eliminado(s)${maestroReparado ? ', convenio maestro reparado' : ''}.`);
+        if (!opciones?.silencioso) alert(`Sincronización completa. ✅\n\n· Líneas ligadas a su convenio original: ${ligadas}\n· Duplicados reparados (la línea volvió a su CONV original): ${reparadas}\n· Convenios creados (no existían): ${creadas}\n· Detalles reconstruidos (línea ya tenía su #): ${reconstruidos}\n· Convenios reapuntados al convenio del cliente (estaban en uno borrado/unido): ${realineadas}\n· Status alineados con el tarifario: ${statusAlineados}\n· Convenios del cliente agregados a este tarifario: ${adoptadas}\n· Duplicados huérfanos eliminados: ${huerfanos}${maestroReparado ? '\n· El tarifario apuntaba a un convenio maestro que ya no existe: se ligó al vigente del cliente' : ''}${vacias > 0 ? `\n\n⚠ ${vacias} línea(s) VACÍA(S) (sin tarifa ni descripción): no generan convenio — complétalas o elimínalas con 🗑.` : ''}${avisoConflictos}`);
       } else if (!opciones?.silencioso) {
-        alert('Todas las líneas ya tienen su # de convenio correcto. ✅');
+        alert(`Todas las líneas ya tienen su # de convenio correcto. ✅${avisoConflictos}`);
       }
-      return { ligadas, reparadas, creadas, huerfanos };
+      return { ligadas, reparadas, creadas, huerfanos, realineadas, statusAlineados, adoptadas, maestros: maestroReparado ? 1 : 0, reconstruidos };
     } catch (e) {
       console.error('No se pudo sincronizar:', e);
       if (!opciones?.silencioso) alert('No se pudo completar la sincronización.');
-      return { ligadas: 0, reparadas: 0, creadas: 0, huerfanos: 0 };
+      return { ...SYNC_CERO };
     } finally {
       setSincronizandoConv(false);
     }
@@ -1391,15 +1556,17 @@ export function TarifarioClientesDashboard() {
     if (!window.confirm(`Se van a sincronizar ${conConvenio.length} tarifario(s) contra sus convenios:\n\n· Las líneas sin # adoptan su CONV original (por tarifa y descripción).\n· Los duplicados creados por error se reparan y eliminan.\n· Solo se crean CONV nuevos cuando de verdad no existen.\n\n¿Continuar?`)) return;
     setSincronizandoTodo(true);
     let L = 0, R = 0, C = 0, H = 0, conCambios = 0;
+    let RA = 0, ST = 0, AD = 0, MA = 0; // ✅ V00428
     try {
       for (const r of conConvenio) {
-        const res = (await sincronizarConvenios(r, { silencioso: true })) || { ligadas: 0, reparadas: 0, creadas: 0, huerfanos: 0 };
+        const res = (await sincronizarConvenios(r, { silencioso: true })) || { ...SYNC_CERO };
         L += res.ligadas; R += res.reparadas; C += res.creadas; H += res.huerfanos;
-        if (res.ligadas + res.reparadas + res.creadas + res.huerfanos > 0) conCambios += 1;
+        RA += res.realineadas; ST += res.statusAlineados; AD += res.adoptadas; MA += res.maestros;
+        if (res.ligadas + res.reparadas + res.creadas + res.huerfanos + res.realineadas + res.statusAlineados + res.adoptadas + res.maestros + res.reconstruidos > 0) conCambios += 1;
       }
       // ✅ V00297: y ahora la relación INVERSA — ningún convenio sin tarifario.
       const inv = await ligarConveniosSinTarifario();
-      alert(`Sincronización GLOBAL completa. ✅\n\n· Tarifarios revisados: ${conConvenio.length} (con cambios: ${conCambios})\n· Líneas ligadas a su convenio original: ${L}\n· Duplicados reparados: ${R}\n· Convenios creados: ${C}\n· Duplicados huérfanos eliminados: ${H}\n\nRelación inversa (convenios → tarifario):\n· Convenios ligados a su tarifario: ${inv.ligados}\n· Sin tarifario identificable (revisar a mano): ${inv.pendientes}`);
+      alert(`Sincronización GLOBAL completa. ✅\n\n· Tarifarios revisados: ${conConvenio.length} (con cambios: ${conCambios})\n· Líneas ligadas a su convenio original: ${L}\n· Duplicados reparados: ${R}\n· Convenios creados: ${C}\n· Duplicados huérfanos eliminados: ${H}\n· Convenios reapuntados al convenio vivo del cliente: ${RA}\n· Status alineados con el tarifario: ${ST}\n· Convenios agregados a su tarifario: ${AD}\n· Tarifarios con convenio maestro reparado: ${MA}\n\nRelación inversa (convenios → tarifario):\n· Convenios ligados a su tarifario: ${inv.ligados}\n· Sin tarifario identificable (revisar a mano): ${inv.pendientes}`);
     } catch (e) { console.error(e); alert('La sincronización global se interrumpió; vuelve a ejecutarla para continuar.'); }
     setSincronizandoTodo(false);
   };
@@ -1524,6 +1691,40 @@ export function TarifarioClientesDashboard() {
       ((String(d.tarifarioId || '') !== '' && String(d.tarifarioId) === String(r.id)) ||
         (String(r.convenioId || '') !== '' && String(d.convenioId || '') === String(r.convenioId)))
     );
+  };
+
+  /** ✅ V00428: por qué una línea CON convenio NO aparece en el modal de
+   *  Operaciones (o en Convenio de Clientes). '' = sí aparece. */
+  const motivoNoVisibleEnOps = (r: Doc, t: Doc): string => {
+    const det = detalleDeLinea(r, t);
+    if (!det) return '';
+    const stL = String(t.status || '').trim();
+    const stD = String(det.status || '').trim();
+    if (['Inactivo', 'Cancelado'].includes(stD) && stL !== stD) return `El convenio está "${stD}" pero la línea dice "${stL || 'Pendiente'}"`;
+    const cli = String(r.clienteId || '').trim();
+    const maestro = String(det.convenioId || '').trim();
+    if (cli && clientePorMaestro.size > 0) {
+      if (!maestro || !clientePorMaestro.has(maestro)) return 'Su convenio maestro fue borrado o unido: no sale en Convenio de Clientes';
+      const duenio = clientePorMaestro.get(maestro) || '';
+      if (!duenio) return 'Su convenio maestro no tiene cliente asignado';
+      if (duenio !== cli) return 'Está dentro del convenio de OTRA empresa';
+    }
+    return '';
+  };
+  /** ✅ V00428: convenios del cliente que no están en NINGÚN tarifario del cliente
+   *  (Operaciones los ofrece, pero el tarifario no los muestra). */
+  const conveniosFueraDeTarifario = (r: Doc): Doc[] => {
+    const cli = String(r.clienteId || '').trim();
+    if (!cli || clientePorMaestro.size === 0) return [];
+    const referenciados = new Set<string>();
+    registros.filter((x) => String(x.clienteId || '').trim() === cli).forEach((x) =>
+      (Array.isArray(x.tarifas) ? (x.tarifas as Doc[]) : []).forEach((lt) => { const k = claveConsecutivo(lt?.consecutivo); if (k) referenciados.add(k); }));
+    lineasConConsecutivo(r).forEach((lt) => { const k = claveConsecutivo(lt?.consecutivo); if (k) referenciados.add(k); });
+    return detallesConv
+      .filter((d) => clientePorMaestro.get(String(d.convenioId || '').trim()) === cli)
+      .filter((d) => !['Inactivo', 'Cancelado'].includes(String(d.status || '').trim()))
+      .filter((d) => { const k = claveConsecutivo(d.consecutivo || d.id); return !!k && !referenciados.has(k); })
+      .sort((a, b) => (Number(claveConsecutivo(a.consecutivo || a.id)) || 0) - (Number(claveConsecutivo(b.consecutivo || b.id)) || 0));
   };
 
   // ✅ V00202: COTIZADO EN editable por línea desde el detalle.
@@ -1767,8 +1968,11 @@ export function TarifarioClientesDashboard() {
             </td>
             {conteoOps !== undefined && (
               <td className="tc-td-ops">{!detalleDeLinea(r, t)
-                ? <span className="tc-chip-huerfana" title="Esta línea ya no tiene su convenio en Convenio de Clientes (se borró). Quítala o usa Sincronizar convenios para volver a crearlo.">Sin convenio</span>
-                : (conteoOps === null ? '…' : (conteoOps[String(detalleDeLinea(r, t)?.id || '')] ?? 0))}</td>
+                ? <span className="tc-chip-huerfana" title="Esta línea ya no tiene su convenio en Convenio de Clientes (se borró). Usa Sincronizar convenios para volver a crearlo con su mismo #, o quítala.">Sin convenio</span>
+                : (<>
+                  {conteoOps === null ? '…' : (conteoOps[String(detalleDeLinea(r, t)?.id || '')] ?? 0)}
+                  {motivoNoVisibleEnOps(r, t) && <span className="tc-chip-novisible" title={`${motivoNoVisibleEnOps(r, t)}. Usa ⟳ Sincronizar convenios para corregirlo.`}>⚠ Desligado</span>}{/* ✅ V00428 */}
+                </>)}</td>
             )}
             {editable && (
               <td className="tc-td-acciones-linea">{/* ✅ V00283: editar/eliminar la línea */}
@@ -1993,6 +2197,14 @@ export function TarifarioClientesDashboard() {
                           await updateDoc(doc(db, 'tarifario_clientes', r.id), { tarifas: nuevas });
                         } catch (e) { alert(`No se pudieron quitar: ${(e as Error)?.message || e}`); }
                       }}>Quitar {huerfanas.length} sin convenio</button>
+                  ) : null;
+                })()}
+                {(() => { // ✅ V00428: convenios del cliente que el tarifario no muestra (y Operaciones sí)
+                  const fuera = conveniosFueraDeTarifario(r);
+                  return fuera.length > 0 ? (
+                    <button type="button" className="tc-btn-fuera-tarifario" disabled={sincronizandoConv}
+                      title={`Convenios del cliente que NO están en este tarifario (Operaciones sí los ofrece):\n${fuera.map((d) => `· ${String(d.consecutivo || d.id)} ${String(d.tipoConvenioNombre || '')}`).join('\n')}\n\nClic para agregarlos con su mismo # (Sincronizar convenios).`}
+                      onClick={() => sincronizarConvenios(r)}>⚠ {fuera.length} convenio(s) fuera del tarifario</button>
                   ) : null;
                 })()}
                 <button type="button" className="tc-btn-sincronizar-conv" title="Ligar las líneas sin # de convenio con su detalle en Convenios (o crearlo)" disabled={sincronizandoConv} onClick={() => sincronizarConvenios(r)}>{sincronizandoConv ? 'Sincronizando…' : '⟳ Sincronizar convenios'}</button>{/* ✅ V00289 */}
