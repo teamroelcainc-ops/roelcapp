@@ -79,7 +79,7 @@
 //   · La migración lo asigna a los importados y la reparación se lo pone a
 //     los tarifarios existentes que no lo tengan.
 // ---------------------------------------------------------------------------
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db, auth, storage } from '../../../config/firebase'; // ✅ V00273: storage para el tarifario firmado
@@ -96,6 +96,9 @@ import { urlVerEnPestana, filtrosDeUrl } from '../../../utils/verEnPestana'; // 
 import { cargarObligatoriosTarifa, guardarObligatoriosTarifa, ETIQUETAS_CAMPOS_TARIFA, OBLIGATORIOS_TARIFA_DEFAULT, type CamposObligatoriosTarifa } from '../../../utils/camposObligatoriosTarifa'; // ✅ V00286
 import { esOperacionPrueba } from '../../../utils/operacionPrueba';
 import { mismoConsecutivo, claveConsecutivo } from '../../../utils/claveConsecutivo'; // ✅ V00428: claveConsecutivo
+import { ResumenStatusOps, ListaOpsConStatus } from '../../conveniosCompartido/StatusOperaciones'; // ✅ V00429
+import { cargarNombresStatus, nombreStatusOp, type OpConStatus } from '../../conveniosCompartido/logicaStatusOps'; // ✅ V00429
+import { asegurarIntegridad } from '../../conveniosCompartido/integridadConvenios'; // ✅ V00429
 import './TarifarioClientesDashboard.css';
 
 const ID_USD = '7dca62b3';
@@ -218,6 +221,9 @@ export function TarifarioClientesDashboard() {
   const [detalleId, setDetalleId] = useState('');
   // ✅ V00424: operaciones hechas por cada convenio (línea) del tarifario abierto
   const [opsPorDetalle, setOpsPorDetalle] = useState<Record<string, number> | null>(null);
+  // ✅ V00429: las operaciones de cada convenio CON SU STATUS, y la línea desplegada
+  const [opsListaPorDetalle, setOpsListaPorDetalle] = useState<Record<string, OpConStatus[]>>({});
+  const [lineaOpsAbierta, setLineaOpsAbierta] = useState('');
   // ✅ V00426: operaciones del CLIENTE con convenios que NO están en este tarifario
   type OpFuera = { ref: string; fecha: string; convenioId: string; convenioNombre: string; motivo: string };
   const [opsFuera, setOpsFuera] = useState<{ totalCliente: number; lista: OpFuera[] } | null>(null);
@@ -832,6 +838,8 @@ export function TarifarioClientesDashboard() {
             consecutivo: consecutivos[i],
             status: String(t.status || 'Aprobado'),
             tarifarioId: String(r.id),
+            clienteId: String(r.clienteId || ''), // ✅ V00429
+            clienteNombre: String(r.clienteNombre || ''),
           });
         });
 
@@ -845,6 +853,7 @@ export function TarifarioClientesDashboard() {
           aprobadoPor: auth.currentUser?.email || '',
         });
         await batch.commit();
+        try { await asegurarIntegridad('clientes', { soloIds: consecutivos }); } catch (eInt) { console.warn('[integridad] aprobación:', eInt); } // ✅ V00429
         await registrarLog('Tarifario Clientes', 'Aprobación', `Aprobó el pre convenio de "${r.clienteNombre}" (${r.fecha}) y pasó ${Array.isArray(r.tarifas) ? r.tarifas.length : 0} tarifa(s) al convenio ${numeroConvenio}.`);
         alert(`Pre convenio aprobado. Sus tarifas ya están en el convenio ${numeroConvenio} (Detalles del Convenio). ✅`);
       } else {
@@ -1100,10 +1109,14 @@ export function TarifarioClientesDashboard() {
             consecutivo: cc,
             status: nueva.status,
             tarifarioId: String(r.id),
+            clienteId: String(r.clienteId || ''), // ✅ V00429: la empresa vive también en el convenio
+            clienteNombre: String(r.clienteNombre || ''),
           });
         }
         tarifas.push(nueva);
         await updateDoc(doc(db, 'tarifario_clientes', r.id), { tarifas });
+        // ✅ V00429: el convenio nuevo queda con maestro VIVO, cliente y tarifa (aunque el del tarifario se haya borrado)
+        if (nueva.consecutivo) { try { await asegurarIntegridad('clientes', { soloIds: [String(nueva.consecutivo)] }); } catch (eInt) { console.warn('[integridad] línea nueva:', eInt); } }
         await registrarLog('Tarifario Clientes', 'Edición', `Agregó la tarifa "${nueva.descripcion}" (${fmtMoney(Number(nueva.tarifa) || 0)} ${nueva.cotizadoEn}) al pre convenio de "${razonSocialDe(r)}".`);
       } else {
         const t = tarifas[lineaEditor.idx];
@@ -1445,6 +1458,13 @@ export function TarifarioClientesDashboard() {
       } else if (!opciones?.silencioso) {
         alert(`Todas las líneas ya tienen su # de convenio correcto. ✅${avisoConflictos}`);
       }
+      // ✅ V00429: integridad de TODOS los convenios de este tarifario (cliente,
+      //   maestro vivo, tarifa, FK) — DESPUÉS de guardar las líneas, para no pisarlas.
+      try {
+        const snapPropios = await getDocs(query(collection(db, 'convenios_clientes_detalles'), where('tarifarioId', '==', String(r.id))));
+        const idsPropios = snapPropios.docs.map((d) => d.id);
+        if (idsPropios.length > 0) await asegurarIntegridad('clientes', { soloIds: idsPropios });
+      } catch (eInt) { console.warn('[integridad] sincronización:', eInt); }
       return { ligadas, reparadas, creadas, huerfanos, realineadas, statusAlineados, adoptadas, maestros: maestroReparado ? 1 : 0, reconstruidos };
     } catch (e) {
       console.error('No se pudo sincronizar:', e);
@@ -1637,7 +1657,9 @@ export function TarifarioClientesDashboard() {
     setOpsFuera(null);
     (async () => {
       const conteo: Record<string, number> = {};
-      ids.forEach((id) => { conteo[id] = 0; });
+      const listas: Record<string, OpConStatus[]> = {}; // ✅ V00429
+      ids.forEach((id) => { conteo[id] = 0; listas[id] = []; });
+      const mapaStatus = await cargarNombresStatus(); // ✅ V00429
       for (let i = 0; i < ids.length; i += 30) {
         try {
           const snap = await getDocs(query(collection(db, 'operaciones'), where('convenio', 'in', ids.slice(i, i + 30))));
@@ -1646,10 +1668,12 @@ export function TarifarioClientesDashboard() {
             if (esOperacionPrueba(x)) return;
             const k = String(x.convenio || '');
             conteo[k] = (conteo[k] || 0) + 1;
+            (listas[k] = listas[k] || []).push({ id: d.id, ref: String(x.ref || d.id.slice(0, 6)), fecha: String(x.fechaServicio || ''), statusNombre: nombreStatusOp(x, mapaStatus), tipo: String(x.tipoOperacionNombre || '') });
           });
         } catch (e) { console.warn('[tarifario] conteo de operaciones:', e); }
       }
-      if (activo) setOpsPorDetalle(conteo);
+      Object.values(listas).forEach((l) => l.sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || ''))));
+      if (activo) { setOpsPorDetalle(conteo); setOpsListaPorDetalle(listas); }
       // ✅ V00426: cruce con TODAS las operaciones del cliente (Cliente Paga)
       try {
         const cli = String(r.clienteId || '').trim();
@@ -1920,11 +1944,17 @@ export function TarifarioClientesDashboard() {
   const tablaTarifasDe = (r: Doc, editable = false, conteoOps: Record<string, number> | null | undefined = undefined) => (
     <table className="tc-tabla-interna">
       <thead>
-        <tr><th>CONSECUTIVO</th><th>TARIFAS</th><th>ORIGEN — DESTINO</th><th>TARIFAS SUGERIDAS</th><th>TARIFA</th><th>COTIZADO EN</th><th>STATUS</th>{conteoOps !== undefined && <th className="tc-th-ops">OPERACIONES</th>}{editable && <th>ACCIONES</th>}</tr>{/* ✅ V00200 · ✅ V00283 · ✅ V00424 */}
+        <tr><th className="tc-th-num">#</th><th>CONSECUTIVO</th><th>TARIFAS</th><th>ORIGEN — DESTINO</th><th>TARIFAS SUGERIDAS</th><th>TARIFA</th><th>COTIZADO EN</th><th>STATUS</th>{conteoOps !== undefined && <th className="tc-th-ops">OPERACIONES</th>}{editable && <th>ACCIONES</th>}</tr>{/* ✅ V00200 · ✅ V00283 · ✅ V00424 */}
       </thead>
       <tbody>
-        {lineasConConsecutivo(r).map((t: Doc, i: number) => (
-          <tr key={`${r.id}-${i}`}>
+        {lineasConConsecutivo(r).map((t: Doc, i: number) => {
+          const idDetOps = String(detalleDeLinea(r, t)?.id || ''); // ✅ V00429
+          const opsLinea = opsListaPorDetalle[idDetOps] || [];
+          const columnas = 8 + (conteoOps !== undefined ? 1 : 0) + (editable ? 1 : 0);
+          return (
+          <Fragment key={`${r.id}-${i}`}>
+          <tr>
+            <td className="tc-td-num">{i + 1}</td>{/* ✅ V00429: conteo */}
             <td className="tc-td-consecutivo">{t.consecutivo || '—'}</td>{/* ✅ V00200 */}
             <td>
               <div>{t.descripcion || '—'}</div>
@@ -1970,7 +2000,14 @@ export function TarifarioClientesDashboard() {
               <td className="tc-td-ops">{!detalleDeLinea(r, t)
                 ? <span className="tc-chip-huerfana" title="Esta línea ya no tiene su convenio en Convenio de Clientes (se borró). Usa Sincronizar convenios para volver a crearlo con su mismo #, o quítala.">Sin convenio</span>
                 : (<>
-                  {conteoOps === null ? '…' : (conteoOps[String(detalleDeLinea(r, t)?.id || '')] ?? 0)}
+                  {conteoOps === null ? '…' : (
+                    /* ✅ V00429: clic = ver cada operación con su status */
+                    <button type="button" className={`tc-btn-ops${lineaOpsAbierta === idDetOps ? ' tc-btn-ops--abierto' : ''}`} disabled={(conteoOps[idDetOps] ?? 0) === 0}
+                      title="Ver las operaciones de este convenio y su status" onClick={(e) => { e.stopPropagation(); setLineaOpsAbierta((p) => (p === idDetOps ? '' : idDetOps)); }}>
+                      {conteoOps[idDetOps] ?? 0}{(conteoOps[idDetOps] ?? 0) > 0 && (lineaOpsAbierta === idDetOps ? ' ▾' : ' ▸')}
+                    </button>
+                  )}
+                  {conteoOps !== null && <ResumenStatusOps ops={opsLinea} />}
                   {motivoNoVisibleEnOps(r, t) && <span className="tc-chip-novisible" title={`${motivoNoVisibleEnOps(r, t)}. Usa ⟳ Sincronizar convenios para corregirlo.`}>⚠ Desligado</span>}{/* ✅ V00428 */}
                 </>)}</td>
             )}
@@ -1983,7 +2020,14 @@ export function TarifarioClientesDashboard() {
               </td>
             )}
           </tr>
-        ))}
+          {conteoOps !== undefined && idDetOps && lineaOpsAbierta === idDetOps && (
+            <tr className="tc-fila-ops">{/* ✅ V00429: operaciones del convenio con su status */}
+              <td colSpan={columnas}><ListaOpsConStatus ops={opsLinea} /></td>
+            </tr>
+          )}
+          </Fragment>
+          );
+        })}
       </tbody>
     </table>
   );

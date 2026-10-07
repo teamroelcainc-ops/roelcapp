@@ -40,7 +40,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 if (getApps().length === 0) initializeApp();
 const dbRel = getFirestore();
 
-const REL_VERSION = 'relacional-v1.3'; // ✅ V00299: + sync INVERSA detalle→línea del tarifario
+const REL_VERSION = 'relacional-v1.4'; // ✅ V00299: + sync INVERSA detalle→línea del tarifario · ✅ V00429: + guardián de integridad del convenio
 
 /** Normaliza: sin acentos, espacios colapsados, minúsculas (misma regla del cliente V00257). */
 const normR = (t: unknown): string =>
@@ -575,10 +575,85 @@ const sincronizarLineaDeDetalle = async (detalleId: string, det: Dict, coleccion
   return true;
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 8) ✅ V00429 — GUARDIÁN DE INTEGRIDAD DEL CONVENIO (regla de Jesús: "bajo
+//    ningún concepto" un convenio queda sin cliente/proveedor, sin tarifa o
+//    sin la llave foránea a su tarifario). Al escribirse un detalle se
+//    completa lo que falte desde su tarifario (FK → línea con el mismo # por
+//    NÚMERO → único tarifario de su maestro). Anti-bucle: solo escribe lo que
+//    falta o difiere; la segunda pasada ya no cambia nada.
+// ─────────────────────────────────────────────────────────────────────────────
+const claveNumRel = (v: unknown): string => String(v ?? '').replace(/\D/g, '').replace(/^0+/, '');
+interface CfgGuard { tarifarios: string; maestros: string; campoId: string; campoNombre: string }
+const entidadDeMaestroRel = (cfg: CfgGuard, c: Dict | undefined): string => {
+  if (!c) return '';
+  return cfg.campoId === 'clienteId'
+    ? String(c.clienteId ?? c.cliente ?? c.id_cliente ?? c.clientePaga ?? c.empresaId ?? c.empresa ?? '').trim()
+    : String(c.proveedorId ?? c.proveedor ?? c.id_proveedor ?? c.empresaId ?? c.empresa ?? '').trim();
+};
+const garantizarIntegridadDetalle = async (ref: FirebaseFirestore.DocumentReference, det: Dict, cfg: CfgGuard): Promise<string[]> => {
+  if (det._eliminado === true) return [];
+  const k = claveNumRel(det.consecutivo || ref.id);
+  // 1) tarifario padre
+  let tarId = String(det.tarifarioId || '').trim();
+  let tar: Dict | undefined;
+  if (tarId) { const t = await dbRel.collection(cfg.tarifarios).doc(tarId).get(); if (t.exists) tar = t.data() as Dict; }
+  if (!tar) {
+    const todos = await dbRel.collection(cfg.tarifarios).get();
+    const porLinea = todos.docs.filter((d) => {
+      const ls = Array.isArray((d.data() as Dict).tarifas) ? ((d.data() as Dict).tarifas as Dict[]) : [];
+      return !!k && ls.some((l) => claveNumRel(l?.consecutivo) === k);
+    });
+    const delMaestro = todos.docs.filter((d) => String(det.convenioId || '') && String((d.data() as Dict).convenioId || '') === String(det.convenioId));
+    const elegido = porLinea.length === 1 ? porLinea[0] : (porLinea.length === 0 && delMaestro.length === 1 ? delMaestro[0] : undefined);
+    if (elegido) { tarId = elegido.id; tar = elegido.data() as Dict; }
+  }
+  if (!tar) return [];
+  const ent = String(tar[cfg.campoId] || '').trim();
+  const cambios: Dict = {};
+  if (String(det.tarifarioId || '') !== tarId) cambios.tarifarioId = tarId;
+  // 2) empresa escrita en el convenio
+  if (ent && String(det[cfg.campoId] || '') !== ent) {
+    cambios[cfg.campoId] = ent;
+    const nom = String(tar[cfg.campoNombre] || '').trim();
+    if (nom) cambios[cfg.campoNombre] = nom;
+  }
+  // 3) convenio maestro vivo de la misma empresa
+  if (ent) {
+    const convActual = String(det.convenioId || '').trim();
+    const mSnap = convActual ? await dbRel.collection(cfg.maestros).doc(convActual).get() : undefined;
+    const duenio = mSnap?.exists ? entidadDeMaestroRel(cfg, mSnap.data() as Dict) : undefined;
+    if (!convActual || duenio === undefined || (duenio !== '' && duenio !== ent)) {
+      let convNuevo = '';
+      const delTar = String(tar.convenioId || '').trim();
+      if (delTar) { const mt = await dbRel.collection(cfg.maestros).doc(delTar).get(); if (mt.exists && [ent, ''].includes(entidadDeMaestroRel(cfg, mt.data() as Dict))) convNuevo = delTar; }
+      if (!convNuevo) { const q = await dbRel.collection(cfg.maestros).where(cfg.campoId, '==', ent).limit(1).get(); if (!q.empty) convNuevo = q.docs[0].id; }
+      if (convNuevo && convNuevo !== convActual) cambios.convenioId = convNuevo;
+    }
+  }
+  // 4) tarifa del catálogo desde su línea
+  if (!String(det.tipoConvenioId || '').trim()) {
+    const ls = Array.isArray(tar.tarifas) ? (tar.tarifas as Dict[]) : [];
+    const linea = ls.find((l) => !!k && claveNumRel(l?.consecutivo) === k);
+    const idLinea = String(linea?.tarifaReferenciaId || '').trim();
+    if (idLinea) {
+      cambios.tipoConvenioId = idLinea;
+      if (!String(det.tipoConvenioNombre || '').trim() && String(linea?.descripcion || '').trim()) cambios.tipoConvenioNombre = String(linea?.descripcion);
+    }
+  }
+  const llaves = Object.keys(cambios);
+  if (llaves.length > 0) await ref.update(cambios);
+  return llaves;
+};
+const CFG_GUARD_CLI: CfgGuard = { tarifarios: 'tarifario_clientes', maestros: 'convenios_clientes', campoId: 'clienteId', campoNombre: 'clienteNombre' };
+const CFG_GUARD_PROV: CfgGuard = { tarifarios: 'tarifario_proveedores', maestros: 'convenios_proveedores', campoId: 'proveedorId', campoNombre: 'proveedorNombre' };
+
 export const convenioClienteDetalleEscrito = onDocumentWritten({ document: 'convenios_clientes_detalles/{detId}', region: 'us-central1' }, async (event) => {
   const despues = event.data?.after;
   if (!despues || !despues.exists) return;
   try {
+    const reparados = await garantizarIntegridadDetalle(despues.ref, despues.data() as Dict, CFG_GUARD_CLI); // ✅ V00429
+    if (reparados.length > 0) { logger.info(`[${REL_VERSION}] convenioClienteDetalleEscrito: ${event.params.detId} → integridad completada (${reparados.join(', ')})`); return; } // la próxima escritura sincroniza la línea
     const cambio = await sincronizarLineaDeDetalle(event.params.detId, despues.data() as Dict, 'tarifario_clientes');
     if (cambio) logger.info(`[${REL_VERSION}] convenioClienteDetalleEscrito: ${event.params.detId} → línea del tarifario sincronizada`);
   } catch (e) {
@@ -590,6 +665,8 @@ export const convenioProveedorDetalleEscrito = onDocumentWritten({ document: 'co
   const despues = event.data?.after;
   if (!despues || !despues.exists) return;
   try {
+    const reparados = await garantizarIntegridadDetalle(despues.ref, despues.data() as Dict, CFG_GUARD_PROV); // ✅ V00429
+    if (reparados.length > 0) { logger.info(`[${REL_VERSION}] convenioProveedorDetalleEscrito: ${event.params.detId} → integridad completada (${reparados.join(', ')})`); return; }
     const cambio = await sincronizarLineaDeDetalle(event.params.detId, despues.data() as Dict, 'tarifario_proveedores');
     if (cambio) logger.info(`[${REL_VERSION}] convenioProveedorDetalleEscrito: ${event.params.detId} → línea del tarifario sincronizada`);
   } catch (e) {

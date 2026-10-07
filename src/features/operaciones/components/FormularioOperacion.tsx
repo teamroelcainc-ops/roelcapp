@@ -3075,6 +3075,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
   const guardarDetalleConvenio = async () => {
     if (!detalleConvEditando) return;
+    if (!String(detalleConvEditando.tipoConvenioId || '').trim()) { alert('Elige la TARIFA del catálogo — un convenio no puede quedar sin tarifa.'); return; } // ✅ V00429
     setGuardandoDetalleConv(true);
     try {
       const numOrUndef = (v: any) => (v === '' || v === null || v === undefined) ? undefined : Number(v);
@@ -4133,6 +4134,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                 <table className="fo-x55">
                   <thead>
                     <tr className="fo-x56">
+                      <th className="fo-x57 fo-col-num">#</th>{/* ✅ V00429: conteo */}
                       <th className="fo-x57"># Tarifario</th>{/* ✅ V00271 */}
                       <th className="fo-x57"># Convenio</th>{/* ✅ V00271 */}
                       <th className="fo-x57">Tarifa</th>
@@ -4142,7 +4144,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     </tr>
                   </thead>
                   <tbody>
-                    {listaConveniosCliente.map((c:any) => (
+                    {listaConveniosCliente.map((c:any, iConv: number) => (
                       <Fragment key={c.id}>{/* ✅ V00313: fila + subfilas de tarifas alternas */}
                       <tr
                         className={`fo-x59 fo-fila-convenio${String(formData.convenio) === String(c.id) ? ' fo-fila-convenio--elegido' : ''}`}
@@ -4154,6 +4156,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           setMostrarConveniosCliente(false);
                         }}
                       >
+                        <td className="fo-x60 fo-col-num">{iConv + 1}</td>{/* ✅ V00429 */}
                         <td className="fo-x60 fo-col-consec">{String(c.tarifarioConsec || c.tarifarioId || '—')}</td>{/* ✅ V00272 */}
                         <td className="fo-x60 fo-col-consec">{String(c.consecutivo || c.id || '—')}</td>
                         <td className="fo-x60">{c.descripcion}{aduanaDeConv(c) && <span className="fo-chip-aduana" title="Aduana de la tarifa">{aduanaDeConv(c)}</span>}</td>
@@ -4178,6 +4181,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           setSearchConvenio(etiquetaConvenioCliente(c));
                           setMostrarConveniosCliente(false);
                         }}>
+                          <td className="fo-x60" />
                           <td className="fo-x60" />
                           <td className="fo-x60 fo-col-consec fo-sub-tarifa">↳ Tarifa {String.fromCharCode(65 + i)}</td>
                           <td className="fo-x60">{c.descripcion}{aduanaDeConv(c) && <span className="fo-chip-aduana" title="Aduana de la tarifa">{aduanaDeConv(c)}</span>}</td>
@@ -4248,6 +4252,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                 <table className="fo-x55">
                   <thead>
                     <tr className="fo-x56">
+                      <th className="fo-x57 fo-col-num">#</th>{/* ✅ V00429: conteo */}
                       <th className="fo-x57"># Tarifario</th>{/* ✅ V00271 */}
                       <th className="fo-x57"># Convenio</th>{/* ✅ V00271 */}
                       <th className="fo-x57">Tarifa</th>
@@ -4257,7 +4262,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     </tr>
                   </thead>
                   <tbody>
-                    {listaConveniosProveedor.map((c:any) => (
+                    {listaConveniosProveedor.map((c:any, iConv: number) => (
                       <Fragment key={c.id}>{/* ✅ V00313: fila + subfilas de tarifas alternas */}
                       <tr
                         className={`fo-x59 fo-fila-convenio${String(formData.convenioProveedor) === String(c.id) ? ' fo-fila-convenio--elegido' : ''}`}
@@ -4269,6 +4274,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           setMostrarConveniosProveedor(false);
                         }}
                       >
+                        <td className="fo-x60 fo-col-num">{iConv + 1}</td>{/* ✅ V00429 */}
                         <td className="fo-x60 fo-col-consec">{String(c.tarifarioConsec || c.tarifarioId || '—')}</td>{/* ✅ V00272 */}
                         <td className="fo-x60 fo-col-consec">{String(c.consecutivo || c.id || '—')}</td>{/* ✅ V00271 */}
                         <td className="fo-x60">{c.tipoConvenioNombre}</td>
@@ -4293,6 +4299,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           setSearchConvenioProveedor(String(c.tipoConvenioNombre || c.descripcion || c.consecutivo || c.id));
                           setMostrarConveniosProveedor(false);
                         }}>
+                          <td className="fo-x60" />
                           <td className="fo-x60" />
                           <td className="fo-x60 fo-col-consec fo-sub-tarifa">↳ Tarifa {String.fromCharCode(65 + i)}</td>
                           <td className="fo-x60">{c.tipoConvenioNombre}</td>

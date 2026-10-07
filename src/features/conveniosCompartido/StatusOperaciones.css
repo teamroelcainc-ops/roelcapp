@@ -1,0 +1,16 @@
+/* ✅ V00429: status de las operaciones en los conteos por convenio */
+.sto-resumen { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; justify-content: center; max-width: 260px; }
+.sto-chip { display: inline-block; padding: 1px 7px; border-radius: 999px; border: 1px solid #30363d; font-size: 0.66rem; font-weight: 600; white-space: nowrap; line-height: 1.5; color: #c9d1d9; background: rgba(110, 118, 129, 0.12); }
+.sto-chip b { font-weight: 800; }
+.sto-chip--completado { border-color: #238636; color: #3fb950; background: rgba(46, 160, 67, 0.12); }
+.sto-chip--cancelado { border-color: #da3633; color: #ff7b72; background: rgba(248, 81, 73, 0.1); }
+.sto-chip--falso { border-color: #9e6a03; color: #e3b341; background: rgba(187, 128, 9, 0.1); }
+.sto-chip--curso { border-color: #1f6feb; color: #58a6ff; background: rgba(31, 111, 235, 0.1); }
+.sto-chip--sin { border-color: #30363d; color: #8b949e; }
+.sto-tabla { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.sto-tabla th { text-align: left; padding: 6px 8px; color: #8b949e; font-size: 0.7rem; text-transform: uppercase; border-bottom: 1px solid #30363d; }
+.sto-tabla td { padding: 6px 8px; border-bottom: 1px solid #21262d; color: #c9d1d9; }
+.sto-num { color: #8b949e; font-variant-numeric: tabular-nums; width: 32px; }
+.sto-ref { background: none; border: none; padding: 0; color: #58a6ff; font-weight: 700; cursor: pointer; font-family: inherit; font-size: inherit; text-decoration: underline dotted; }
+.sto-ref:hover { color: #79c0ff; }
+.sto-vacio { color: #8b949e; font-size: 0.8rem; padding: 8px; }

@@ -188,3 +188,6 @@
 /* ✅ V00406: botón para poner en $0 el sueldo de un trompo viejo */
 .fo-btn-trompo { margin-top: 6px; width: 100%; padding: 5px 10px; border-radius: 6px; border: 1px solid #d29922; background: rgba(187, 128, 9, 0.12); color: #e3b341; font-size: 0.74rem; font-weight: 700; cursor: pointer; }
 .fo-btn-trompo:hover { background: rgba(187, 128, 9, 0.22); }
+
+/* ✅ V00429: conteo (#) en los modales de convenios */
+.fo-col-num { width: 32px; text-align: center; color: #8b949e; font-variant-numeric: tabular-nums; }

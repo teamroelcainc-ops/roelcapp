@@ -48,6 +48,9 @@ import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesC
 import { FormularioOperacion } from '../../operaciones/components/FormularioOperacion'; // ✅ V00236
 import './DetallesConvenioDashboard.css';
 import { mismoConsecutivo } from '../../../utils/claveConsecutivo';
+import { asegurarIntegridad, contarIncompletos, huboCambios, resumenReporte } from '../../conveniosCompartido/integridadConvenios'; // ✅ V00429
+import { ResumenStatusOps } from '../../conveniosCompartido/StatusOperaciones'; // ✅ V00429
+import { cargarNombresStatus, nombreStatusOp, familiaStatus, type OpConStatus } from '../../conveniosCompartido/logicaStatusOps'; // ✅ V00429
 
 /** ✅ V00231: campo de BÚSQUEDA para elegir de una lista (no desplegable). */
 const BuscadorSimple = ({ etiqueta, opciones, valor, onElegir }: {
@@ -144,8 +147,6 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   const [reparando, setReparando] = useState(false);
   // ✅ V00302: filas en proceso de eliminación (aviso visual mientras viajan a la Papelera)
   const [eliminandoIds, setEliminandoIds] = useState<Set<string>>(new Set());
-  // ✅ V00302: variante (costo) elegida por grupo de convenios con el mismo nombre
-  const [varianteSel, setVarianteSel] = useState<Record<string, string>>({});
   const [busqueda, setBusqueda] = useState('');
   useBusquedaGlobal((t) => setBusqueda(t), 'los convenios'); // ✅ V00263: buscador global del topbar
   const [ordenAsc, setOrdenAsc] = useState(false);
@@ -469,6 +470,11 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
           }
         }
       } catch { /* el botón 🔗 Reparar relación lo deja cuadrado */ }
+      // ✅ V00429: INTEGRIDAD INMEDIATA — antes, si el tarifario no tenía convenio
+      //   maestro (Pendiente) o el suyo se había borrado, el convenio nacía SIN
+      //   cliente (casos 644, 647, 648). Ahora se liga al maestro vivo de la
+      //   empresa (o se crea) y lleva su cliente/proveedor escrito.
+      try { await asegurarIntegridad(tipo, { soloIds: [consec] }); } catch (eInt) { console.warn('[integridad] alta:', eInt); }
       setModalAgregar(false);
       setAlta({ tarifarioId: '', tarifaId: '', origen: '', destino: '', moneda: '', status: 'Aprobado', costo: '' });
       // ✅ V00302: ya no se recarga todo — el onSnapshot pinta la fila nueva al instante.
@@ -737,6 +743,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   const guardarEdicion = async () => {
     if (!editando || guardandoEdicion) return;
     if (!String(editForm.moneda || '').trim()) { alert('Selecciona la moneda de cotización (Cotizado En) — es obligatoria.'); return; } // ✅ V00283
+    if (!editForm.tarifaId && !editando.tarifaId) { alert('La TARIFA del catálogo es obligatoria — un convenio no puede quedar sin tarifa.'); return; } // ✅ V00429
     const f = editando;
     const tocados: string[] = [];
     if (editForm.tarifaId !== (f.tarifaId || '')) tocados.push('tarifa');
@@ -772,6 +779,8 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         if (tarSel.convenioId) cambiosDoc.convenioId = tarSel.convenioId;
       }
       await updateDoc(doc(dbFs, COL_DETALLES, f.id), cambiosDoc);
+      // ✅ V00429: el convenio editado queda con tarifario, maestro y empresa
+      try { await asegurarIntegridad(tipo, { soloIds: [f.id] }); } catch (eInt) { console.warn('[integridad] edición:', eInt); }
       // ✅ V00299: RELACIÓN BIDIRECCIONAL — "# de tarifario" es la llave foránea:
       //   lo editado en el CONVENIO se refleja en la LÍNEA del tarifario (por
       //   consecutivo). Mejor esfuerzo aquí; el motor relacional v1.3 lo cubre
@@ -832,7 +841,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   const cargar = async (forzar = false) => {
     if (cargando) return;
     if (!forzar) {
-      const aux = obtenerCacheMemoria<{ monedas: string[]; tarifas: { id: string; nombre: string }[]; usos: Record<string, { ref: string; fecha: string; status: string; tipo: string; entidad: string; monto: string; docId: string }[]> }>(`${CLAVE_CACHE}_aux`, TTL_MS);
+      const aux = obtenerCacheMemoria<{ monedas: string[]; tarifas: { id: string; nombre: string }[]; usos: Record<string, { ref: string; fecha: string; status: string; tipo: string; entidad: string; monto: string; docId: string }[]> }>(`${CLAVE_CACHE}_aux2`, TTL_MS);
       if (aux) { setMonedasCat(aux.monedas); setTarifasLista(aux.tarifas); setUsosOps(aux.usos); return; }
     }
     setCargando(true);
@@ -844,7 +853,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       // ✅ V00206/V00211: operaciones que usan cada detalle (clientes: op.convenio; proveedores: op.convenioProveedor)
       {
         try {
-          const snapOps = await getDocs(collection(db, 'operaciones'));
+          const [snapOps, mapaStatus] = await Promise.all([getDocs(collection(db, 'operaciones')), cargarNombresStatus()]); // ✅ V00429: nombre del status
           const mapa: Record<string, { ref: string; fecha: string; status: string; tipo: string; entidad: string; monto: string; docId: string }[]> = {};
           snapOps.docs.forEach((d) => {
             const o = d.data() as Record<string, unknown>;
@@ -854,7 +863,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
             mapa[conv].push({
               ref: String(o.ref || d.id.substring(0, 6)),
               fecha: String(o.fechaServicio || ''),
-              status: String(o.status || o.estatus || ''),
+              status: nombreStatusOp(o, mapaStatus), // ✅ V00429: NOMBRE del status (antes el id)
               // ✅ V00218: más contexto en el modal de uso
               tipo: String(o.tipoOperacionNombre || o.trafico || ''),
               entidad: String((esClientes ? (o.clientePagaNombre || o.clienteNombre) : (o.proveedorUnidadNombre || o.proveedorNombre)) || ''),
@@ -865,7 +874,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
           Object.values(mapa).forEach((lista) => lista.sort((a, b) => b.fecha.localeCompare(a.fecha)));
           setUsosOps(mapa);
           // ✅ V00302: caché auxiliar (catálogos + usos) para volver al módulo al instante
-          guardarCacheMemoria(`${CLAVE_CACHE}_aux`, {
+          guardarCacheMemoria(`${CLAVE_CACHE}_aux2`, {
             monedas: snapMon.docs.map((d) => String((d.data() as { moneda?: unknown }).moneda || '')).filter(Boolean),
             tarifas: snapTar.docs.map((d) => ({ id: d.id, nombre: String((d.data() as Record<string, unknown>).descripcion || '') })).filter((t) => t.nombre).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' })),
             usos: mapa,
@@ -939,7 +948,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         consecutivo: String(x.consecutivo || ''), // ✅ V00196
         numeroConvenio: conv.numero || '—',
         numeroOrden: parseInt(String(conv.numero || '').replace(/\D/g, ''), 10) || 0,
-        entidad: conv.entidad || '—',
+        entidad: conv.entidad || String(x[CAMPO_ENTIDAD] || '') || '—', // ✅ V00429: respaldo = empresa escrita en el propio convenio
         // ✅ CORREGIDO (V00126): la moneda del DETALLE manda; la del maestro solo es respaldo.
         moneda: String(x.moneda || ''),
         tarifa: tarifas[idTarifa] || nombreGuardado || '—',
@@ -1081,134 +1090,42 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   const repararRelacion = async () => {
     if (reparando) return;
     if (!aut.verificarAccion('editar', ['tarifa'])) return;
-    if (!window.confirm(`¿Reparar la relación tarifario ↔ convenios (${esClientes ? 'clientes' : 'proveedores'})?\n\n· Se escribe la LLAVE FORÁNEA (tarifarioId) en todos los convenios que no la tengan.\n· El detalle del tarifario y el detalle del convenio quedan IGUALES (se reconstruyen líneas y convenios faltantes).\n· Al final verás el reporte de convenios con datos faltantes (tarifa, moneda o costo) para corregirlos con el ✏.`)) return;
+    if (!window.confirm(`¿Reparar la relación tarifario ↔ convenios (${esClientes ? 'clientes' : 'proveedores'})?\n\n· Todo convenio queda con su LLAVE FORÁNEA (tarifario), su ${esClientes ? 'CLIENTE' : 'PROVEEDOR'} y su convenio maestro vivo.\n· La tarifa del catálogo se resuelve desde su línea del tarifario o por nombre.\n· El detalle del tarifario y el del convenio quedan IGUALES (se reconstruyen líneas y convenios faltantes con su mismo número).\n· Al final verás lo que no se pudo resolver con certeza.`)) return;
     setReparando(true);
     try {
-      const [snapTar, snapDet] = await Promise.all([
-        getDocs(collection(db, COL_TARIFARIOS)),
-        getDocs(collection(db, COL_DETALLES)),
-      ]);
-      const tarifarios = snapTar.docs.map((d) => ({ id: d.id, data: d.data() as Record<string, unknown> }));
-      const detalles = snapDet.docs.map((d) => ({ id: d.id, data: d.data() as Record<string, unknown> }));
-      const esUSD = (m: unknown) => { const t = String(m ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase(); return t.includes('USD') || t.includes('DOLAR'); };
-
-      // Mapas de resolución: consecutivo→tarifario (por sus líneas) y convenioId→tarifario.
-      const tariPorConsec: Record<string, string> = {};
-      const tariPorConvenio: Record<string, string> = {};
-      const idsTarifario = new Set(tarifarios.map((t) => t.id));
-      tarifarios.forEach((t) => {
-        const cid = String(t.data.convenioId || '');
-        if (cid && !tariPorConvenio[cid]) tariPorConvenio[cid] = t.id;
-        (Array.isArray(t.data.tarifas) ? (t.data.tarifas as Record<string, unknown>[]) : []).forEach((l) => {
-          const c = String((l as Record<string, unknown>)?.consecutivo || '');
-          if (c && !tariPorConsec[c]) tariPorConsec[c] = t.id;
-        });
-      });
-
-      // 1) LLAVE FORÁNEA en todos los detalles.
-      let fkEscritas = 0;
-      const sinFk: string[] = [];
-      for (const det of detalles) {
-        const consec = String(det.data.consecutivo || det.id);
-        const tid = String(det.data.tarifarioId || '');
-        if (tid && idsTarifario.has(tid)) continue; // FK válida
-        const resuelto = tariPorConsec[consec] || tariPorConvenio[String(det.data.convenioId || '')] || '';
-        if (resuelto) {
-          await updateDoc(doc(dbFs, COL_DETALLES, det.id), { tarifarioId: resuelto });
-          det.data.tarifarioId = resuelto;
-          fkEscritas += 1;
-        } else {
-          sinFk.push(consec);
-        }
-      }
-
-      // 2) Detalle CON llave pero SIN línea en el tarifario → la línea se reconstruye.
-      let lineasCreadas = 0;
-      const porTarifario = new Map<string, typeof detalles>();
-      detalles.forEach((det) => {
-        const tid = String(det.data.tarifarioId || '');
-        if (!tid) return;
-        if (!porTarifario.has(tid)) porTarifario.set(tid, []);
-        porTarifario.get(tid)!.push(det);
-      });
-      for (const t of tarifarios) {
-        const dets = porTarifario.get(t.id) || [];
-        if (dets.length === 0) continue;
-        const ts: Record<string, unknown>[] = Array.isArray(t.data.tarifas) ? [...(t.data.tarifas as Record<string, unknown>[])] : [];
-        const enLineas = new Set(ts.map((l) => String((l as Record<string, unknown>)?.consecutivo || '')).filter(Boolean));
-        let cambio = false;
-        for (const det of dets) {
-          const consec = String(det.data.consecutivo || det.id);
-          if (enLineas.has(consec)) continue;
-          const mon = det.data.moneda;
-          ts.push({
-            tarifaReferenciaId: String(det.data.tipoConvenioId || ''),
-            descripcion: String(det.data.tipoConvenioNombre || ''),
-            clave: '',
-            origen: String(det.data.origenNombre || ''),
-            destino: String(det.data.destinoNombre || ''),
-            costosSugeridos: [],
-            tarifa: Number(det.data.tarifa) || 0,
-            cotizadoEn: String(mon || '') ? (esUSD(mon) ? 'USD' : 'MXN') : '',
-            status: String(det.data.status || 'Aprobado'),
-            consecutivo: consec,
-            ...(Array.isArray(det.data.montos) && (det.data.montos as unknown[]).length > 1 ? { montos: (det.data.montos as unknown[]).map(Number) } : {}),
-          });
-          enLineas.add(consec);
-          cambio = true;
-          lineasCreadas += 1;
-        }
-        if (cambio) { await updateDoc(doc(dbFs, COL_TARIFARIOS, t.id), { tarifas: ts }); t.data.tarifas = ts; }
-      }
-
-      // 3) Línea guardada SIN detalle → el convenio se reconstruye con SU consecutivo.
-      let detallesCreados = 0;
-      const consecsDet = new Set(detalles.map((d) => String(d.data.consecutivo || d.id)));
-      for (const t of tarifarios) {
-        const ts = Array.isArray(t.data.tarifas) ? (t.data.tarifas as Record<string, unknown>[]) : [];
-        for (const l of ts) {
-          const li = l as Record<string, unknown>;
-          const consec = String(li?.consecutivo || '');
-          if (!consec || consecsDet.has(consec)) continue;
-          await setDoc(doc(dbFs, COL_DETALLES, consec), {
-            convenioId: String(t.data.convenioId || ''),
-            tarifarioId: t.id,
-            tipoConvenioId: String(li.tarifaReferenciaId || ''),
-            tipoConvenioNombre: String(li.descripcion || ''),
-            tarifa: Number(li.tarifa) || 0,
-            moneda: String(li.cotizadoEn || '') ? (esUSD(li.cotizadoEn) ? 'Dólares' : 'Pesos') : '',
-            status: String(li.status || 'Aprobado'),
-            consecutivo: consec,
-            origenNombre: String(li.origen || ''),
-            destinoNombre: String(li.destino || ''),
-            ...(Array.isArray(li.montos) && (li.montos as unknown[]).length > 1 ? { montos: (li.montos as unknown[]).map(Number) } : {}),
-          });
-          consecsDet.add(consec);
-          detallesCreados += 1;
-        }
-      }
-
-      // 4) VERIFICACIÓN de obligatorios sobre la colección YA reparada.
+      // ✅ V00429: un solo motor de integridad (compartido con tarifarios y operaciones)
+      const rep = await asegurarIntegridad(tipo);
+      // Verificación de moneda y costo sobre la colección ya reparada.
       const snapFin = await getDocs(collection(db, COL_DETALLES));
-      const sinTarifa: string[] = []; const sinMoneda: string[] = []; const sinCosto: string[] = [];
+      const sinMoneda: string[] = []; const sinCosto: string[] = [];
       snapFin.docs.forEach((d) => {
         const x = d.data() as Record<string, unknown>;
         const consec = String(x.consecutivo || d.id);
-        const nombre = String(x.tipoConvenioNombre || '').trim();
-        if (!String(x.tipoConvenioId || '') && (!nombre || norm2(nombre).includes('no identificad'))) sinTarifa.push(consec);
         if (!String(x.moneda || '').trim()) sinMoneda.push(consec);
         const c = Number(((x.costo !== undefined && x.costo !== null && x.costo !== '') ? x.costo : x.tarifa) ?? NaN);
         if (isNaN(c) || c <= 0) sinCosto.push(consec);
       });
       const listar = (a: string[]) => a.length === 0 ? 'ninguno ✅' : `${a.length} → ${a.slice(0, 12).join(', ')}${a.length > 12 ? '…' : ''}`;
-      alert(`Relación reparada. ✅\n\n· Llaves foráneas (tarifarioId) escritas: ${fkEscritas}\n· Líneas del tarifario reconstruidas: ${lineasCreadas}\n· Convenios reconstruidos desde líneas guardadas: ${detallesCreados}\n\nVERIFICACIÓN (para corregir con el ✏):\n· Sin llave foránea (irresolubles): ${listar(sinFk)}\n· Sin tarifa del catálogo: ${listar(sinTarifa)}\n· Sin moneda de cotización: ${listar(sinMoneda)}\n· Sin costo: ${listar(sinCosto)}\n\nLas pestañas "No identificados", "Sin cotización" y "Vacíos" los listan.`);
-      await registrarLog('Detalles del Convenio', 'Edición', `Reparó la relación tarifario ↔ convenios (${esClientes ? 'clientes' : 'proveedores'}): ${fkEscritas} FK, ${lineasCreadas} líneas y ${detallesCreados} convenios reconstruidos.`);
+      alert(`Relación reparada. ✅\n\n${resumenReporte(rep)}\n· Sin moneda de cotización: ${listar(sinMoneda)}\n· Sin costo: ${listar(sinCosto)}`);
+      await registrarLog('Detalles del Convenio', 'Edición', `Reparó la relación tarifario ↔ convenios (${esClientes ? 'clientes' : 'proveedores'}): ${rep.fkEscritas} FK, ${rep.entidadEscrita} ${esClientes ? 'clientes' : 'proveedores'}, ${rep.maestroReapuntado} maestros, ${rep.tarifaResuelta} tarifas, ${rep.lineasCreadas} líneas y ${rep.detallesCreados} convenios reconstruidos.`);
     } catch (e) {
       console.error('No se pudo reparar la relación:', e);
       alert('No se pudo reparar la relación tarifario ↔ convenios.');
     }
     setReparando(false);
   };
+  // ✅ V00429: AUTORREPARACIÓN — al abrir el módulo, si algún convenio no tiene
+  //   tarifario, empresa, maestro o tarifa, se repara solo (una vez por sesión;
+  //   el aviso queda visible si algo no se pudo resolver).
+  const incompletos = useMemo(() => (detallesDocs ? contarIncompletos(tipo, detallesDocs) : []), [detallesDocs, tipo]);
+  useEffect(() => {
+    if (incompletos.length === 0) return;
+    const clave = `roelca_integridad_${tipo}`;
+    try { if (sessionStorage.getItem(clave)) return; sessionStorage.setItem(clave, '1'); } catch { /* sin sessionStorage: se intenta igual */ }
+    asegurarIntegridad(tipo)
+      .then((rep) => { if (huboCambios(rep)) registrarLog('Detalles del Convenio', 'Edición', `Autorreparación de integridad (${tipo}): ${rep.fkEscritas} FK, ${rep.entidadEscrita} empresas, ${rep.maestroReapuntado} maestros, ${rep.tarifaResuelta} tarifas.`).catch(() => {}); })
+      .catch((e) => console.warn('[integridad] autorreparación:', e));
+  }, [incompletos.length, tipo]);
   /** ✅ V00304: elegir el monto VIGENTE de un convenio con varios montos —
    *  escribe `tarifa` en el detalle y en su línea del tarifario (el motor
    *  v1.3 también cascadea); las operaciones toman el vigente con ↻. */
@@ -1245,6 +1162,11 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     setConservarId(mejor.id);
     setModalUnir(true);
   };
+  // ✅ V00429: grupos desplegables (antes era un desplegable de costos que
+  //   escondía los demás convenios del grupo).
+  const [gruposAbiertos, setGruposAbiertos] = useState<Set<string>>(new Set());
+  const alternarGrupo = (k: string) => setGruposAbiertos((p) => { const st = new Set(p); if (st.has(k)) st.delete(k); else st.add(k); return st; });
+  type ItemRender = { tipo: 'fila'; fila: FilaDetalle; esMontos: boolean; sub: boolean; clave: string } | { tipo: 'grupo'; grupo: FilaDetalle[]; clave: string };
   const filasRender = useMemo(() => {
     const claveGrupo = (f: FilaDetalle) => `${f.entidad}|${f.tarifaId || f.tarifa}|${f.origen}|${f.destino}|${f.moneda}`;
     const mapa = new Map<string, FilaDetalle[]>();
@@ -1254,23 +1176,98 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       if (!mapa.has(k)) { mapa.set(k, []); orden.push(k); }
       mapa.get(k)!.push(f);
     });
-    const out: { fila: FilaDetalle; grupo?: FilaDetalle[]; esMontos?: boolean; clave: string }[] = [];
+    const out: ItemRender[] = [];
     orden.forEach((k) => {
       const variantes = mapa.get(k)!;
       const costosDistintos = new Set(variantes.map((v) => v.costo ?? 0)).size;
       if (variantes.length < 2 || costosDistintos < 2) {
         // Sin variantes de costo: cada detalle es su propia fila; si el DOC
         // trae varios montos (✅ V00304), su costo se elige en desplegable.
-        variantes.forEach((v) => out.push({ fila: v, clave: k, esMontos: (v.montos || []).length > 1 }));
+        variantes.forEach((v) => out.push({ tipo: 'fila', fila: v, clave: k, esMontos: (v.montos || []).length > 1, sub: false }));
         return;
       }
       const ordenadas = [...variantes].sort((a, b) => (a.costo ?? 0) - (b.costo ?? 0));
-      const elegida = ordenadas.find((v) => v.id === varianteSel[k]) || ordenadas[0];
-      out.push({ fila: elegida, grupo: ordenadas, clave: k });
+      out.push({ tipo: 'grupo', grupo: ordenadas, clave: k });
+      if (gruposAbiertos.has(k)) ordenadas.forEach((v) => out.push({ tipo: 'fila', fila: v, clave: k, esMontos: (v.montos || []).length > 1, sub: true }));
     });
     return out;
-  }, [filasVisibles, varianteSel]);
+  }, [filasVisibles, gruposAbiertos]);
 
+  // ✅ V00429: operaciones del convenio con el NOMBRE de su status
+  const opsConStatus = (id: string): OpConStatus[] => (usosOps[id] || []).map((o) => ({ id: o.docId, ref: o.ref, fecha: o.fecha, statusNombre: o.status, tipo: o.tipo }));
+  // ✅ V00429: una fila de convenio (también las del grupo desplegado, con `sub`)
+  const renderFila = (f: FilaDetalle, esMontos: boolean, sub: boolean) => (
+                <tr key={f.id} className={`dcv-fila-click${eliminandoIds.has(f.id) ? ' dcv-fila-eliminando' : ''}${sub ? ' dcv-fila-sub' : ''}`} onClick={() => setUsoAbierto(f)}>
+                  {(
+                    /* ✅ V00207: checkbox de selección para borrado masivo */
+                    <td className="dcv-th-check dcv-fija-check" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={seleccion.has(f.id)}
+                        onChange={(e) => setSeleccion((prev) => { const s = new Set(prev); if (e.target.checked) s.add(f.id); else s.delete(f.id); return s; })}
+                      />
+                    </td>
+                  )}
+                  {(
+                    /* ✅ V00207: editar (corrige tarifa/No identificado) y eliminar AL INICIO */
+                    <td className="dcv-td-acciones dcv-fija-acciones" onClick={(e) => e.stopPropagation()}>
+                      {eliminandoIds.has(f.id) ? (
+                        <span className="dcv-eliminando-chip" title="Este convenio está viajando a la Papelera de Reciclaje">⏳ Eliminando…</span>/* ✅ V00302 */
+                      ) : (<>
+                      <button className="btn-small btn-edit dcv-mr6" title="Editar este detalle (tarifa, cotizado en, status y costo)" onClick={() => abrirEdicion(f)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></button>
+                      <button className="btn-small btn-danger" title="Eliminar (va a la Papelera de Reciclaje)" onClick={() => eliminarDetalle(f.id)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button>
+                      </>)}
+                    </td>
+                  )}
+                  <td className="dcv-x10 dcv-fija-consec" title={`Convenio ${f.numeroConvenio} · id ${f.id}`}>{f.consecutivo || '—'}</td>{/* ✅ V00211 */}
+                  <td>{f.entidad}</td>
+                  <td>
+                    {f.tarifa}
+                    {sub && <span className="dcv-chip-sub" title="Convenio del grupo (mismo nombre, otro costo)">↳ {fmtCosto(f.costo)}</span>}
+                    {/* ✅ V00304: UN convenio con varios montos */}
+                    {esMontos && <span className="dcv-chip-variantes" title="Este convenio tiene varios montos — elige el VIGENTE en el desplegable de COSTO">{f.montos.length} montos</span>}
+                    {/* ✅ V00218: aviso de convenio repetido con la misma tarifa */}
+                    {esDuplicado(f) && <span className="dcv-chip-dup" title="Este cliente/proveedor tiene otro convenio idéntico (misma tarifa y mismo monto) — conviene unirlos">⚠ duplicado</span>}
+                  </td>
+                  <td>{f.origen || '—'}</td>{/* ✅ V00231 */}
+                  <td>{f.destino || '—'}</td>
+                  <td onClick={(e) => e.stopPropagation()}>{(() => { const val = String(cambios[f.id]?.moneda ?? f.moneda ?? ''); const ops = monedasCat.length > 0 ? monedasCat : ['Pesos', 'Dólares']; const lista = val && !ops.includes(val) ? [...ops, val] : ops; return (
+                    <select className="form-control dcv-select-moneda" value={val} onChange={(e) => marcarCambio(f.id, 'moneda', e.target.value)}>
+                      <option value="">— Sin moneda —</option>
+                      {lista.map((m) => <option key={m} value={m}>{m}</option>)}
+                    </select>); })()}</td>
+                  {(
+                    /* ✅ V00199: status editable del detalle (se guarda con "Guardar cambios") */
+                    <td onClick={(e) => e.stopPropagation()}>
+                      {/* ✅ V00202: vacío = Aprobado (estar en Detalles implica aprobado) */}
+                      <select className="form-control dcv-select-moneda" value={String(cambios[f.id]?.status ?? (f.status || 'Aprobado'))} onChange={(e) => marcarCambio(f.id, 'status', e.target.value)}>
+                        {ESTADOS_DETALLE.map((st) => <option key={st} value={st}>{st}</option>)}
+                      </select>
+                    </td>
+                  )}
+                  {(
+                    /* ✅ V00206: total de operaciones que usaron este convenio */
+                    <td className="dcv-td-usos">{(usosOps[f.id] || []).length}<ResumenStatusOps ops={opsConStatus(f.id)} /></td>
+                  )}
+                  <td className="dcv-x8" onClick={(e) => e.stopPropagation()}>
+                    {esMontos ? (
+                      /* ✅ V00304: los montos viven en el MISMO convenio (un solo
+                         CONV-###); aquí se elige cuál queda VIGENTE. */
+                      <select
+                        className="form-control dcv-select-costo-variante"
+                        value={String(f.costo ?? '')}
+                        title="Este convenio tiene varios montos: elige cuál queda VIGENTE (es el que usan las operaciones)"
+                        onChange={(e) => elegirMontoVigente(f, Number(e.target.value))}
+                      >
+                        {Array.from(new Set([...(f.costo !== null ? [f.costo] : []), ...f.montos])).sort((a, b) => a - b).map((m) => <option key={m} value={String(m)}>{fmtCosto(m)}</option>)}
+                      </select>
+                    ) : (
+                      <input type="number" step="0.01" className="form-control dcv-input-costo" value={cambios[f.id]?.tarifa ?? (f.costo ?? 0)} onChange={(e) => marcarCambio(f.id, 'tarifa', parseFloat(e.target.value) || 0)} />
+                    )}
+                  </td>
+
+                </tr>
+  );
   // ✅ V00217: entidades presentes, para el selector
   const entidades = useMemo(
     () => Array.from(new Set((filas || []).map((f) => f.entidad).filter((e) => e && e !== '—'))).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' })),
@@ -1357,6 +1354,13 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         <button className="btn btn-outline dcv-btn-reparar" disabled={reparando} title="Escribe la llave foránea (tarifarioId) en todos los convenios y deja el detalle del tarifario IGUAL al detalle del convenio; al final reporta los que queden sin tarifa, moneda o costo" onClick={repararRelacion}>
           {reparando ? 'Reparando…' : '🔗 Reparar relación'}
         </button>
+        {/* ✅ V00429: convenios con cliente/proveedor, tarifa o llave foránea vacíos */}
+        {incompletos.length > 0 && (
+          <button type="button" className="dcv-chip-incompletos" disabled={reparando} onClick={repararRelacion}
+            title={`Convenios con ${esClientes ? 'cliente' : 'proveedor'}, tarifa, convenio maestro o tarifario vacío:\n${incompletos.slice(0, 30).join(', ')}${incompletos.length > 30 ? '…' : ''}\n\nClic para repararlos.`}>
+            ⚠ {incompletos.length} incompleto(s)
+          </button>
+        )}
         {/* ✅ V00215: unir duplicados */}
         {seleccion.size >= 2 && (
           <button className="btn btn-outline dcv-btn-unir" disabled={uniendo} onClick={abrirModalUnir}>
@@ -1414,98 +1418,43 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
               </tr>
             </thead>
             <tbody>
-              {filasRender.slice(0, visibleN).map(({ fila: f, grupo, esMontos, clave }) => (
-                /* ✅ V00206: clic en la fila = ver en cuántas operaciones se usó */
-                /* ✅ V00302: la fila se atenúa mientras se elimina */
-                <tr key={f.id} className={`dcv-fila-click${eliminandoIds.has(f.id) ? ' dcv-fila-eliminando' : ''}`} onClick={() => setUsoAbierto(f)}>
-                  {(
-                    /* ✅ V00207: checkbox de selección para borrado masivo */
-                    <td className="dcv-th-check dcv-fija-check" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        checked={seleccion.has(f.id)}
-                        onChange={(e) => setSeleccion((prev) => { const s = new Set(prev); if (e.target.checked) s.add(f.id); else s.delete(f.id); return s; })}
-                      />
-                    </td>
-                  )}
-                  {(
-                    /* ✅ V00207: editar (corrige tarifa/No identificado) y eliminar AL INICIO */
-                    <td className="dcv-td-acciones dcv-fija-acciones" onClick={(e) => e.stopPropagation()}>
-                      {eliminandoIds.has(f.id) ? (
-                        <span className="dcv-eliminando-chip" title="Este convenio está viajando a la Papelera de Reciclaje">⏳ Eliminando…</span>/* ✅ V00302 */
-                      ) : (<>
-                      <button className="btn-small btn-edit dcv-mr6" title="Editar este detalle (tarifa, cotizado en, status y costo)" onClick={() => abrirEdicion(f)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></button>
-                      <button className="btn-small btn-danger" title="Eliminar (va a la Papelera de Reciclaje)" onClick={() => eliminarDetalle(f.id)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button>
-                      </>)}
-                    </td>
-                  )}
-                  <td className="dcv-x10 dcv-fija-consec" title={`Convenio ${f.numeroConvenio} · id ${f.id}`}>{f.consecutivo || '—'}</td>{/* ✅ V00211 */}
-                  <td>{f.entidad}</td>
+              {filasRender.slice(0, visibleN).map((item) => item.tipo === 'grupo' ? (
+                /* ✅ V00429: FILA DE GRUPO — mismo nombre con varios costos. El
+                   ícono ▸ despliega cada convenio por separado (sus operaciones,
+                   su status, su costo…). */
+                <tr key={`g_${item.clave}`} className={`dcv-fila-grupo${gruposAbiertos.has(item.clave) ? ' dcv-fila-grupo--abierto' : ''}`} onClick={() => alternarGrupo(item.clave)}>
+                  <td className="dcv-th-check dcv-fija-check" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      title="Seleccionar todos los convenios del grupo"
+                      checked={item.grupo.every((v) => seleccion.has(v.id))}
+                      onChange={(e) => setSeleccion((prev) => { const st = new Set(prev); item.grupo.forEach((v) => { if (e.target.checked) st.add(v.id); else st.delete(v.id); }); return st; })}
+                    />
+                  </td>
+                  <td className="dcv-td-acciones dcv-fija-acciones">
+                    <button type="button" className="dcv-btn-grupo" title={gruposAbiertos.has(item.clave) ? 'Ocultar los convenios del grupo' : 'Ver cada convenio por separado'}>
+                      {gruposAbiertos.has(item.clave) ? '▾' : '▸'} {item.grupo.length}
+                    </button>
+                  </td>
+                  <td className="dcv-x10 dcv-fija-consec" title="Consecutivos del grupo">{item.grupo.map((v) => v.consecutivo || v.id).join(' · ')}</td>
+                  <td>{item.grupo[0].entidad}</td>
                   <td>
-                    {f.tarifa}
-                    {/* ✅ V00302: este nombre está repetido en VARIOS convenios con costo distinto */}
-                    {grupo && <>
-                      <span className="dcv-chip-variantes" title="Este nombre está repetido en varios convenios que solo difieren en el costo">{grupo.length} costos</span>
-                      {/* ✅ V00304: fusionarlos en UN solo convenio con todos sus montos */}
-                      <button type="button" className="dcv-btn-unificar" title="Unificar en UN solo convenio con todos sus montos (reapunta operaciones y limpia las líneas del tarifario)" onClick={(e) => { e.stopPropagation(); prepararUnificacion(grupo); }}>⇒ 1 convenio</button>
-                    </>}
-                    {/* ✅ V00304: UN convenio con varios montos */}
-                    {esMontos && <span className="dcv-chip-variantes" title="Este convenio tiene varios montos — elige el VIGENTE en el desplegable de COSTO">{f.montos.length} montos</span>}
-                    {/* ✅ V00218: aviso de convenio repetido con la misma tarifa */}
-                    {esDuplicado(f) && <span className="dcv-chip-dup" title="Este cliente/proveedor tiene otro convenio idéntico (misma tarifa y mismo monto) — conviene unirlos">⚠ duplicado</span>}
+                    {item.grupo[0].tarifa}
+                    <span className="dcv-chip-variantes" title="Este nombre está repetido en varios convenios que solo difieren en el costo">{item.grupo.length} costos</span>
+                    {/* ✅ V00304: fusionarlos en UN solo convenio con todos sus montos */}
+                    <button type="button" className="dcv-btn-unificar" title="Unificar en UN solo convenio con todos sus montos (reapunta operaciones y limpia las líneas del tarifario)" onClick={(e) => { e.stopPropagation(); prepararUnificacion(item.grupo); }}>⇒ 1 convenio</button>
                   </td>
-                  <td>{f.origen || '—'}</td>{/* ✅ V00231 */}
-                  <td>{f.destino || '—'}</td>
-                  <td onClick={(e) => e.stopPropagation()}>{(() => { const val = String(cambios[f.id]?.moneda ?? f.moneda ?? ''); const ops = monedasCat.length > 0 ? monedasCat : ['Pesos', 'Dólares']; const lista = val && !ops.includes(val) ? [...ops, val] : ops; return (
-                    <select className="form-control dcv-select-moneda" value={val} onChange={(e) => marcarCambio(f.id, 'moneda', e.target.value)}>
-                      <option value="">— Sin moneda —</option>
-                      {lista.map((m) => <option key={m} value={m}>{m}</option>)}
-                    </select>); })()}</td>
-                  {(
-                    /* ✅ V00199: status editable del detalle (se guarda con "Guardar cambios") */
-                    <td onClick={(e) => e.stopPropagation()}>
-                      {/* ✅ V00202: vacío = Aprobado (estar en Detalles implica aprobado) */}
-                      <select className="form-control dcv-select-moneda" value={String(cambios[f.id]?.status ?? (f.status || 'Aprobado'))} onChange={(e) => marcarCambio(f.id, 'status', e.target.value)}>
-                        {ESTADOS_DETALLE.map((st) => <option key={st} value={st}>{st}</option>)}
-                      </select>
-                    </td>
-                  )}
-                  {(
-                    /* ✅ V00206: total de operaciones que usaron este convenio */
-                    <td className="dcv-td-usos">{(usosOps[f.id] || []).length}</td>
-                  )}
-                  <td className="dcv-x8" onClick={(e) => e.stopPropagation()}>
-                    {grupo ? (
-                      /* ✅ V00302: DESPLEGABLE de costos — el usuario elige qué
-                         costo de este convenio ver (la fila entera cambia a esa
-                         variante: consecutivo, status y operaciones). Para
-                         cambiar el monto en sí, usa el lápiz ✏. */
-                      <select
-                        className="form-control dcv-select-costo-variante"
-                        value={f.id}
-                        title="Este convenio tiene varias tarifas con el mismo nombre: elige qué costo usar"
-                        onChange={(e) => setVarianteSel((p) => ({ ...p, [clave]: e.target.value }))}
-                      >
-                        {grupo.map((v) => <option key={v.id} value={v.id}>{fmtCosto(v.costo)} · {v.consecutivo || v.id}</option>)}
-                      </select>
-                    ) : esMontos ? (
-                      /* ✅ V00304: los montos viven en el MISMO convenio (un solo
-                         CONV-###); aquí se elige cuál queda VIGENTE. */
-                      <select
-                        className="form-control dcv-select-costo-variante"
-                        value={String(f.costo ?? '')}
-                        title="Este convenio tiene varios montos: elige cuál queda VIGENTE (es el que usan las operaciones)"
-                        onChange={(e) => elegirMontoVigente(f, Number(e.target.value))}
-                      >
-                        {Array.from(new Set([...(f.costo !== null ? [f.costo] : []), ...f.montos])).sort((a, b) => a - b).map((m) => <option key={m} value={String(m)}>{fmtCosto(m)}</option>)}
-                      </select>
-                    ) : (
-                      <input type="number" step="0.01" className="form-control dcv-input-costo" value={cambios[f.id]?.tarifa ?? (f.costo ?? 0)} onChange={(e) => marcarCambio(f.id, 'tarifa', parseFloat(e.target.value) || 0)} />
-                    )}
+                  <td>{item.grupo[0].origen || '—'}</td>
+                  <td>{item.grupo[0].destino || '—'}</td>
+                  <td>{Array.from(new Set(item.grupo.map((v) => v.moneda || '—'))).join(' / ')}</td>
+                  <td>{Array.from(new Set(item.grupo.map((v) => v.status || 'Aprobado'))).join(' / ')}</td>
+                  <td className="dcv-td-usos">
+                    {item.grupo.reduce((a, v) => a + (usosOps[v.id] || []).length, 0)}
+                    <ResumenStatusOps ops={item.grupo.flatMap((v) => opsConStatus(v.id))} />
                   </td>
-
+                  <td className="dcv-x8 dcv-rango-costos">{(() => { const cs = item.grupo.map((v) => v.costo ?? 0); return `${fmtCosto(Math.min(...cs))} – ${fmtCosto(Math.max(...cs))}`; })()}</td>
                 </tr>
-              ))}
+              ) : renderFila(item.fila, item.esMontos, item.sub))}
             </tbody>
           </table>
         </div>
@@ -1764,6 +1713,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
               <div className="dcv-kpi">
                 <span className="dcv-kpi-lbl">Operaciones</span>
                 <span className="dcv-kpi-val">{(usosOps[usoAbierto.id] || []).length}</span>
+                <ResumenStatusOps ops={opsConStatus(usoAbierto.id)} />{/* ✅ V00429 */}
               </div>
               <div className="dcv-kpi">
                 <span className="dcv-kpi-lbl">Status</span>
@@ -1795,12 +1745,14 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                 <div className="dcv-ficha-ops-tit">Operaciones que lo usaron</div>
                 <div className="dcv-modal-marco">
                   <table className="dcv-tabla-usos">
-                    <thead><tr><th>REF</th><th>FECHA</th><th>TIPO</th><th className="dcv-usos-monto">MONTO</th></tr></thead>{/* ✅ V00236: sin status */}
+                    <thead><tr><th>#</th><th>REF</th><th>FECHA</th><th>STATUS</th><th>TIPO</th><th className="dcv-usos-monto">MONTO</th></tr></thead>{/* ✅ V00429: con # y STATUS */}
                     <tbody>
                       {(usosOps[usoAbierto.id] || []).map((o, i) => (
                         <tr key={`${o.ref}-${i}`}>
+                          <td className="dcv-num">{i + 1}</td>
                           <td><button type="button" className="dcv-ref-link" title={`Editar ${o.ref}`} onClick={() => editarOperacion(o)}>{o.ref || '—'}</button></td>
                           <td>{o.fecha || '—'}</td>
+                          <td><span className={`sto-chip sto-chip--${familiaStatus(o.status)}`}>{o.status || 'Sin status'}</span></td>
                           <td>{o.tipo || '—'}</td>
                           <td className="dcv-usos-monto">{o.monto ? `$${Number(o.monto).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</td>
                         </tr>
