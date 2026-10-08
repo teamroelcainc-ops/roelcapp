@@ -298,8 +298,20 @@
 .dcv-fila-grupo td { font-weight: 600; }
 .dcv-btn-grupo { min-width: 44px; padding: 3px 8px; border: 1px solid #1f6feb; border-radius: 6px; background: transparent; color: #58a6ff; font-weight: 800; cursor: pointer; font-family: inherit; }
 .dcv-fila-grupo:hover .dcv-btn-grupo { background: rgba(31, 111, 235, 0.18); }
-.dcv-fila-sub td { background: rgba(31, 111, 235, 0.03); }
-.dcv-fila-sub td:nth-child(3) { padding-left: 22px; }
+/* ✅ V00430: las filas DESPLEGADAS del grupo se distinguen del resto — fondo
+   azulado (también en las columnas fijas), barra azul a la izquierda,
+   sangría con conector └ en consecutivo/cliente/tarifa y letra más chica. */
+.dcv-x6 .data-table tr.dcv-fila-sub td { background-color: #111d2e; font-size: 0.8rem; border-bottom: 1px dashed rgba(31, 111, 235, 0.35); }
+.dcv-x6 .data-table tr.dcv-fila-sub:hover td { background-color: #16253b; }
+.dcv-x6 .data-table tr.dcv-fila-sub .dcv-fija-check { box-shadow: inset 4px 0 0 #1f6feb; }
+.dcv-x6 .data-table tr.dcv-fila-sub td:nth-child(3),
+.dcv-x6 .data-table tr.dcv-fila-sub td:nth-child(4),
+.dcv-x6 .data-table tr.dcv-fila-sub td:nth-child(5) { padding-left: 30px; position: relative; }
+.dcv-x6 .data-table tr.dcv-fila-sub td:nth-child(3)::before { content: '└'; position: absolute; left: 12px; color: #58a6ff; font-weight: 700; }
+.dcv-x6 .data-table tr.dcv-fila-sub td:nth-child(3) { position: sticky; }
+.dcv-x6 .data-table tr.dcv-fila-sub--ultima td { border-bottom: 2px solid #1f6feb; }
+.dcv-x6 .data-table tr.dcv-fila-grupo--abierto td { background-color: #13233a; border-bottom: 1px solid #1f6feb; }
+.dcv-x6 .data-table tr.dcv-fila-grupo--abierto .dcv-fija-check { box-shadow: inset 4px 0 0 #1f6feb; }
 .dcv-chip-sub { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; border: 1px dashed #1f6feb; color: #58a6ff; font-size: 0.68rem; font-weight: 700; white-space: nowrap; }
 .dcv-rango-costos { white-space: nowrap; font-variant-numeric: tabular-nums; color: #c9d1d9; }
 .dcv-num { color: #8b949e; font-variant-numeric: tabular-nums; }

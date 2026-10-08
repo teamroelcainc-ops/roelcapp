@@ -1166,7 +1166,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   //   escondía los demás convenios del grupo).
   const [gruposAbiertos, setGruposAbiertos] = useState<Set<string>>(new Set());
   const alternarGrupo = (k: string) => setGruposAbiertos((p) => { const st = new Set(p); if (st.has(k)) st.delete(k); else st.add(k); return st; });
-  type ItemRender = { tipo: 'fila'; fila: FilaDetalle; esMontos: boolean; sub: boolean; clave: string } | { tipo: 'grupo'; grupo: FilaDetalle[]; clave: string };
+  type ItemRender = { tipo: 'fila'; fila: FilaDetalle; esMontos: boolean; sub: boolean; ultima?: boolean; clave: string } | { tipo: 'grupo'; grupo: FilaDetalle[]; clave: string };
   const filasRender = useMemo(() => {
     const claveGrupo = (f: FilaDetalle) => `${f.entidad}|${f.tarifaId || f.tarifa}|${f.origen}|${f.destino}|${f.moneda}`;
     const mapa = new Map<string, FilaDetalle[]>();
@@ -1188,7 +1188,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       }
       const ordenadas = [...variantes].sort((a, b) => (a.costo ?? 0) - (b.costo ?? 0));
       out.push({ tipo: 'grupo', grupo: ordenadas, clave: k });
-      if (gruposAbiertos.has(k)) ordenadas.forEach((v) => out.push({ tipo: 'fila', fila: v, clave: k, esMontos: (v.montos || []).length > 1, sub: true }));
+      if (gruposAbiertos.has(k)) ordenadas.forEach((v, iv) => out.push({ tipo: 'fila', fila: v, clave: k, esMontos: (v.montos || []).length > 1, sub: true, ultima: iv === ordenadas.length - 1 }));
     });
     return out;
   }, [filasVisibles, gruposAbiertos]);
@@ -1196,8 +1196,8 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   // ✅ V00429: operaciones del convenio con el NOMBRE de su status
   const opsConStatus = (id: string): OpConStatus[] => (usosOps[id] || []).map((o) => ({ id: o.docId, ref: o.ref, fecha: o.fecha, statusNombre: o.status, tipo: o.tipo }));
   // ✅ V00429: una fila de convenio (también las del grupo desplegado, con `sub`)
-  const renderFila = (f: FilaDetalle, esMontos: boolean, sub: boolean) => (
-                <tr key={f.id} className={`dcv-fila-click${eliminandoIds.has(f.id) ? ' dcv-fila-eliminando' : ''}${sub ? ' dcv-fila-sub' : ''}`} onClick={() => setUsoAbierto(f)}>
+  const renderFila = (f: FilaDetalle, esMontos: boolean, sub: boolean, ultima = false) => (
+                <tr key={f.id} className={`dcv-fila-click${eliminandoIds.has(f.id) ? ' dcv-fila-eliminando' : ''}${sub ? ' dcv-fila-sub' : ''}${ultima ? ' dcv-fila-sub--ultima' : ''}`} onClick={() => setUsoAbierto(f)}>
                   {(
                     /* ✅ V00207: checkbox de selección para borrado masivo */
                     <td className="dcv-th-check dcv-fija-check" onClick={(e) => e.stopPropagation()}>
@@ -1454,7 +1454,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                   </td>
                   <td className="dcv-x8 dcv-rango-costos">{(() => { const cs = item.grupo.map((v) => v.costo ?? 0); return `${fmtCosto(Math.min(...cs))} – ${fmtCosto(Math.max(...cs))}`; })()}</td>
                 </tr>
-              ) : renderFila(item.fila, item.esMontos, item.sub))}
+              ) : renderFila(item.fila, item.esMontos, item.sub, item.ultima))}
             </tbody>
           </table>
         </div>

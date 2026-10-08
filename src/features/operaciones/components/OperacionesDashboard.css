@@ -402,3 +402,9 @@
 .od-tab-tipo--activa { color: #f0f6fc; border-bottom-color: #D84315; }
 .od-tab-tipo__n { min-width: 20px; padding: 1px 7px; border-radius: 999px; background: #21262d; color: #c9d1d9; font-size: 0.72rem; font-weight: 700; text-align: center; }
 .od-tab-tipo--activa .od-tab-tipo__n { background: rgba(216, 67, 21, 0.2); color: #ffb08a; }
+
+/* ✅ V00430: cancelar la referencia cuando la operación no tiene reglas de estatus */
+.od-btn-cancelar-ref { margin-left: 10px; padding: 8px 14px; border-radius: 999px; border: 1px solid #da3633; background: rgba(248, 81, 73, 0.1); color: #ff7b72; font-weight: 700; font-size: 0.82rem; cursor: pointer; font-family: inherit; }
+.od-btn-cancelar-ref:hover:not(:disabled) { background: rgba(248, 81, 73, 0.22); color: #ffa198; }
+.od-btn-cancelar-ref:disabled { opacity: 0.6; cursor: wait; }
+.od-btn-cancelar-ref--modal { margin: 10px 0 0; width: 100%; border-radius: 6px; }

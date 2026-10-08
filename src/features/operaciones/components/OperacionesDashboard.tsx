@@ -8,7 +8,8 @@ import { ResumenDiarioOperaciones } from '../../reportes/components/ResumenDiari
 import { collection, doc, writeBatch, query, getDoc, getDocs, limit, where, startAfter, orderBy, onSnapshot, setDoc } from 'firebase/firestore';
 import { DocumentosLista } from '../../documentos/DocumentosLista'; // ✅ V00344
 import { obtenerUsuarioAut } from '../../autorizaciones/autorizaciones'; // ✅ V00344
-import { db, eliminarRegistro } from '../../../config/firebase'; 
+import { db, eliminarRegistro } from '../../../config/firebase';
+import { useUsuarioStore } from '../../../stores/useUsuarioStore'; // ✅ V00430 
 import { registrarLog } from '../../../utils/logger';
 import { sincronizarNombresOperaciones as sincronizarNombresUtil } from '../../../utils/sincronizarNombresOperaciones';
 import { obtenerBotonesHorarioDinamicos, resolverCascadaStatus, obtenerNombresStatusDelFlujo, statusDescuentaPuente } from '../config/statusRules';
@@ -1207,6 +1208,61 @@ const OperacionesDashboard = () => {
     setCargandoHorarios(false);
   };
 
+  // ✅ V00430: CANCELAR LA REFERENCIA aunque la operación no tenga reglas de
+  //   estatus (sin flujo no hay botones ni "Registrar Movimiento"). Mismo
+  //   control que el formulario: motivo obligatorio y quién/cuándo canceló.
+  const ID_STATUS_CANCELADO_OD = '7607f692';
+  const usuarioCancelaOD = useUsuarioStore((st) => st.usuario);
+  const [cancelandoRef, setCancelandoRef] = useState(false);
+  const sinReglasDeEstatus = !!operacionViendo && Array.isArray(statusDelFlujo) && statusDelFlujo.length === 0;
+  const yaCancelada = (op: { status?: unknown; statusNombre?: unknown } | null | undefined): boolean => String(op?.status || '') === ID_STATUS_CANCELADO_OD || String(op?.statusNombre || '').toLowerCase().includes('cancel');
+  const cancelarReferenciaSinFlujo = async () => {
+    if (!operacionViendo || cancelandoRef || yaCancelada(operacionViendo)) return;
+    const refTxt = String(operacionViendo.ref || operacionViendo.id || '');
+    let motivo = '';
+    while (!motivo.trim()) {
+      const resp = window.prompt(`Para CANCELAR la referencia ${refTxt} escribe el motivo de la cancelación (obligatorio):`, '');
+      if (resp === null) return; // desistió
+      motivo = resp;
+    }
+    setCancelandoRef(true);
+    try {
+      const { id: statusId, nombre: statusNombreRes } = resolverStatus(ID_STATUS_CANCELADO_OD);
+      const nombreCancelado = statusNombreRes && statusNombreRes !== statusId ? statusNombreRes : 'Cancelado';
+      const ahora = new Date().toISOString();
+      const datos = {
+        status: ID_STATUS_CANCELADO_OD,
+        statusNombre: nombreCancelado,
+        observacionCancelacion: motivo.trim(),
+        canceladoPor: String(usuarioCancelaOD?.nombre || usuarioCancelaOD?.email || usuarioCancelaOD?.id || 'Desconocido'),
+        canceladoPorUid: String(usuarioCancelaOD?.id || ''),
+        fechaCancelacion: ahora,
+      };
+      const batch = writeBatch(db);
+      batch.set(doc(collection(db, 'horarios')), limpiarUndefined({
+        operacionId: operacionViendo.id,
+        status: ID_STATUS_CANCELADO_OD,
+        statusNombre: nombreCancelado,
+        fechaHora: ahoraLocalISOCorto(),
+        registradoEn: ahora,
+        observacion: motivo.trim(),
+      }));
+      batch.update(doc(db, 'operaciones', String(operacionViendo._docId || operacionViendo.id)), limpiarUndefined(datos));
+      await batch.commit();
+      const opAct = { ...operacionViendo, ...datos };
+      notificarOperacionGuardada(String(operacionViendo._docId || operacionViendo.id), opAct, 'operaciones-status');
+      setOperacionViendo(opAct);
+      setOperacionesGlobales((prev) => prev.map((op: { id?: unknown }) => (op.id === operacionViendo.id ? opAct : op)));
+      setModalHorarios('cerrado');
+      alert(`Referencia ${refTxt} cancelada. ✅ Ahora aparece en Servicios Cancelados.`);
+    } catch (e) {
+      console.error('Error cancelando la referencia:', e);
+      const err = e as { message?: string; code?: string };
+      alert('No se pudo cancelar la referencia.\n\nDetalle técnico: ' + (err?.message || err?.code || 'desconocido'));
+    }
+    setCancelandoRef(false);
+  };
+
   // ✅ V00384: el botón de SIGUIENTE PASO primero pide fecha y hora
   const [pasoPendiente, setPasoPendiente] = useState<{ status: string; fecha: string } | null>(null);
   const pedirFechaPaso = (statusNombre: string) => {
@@ -2398,6 +2454,13 @@ const OperacionesDashboard = () => {
                       </span>
                       Registrar Status
                     </button>
+                    {/* ✅ V00430: sin reglas de estatus igual se puede cancelar la referencia */}
+                    {sinReglasDeEstatus && !yaCancelada(operacionViendo) && (
+                      <button type="button" className="od-btn-cancelar-ref" disabled={cancelandoRef} onClick={cancelarReferenciaSinFlujo}
+                        title="Esta operación no tiene reglas de estatus configuradas; aun así puedes cancelar la referencia (se pide el motivo)">
+                        {cancelandoRef ? 'Cancelando…' : '✕ Cancelar referencia'}
+                      </button>
+                    )}
                   </>
                 )}
               </div>
@@ -2883,6 +2946,12 @@ const OperacionesDashboard = () => {
                 </select>
                 {(!statusDelFlujo || statusDelFlujo.length === 0) && (
                   <div className="od-sinflujo">⚠ Esta operación (su Servicio + Tráfico + Carga) no tiene un flujo en Configuración → Reglas de Estatus. Configúralo y guárdalo para habilitar el registro de movimientos.</div>
+                )}
+                {/* ✅ V00430: la cancelación no depende del flujo */}
+                {sinReglasDeEstatus && !yaCancelada(operacionViendo) && (
+                  <button type="button" className="od-btn-cancelar-ref od-btn-cancelar-ref--modal" disabled={cancelandoRef} onClick={cancelarReferenciaSinFlujo}>
+                    {cancelandoRef ? 'Cancelando…' : '✕ Cancelar referencia'}
+                  </button>
                 )}
               </div>
               <div>
