@@ -313,6 +313,8 @@ const OperacionesDashboard = () => {
   const [botonesDisponibles, setBotonesDisponibles] = useState<string[]>([]);
   // ✅ V00377: estatus del FLUJO aplicable (Registrar Movimiento solo ofrece estos)
   const [statusDelFlujo, setStatusDelFlujo] = useState<string[] | null>(null);
+  // ✅ V00431: id de la operación cuyo flujo YA se consultó (null = sin reglas, no "cargando")
+  const [flujoConsultadoDe, setFlujoConsultadoDe] = useState('');
   const [catalogosGlobales, setCatalogosGlobales] = useState<any>({});
 
   const [busqueda, setBusqueda] = useState('');
@@ -791,9 +793,11 @@ const OperacionesDashboard = () => {
         const botones = await obtenerBotonesHorarioDinamicos(op);
         setBotonesDisponibles(botones || []);
         setStatusDelFlujo(await obtenerNombresStatusDelFlujo(op)); // ✅ V00377
+        setFlujoConsultadoDe(String(op.id || '')); // ✅ V00431
       } else {
         setBotonesDisponibles([]);
         setStatusDelFlujo(null);
+        setFlujoConsultadoDe(''); // ✅ V00431
       }
     };
     cargarBotones();
@@ -1214,7 +1218,9 @@ const OperacionesDashboard = () => {
   const ID_STATUS_CANCELADO_OD = '7607f692';
   const usuarioCancelaOD = useUsuarioStore((st) => st.usuario);
   const [cancelandoRef, setCancelandoRef] = useState(false);
-  const sinReglasDeEstatus = !!operacionViendo && Array.isArray(statusDelFlujo) && statusDelFlujo.length === 0;
+  // ✅ V00431: obtenerNombresStatusDelFlujo devuelve null cuando NO hay reglas
+  //   (V00430 solo reconocía la lista vacía y el botón nunca aparecía).
+  const sinReglasDeEstatus = !!operacionViendo && flujoConsultadoDe === String(operacionViendo.id || '') && (!statusDelFlujo || statusDelFlujo.length === 0);
   const yaCancelada = (op: { status?: unknown; statusNombre?: unknown } | null | undefined): boolean => String(op?.status || '') === ID_STATUS_CANCELADO_OD || String(op?.statusNombre || '').toLowerCase().includes('cancel');
   const cancelarReferenciaSinFlujo = async () => {
     if (!operacionViendo || cancelandoRef || yaCancelada(operacionViendo)) return;
