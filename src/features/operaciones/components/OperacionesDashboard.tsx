@@ -450,10 +450,29 @@ const OperacionesDashboard = () => {
   const ultimoDocRef = useRef<any>(null);
 
   const IDS_STATUS_EXCLUIDOS = ['7607f692', 'f557b751', 'c2d57403'];
-  const esOperacionActiva = (op: any): boolean => {
+  // ✅ V00432: además de los ids, se excluye por NOMBRE del status (catálogo o
+  //   guardado): Cancelado, Falso y Servicio Completado nunca son "activas",
+  //   aunque el id venga de otro registro del catálogo o de un dato viejo.
+  const sinAcentosOD = (t: unknown) => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const esNombreFinal = (n: unknown): boolean => { const t = sinAcentosOD(n); return t.includes('cancel') || t.includes('falso') || t.includes('complet'); };
+  const esOperacionActiva = (op: { status?: unknown; statusNombre?: unknown }): boolean => {
     const statusId = String(op.status || '').trim();
-    return !IDS_STATUS_EXCLUIDOS.includes(statusId);
+    if (IDS_STATUS_EXCLUIDOS.includes(statusId)) return false;
+    if (esNombreFinal(op.statusNombre)) return false;
+    if (statusId && esNombreFinal(resolverStatus(statusId).nombre)) return false;
+    return true;
   };
+
+  // ✅ V00432: si una operación pasa a Cancelado/Falso/Completado mientras la
+  //   lista está abierta (botones de status, Registrar Movimiento, Cancelar
+  //   referencia, formulario…), sale de Operaciones Activas al instante.
+  const hayFinalizadas = operacionesGlobales.some((op) => !esOperacionActiva(op));
+  useEffect(() => {
+    if (!hayFinalizadas) return;
+    const t = setTimeout(() => setOperacionesGlobales((prev) => prev.filter(esOperacionActiva)), 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hayFinalizadas, operacionesGlobales]);
 
   const descargarOperaciones = async () => {
     setCargandoOperaciones(true);
