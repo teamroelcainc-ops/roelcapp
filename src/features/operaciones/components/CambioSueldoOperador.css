@@ -1,0 +1,32 @@
+/* ✅ V00433: cambiar el sueldo del operador con motivo */
+.cso-btn { margin-top: 6px; padding: 4px 10px; border: 1px solid #1f6feb; border-radius: 6px; background: transparent; color: #58a6ff; font-size: 0.75rem; font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.cso-btn:hover:not(:disabled) { background: rgba(31, 111, 235, 0.15); }
+.cso-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.cso-fondo { position: fixed; inset: 0; z-index: 3500; background: rgba(1, 4, 9, 0.7); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.cso-modal { width: min(460px, 100%); background: #161b22; border: 1px solid #30363d; border-radius: 12px; box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5); color: #c9d1d9; }
+.cso-enc { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid #30363d; }
+.cso-titulo { margin: 0; font-size: 1rem; color: #f0f6fc; }
+.cso-cerrar { background: none; border: none; color: #8b949e; font-size: 1rem; cursor: pointer; }
+.cso-cerrar:hover { color: #f0f6fc; }
+.cso-cuerpo { padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; }
+.cso-actual { font-size: 0.85rem; color: #8b949e; }
+.cso-actual b { color: #f0f6fc; }
+.cso-aviso { padding: 8px 10px; border: 1px solid #9e6a03; border-radius: 6px; background: rgba(187, 128, 9, 0.1); color: #e3b341; font-size: 0.8rem; }
+.cso-lbl { margin-top: 4px; font-size: 0.78rem; font-weight: 700; color: #c9d1d9; }
+.cso-oblig { color: #ff7b72; }
+.cso-input, .cso-textarea { width: 100%; }
+.cso-textarea { resize: vertical; min-height: 70px; }
+.cso-total { font-size: 0.8rem; color: #8b949e; }
+.cso-total b { color: #3fb950; }
+.cso-pie { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 18px; border-top: 1px solid #30363d; }
+.cso-guardar { padding: 8px 18px; border: none; border-radius: 6px; background: #d84315; color: #fff; font-weight: 700; cursor: pointer; font-family: inherit; }
+.cso-guardar:hover:not(:disabled) { background: #e65100; }
+.cso-guardar:disabled { opacity: 0.6; cursor: wait; }
+.cso-historial { grid-column: 1 / -1; margin-top: 10px; padding: 10px 12px; border: 1px solid #1f6feb; border-radius: 8px; background: rgba(31, 111, 235, 0.06); display: flex; flex-direction: column; gap: 8px; }
+.cso-historial-tit { font-size: 0.78rem; font-weight: 800; color: #58a6ff; }
+.cso-nota { padding: 8px 10px; border-radius: 6px; background: #0d1117; border: 1px solid #30363d; }
+.cso-nota-enc { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 0.78rem; }
+.cso-nota-montos { color: #c9d1d9; }
+.cso-nota-montos b { color: #3fb950; }
+.cso-nota-meta { color: #8b949e; }
+.cso-nota-motivo { margin-top: 4px; font-size: 0.82rem; color: #f0f6fc; white-space: pre-wrap; }

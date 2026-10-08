@@ -191,3 +191,6 @@
 
 /* ✅ V00429: conteo (#) en los modales de convenios */
 .fo-col-num { width: 32px; text-align: center; color: #8b949e; font-variant-numeric: tabular-nums; }
+
+/* ✅ V00433: el sueldo del operador solo cambia con "✎ Cambiar sueldo" */
+.fo-sueldo-fijo { cursor: default; }

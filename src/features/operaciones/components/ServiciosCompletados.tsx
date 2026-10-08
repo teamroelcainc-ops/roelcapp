@@ -10,6 +10,7 @@ import { puedeClave } from '../../../utils/permisos'; // ✅ V00224
 import { obtenerCacheMemoria, guardarCacheMemoria, limpiarCacheMemoria, limpiarCachesPorPrefijo } from '../../../utils/cacheMemoria'; // ✅ V00310
 // ✅ NUEVO: historial de actividad (colección historial_actividad)
 import { registrarLog } from '../../../utils/logger';
+import { CambioSueldoOperador, HistorialCambiosSueldo } from './CambioSueldoOperador'; // ✅ V00433
 import { sincronizarNombresOperaciones } from '../../../utils/sincronizarNombresOperaciones';
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF } from '../../../utils/pdfGenerator'; 
 import * as XLSX from 'xlsx';
@@ -3415,6 +3416,12 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                       <div>
                         <span className="sc-x140">Sueldo del Operador</span>
                         <span className="sc-x136">{formatoMoneda(operacionViendo.sueldoOperador)}</span>
+                        {/* ✅ V00433: cambiar el sueldo con motivo */}
+                        <CambioSueldoOperador op={operacionViendo} modulo="Servicios Completados" onGuardado={(campos) => {
+                          const opAct = { ...operacionViendo, ...campos };
+                          setOperacionViendo(opAct);
+                          setOperacionesGlobales((prev) => prev.map((o: { id?: unknown }) => (o.id === operacionViendo.id ? opAct : o)));
+                        }} />
                       </div>
                       <div>
                         <span className="sc-x140">Sueldo Extra</span>
@@ -3424,6 +3431,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                         <span className="sc-x135">Sueldo Total</span>
                         <span className="sc-x159">{formatoMoneda(operacionViendo.sueldoTotal)}</span>
                       </div>
+                      <HistorialCambiosSueldo cambios={operacionViendo.cambiosSueldo} />{/* ✅ V00433: nota del motivo */}
 
                       <div className="sc-x138"><hr className="sc-x158" /></div>
 

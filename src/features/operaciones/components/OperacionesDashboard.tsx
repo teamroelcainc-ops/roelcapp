@@ -9,7 +9,8 @@ import { collection, doc, writeBatch, query, getDoc, getDocs, limit, where, star
 import { DocumentosLista } from '../../documentos/DocumentosLista'; // ✅ V00344
 import { obtenerUsuarioAut } from '../../autorizaciones/autorizaciones'; // ✅ V00344
 import { db, eliminarRegistro } from '../../../config/firebase';
-import { useUsuarioStore } from '../../../stores/useUsuarioStore'; // ✅ V00430 
+import { useUsuarioStore } from '../../../stores/useUsuarioStore'; // ✅ V00430
+import { CambioSueldoOperador, HistorialCambiosSueldo } from './CambioSueldoOperador'; // ✅ V00433 
 import { registrarLog } from '../../../utils/logger';
 import { sincronizarNombresOperaciones as sincronizarNombresUtil } from '../../../utils/sincronizarNombresOperaciones';
 import { obtenerBotonesHorarioDinamicos, resolverCascadaStatus, obtenerNombresStatusDelFlujo, statusDescuentaPuente } from '../config/statusRules';
@@ -2746,6 +2747,13 @@ const OperacionesDashboard = () => {
                       <div>
                         <span className="od-x94">Sueldo del Operador</span>
                         <span className="od-x90">{formatoMoneda(operacionViendo.sueldoOperador)}</span>
+                        {/* ✅ V00433: cambiar el sueldo con motivo */}
+                        <CambioSueldoOperador op={operacionViendo} modulo="Operaciones Activas" onGuardado={(campos) => {
+                          const opAct = { ...operacionViendo, ...campos };
+                          setOperacionViendo(opAct);
+                          setOperacionesGlobales((prev) => prev.map((o: { id?: unknown }) => (o.id === operacionViendo.id ? opAct : o)));
+                          notificarOperacionGuardada(String(operacionViendo._docId || operacionViendo.id), opAct, 'operaciones-sueldo');
+                        }} />
                       </div>
                       <div>
                         <span className="od-x94">Sueldo Extra</span>
@@ -2755,6 +2763,7 @@ const OperacionesDashboard = () => {
                         <span className="od-x89">Sueldo Total</span>
                         <span className="od-x113">{formatoMoneda(operacionViendo.sueldoTotal)}</span>
                       </div>
+                      <HistorialCambiosSueldo cambios={operacionViendo.cambiosSueldo} />{/* ✅ V00433: nota del motivo */}
                       <div className="od-x92"><hr className="od-x112" /></div>
                       <div>
                         <span className="od-x94">Combustible</span>
