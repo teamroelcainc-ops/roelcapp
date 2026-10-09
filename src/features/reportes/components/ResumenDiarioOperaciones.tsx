@@ -301,6 +301,9 @@ export const ResumenDiarioOperaciones = () => {
   const esCancelada = (o: any): boolean => norm(statusNombre(o)).includes('cancel');
   const esNoCobrable = (o: any): boolean => { const s = norm(statusNombre(o)); return s.includes('cancel') || s.includes('no cobrable'); };
   const esRoelca = (o: any): boolean => norm(nombreProveedor(o)).includes('roelca');
+  // ✅ V00434: TROMPO de Roelca (Cliente Paga = Roelca) = NO COBRABLE — va en
+  //   "OTROS NO COBRABLES" (no en TROMPO) y no cuenta como referencia cobrable.
+  const esTrompoRoelca = (o: Parameters<typeof matchKw>[0]): boolean => matchKw(o, 'trompo') && norm(nombreCliente(o)).includes('roelca') && !esCancelada(o);
 
   // Operaciones del día seleccionado.
   const opsDia = useMemo(
@@ -315,7 +318,8 @@ export const ResumenDiarioOperaciones = () => {
     const tipoServicio = groupCount(ops, nombreConvenio, '(Sin convenio)');
     const clientes = groupCount(ops, nombreCliente, '(Sin cliente)');
     const cancelada = ops.filter(esCancelada).length;
-    const noCobrables = ops.filter(esNoCobrable).length;
+    const otrosNoCobrables = ops.filter((o) => esTrompoRoelca(o) || (!esCancelada(o) && esNoCobrable(o))).length; // ✅ V00434
+    const noCobrables = ops.filter((o) => esNoCobrable(o) || esTrompoRoelca(o)).length;
     const refCobrables = servicios - noCobrables;
 
     if (tipo === 'Transfer') {
@@ -336,7 +340,7 @@ export const ResumenDiarioOperaciones = () => {
         .sort((a, b) => b.op - a.op || a.label.localeCompare(b.label, 'es', { sensitivity: 'base' }));
       const dieselTotal = unidades.reduce((s, u) => s + u.diesel, 0);
 
-      const trompo = ops.filter(o => matchKw(o, 'trompo')).length;
+      const trompo = ops.filter(o => matchKw(o, 'trompo') && !esTrompoRoelca(o)).length; // ✅ V00434: los de Roelca van a OTROS NO COBRABLES
       // ✅ V00191: CARGA DE DIESEL = total de VECES que las unidades del día
       //   fueron a cargar diésel. Coincide con la suma de la columna DIESEL
       //   de la tabla de unidades (dieselTotal).
@@ -345,7 +349,7 @@ export const ResumenDiarioOperaciones = () => {
       const logisticaRoelca = ops.filter(o => matchKw(o, 'logistica roelca') || matchKw(o, 'logística roelca')).length;
 
       return {
-        tipo, servicios, refCobrables, cancelada,
+        tipo, servicios, refCobrables, cancelada, otrosNoCobrables,
         tipoServicio, clientes, operadores, unidades, dieselTotal,
         trompo, cargaDiesel, cargaGasolina, logisticaRoelca,
       };
@@ -354,7 +358,7 @@ export const ResumenDiarioOperaciones = () => {
     // Logística / Fletes
     const proveedores = groupCount(ops, nombreProveedor, '(Sin proveedor)');
     const roelca = ops.filter(esRoelca).length;
-    return { tipo, servicios, refCobrables, cancelada, tipoServicio, clientes, proveedores, roelca };
+    return { tipo, servicios, refCobrables, cancelada, otrosNoCobrables, tipoServicio, clientes, proveedores, roelca };
   };
 
   // ---------- CSS del PDF (réplica del diseño de AppSheet) ----------
@@ -420,7 +424,7 @@ export const ResumenDiarioOperaciones = () => {
           <tr><td class="text-cell">CARGA DE GASOLINA</td><td class="num-cell">${fmtNum(d.cargaGasolina)}</td></tr>
           <tr><td class="text-cell">CANCELADA</td><td class="num-cell">${fmtNum(d.cancelada)}</td></tr>
           <tr><td class="text-cell">TROMPO</td><td class="num-cell">${fmtNum(d.trompo)}</td></tr>
-          <tr><td class="text-cell">OTROS NO COBRABLES</td><td class="num-cell highlight-cell">${fmtNum(0)}</td></tr>
+          <tr><td class="text-cell">OTROS NO COBRABLES</td><td class="num-cell highlight-cell">${fmtNum(d.otrosNoCobrables || 0)}</td></tr>
           <tr><td class="text-cell">LOGISTICA ROELCA</td><td class="num-cell">${fmtNum(d.logisticaRoelca)}</td></tr>
           <tr><td class="bold text-cell">SERVICIOS TOTALES TRANSFER</td><td class="table-header text-center" style="border: 2px solid #555;">${fmtNum(d.servicios)}</td></tr>
           <tr><td class="bold text-cell">REF. COBRABLES TRANSFER</td><td class="num-cell" style="color: #004080;">${fmtNum(d.refCobrables)}</td></tr>
@@ -471,7 +475,7 @@ export const ResumenDiarioOperaciones = () => {
           <tr><td class="bold text-cell w-80">SERVICIOS:</td><td class="table-header text-center w-20">${fmtNum(d.servicios)}</td></tr>
           <tr><td class="text-cell">OTROS COBRABLES</td><td class="num-cell highlight-cell">${fmtNum(0)}</td></tr>
           <tr><td class="text-cell">CANCELADA</td><td class="num-cell">${fmtNum(d.cancelada)}</td></tr>
-          <tr><td class="text-cell">OTROS NO COBRABLES</td><td class="num-cell highlight-cell">${fmtNum(0)}</td></tr>
+          <tr><td class="text-cell">OTROS NO COBRABLES</td><td class="num-cell highlight-cell">${fmtNum(d.otrosNoCobrables || 0)}</td></tr>
           <tr><td class="text-cell">ROELCA</td><td class="num-cell">${fmtNum(d.roelca)}</td></tr>
           <tr><td class="bold text-cell">SERVICIOS TOTALES LOGISTICA</td><td class="table-header text-center" style="border: 2px solid #555;">${fmtNum(d.servicios)}</td></tr>
           <tr><td class="bold text-cell">REF. COBRABLES LOGISTICA</td><td class="num-cell" style="color: #004080;">${fmtNum(d.refCobrables)}</td></tr>
@@ -513,7 +517,7 @@ export const ResumenDiarioOperaciones = () => {
           <tr><td class="bold text-cell w-80">SERVICIOS:</td><td class="table-header text-center w-20">${fmtNum(d.servicios)}</td></tr>
           <tr><td class="text-cell">OTROS COBRABLES</td><td class="num-cell highlight-cell">${fmtNum(0)}</td></tr>
           <tr><td class="text-cell">CANCELADA</td><td class="num-cell">${fmtNum(d.cancelada)}</td></tr>
-          <tr><td class="text-cell">OTROS NO COBRABLES</td><td class="num-cell highlight-cell">${fmtNum(0)}</td></tr>
+          <tr><td class="text-cell">OTROS NO COBRABLES</td><td class="num-cell highlight-cell">${fmtNum(d.otrosNoCobrables || 0)}</td></tr>
           <tr><td class="bold text-cell">SERVICIOS TOTALES FLETES</td><td class="table-header text-center" style="border: 2px solid #555;">${fmtNum(d.servicios)}</td></tr>
           <tr><td class="bold text-cell">REF. COBRABLES FLETES</td><td class="num-cell" style="color: #004080;">${fmtNum(d.refCobrables)}</td></tr>
         </tbody></table>

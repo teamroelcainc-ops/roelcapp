@@ -194,3 +194,6 @@
 
 /* ✅ V00433: el sueldo del operador solo cambia con "✎ Cambiar sueldo" */
 .fo-sueldo-fijo { cursor: default; }
+
+/* ✅ V00434: trompo de Roelca no cobrable */
+.fo-aviso-no-cobrable { grid-column: 1 / -1; padding: 8px 10px; border: 1px solid #9e6a03; border-radius: 6px; background: rgba(187, 128, 9, 0.1); color: #e3b341; font-size: 0.8rem; font-weight: 600; }

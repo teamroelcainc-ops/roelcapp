@@ -2020,6 +2020,18 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     const txt = `${String(formData.carga || '')} ${String(conv?.descripcion || conv?.nombre || '')}`;
     return txt.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes('trompo');
   })();
+  // ✅ V00434: TROMPO de ROELCA (Cliente Paga = Roelca) = NO COBRABLE → el
+  //   monto de cobro es $0 (el resumen diario lo pone en "Otros no cobrables").
+  const esClientePagaRoelca = (() => {
+    const emp = (empresas || []).find((e: { id?: unknown }) => String(e.id) === String(formData.clientePaga || '')) as { nombre?: unknown; razonSocial?: unknown; nombreCorto?: unknown } | undefined;
+    const txt = `${searchClientePaga || ''} ${String(emp?.nombre || '')} ${String(emp?.razonSocial || '')} ${String(emp?.nombreCorto || '')}`;
+    return txt.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes('roelca');
+  })();
+  const trompoNoCobrable = esTrompoOp && esClientePagaRoelca;
+  useEffect(() => {
+    if (!trompoNoCobrable) return;
+    if (Number(formData.montoConvenioCliente) !== 0) setFormData(prev => ({ ...prev, montoConvenioCliente: 0 }));
+  }, [trompoNoCobrable, formData.montoConvenioCliente]);
   const sueldoManualForm = (formData as { sueldoManual?: unknown }).sueldoManual === true; // ✅ V00433
   useEffect(() => {
     if (initialData || !esTrompoOp) return;
@@ -2766,6 +2778,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
       const operacionData: any = { 
         ...datosLimpios, 
+        ...(trompoNoCobrable ? { montoConvenioCliente: 0, noCobrable: true, motivoNoCobrable: 'Trompo de Roelca' } : {}), // ✅ V00434
         ...(esPrueba ? { esPrueba: true } : {}), // ✅ V00380
         clientePaga: resolvedClientePaga, origen: resolvedOrigen, destino: resolvedDestino,
         numeroRemolque: resolvedRemolque, clienteMercancia: resolvedClienteMercancia,
@@ -3824,6 +3837,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         {/* ✅ V00243: traer el monto vigente del convenio, aquí mismo */}
                         {formData.convenio && <button type="button" className="fo-btn-act-moneda fo-btn-actualizar" onClick={() => actualizarMontoConvenio('cliente')} title="Traer los datos vigentes del convenio: monto, moneda, sueldo del operador, combustible, servicio, tráfico y carga">↻ Actualizar convenio</button>}
                       </label><ConSimboloMoneda><input type="number" step="any" className="form-control" value={subtotalClienteFact.convertido ? subtotalClienteFact.monto : (formData.montoConvenioCliente || 0)} readOnly={campoBloqueadoAut('montoConvenioCliente') || subtotalClienteFact.convertido} onChange={e => setFormData(prev => ({ ...prev, montoConvenioCliente: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('montoConvenioCliente') ? 'Bloqueado por autorizaciones para tu rol' : subtotalClienteFact.convertido ? leyendaConversion(subtotalClienteFact, Number(formData.montoConvenioCliente || 0), monConvCliActual) : 'Se toma del convenio (tarifario) del cliente; puedes ajustarlo manualmente'} style={{ color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 600 : undefined, ...(campoBloqueadoAut('montoConvenioCliente') ? { opacity: 0.65, cursor: 'not-allowed' } : {}) }} /></ConSimboloMoneda>{subtotalClienteFact.convertido && <small className={subtotalClienteFact.sinTC ? 'fo-conv-alerta' : 'fo-conv-ok'}>{leyendaConversion(subtotalClienteFact, Number(formData.montoConvenioCliente || 0), monConvCliActual)}</small>}</div>
+                      {trompoNoCobrable && <div className="fo-aviso-no-cobrable">🚫 Trompo de Roelca: NO COBRABLE — el monto de cobro queda en $0 y en el resumen diario va en "Otros no cobrables".</div>}{/* ✅ V00434 */}
                       {/* ✅ V00126: se eliminó el selector "Moneda del Monto"; la moneda del monto viene del detalle del convenio (monedaConvenioCliente se sigue guardando). */}
                       <div className="form-group">
                         <label className="form-label">Cargos Adicionales <span className="campo-badge">cargosAdicionales</span></label>
