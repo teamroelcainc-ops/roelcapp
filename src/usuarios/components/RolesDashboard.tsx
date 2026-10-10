@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, doc, getDoc, setDoc, deleteDoc, updateDoc, addDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { registrarLog } from '../../utils/logger';
+import { useCatalogo } from '../../shared/data/catalogos';
 import './RolesDashboard.css';
 
 // ============================================================================
@@ -45,7 +46,9 @@ const ETIQUETA_PERMISO: Record<string, string> = {
 const etiquetaPermiso = (modulo: string): string => ETIQUETA_PERMISO[modulo] ?? modulo;
 
 export const RolesDashboard: React.FC = () => {
-  const [roles, setRoles] = useState<any[]>([]);
+  // ✅ V00439 (Fase 3.x): roles desde el catálogo compartido (el mismo listener que App).
+  const { datos: datosRoles } = useCatalogo('roles');
+  const roles: any[] = datosRoles;
   // ✅ V00160: VISTAS ADICIONALES POR USUARIO — módulos extra fuera del rol.
   const [usuariosLista, setUsuariosLista] = useState<any[]>([]);
   const [usuarioVistasId, setUsuarioVistasId] = useState('');
@@ -65,13 +68,9 @@ export const RolesDashboard: React.FC = () => {
   const [cargandoRol, setCargandoRol] = useState(false);
 
   useEffect(() => {
-    // Suscripción a Roles
+    // Suscripción a usuarios (los roles llegan por useCatalogo, arriba)
     const unsubUsuarios = onSnapshot(collection(db, 'usuarios'), (snapshot) => {
       setUsuariosLista(snapshot.docs.map(d => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es')));
-    });
-    const unsubRoles = onSnapshot(collection(db, 'roles'), (snapshot) => {
-      const rolesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setRoles(rolesData);
     });
 
     // Cargar Configuración IP
@@ -85,7 +84,7 @@ export const RolesDashboard: React.FC = () => {
     };
     fetchConfig();
 
-    return () => { unsubRoles(); unsubUsuarios(); };
+    return () => { unsubUsuarios(); };
   }, []);
 
   const detectarIp = async () => {

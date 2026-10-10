@@ -1,10 +1,10 @@
 // src/features/unidades/components/FormularioUnidad.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import { camposModificadosDe } from '../../autorizaciones/autorizaciones';
-import { collection, getDocs } from 'firebase/firestore';
-import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
+import { agregarRegistro, actualizarRegistro } from '../../../config/firebase';
+import { idReal, useCatalogo } from '../../../shared/data/catalogos';
 import type { UnidadRecord } from '../../../types/unidad'; // ✅ RUTA CORREGIDA
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
@@ -138,25 +138,14 @@ export const FormularioUnidad = ({ estado, initialData, onClose, onMinimize, onR
     porcentajeRecarga: 0
   });
 
-  const [tiposUnidad, setTiposUnidad] = useState<{id: string, label: string}[]>([]);
+  // ✅ V00439 (Fase 3.x): tipos de unidad (catalogo_tipo_remolque) del listener compartido.
+  const { datos: tiposRemolqueCat } = useCatalogo('catalogo_tipo_remolque');
+  const tiposUnidad = useMemo(
+    () => tiposRemolqueCat.map(d => ({ id: idReal(d), label: String(d.nombre || `Desconocido (${idReal(d).substring(0,4)})`) })),
+    [tiposRemolqueCat],
+  );
   const [cargando, setCargando] = useState(false);
   const [mostrarSubirDoc, setMostrarSubirDoc] = useState(false); // ✅ Modal de documentos
-
-  useEffect(() => {
-    const cargarCatalogos = async () => {
-      try {
-        const snap = await getDocs(collection(db, 'catalogo_tipo_remolque'));
-        const tipos = snap.docs.map(doc => ({
-          id: doc.id,
-          label: doc.data().nombre || `Desconocido (${doc.id.substring(0,4)})`
-        }));
-        setTiposUnidad(tipos);
-      } catch (error) {
-        console.error("Error cargando catálogo tipo_remolque:", error);
-      }
-    };
-    cargarCatalogos();
-  }, []);
 
   useEffect(() => {
     if (initialData) setFormData(initialData);

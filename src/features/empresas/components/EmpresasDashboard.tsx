@@ -19,6 +19,9 @@ import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 import { almacenSesion, obtenerCacheMemoria, guardarCacheMemoria } from '../../../utils/cacheMemoria';
 import { hoyLocalISO, fechaLocalISO } from '../../../utils/fechaHoraLocal';
 import { useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
+import { idReal, useCatalogo, useCatalogos } from '../../../shared/data/catalogos';
+import type { DocCatalogo } from '../../../shared/data/catalogos';
+import { monedaCanonica } from '../../../shared/dominio/moneda';
 
 const opcionesFiltro = [
   'Todo', 'Proveedor (Servicios)', 'Empresa Inactiva', 'Baja', 'Cliente (Mercancía)', 
@@ -56,6 +59,9 @@ const requiereMonedaFactura = (emp: any): boolean => {
   return tipos.includes('Cliente (Paga)') || tipos.includes('Proveedor (Transporte)');
 };
 const esEmpresaActiva = (emp: any): boolean => emp?.status !== 'Inactiva' && emp?.status !== 'Baja';
+/** Nombre legible de una dirección, remolque o unidad (pestaña Referencias). */
+const etiquetaRef = (x: Record<string, unknown>, id: string): string =>
+  String(x.nombre || x.direccion || x.alias || x.numeroRemolque || x.placa || '').trim() || id;
 
 // ✅ GRID DINÁMICO DE COLUMNAS BASE PARA LA TABLA PRINCIPAL
 const COLUMNAS_BASE = [
@@ -75,9 +81,6 @@ const EmpresasDashboard = () => {
   const [empresaEditando, setEmpresaEditando] = useState<any | null>(null);
   
   const [empresaViendo, setEmpresaViendo] = useState<any | null>(null);
-  // ✅ Documentos COMPLETOS del catálogo de direcciones (país, estado, colonia,
-  //   calle, C.P., números) para el desglose en el detalle de la empresa.
-  const [direccionesDocs, setDireccionesDocs] = useState<Record<string, any>>({});
   const [activeTabDetalle, setActiveTabDetalle] = useState<'general' | 'fiscal' | 'contacto' | 'uso' | 'documentos' | 'referencias'>('general');
   // ✅ NUEVO: referencias (operaciones) del cliente, cargadas al abrir su pestaña.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docs de operación sin tipo canónico (mismo criterio del resto del módulo).
@@ -126,6 +129,8 @@ const EmpresasDashboard = () => {
     if (gruposDuplicadas) return; // ya analizado en esta visita
     setCargandoDuplicadas(true);
     try {
+      // ✅ V00439 (Fase 3.x): getDocs propio A PROPÓSITO (no useCatalogo): el
+      //   catálogo compartido arma {id, ...datos} y aquí hace falta el id del documento.
       const snap = await getDocs(collection(db, 'empresas'));
       // ⚠️ Orden del spread: el id del DOCUMENTO al final, para que un campo
       //   interno llamado "id" (herencia de AppSheet) no lo pise — con ids
@@ -321,7 +326,16 @@ const EmpresasDashboard = () => {
   //   (sin abrir la ficha). Si es null, el modal usa la empresa de la ficha.
   const [empresaDocs, setEmpresaDocs] = useState<any | null>(null);
 
-  const [empresas, setEmpresas] = useState<any[]>([]);
+  // ✅ V00439 (Fase 3.x): empresas desde el listener compartido (useCatalogo),
+  //   mismo orden que antes (# de cliente descendente).
+  const { datos: datosEmpresas } = useCatalogo('empresas');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docs de empresa sin tipo canónico (criterio del módulo).
+  const empresas = useMemo<any[]>(() => [...datosEmpresas].sort((a, b) => {
+    if (a.numCliente && b.numCliente) {
+      return String(b.numCliente).localeCompare(String(a.numCliente), undefined, { numeric: true, sensitivity: 'base' });
+    }
+    return 0;
+  }), [datosEmpresas]);
   useEffect(() => {
     if (!empresas || empresas.length === 0) return; // ✅ V00269: espera las empresas para resolver nombres→id
     const CLAVE = 'empresas_conteo_ops_v2'; // ✅ V00269: v2 = resuelve nombres→id
@@ -399,7 +413,6 @@ const EmpresasDashboard = () => {
     opcionesColumnasExcel.map(col => col.key)
   );
 
-  const [diccionarios, setDiccionarios] = useState<any>({});
   const [paginaActual, setPaginaActual] = useState(1);
   const registrosPorPagina = 50;
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
@@ -409,22 +422,12 @@ const EmpresasDashboard = () => {
   const [columnasTabla, setColumnasTabla] = useState(COLUMNAS_BASE.map(c => ({ ...c })));
   const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
 
-  // ✅ V00438 (Fase 2.7): empresas y "último uso" (1,500 operaciones) solo se
-  //   escuchan con el módulo VISIBLE; oculto conserva lo ya pintado.
+  // ✅ V00438 (Fase 2.7): "último uso" (1,500 operaciones) solo se escucha con
+  //   el módulo VISIBLE; oculto conserva lo ya pintado. (Las empresas, V00439:
+  //   useCatalogo, que ya se pausa solo con el módulo oculto.)
   const visible = useModuloVivoActivo();
   useEffect(() => {
     if (!visible) return;
-    const unsubscribeEmpresas = onSnapshot(collection(db, 'empresas'), (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      data.sort((a: any, b: any) => {
-        if (a.numCliente && b.numCliente) {
-          return b.numCliente.localeCompare(a.numCliente, undefined, { numeric: true, sensitivity: 'base' });
-        }
-        return 0;
-      });
-      setEmpresas(data);
-    });
-
     const qOps = query(collection(db, 'operaciones'), orderBy('fechaServicio', 'desc'), limit(1500));
     const unsubscribeOperaciones = onSnapshot(qOps, (snap) => {
       const usageMap: Record<string, string> = {};
@@ -455,64 +458,39 @@ const EmpresasDashboard = () => {
     });
 
     return () => {
-      unsubscribeEmpresas();
       unsubscribeOperaciones();
     };
   }, [visible]);
 
-  useEffect(() => {
-    // ✅ OPTIMIZACIÓN DE LECTURAS Y DICCIONARIOS A PRUEBA DE FALLOS
-    const fetchDiccionarios = async () => {
-      const cacheKey = 'roelca_empresas_dict_v2'; // Cambiamos la llave para obligar a que se limpie la caché antigua
-      const cacheData = almacenSesion.getItem(cacheKey);
-      if (cacheData) {
-        setDiccionarios(JSON.parse(cacheData));
-        return;
-      }
-
-      console.warn(`[FIREBASE READ] Descargando diccionarios de empresas a caché...`);
-      try {
-        const getDict = async (col: string, labelField: string, formatFn?: Function) => {
-          const snap = await getDocs(collection(db, col));
-          const dict: any = {};
-          snap.forEach(doc => {
-            const data = doc.data();
-            // A prueba de fallos: busca el campo deseado, o nombre, o tipo, o descripción.
-            dict[doc.id] = formatFn ? formatFn(data) : (data[labelField] || data.nombre || data.tipo || data.descripcion || doc.id);
-          });
-          return dict;
-        };
-
-        // ✅ Docs completos de direcciones para el desglose del detalle.
-        getDocs(collection(db, 'direcciones')).then(snapDir => {
-          const m: Record<string, any> = {};
-          snapDir.docs.forEach(dd => { m[dd.id] = { id: dd.id, ...(dd.data() as any) }; });
-          setDireccionesDocs(m);
-        }).catch(() => {});
-
-        const [reg, mon, fac, dir, tEmpresa, tServicio] = await Promise.all([
-          getDict('catalogo_regimen_fiscal', '', (d: any) => `${d.clave} - ${d.descripcion}`),
-          getDict('catalogo_moneda', 'moneda'),
-          getDict('catalogo_tipo_factura', 'nombre'),
-          getDict('direcciones', 'direccionCompleta'),
-          getDict('catalogo_tipo_empresa', 'nombre'),
-          getDict('catalogo_tipo_servicio', 'nombre')
-        ]);
-
-        const totalDict = { 
-          regimenes: reg, monedas: mon, facturas: fac, direcciones: dir, 
-          tiposEmpresa: tEmpresa, tiposServicio: tServicio 
-        };
-
-        almacenSesion.setItem(cacheKey, JSON.stringify(totalDict));
-        setDiccionarios(totalDict);
-      } catch (error) {
-        console.error("Error cargando diccionarios:", error);
-      }
+  // ✅ V00439 (Fase 3.x): diccionarios id → etiqueta desde los catálogos en vivo
+  //   (antes getDocs + copia en localStorage 'roelca_empresas_dict_v2' sin vencimiento).
+  const { datos: catDic } = useCatalogos({
+    regimenes: 'catalogo_regimen_fiscal', monedas: 'catalogo_moneda', facturas: 'catalogo_tipo_factura',
+    direcciones: 'direcciones', tiposEmpresa: 'catalogo_tipo_empresa', tiposServicio: 'catalogo_tipo_servicio',
+  });
+  const diccionarios = useMemo(() => {
+    const getDict = (docs: DocCatalogo[], labelField: string, formatFn?: (d: DocCatalogo) => string) => {
+      const dict: Record<string, unknown> = {};
+      // A prueba de fallos: busca el campo deseado, o nombre, o tipo, o descripción.
+      docs.forEach((d) => { dict[idReal(d)] = formatFn ? formatFn(d) : (d[labelField] || d.nombre || d.tipo || d.descripcion || idReal(d)); });
+      return dict;
     };
-
-    fetchDiccionarios();
-  }, []);
+    return {
+      regimenes: getDict(catDic.regimenes, '', (d) => `${d.clave} - ${d.descripcion}`),
+      monedas: getDict(catDic.monedas, 'moneda'),
+      facturas: getDict(catDic.facturas, 'nombre'),
+      direcciones: getDict(catDic.direcciones, 'direccionCompleta'),
+      tiposEmpresa: getDict(catDic.tiposEmpresa, 'nombre'),
+      tiposServicio: getDict(catDic.tiposServicio, 'nombre'),
+    } as Record<string, Record<string, unknown>>;
+  }, [catDic]);
+  // ✅ Documentos COMPLETOS del catálogo de direcciones (país, estado, colonia,
+  //   calle, C.P., números) para el desglose en el detalle de la empresa.
+  const direccionesDocs = useMemo(() => {
+    const m: Record<string, DocCatalogo> = {};
+    catDic.direcciones.forEach((dd) => { m[idReal(dd)] = dd; });
+    return m;
+  }, [catDic.direcciones]);
 
   useEffect(() => {
     const syncStatusAutomatico = async () => {
@@ -675,31 +653,41 @@ const EmpresasDashboard = () => {
   // ✅ NUEVO — RESOLVER NOMBRES en la pestaña Referencias (origen/destino/
   //   remolque llegan como IDs en operaciones viejas): se cargan los
   //   catálogos una sola vez y se muestran los NOMBRES.
-  const [nombresRef, setNombresRef] = useState<Record<string, string> | null>(null);
+  // ✅ V00439 (Fase 3.x): direcciones, remolques y unidades de proveedor desde los
+  //   catálogos en vivo, BAJO DEMANDA (solo con el detalle de una empresa abierto,
+  //   que es donde se usan). 'catalogo_direcciones' no es catálogo compartido:
+  //   conserva su lectura única. Mismo orden de precedencia que antes.
+  const conDetalle = Boolean(empresaViendo);
+  const { datos: catRef } = useCatalogos(
+    { direcciones: 'direcciones', remolques: 'remolques', unidadesProveedor: 'unidades_proveedor' },
+    { activo: conDetalle },
+  );
+  const [nombresCatDirecciones, setNombresCatDirecciones] = useState<Record<string, string> | null>(null);
   useEffect(() => {
-    if (nombresRef !== null) return;
-    (async () => {
-      try {
+    if (!conDetalle || nombresCatDirecciones !== null) return;
+    let vigente = true;
+    getDocs(query(collection(db, 'catalogo_direcciones'), limit(2000)))
+      .then((snap) => {
         const mapa: Record<string, string> = {};
-        for (const col of ['direcciones', 'catalogo_direcciones', 'remolques', 'unidades_proveedor']) {
-          try {
-            const snap = await getDocs(query(collection(db, col), limit(2000)));
-            snap.docs.forEach((d) => {
-              const x: any = d.data();
-              mapa[d.id] = String(x.nombre || x.direccion || x.alias || x.numeroRemolque || x.placa || '').trim() || d.id;
-            });
-          } catch { /* colección inexistente: seguir */ }
-        }
-        setNombresRef(mapa);
-      } catch { setNombresRef({}); }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+        snap.docs.forEach((d) => { mapa[d.id] = etiquetaRef(d.data(), d.id); });
+        if (vigente) setNombresCatDirecciones(mapa);
+      })
+      .catch(() => { if (vigente) setNombresCatDirecciones({}); }); // colección inexistente: seguir
+    return () => { vigente = false; };
+  }, [conDetalle, nombresCatDirecciones]);
+  const nombresRef = useMemo(() => {
+    const mapa: Record<string, string> = {};
+    catRef.direcciones.forEach((d) => { mapa[idReal(d)] = etiquetaRef(d, idReal(d)); });
+    Object.assign(mapa, nombresCatDirecciones || {});
+    catRef.remolques.forEach((d) => { mapa[idReal(d)] = etiquetaRef(d, idReal(d)); });
+    catRef.unidadesProveedor.forEach((d) => { mapa[idReal(d)] = etiquetaRef(d, idReal(d)); });
+    return mapa;
+  }, [catRef, nombresCatDirecciones]);
   const nombreDe = (v: any): string => {
     const s = String(v || '').trim();
     if (!s) return '—';
     // Si parece un ID (hex corto sin espacios) y está en el mapa, se traduce.
-    return (nombresRef && nombresRef[s]) ? nombresRef[s] : s;
+    return nombresRef[s] ? nombresRef[s] : s;
   };
 
   // ✅ NUEVO (V00191) — helpers de la pestaña Referencias y del detalle de
@@ -1125,7 +1113,8 @@ const EmpresasDashboard = () => {
         const monTxt = String(emp.monedaNombre || emp.moneda || '').toUpperCase();
         const tiene = Boolean(String(emp.monedaId || '').trim() || monTxt.trim());
         if (filtroMoneda === 'Sin moneda') { if (tiene) return false; }
-        else if (!(monTxt.includes(filtroMoneda) || (filtroMoneda === 'MXN' && (monTxt.includes('PESO') || monTxt.includes('MN'))) || (filtroMoneda === 'USD' && monTxt.includes('DOLAR')))) return false;
+        // ✅ V00439 (Fase 3.x): moneda con el helper compartido (acepta el ID del catálogo y 'Dólares'/'Pesos').
+        else if (monedaCanonica(emp.monedaNombre || emp.moneda) !== filtroMoneda) return false;
       }
 
       if (!busqueda.trim()) return true;
@@ -1376,15 +1365,10 @@ const EmpresasDashboard = () => {
                 title="Cliente (Paga) y Proveedor (Transporte) deben tener moneda y tipo de factura. Este apartado muestra las que aún no los tienen.">
                 {verSinMoneda ? '✕ Ver todas' : `Sin moneda (${empresasSinMoneda.length})`}
               </button>
-              {/* ✅ NUEVO (V00117): recarga los catálogos (moneda, tipo de factura, etc.) */}
+              {/* ✅ NUEVO (V00117): recarga los catálogos (moneda, tipo de factura, etc.)
+                  ✅ V00439 (Fase 3.x): los catálogos ya llegan en vivo; ya no hay caché que borrar. */}
               <button className="btn btn-outline" title="Recargar catálogos: vuelve a leer moneda, tipo de factura, régimen y tipos desde Firebase"
-                onClick={() => {
-                  try {
-                    almacenSesion.removeItem('roelca_empresas_dict_v2');
-                    Object.keys(localStorage).filter(k => k.startsWith('cat_v2__') || k.startsWith('cat_v1__')).forEach(k => localStorage.removeItem(k));
-                  } catch { /* sin almacenamiento */ }
-                  window.location.reload();
-                }}>
+                onClick={() => window.location.reload()}>
                 ↻ Recargar catálogos
               </button>
             {filtroActivo !== 'Todo' && (

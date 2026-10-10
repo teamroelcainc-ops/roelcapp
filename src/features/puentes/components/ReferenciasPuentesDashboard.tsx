@@ -21,9 +21,29 @@ import { esOperacionPrueba } from '../../../utils/operacionPrueba';
 import { cargarCtxCobroPuente, cobroPuenteDeOperacion } from '../../../utils/puenteColombia';
 import { COL_REF_AUTO, filaDeOperacion, grupoDeFila, quitarOperacionDeReferenciaAuto, upsertReferenciaAuto } from '../../../utils/historialCalculadoPuentes';
 import { FormularioOperacion } from '../../operaciones/components/FormularioOperacion';
+import { idReal, obtenerCatalogo, useCatalogos } from '../../../shared/data/catalogos';
+import { ID_MXN, ID_USD } from '../../../shared/dominio/constantes';
 
 // ⚠ Si tu colección de convenios de clientes tiene otro nombre, cámbialo aquí.
 const COLECCION_CONVENIOS = 'convenios_clientes';
+
+// ✅ V00439 (Fase 3.4): catálogos del módulo, del listener compartido.
+const CATALOGOS_PUENTES = {
+  operadoresList: 'empleados', conveniosList: COLECCION_CONVENIOS, tiposGastoList: 'catalogo_tipos_gastos',
+  empresasList: 'empresas', traficoList: 'catalogo_trafico', convDetallesList: 'convenios_clientes_detalles',
+  tarifasRefList: 'catalogo_tarifas_referencia', tiposTarifariosList: 'catalogo_tipos_tarifarios', unidadesList: 'unidades',
+} as const;
+// Catálogos del FormularioOperacion (detalle de una operación), bajo demanda.
+const CATALOGOS_FORMULARIO = {
+  empresas: 'empresas', tiposOperacion: 'catalogo_tipo_operacion', embalajes: 'catalogo_embalaje',
+  remolques: 'remolques', tarifas: 'catalogo_tarifas_referencia', conveniosProv: 'convenios_proveedores',
+  catalogoConvProvDetalles: 'convenios_proveedores_detalles', catalogoTC: 'tipo_cambio',
+  catalogoConvClientes: 'convenios_clientes', catalogoConvDetalles: 'convenios_clientes_detalles',
+  unidades: 'unidades', empleados: 'empleados', statusServicio: 'catalogo_status_servicio',
+  unidades_proveedor: 'unidades_proveedor', proveedores_unidad: 'proveedores_unidad', catalogoMoneda: 'catalogo_moneda',
+} as const;
+// Nombre de moneda para el saldo del puente (por ID; cualquier otro valor se deja tal cual).
+const monedaDeCatalogo = (m: unknown) => (String(m || '') === ID_USD ? 'Dólares' : String(m || '') === ID_MXN ? 'Pesos' : String(m || ''));
 
 // ✅ V00392: columnas pedidas — Ref, Fecha, Unidad, Convenio, Puente, Monto
 const COLUMNAS_OPS_PUENTES_BASE = [
@@ -44,15 +64,13 @@ export const ReferenciasPuentesDashboard = () => {
 
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
   const [referenciasGlobales, setReferenciasGlobales] = useState<any[]>([]);
-  const [operadoresList, setOperadoresList] = useState<any[]>([]);
-  const [conveniosList, setConveniosList] = useState<any[]>([]);
-  const [tiposGastoList, setTiposGastoList] = useState<any[]>([]);
-  const [empresasList, setEmpresasList] = useState<any[]>([]);
-  const [traficoList, setTraficoList] = useState<any[]>([]);
-  // Para resolver el tráfico por la cadena de la tarifa (igual que el formulario de operación)
-  const [convDetallesList, setConvDetallesList] = useState<any[]>([]);
-  const [tarifasRefList, setTarifasRefList] = useState<any[]>([]);
-  const [tiposTarifariosList, setTiposTarifariosList] = useState<any[]>([]);
+  // ✅ V00439 (Fase 3.4): catálogos del listener compartido; fuera de la pestaña
+  //   Historial, igual que antes (convDetalles/tarifas/tipos tarifarios resuelven
+  //   el tráfico por la cadena de la tarifa, como el formulario de operación).
+  const { datos: {
+    operadoresList, conveniosList, tiposGastoList, empresasList, traficoList,
+    convDetallesList, tarifasRefList, tiposTarifariosList, unidadesList,
+  } } = useCatalogos(CATALOGOS_PUENTES, { activo: activeTab !== 'historial' });
 
   // Filtros pestaña 1
   // ✅ V00402: por defecto se ven las operaciones de HOY
@@ -61,15 +79,16 @@ export const ReferenciasPuentesDashboard = () => {
   // ✅ V00392: filtros Puente y Unidad; unidades para mostrar su número
   const [filtroPuente, setFiltroPuente] = useState<string>('todos');
   const [filtroUnidad, setFiltroUnidad] = useState<string>('todas');
-  const [unidadesList, setUnidadesList] = useState<Record<string, unknown>[]>([]);
   const [asignandoMontos, setAsignandoMontos] = useState(false);
   // ✅ V00412: detalle de la operación (formulario) y sacar operaciones de una referencia
   const [opDetalle, setOpDetalle] = useState<Record<string, unknown> | null>(null);
-  const [catalogosFormulario, setCatalogosFormulario] = useState<Record<string, unknown[]> | null>(null);
+  // ✅ V00439 (Fase 3.4): listener compartido mientras el detalle está abierto
+  //   (antes getDocs de 16 colecciones la primera vez, guardados en estado).
+  const { datos: catalogosFormulario } = useCatalogos(CATALOGOS_FORMULARIO, { activo: opDetalle !== null });
   const [cargandoDetalleOp, setCargandoDetalleOp] = useState(false);
   const [quitandoOp, setQuitandoOp] = useState('');
   const [cambiandoPuente, setCambiandoPuente] = useState('');
-  const monedaDeCat = (m: unknown) => (String(m || '') === '7dca62b3' ? 'Dólares' : String(m || '') === 'f95d8894' ? 'Pesos' : String(m || ''));
+  const monedaDeCat = monedaDeCatalogo;
   const cambiarPuenteOp = async (op: Record<string, unknown>, puenteId: string) => {
     const p = puentesCatalogo.find(x => x.id === puenteId);
     if (!p) return;
@@ -104,24 +123,9 @@ export const ReferenciasPuentesDashboard = () => {
   const [selAgregar, setSelAgregar] = useState<string[]>([]);
   const [agregandoOps, setAgregandoOps] = useState(false);
   const [agregarTodasFechas, setAgregarTodasFechas] = useState(false);
-  const cargarCatalogosFormulario = async () => {
-    if (catalogosFormulario) return catalogosFormulario;
-    const ALIAS: Record<string, string> = {
-      empresas: 'empresas', tiposOperacion: 'catalogo_tipo_operacion', embalajes: 'catalogo_embalaje',
-      remolques: 'remolques', tarifas: 'catalogo_tarifas_referencia', conveniosProv: 'convenios_proveedores',
-      catalogoConvProvDetalles: 'convenios_proveedores_detalles', catalogoTC: 'tipo_cambio',
-      catalogoConvClientes: 'convenios_clientes', catalogoConvDetalles: 'convenios_clientes_detalles',
-      unidades: 'unidades', empleados: 'empleados', statusServicio: 'catalogo_status_servicio',
-      unidades_proveedor: 'unidades_proveedor', proveedores_unidad: 'proveedores_unidad', catalogoMoneda: 'catalogo_moneda',
-    };
-    const resultado: Record<string, unknown[]> = {};
-    await Promise.all(Object.entries(ALIAS).map(async ([alias, col]) => {
-      try { const snap = await getDocs(collection(db, col)); resultado[alias] = snap.docs.map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) })); }
-      catch { resultado[alias] = []; }
-    }));
-    setCatalogosFormulario(resultado);
-    return resultado;
-  };
+  // Espera los catálogos del formulario (abre el listener compartido) antes de mostrarlo.
+  const cargarCatalogosFormulario = () =>
+    Promise.all(Object.values(CATALOGOS_FORMULARIO).map((col) => obtenerCatalogo(col)));
   const abrirDetalleOperacion = async (opId: string) => {
     if (!opId || cargandoDetalleOp) return;
     setCargandoDetalleOp(true);
@@ -310,33 +314,6 @@ export const ReferenciasPuentesDashboard = () => {
   useEffect(() => {
     if (activeTab === 'historial') return; // ✅ V00395 / V00404: el historial de referencias también necesita operaciones (para asignar)
     const subs: Array<() => void> = [];
-    subs.push(onSnapshot(collection(db, 'empleados'), (snap) => {
-      setOperadoresList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-    }));
-    subs.push(onSnapshot(collection(db, COLECCION_CONVENIOS), (snap) => {
-      setConveniosList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-    }));
-    subs.push(onSnapshot(collection(db, 'catalogo_tipos_gastos'), (snap) => {
-      setTiposGastoList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-    }));
-    subs.push(onSnapshot(collection(db, 'empresas'), (snap) => {
-      setEmpresasList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-    }));
-    subs.push(onSnapshot(collection(db, 'catalogo_trafico'), (snap) => {
-      setTraficoList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-    }));
-    subs.push(onSnapshot(collection(db, 'convenios_clientes_detalles'), (snap) => {
-      setConvDetallesList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-    }));
-    subs.push(onSnapshot(collection(db, 'catalogo_tarifas_referencia'), (snap) => {
-      setTarifasRefList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-    }));
-    subs.push(onSnapshot(collection(db, 'catalogo_tipos_tarifarios'), (snap) => {
-      setTiposTarifariosList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-    }));
-    subs.push(onSnapshot(collection(db, 'unidades'), (snap) => {
-      setUnidadesList(snap.docs.map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) })));
-    }));
     // ✅ V00392: las más recientes por fecha de servicio (antes 500 sin orden)
     const qOps = query(collection(db, 'operaciones'), orderBy('fechaServicio', 'desc'), limit(2500));
     subs.push(onSnapshot(qOps, (snap) => {
@@ -575,8 +552,9 @@ export const ReferenciasPuentesDashboard = () => {
     (async () => {
       if (!statusNombresRef.current) {
         try {
-          const cat = await getDocs(collection(db, 'catalogo_status_servicio'));
-          statusNombresRef.current = new Map(cat.docs.map(d => [d.id, String((d.data() as Record<string, unknown>).nombre ?? (d.data() as Record<string, unknown>).descripcion ?? '')]));
+          // ✅ V00439 (Fase 3.4): del listener compartido (antes getDocs).
+          const cat = await obtenerCatalogo('catalogo_status_servicio');
+          statusNombresRef.current = new Map(cat.map(d => [idReal(d), String(d.nombre ?? d.descripcion ?? '')]));
         } catch { statusNombresRef.current = new Map(); }
       }
       const lotes: string[][] = [];
@@ -880,7 +858,7 @@ export const ReferenciasPuentesDashboard = () => {
   };
   const usuarioActual = () => auth.currentUser?.displayName || auth.currentUser?.email || 'Usuario';
   const horaAhora = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
-  const monedaCatalogo = (m: unknown) => (String(m || '') === '7dca62b3' ? 'Dólares' : String(m || '') === 'f95d8894' ? 'Pesos' : String(m || ''));
+  const monedaCatalogo = monedaDeCatalogo;
   const otrosCruces = useMemo(() => {
     // ✅ V00415: los otros cruces nuevos viven DENTRO de una referencia del Historial
     const dentro = refsAuto.flatMap(r => ((r as { operacionesGuardadas?: Record<string, unknown>[] }).operacionesGuardadas || [])
@@ -1893,7 +1871,7 @@ export const ReferenciasPuentesDashboard = () => {
         <FormularioOperacion
           estado="abierto"
           initialData={opDetalle}
-          catalogosCacheados={catalogosFormulario || {}}
+          catalogosCacheados={catalogosFormulario}
           onClose={() => setOpDetalle(null)}
           onMinimize={() => {}}
           onRestore={() => {}}

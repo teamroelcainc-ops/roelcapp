@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useEffectEvent, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
-import { useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
 import { useHandlerEstable } from '../hooks/useHandlerEstable';
 import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
 import { sinPruebas, esOperacionPrueba } from '../../../utils/operacionPrueba';
-import { addDoc, collection, query, getDocs, onSnapshot, orderBy, limit, where, startAfter, documentId, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
+import { addDoc, collection, query, getDocs, orderBy, limit, where, startAfter, documentId, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db, auth } from '../../../config/firebase';
 import { direccionCompletaDeEmpresa } from '../../../utils/direccionEmpresa'; // ✅ V00281
 import { EditorTarifaOrigenDestino } from './EditorTarifaOrigenDestino'; // ✅ V00224
@@ -32,7 +31,10 @@ import { datosDireccionEmpresaPdf, direccionesParaPdf } from '../../../utils/dir
 import { mostrarCartaPara, useConfigCarta } from '../../../utils/configCartaInstrucciones';
 import { ConfigCartaModal } from './ConfigCartaModal';
 import { usePermisoFormularios } from '../../formularios/configFormularios';
-import { cargarCatalogo, TTL } from '../../../hooks/useCatalogoCache'; // ✅ V00256: catálogos C/V y Aduanas para los filtros nuevos
+import type { DocLibre } from '../../../utils/docPorId';
+import { idReal, useCatalogos } from '../../../shared/data/catalogos';
+import type { ColeccionCatalogo } from '../../../shared/data/catalogos';
+import { ID_MXN, ID_USD, STATUS_COMPLETADOS, TIPO_EMPRESA } from '../../../shared/dominio/constantes';
 
 // ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
 const fmtFechaAuditoria = (iso: any): string => {
@@ -43,8 +45,34 @@ const fmtFechaAuditoria = (iso: any): string => {
   } catch { return String(iso || ''); }
 };
 
-const ID_USD = '7dca62b3';
-const ID_MXN = 'f95d8894';
+// ✅ V00439 (Fase 3.x): catálogos del módulo (alias → colección) desde el
+//   listener compartido (antes 16 onSnapshot propios + caché de useCatalogoCache).
+//   Los de la tabla y los filtros, siempre; el resto, con el formulario o la
+//   ficha abiertos (PDF, carta, municipios). Mismos alias que antes.
+const CATALOGOS_SIEMPRE = {
+  empresas: 'empresas',
+  tiposOperacion: 'catalogo_tipo_operacion',
+  remolques: 'remolques',
+  empleados: 'empleados',
+  statusServicio: 'catalogo_status_servicio',
+  cargaVacia: 'catalogo_carga_vacia',
+  aduanas: 'catalogo_aduanas',
+} as const satisfies Record<string, ColeccionCatalogo>;
+const CATALOGOS_BAJO_DEMANDA = {
+  embalajes: 'catalogo_embalaje',
+  tarifas: 'catalogo_tarifas_referencia',
+  conveniosProv: 'convenios_proveedores',
+  catalogoConvProvDetalles: 'convenios_proveedores_detalles',
+  catalogoTC: 'tipo_cambio',
+  catalogoConvClientes: 'convenios_clientes',
+  catalogoConvDetalles: 'convenios_clientes_detalles',
+  unidades: 'unidades',
+  unidades_proveedor: 'unidades_proveedor',
+  proveedores_unidad: 'proveedores_unidad',
+  catalogoMoneda: 'catalogo_moneda',
+  direcciones: 'direcciones',
+} as const satisfies Record<string, ColeccionCatalogo>;
+type AliasCatalogoSC = keyof typeof CATALOGOS_SIEMPRE | keyof typeof CATALOGOS_BAJO_DEMANDA;
 
 
 // ✅ Color por TIPO DE OPERACIÓN: Transfer → naranja, Logística → azul,
@@ -162,7 +190,7 @@ const COLUMNAS_BASE = [
 ];
 
 // ✅ Status que se muestran en esta vista — SOLO estos 2 IDs hex.
-const STATUS_COMPLETADOS_VALORES = ['c2d57403', 'f557b751'];
+const STATUS_COMPLETADOS_VALORES = STATUS_COMPLETADOS; // ✅ V00439 (Fase 3.x)
 // ✅ V00355: saldo del puente colocado al completar (AVI import / Puente III export)
 const fmtSaldoPuente = (op: { saldoPuente?: unknown; saldoPuenteMoneda?: unknown; saldoPuentePiso?: unknown; saldoPuentePisoMoneda?: unknown }): string => {
   const n = Number(op?.saldoPuente); if (!Number.isFinite(n)) return '-';
@@ -172,7 +200,7 @@ const fmtSaldoPuente = (op: { saldoPuente?: unknown; saldoPuenteMoneda?: unknown
 };
 
 // ID del tipo de empresa "Cliente (Paga)" para el buscador
-const ID_TIPO_CLIENTE_PAGA = '7eec9cbb';
+const ID_TIPO_CLIENTE_PAGA = TIPO_EMPRESA.clientePaga; // ✅ V00439 (Fase 3.x)
 // ✅ NUEVO: tamaño de página para descarga incremental
 const TAMANIO_PAGINA = 100;
 // ✅ NUEVO: tamaño de bloque al descargar TODOS los completados por status.
@@ -369,33 +397,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     })();
   }, []);
 
-  // ✅ V00225: municipios (catálogo de Direcciones) para el detalle.
-  const [mapaMunicipios, setMapaMunicipios] = useState<Record<string, string>>({});
-  const [direccionesDoc, setDireccionesDoc] = useState<Array<Record<string, unknown> & { id: string }>>([]); // ✅ V00281: catálogo para documentos
-  useEffect(() => {
-    (async () => {
-      try {
-        const [snapDir, snapEmp] = await Promise.all([
-          getDocs(collection(db, 'direcciones')),
-          getDocs(collection(db, 'empresas')),
-        ]);
-        setDireccionesDoc(snapDir.docs.map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }))); // ✅ V00281
-        const munDeDireccion: Record<string, string> = {};
-        snapDir.docs.forEach((d) => {
-          const x = d.data() as any;
-          munDeDireccion[d.id] = String(x.municipioNombre || x.municipio || x.ciudad || '');
-        });
-        const porEmpresa: Record<string, string> = {};
-        snapEmp.docs.forEach((d) => {
-          const x = d.data() as any;
-          const m = munDeDireccion[String(x.direccionId || '')] || '';
-          if (m) porEmpresa[d.id] = m;
-        });
-        setMapaMunicipios(porEmpresa);
-      } catch { /* noop */ }
-    })();
-  }, []);
-
   // ✅ V00223: editor de Origen/Destino de las tarifas de referencia usadas por
   //   una operación de FLETE (tarifa del cliente y del proveedor).
   const [editorTarifa, setEditorTarifa] = useState<any | null>(null);
@@ -447,7 +448,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   // ✅ NUEVO: operación a la que se sube un documento DIRECTO desde la fila.
   const [opSubirDocs, setOpSubirDocs] = useState<any | null>(null);
   
-  const [catalogosGlobales, setCatalogosGlobales] = useState<any>({});
   const [busqueda, setBusqueda] = useState('');
   // ✅ V00263: el buscador global filtra EN VIVO — actualiza el campo y el
   //   snapshot aplicado (aquí los filtros normales aplican con BUSCAR).
@@ -471,13 +471,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const [filterMovimiento, setFilterMovimiento] = useState('');
   const [filterCargaVacia, setFilterCargaVacia] = useState('');
   const [filterAduana, setFilterAduana] = useState('');
-  type CatFiltro = { id?: unknown; nombre?: unknown; estado_carga?: unknown; aduana?: unknown };
-  const [catCVFiltro, setCatCVFiltro] = useState<CatFiltro[]>([]);
-  const [catAduanasFiltro, setCatAduanasFiltro] = useState<CatFiltro[]>([]);
-  useEffect(() => {
-    cargarCatalogo('catalogo_carga_vacia', { ttlMs: TTL.MEDIO }).then(setCatCVFiltro).catch(() => {});
-    cargarCatalogo('catalogo_aduanas', { ttlMs: TTL.MEDIO }).then(setCatAduanasFiltro).catch(() => {});
-  }, []);
 
   const [paginaActual, setPaginaActual] = useState(1);
   const [pestañaDetalleActiva, setPestañaDetalleActiva] = useState<string>('general');
@@ -561,6 +554,30 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   // ✅ NUEVO: estado del FormularioOperacion COMPLETO (mismo que Operaciones Activas).
   //   Al editar se abre este formulario en lugar del editor rápido reducido.
   const [estadoFormulario, setEstadoFormulario] = useState<'cerrado' | 'abierto' | 'minimizado'>('cerrado');
+
+  // ✅ V00439 (Fase 3.x): catálogos del listener compartido (ver CATALOGOS_SIEMPRE).
+  const { datos: catSiempre } = useCatalogos(CATALOGOS_SIEMPRE);
+  const { datos: catDemanda } = useCatalogos(CATALOGOS_BAJO_DEMANDA, { activo: estadoFormulario !== 'cerrado' || !!operacionViendo });
+  // Filas sin esquema fijo: mismo trato que docPorId (DocLibre). Mismos alias que
+  // antes para el formulario (catalogosCacheados).
+  const catalogosGlobales = useMemo((): Record<AliasCatalogoSC, DocLibre[]> => ({ ...catSiempre, ...catDemanda }), [catSiempre, catDemanda]);
+  // ✅ V00256: catálogos C/V y Aduanas para los filtros nuevos.
+  type CatFiltro = { id?: unknown; nombre?: unknown; estado_carga?: unknown; aduana?: unknown };
+  const catCVFiltro: CatFiltro[] = catSiempre.cargaVacia;
+  const catAduanasFiltro: CatFiltro[] = catSiempre.aduanas;
+  // ✅ V00225: municipios (catálogo de Direcciones) para el detalle.
+  // ✅ V00281: catálogo de direcciones para documentos.
+  const direccionesDoc = catDemanda.direcciones;
+  const mapaMunicipios = useMemo(() => {
+    const munDeDireccion: Record<string, string> = {};
+    direccionesDoc.forEach((x) => { munDeDireccion[idReal(x)] = String(x.municipioNombre || x.municipio || x.ciudad || ''); });
+    const porEmpresa: Record<string, string> = {};
+    catSiempre.empresas.forEach((x) => {
+      const m = munDeDireccion[String(x.direccionId || '')] || '';
+      if (m) porEmpresa[idReal(x)] = m;
+    });
+    return porEmpresa;
+  }, [direccionesDoc, catSiempre.empresas]);
 
   // ✅ NUEVO: resolución bidireccional ID ↔ Nombre de catalogo_status_servicio.
   const mapaStatus = useMemo(() => {
@@ -811,53 +828,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const cargarMasOperaciones = async () => {
     return;
   };
-
-  // ✅ Catálogos en tiempo real vía onSnapshot.
-  const COLECCIONES_CATALOGOS: Record<string, string> = {
-    empresas: 'empresas',
-    tiposOperacion: 'catalogo_tipo_operacion',
-    embalajes: 'catalogo_embalaje',
-    remolques: 'remolques',
-    tarifas: 'catalogo_tarifas_referencia',
-    conveniosProv: 'convenios_proveedores',
-    catalogoConvProvDetalles: 'convenios_proveedores_detalles',
-    catalogoTC: 'tipo_cambio',
-    catalogoConvClientes: 'convenios_clientes',
-    catalogoConvDetalles: 'convenios_clientes_detalles',
-    unidades: 'unidades',
-    empleados: 'empleados',
-    statusServicio: 'catalogo_status_servicio',
-    unidades_proveedor: 'unidades_proveedor',
-    proveedores_unidad: 'proveedores_unidad',
-    catalogoMoneda: 'catalogo_moneda',
-  };
-
-  const suscribirCatalogosEnVivo = () => {
-    return Object.entries(COLECCIONES_CATALOGOS).map(([alias, coleccion]) =>
-      onSnapshot(
-        collection(db, coleccion),
-        (snap) => {
-          const data = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-          setCatalogosGlobales((prev: any) => ({ ...prev, [alias]: data }));
-        },
-        (error) => console.error(`Error escuchando catálogo "${coleccion}":`, error)
-      )
-    );
-  };
-
-  // Se conserva como no-op para no tocar los puntos donde se invocaba antes.
-  const cargarCatalogosSiEsNecesario = async () => {};
-
-  // ✅ V00438 (Fase 2.7): los listeners de catálogos solo viven mientras el
-  //   módulo se ve; oculto conserva los catálogos ya cargados y al volver se
-  //   re-suscribe (Fase 3 los reemplaza por la capa compartida de catálogos).
-  const moduloVisible = useModuloVivoActivo();
-  const suscribirCatalogosEv = useEffectEvent(suscribirCatalogosEnVivo);
-  useEffect(() => {
-    if (!moduloVisible) return;
-    const unsubscribers = suscribirCatalogosEv();
-    return () => unsubscribers.forEach((unsub) => unsub());
-  }, [moduloVisible]);
 
   // ✅ OPTIMIZACIÓN: el conjunto descargado (TODOS los completados) NO depende de
   //   los filtros — fecha, cliente, tipo y remolque se aplican en memoria. Por eso
@@ -1111,7 +1081,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   //    si no hay nombre guardado, devuelve '-'. Para monedas cae a la conversión
   //    local ID→USD/MXN (sin catálogo).
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const mostrarDatoMapeado = (id: string | null | undefined, catalogo: keyof typeof catalogosGlobales, _campoRetorno: string = 'nombre', valorDesnormalizado?: string) => {
+  const mostrarDatoMapeado = (id: string | null | undefined, catalogo: string, _campoRetorno: string = 'nombre', valorDesnormalizado?: string) => {
     const v = valorDesnormalizado != null ? String(valorDesnormalizado).trim() : '';
     if (v && v !== '-' && v !== String(id ?? '').trim()) return String(valorDesnormalizado);
     if ((catalogo === 'catalogoMoneda' || catalogo === 'catalogo_moneda') && id) {
@@ -1300,7 +1270,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   void ultimoStatusGuardado; void abrirRegistroHorario; void registrarStatusRapido;
 
   const handleDescSolicitudRetiro = async () => {
-    await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
     const origen = mostrarDatoMapeado(operacionViendo.origen, 'empresas', 'nombre', operacionViendo.origenNombre);
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
@@ -1327,7 +1296,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   };
 
   const handleDescargarInstruccionesServicio = async () => {
-    await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
 
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
@@ -1357,7 +1325,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   };
 
   const handleDescargarCheckList = async () => {
-    await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
 
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
@@ -1395,7 +1362,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   };
 
   const handleDescargarPruebaEntrega = async () => {
-    await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
 
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
@@ -1430,7 +1396,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   };
 
   const handleDescargarCartaInstrucciones = async () => {
-    await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
@@ -2215,8 +2180,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     // ✅ MODIFICADO: usa la selección y el ORDEN elegidos en el modal.
     const columnasVisibles = columnasExport.filter(c => c.visible);
     if (columnasVisibles.length === 0) return alert('Selecciona al menos una columna para exportar.');
-
-    await cargarCatalogosSiEsNecesario();
 
     // ✅ V00380: las operaciones de PRUEBA no salen en el Excel
     const datosExcel = sinPruebas(operacionesOrdenadas).map(op => {

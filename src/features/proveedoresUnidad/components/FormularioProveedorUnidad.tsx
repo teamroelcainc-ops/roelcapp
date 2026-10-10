@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import { camposModificadosDe } from '../../autorizaciones/autorizaciones';
@@ -6,6 +6,9 @@ import { collection, getDocs } from 'firebase/firestore';
 import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
 import './FormularioProveedorUnidad.css';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
+import { useCatalogo } from '../../../shared/data/catalogos';
+import type { DocCatalogo } from '../../../shared/data/catalogos';
+import { TIPO_EMPRESA } from '../../../shared/dominio/constantes';
 
 interface FormProps {
   estado: 'abierto' | 'minimizado';
@@ -30,63 +33,55 @@ export const FormularioProveedorUnidad = ({ estado, initialData, onClose, onMini
     estadoExpedicion: ''
   });
 
-  const [empresasProveedoras, setEmpresasProveedoras] = useState<any[]>([]);
   const [cargando, setCargando] = useState(false);
 
-  // --- FILTRADO ESTRICTO POR ID: ca21ab07 ---
+  // ✅ V00439 (Fase 3.x): `empresas` llega del listener compartido de catálogos; las
+  //   colecciones heredadas 'empresa' y 'catalogo_empresas' (no son catálogos) se leen una vez.
+  const { datos: empresasCat } = useCatalogo('empresas');
+  const [empresasLegado, setEmpresasLegado] = useState<{ empresa: DocCatalogo[]; catalogoEmpresas: DocCatalogo[] }>({ empresa: [], catalogoEmpresas: [] });
   useEffect(() => {
-    const obtenerProveedoresFiltrados = async () => {
+    let activo = true;
+    const leer = async (nombreColeccion: string): Promise<DocCatalogo[]> => {
       try {
-        let todasLasEmpresas: any[] = [];
-        const coleccionesPosibles = ['empresa', 'empresas', 'catalogo_empresas'];
-
-        // 1. Buscamos en las colecciones disponibles
-        for (const nombreColeccion of coleccionesPosibles) {
-          try {
-            const snap = await getDocs(collection(db, nombreColeccion));
-            if (!snap.empty) {
-              const docs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-              todasLasEmpresas = [...todasLasEmpresas, ...docs];
-            }
-          } catch (e) {
-            // Ignorar si la colección no existe
-          }
-        }
-
-        // 2. Eliminar duplicados por ID
-        const empresasUnicas = Array.from(new Map(todasLasEmpresas.map(item => [item.id, item])).values());
-
-        // 3. APLICAR FILTRO ESTRICTO ca21ab07
-        const ID_REQUERIDO = 'ca21ab07';
-        const filtradas = empresasUnicas.filter((emp: any) => {
-          // Caso A: El ID está en el arreglo de tiposEmpresa
-          if (Array.isArray(emp.tiposEmpresa)) {
-            return emp.tiposEmpresa.includes(ID_REQUERIDO);
-          }
-          // Caso B: El ID coincide con el campo tipo_empresa o categoria
-          if (emp.tipo_empresa === ID_REQUERIDO || emp.categoria === ID_REQUERIDO) {
-            return true;
-          }
-          // Caso C: Verificación de seguridad en todo el objeto (por si está en otro campo)
-          const dataString = JSON.stringify(emp).toLowerCase();
-          return dataString.includes(ID_REQUERIDO.toLowerCase());
-        });
-
-        // 4. Ordenar alfabéticamente
-        filtradas.sort((a: any, b: any) => {
-          const nombreA = a.nombre || a.empresa || '';
-          const nombreB = b.nombre || b.empresa || '';
-          return nombreA.localeCompare(nombreB);
-        });
-
-        setEmpresasProveedoras(filtradas);
-      } catch (error) {
-        console.error("Error al obtener proveedores:", error);
-      }
+        const snap = await getDocs(collection(db, nombreColeccion));
+        return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      } catch { return []; /* Ignorar si la colección no existe */ }
     };
-
-    obtenerProveedoresFiltrados();
+    Promise.all([leer('empresa'), leer('catalogo_empresas')]).then(([empresa, catalogoEmpresas]) => {
+      if (activo) setEmpresasLegado({ empresa, catalogoEmpresas });
+    });
+    return () => { activo = false; };
   }, []);
+
+  // --- FILTRADO ESTRICTO POR ID: TIPO_EMPRESA.proveedorUnidad (ca21ab07) ---
+  const empresasProveedoras = useMemo(() => {
+    // 1. Todas las colecciones disponibles; 2. sin duplicados por ID
+    const todasLasEmpresas = [...empresasLegado.empresa, ...empresasCat, ...empresasLegado.catalogoEmpresas];
+    const empresasUnicas = Array.from(new Map(todasLasEmpresas.map(item => [item.id, item])).values());
+
+    // 3. APLICAR FILTRO ESTRICTO
+    const ID_REQUERIDO: string = TIPO_EMPRESA.proveedorUnidad;
+    const filtradas = empresasUnicas.filter((emp) => {
+      // Caso A: El ID está en el arreglo de tiposEmpresa
+      if (Array.isArray(emp.tiposEmpresa)) {
+        return emp.tiposEmpresa.includes(ID_REQUERIDO);
+      }
+      // Caso B: El ID coincide con el campo tipo_empresa o categoria
+      if (emp.tipo_empresa === ID_REQUERIDO || emp.categoria === ID_REQUERIDO) {
+        return true;
+      }
+      // Caso C: Verificación de seguridad en todo el objeto (por si está en otro campo)
+      const dataString = JSON.stringify(emp).toLowerCase();
+      return dataString.includes(ID_REQUERIDO.toLowerCase());
+    });
+
+    // 4. Ordenar alfabéticamente
+    return filtradas.sort((a, b) => {
+      const nombreA = String(a.nombre || a.empresa || '');
+      const nombreB = String(b.nombre || b.empresa || '');
+      return nombreA.localeCompare(nombreB);
+    });
+  }, [empresasLegado, empresasCat]);
 
   useEffect(() => {
     if (initialData) {
@@ -107,7 +102,7 @@ export const FormularioProveedorUnidad = ({ estado, initialData, onClose, onMini
     const empresaEncontrada = empresasProveedoras.find(emp => emp.id === idSeleccionado);
     
     const nombreVisual = empresaEncontrada 
-      ? (empresaEncontrada.nombre || empresaEncontrada.empresa || `Proveedor (${idSeleccionado.substring(0,4)})`) 
+      ? String(empresaEncontrada.nombre || empresaEncontrada.empresa || `Proveedor (${idSeleccionado.substring(0,4)})`) 
       : '';
 
     setFormData(prev => ({
@@ -174,13 +169,13 @@ export const FormularioProveedorUnidad = ({ estado, initialData, onClose, onMini
                   <option value="">Seleccione el proveedor...</option>
                   {empresasProveedoras.map(emp => (
                     <option key={emp.id} value={emp.id}>
-                      {emp.nombre || emp.empresa}
+                      {String(emp.nombre || emp.empresa || '')}
                     </option>
                   ))}
                 </select>
                 {empresasProveedoras.length === 0 && (
                   <small className="fpu-x4">
-                    No se encontraron empresas con el ID ca21ab07.
+                    No se encontraron empresas con el ID {TIPO_EMPRESA.proveedorUnidad}.
                   </small>
                 )}
               </div>

@@ -21,6 +21,7 @@ import { EditorNavMovil } from './components/EditorNavMovil';
 import { useUsuarioStore } from './stores/useUsuarioStore';
 import { evaluarPerfil, MENSAJE_ACCESO, esAdminPorRoles, verificarRedOficina } from './features/auth/services/acceso'; // ✅ V00437
 import { iniciarFlags, detenerFlags } from './shared/data/flags'; // ✅ V00437
+import { idReal, useCatalogo, reiniciarCatalogos, obtenerCatalogo } from './shared/data/catalogos'; // ✅ V00439
 import { EtiquetasProvider, useEtiquetas } from './contexts/EtiquetasContext'; 
 import { lazyWithRetry } from './utils/lazyWithRetry';
 
@@ -390,20 +391,21 @@ const ResumenDelDia = memo(function ResumenDelDia() {
       try {
         // ✅ CORREGIDO: solo PROVEEDORES DE DIESEL (tipos de empresa/servicio que
         //   mencionen diesel o combustible), igual que el formulario del catálogo.
-        const [snap, tipoEmpSnap, tipoServSnap] = await Promise.all([
-          getDocs(collection(db, 'empresas')),
-          getDocs(collection(db, 'catalogo_tipo_empresa')),
-          getDocs(collection(db, 'catalogo_tipo_servicio')),
+        // ✅ V00439 (Fase 3.4): catálogos compartidos (antes 3 colecciones completas por apertura).
+        const [empresasCat, tiposEmpresa, tiposServicio] = await Promise.all([
+          obtenerCatalogo('empresas'),
+          obtenerCatalogo('catalogo_tipo_empresa'),
+          obtenerCatalogo('catalogo_tipo_servicio'),
         ]);
         const nombresTipo: Record<string, string> = {};
-        tipoEmpSnap.docs.forEach((d: any) => { nombresTipo[d.id] = String((d.data() as any).nombre || ''); });
-        tipoServSnap.docs.forEach((d: any) => { nombresTipo[d.id] = String((d.data() as any).nombre || ''); });
+        tiposEmpresa.forEach((d) => { nombresTipo[idReal(d)] = String(d.nombre || ''); });
+        tiposServicio.forEach((d) => { nombresTipo[idReal(d)] = String(d.nombre || ''); });
         const nombreDeTipo = (item: any): string => {
           if (!item) return '';
           if (typeof item === 'object') return String(item.nombre || item.tipo || nombresTipo[item.id] || '');
           return String(nombresTipo[String(item)] || item);
         };
-        const todas = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+        const todas = [...empresasCat];
         let lista = todas.filter((emp: any) => {
           const etiquetas = [
             ...(Array.isArray(emp.tiposEmpresa) ? emp.tiposEmpresa : []),
@@ -801,10 +803,11 @@ function AppContenido() {
     window.location.reload();
   };
   const [usuarioActualDB, setUsuarioActualDB] = useState<any>(null); 
-  const [rolesCatalogo, setRolesCatalogo] = useState<any[]>([]); // catálogo de roles (para permisos)
+  // ✅ V00439 (Fase 3.7): catálogo de roles por el listener compartido de catálogos
+  //   (antes un onSnapshot propio + lecturas repetidas en varios módulos).
   // ✅ V00438 (Fase 2.10): hasta que llega el catálogo de roles no se sabe qué
   //   módulos tiene el usuario; antes se mostraba "Sin módulos asignados" un instante.
-  const [rolesCargados, setRolesCargados] = useState(false);
+  const { datos: rolesCatalogo, listo: rolesCargados } = useCatalogo('roles', { activo: estaAutenticado });
   
   const { etq } = useEtiquetas();
   const [moduloActivo, setModuloActivo] = useState<'tableroCrm' | 'panelControl' | 'reporteVencimientos' | 'etiquetas' | 'estadisticas' | 'pagos' | 'misOperaciones' | 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'saldosPuentes' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'tarifarioClientes' | 'conveniosProveedores' | 'tarifarioProveedores' | 'detallesConvenioClientes' | 'detallesConvenioProveedores' | 'papeleraReciclaje' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones' | 'historialCambios'>(() => {
@@ -1194,6 +1197,9 @@ function AppContenido() {
           setEstaAutenticado(false);
           setUsuarioActualDB(null);
           detenerFlags();
+          // ✅ V00439: al cerrar sesión se cierran los listeners compartidos y se olvida la sesión.
+          reiniciarCatalogos();
+          useUsuarioStore.getState().limpiar();
         }
       } finally {
         setCargandoAuth(false);
@@ -1226,18 +1232,8 @@ function AppContenido() {
     return () => unsub();
   }, [uidSesion, abrirSesion]);
 
-  // Catálogo de roles (para saber qué módulos puede ver el usuario)
-  useEffect(() => {
-    if (!estaAutenticado) return;
-    const unsub = onSnapshot(collection(db, 'roles'), (snap) => {
-      setRolesCatalogo(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-      setRolesCargados(true);
-    }, (err) => {
-      console.error('[roles] No se pudo leer el catálogo de roles.', err);
-      setRolesCargados(true);
-    });
-    return () => unsub();
-  }, [estaAutenticado]);
+  // ✅ V00439: el catálogo de roles también queda en el store de sesión.
+  useEffect(() => { useUsuarioStore.getState().setRolesCatalogo(rolesCatalogo); }, [rolesCatalogo]);
 
   const handleCerrarSesion = async (motivo: 'manual' | 'inactividad' = 'manual') => {
     if (auth.currentUser) {
@@ -1359,10 +1355,11 @@ function AppContenido() {
       roles: usuarioActualDB.roles,
       colaboradorId: usuarioActualDB.colaboradorId,
       horarioTrabajo: usuarioActualDB.horarioTrabajo,
+      puedeEditarApp: usuarioActualDB.puedeEditarApp === true,
     } : null);
-    useUsuarioStore.getState().setRolesEfectivos(rolesEfectivos);
+    useUsuarioStore.getState().setRolesEfectivos(rolesEfectivos, !!vistaComoAplicada);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [usuarioActualDB, JSON.stringify(rolesEfectivos)]);
+  }, [usuarioActualDB, JSON.stringify(rolesEfectivos), !!vistaComoAplicada]);
   const accesoTotal = vistaComoAplicada
     ? rolesEfectivos.some((r: string) => String(r).toUpperCase() === 'ADMIN')
     : accesoTotalReal;

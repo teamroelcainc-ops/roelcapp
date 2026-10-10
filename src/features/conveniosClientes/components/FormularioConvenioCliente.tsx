@@ -1,5 +1,5 @@
 // src/features/conveniosClientes/components/FormularioConvenioCliente.tsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import { camposModificadosDe } from '../../autorizaciones/autorizaciones';
@@ -11,6 +11,9 @@ import { reservarConsecutivosDetalle } from '../../conveniosDetalles/consecutivo
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { limpiarCacheMemoria } from '../../../utils/cacheMemoria';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
+import { obtenerCatalogo, useCatalogos } from '../../../shared/data/catalogos';
+import { TIPO_EMPRESA } from '../../../shared/dominio/constantes';
+import { monedaCanonica } from '../../../shared/dominio/moneda';
 
 // =========================================
 // SUB-COMPONENTE: SELECTOR CON BUSCADOR
@@ -152,8 +155,18 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
 
   const [detalles, setDetalles] = useState<(ConvenioDetalleRecord & { _isNew?: boolean })[]>([]);
   const [detallesEliminados, setDetallesEliminados] = useState<string[]>([]); 
-  const [clientes, setClientes] = useState<any[]>([]);
-  const [monedas, setMonedas] = useState<any[]>([]);
+  // ✅ V00439 (Fase 3.x): empresas, monedas y tarifas de referencia desde los
+  //   catálogos compartidos (antes 3 getDocs en cada apertura del formulario).
+  const { datos: cat } = useCatalogos({ empresas: 'empresas', monedas: 'catalogo_moneda', tarifas: 'catalogo_tarifas_referencia' });
+  // CORRECCIÓN 1: Selección directa por status y tipo "Cliente (Paga)"
+  const clientes: any[] = useMemo(() => cat.empresas.filter((emp) => {
+    const isActiva = emp.status === 'Activa';
+    const hasTipo = Array.isArray(emp.tiposEmpresa)
+      ? emp.tiposEmpresa.includes(TIPO_EMPRESA.clientePaga)
+      : emp.tiposEmpresa === TIPO_EMPRESA.clientePaga;
+    return isActiva && hasTipo;
+  }), [cat.empresas]);
+  const monedas: any[] = cat.monedas;
 
   // ✅ CORREGIDO (V00118) — RESOLUCIÓN ROBUSTA DE LA MONEDA DE LA EMPRESA:
   //   la empresa puede tener la moneda guardada como ID del catálogo o como
@@ -187,13 +200,7 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
   const resolverMonedaDeEmpresa = async (e: any): Promise<{ monId: string; monNom: string }> => {
     const crudo = String(e?.monedaId || e?.moneda || '').trim();
     let lista = monedas;
-    if (lista.length === 0) {
-      try {
-        const snapM = await getDocs(collection(db, 'catalogo_moneda'));
-        lista = snapM.docs.map((d) => ({ id: d.id, ...d.data() }));
-        setMonedas(lista);
-      } catch { /* sin conexión: se intenta con lo que haya */ }
-    }
+    if (lista.length === 0) lista = await obtenerCatalogo('catalogo_moneda'); // ✅ V00439 (Fase 3.x)
     if (!crudo) {
       const nom = String(e?.monedaNombre || '').trim();
       if (nom) {
@@ -231,7 +238,7 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
     return () => { activo = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formData.clienteId, monedas]);
-  const [tarifarios, setTarifarios] = useState<any[]>([]);
+  const tarifarios: any[] = cat.tarifas;
   const [tarifasSugeridasActuales, setTarifasSugeridasActuales] = useState<number[]>([]); 
   const [cargando, setCargando] = useState(false);
   const [mostrandoDetalleForm, setMostrandoDetalleForm] = useState(false);
@@ -257,8 +264,9 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
     const norm = (t: string) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     const r = norm(raw);
     const porNombre = opcionesMoneda.find(m => norm(m) === r); if (porNombre) return porNombre;
-    if (r.includes('usd') || r.includes('dolar')) { const d = opcionesMoneda.find(m => norm(m).includes('dolar') || norm(m).includes('usd')); if (d) return d; }
-    if (r.includes('mxn') || r.includes('peso')) { const pz = opcionesMoneda.find(m => norm(m).includes('peso') || norm(m).includes('mxn')); if (pz) return pz; }
+    // ✅ V00439 (Fase 3.x): USD/MXN con el helper compartido (acepta también el ID del catálogo).
+    const canon = monedaCanonica(raw);
+    if (canon) { const op = opcionesMoneda.find(m => monedaCanonica(m) === canon); if (op) return op; }
     return raw;
   };
   const opcionesMonedaCon = (v: string) => (v && !opcionesMoneda.includes(v)) ? [...opcionesMoneda, v] : opcionesMoneda;
@@ -294,31 +302,7 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
 
   const isRequired = (fieldName: string) => requiredFields.includes(fieldName);
 
-  // 2. CARGA DE CATÁLOGOS INICIALES
-  useEffect(() => {
-    const cargarCatalogos = async () => {
-      try {
-        const empSnapshot = await getDocs(collection(db, 'empresas'));
-        const todasEmpresas = empSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        
-        // CORRECCIÓN 1: Selección directa por status y 7eec9cbb
-        setClientes(todasEmpresas.filter((emp: any) => {
-          const isActiva = emp.status === 'Activa';
-          const hasTipo = Array.isArray(emp.tiposEmpresa) 
-            ? emp.tiposEmpresa.includes('7eec9cbb') 
-            : emp.tiposEmpresa === '7eec9cbb';
-          return isActiva && hasTipo;
-        }));
-
-        const monSnapshot = await getDocs(collection(db, 'catalogo_moneda'));
-        setMonedas(monSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-
-        const tarifarioSnapshot = await getDocs(collection(db, 'catalogo_tarifas_referencia'));
-        setTarifarios(tarifarioSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      } catch (error) { console.error("Error catálogos:", error); }
-    };
-    cargarCatalogos();
-  }, []);
+  // 2. CARGA DE CATÁLOGOS INICIALES → ✅ V00439 (Fase 3.x): useCatalogos (arriba).
 
   // 3. CARGA DE DATOS Y CRUCE DE NOMBRES (JOIN)
   // ✅ CORREGIDO (V00126): los detalles se cargan UNA sola vez por convenio.

@@ -15,13 +15,28 @@ import { SelectBuscable } from './SelectBuscable';
 import './CatalogosDashboard.css';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 import { esAduanaColombia, esGastoPisoColombia } from '../../../utils/puenteColombia';
+import { COLECCIONES_CATALOGO, idReal, obtenerCatalogo, useCatalogos } from '../../../shared/data/catalogos';
+import { armarDoc } from '../../../shared/data/coleccionesVivas';
+import type { ColeccionCatalogo, DocCatalogo } from '../../../shared/data/catalogos';
 
 // ✅ Helper compartido: resuelve la etiqueta a mostrar de una opción dinámica
 //    (misma cadena de respaldos que usaban los <select> nativos)
 const etiquetaDeOpcion = (opt: any, labelField: string, valueField: string): string =>
   String(opt[labelField] || opt.nombreCorto || opt.razonSocial || opt.nombre || opt.moneda || opt.descripcion || opt.tipo || opt[valueField] || opt.id);
 
+// ✅ V00439 (Fase 3.x): ¿la colección es un catálogo compartido (useCatalogo)?
+//   Las que no (p. ej. catalogo_colonias, catalogo_calles) conservan su lectura propia.
+const esColeccionCatalogo = (c: string | null | undefined): c is ColeccionCatalogo =>
+  !!c && (COLECCIONES_CATALOGO as readonly string[]).includes(c);
+/** Lee una colección entera: del listener compartido si es catálogo, si no con getDocs. */
+const leerColeccion = async (col: string): Promise<DocCatalogo[]> => {
+  if (esColeccionCatalogo(col)) return obtenerCatalogo(col);
+  const snap = await getDocs(collection(db, col));
+  return snap.docs.map((d) => armarDoc(d.id, d.data() as Record<string, unknown>));
+};
+
 // 🔥 CACHÉ GLOBAL DE MÓDULO PARA ELIMINAR LECTURAS EXCESIVAS EN FIREBASE 🔥
+// ✅ V00439 (Fase 3.x): solo para colecciones que NO son catálogo compartido.
 const CACHE_OPCIONES_DINAMICAS: Record<string, any[]> = {};
 
 // ✅ V00228: el caché de opciones dinámicas vivía toda la sesión, así que al
@@ -37,6 +52,8 @@ const invalidarCacheOpciones = (coleccion?: string): void => {
   });
 };
 const CACHE_NOMBRES_COLECCIONES: Record<string, string> = {};
+/** Lista vacía estable (evita recalcular memos con un [] nuevo en cada render). */
+const SIN_REGISTROS: never[] = [];
 
 // ✅ NUEVO (V00106) — PAPELERA DE CATÁLOGOS: colección donde se guarda una
 //    copia completa de cada registro ANTES de eliminarlo (borrado individual,
@@ -112,7 +129,17 @@ const REFS_TEXTO_CATALOGO: Record<string, Array<[string, string]>> = {
 // =========================================
 const CatalogosDashboard = () => {
   const [catalogoSeleccionado, setCatalogoSeleccionado] = useState<CatalogSchema | null>(null);
-  const [registrosGlobales, setRegistrosGlobales] = useState<any[]>([]);
+  // ✅ V00439 (Fase 3.x): registros del catálogo abierto — del listener compartido
+  //   si es catálogo de la app; si no, de un listener propio (ver más abajo).
+  const coleccionCatalogo = catalogoSeleccionado ? `catalogo_${catalogoSeleccionado.id}` : null;
+  const coleccionCompartida = esColeccionCatalogo(coleccionCatalogo) ? coleccionCatalogo : null;
+  const { datos: catalogoCompartido } = useCatalogos(
+    (coleccionCompartida ? { registros: coleccionCompartida } : {}) as Record<string, ColeccionCatalogo>,
+  );
+  const [registrosPropios, setRegistrosPropios] = useState<{ col: string; datos: any[] } | null>(null);
+  const registrosGlobales: any[] = coleccionCompartida
+    ? (catalogoCompartido.registros ?? SIN_REGISTROS)
+    : (registrosPropios && registrosPropios.col === coleccionCatalogo ? registrosPropios.datos : SIN_REGISTROS);
   // ✅ NUEVO — USO DE TARIFAS DE REFERENCIA: dónde se usa cada tarifa
   //   (detalles de convenios de clientes/proveedores vía tipoConvenioId, y
   //   operaciones vía op.convenio -> detalle -> tarifa).
@@ -204,18 +231,19 @@ const CatalogosDashboard = () => {
           setUsoTarifas(CACHE_USO_TARIFAS.data);
           return;
         }
+        // ✅ V00439 (Fase 3.x): convenios y detalles desde los catálogos compartidos.
         const [detC, detP, masC, masP] = await Promise.all([
-          getDocs(collection(db, 'convenios_clientes_detalles')),
-          getDocs(collection(db, 'convenios_proveedores_detalles')),
-          getDocs(collection(db, 'convenios_clientes')),
-          getDocs(collection(db, 'convenios_proveedores')),
+          obtenerCatalogo('convenios_clientes_detalles'),
+          obtenerCatalogo('convenios_proveedores_detalles'),
+          obtenerCatalogo('convenios_clientes'),
+          obtenerCatalogo('convenios_proveedores'),
         ]);
-        const nomC: Record<string, string> = {}; masC.docs.forEach((d) => { const x: any = d.data(); nomC[d.id] = `${x.numeroConvenio || d.id.slice(0, 6)} · ${x.clienteNombre || ''}`; });
-        const nomP: Record<string, string> = {}; masP.docs.forEach((d) => { const x: any = d.data(); nomP[d.id] = `${x.numeroConvenio || d.id.slice(0, 6)} · ${x.proveedorNombre || ''}`; });
+        const nomC: Record<string, string> = {}; masC.forEach((x) => { nomC[idReal(x)] = `${x.numeroConvenio || idReal(x).slice(0, 6)} · ${x.clienteNombre || ''}`; });
+        const nomP: Record<string, string> = {}; masP.forEach((x) => { nomP[idReal(x)] = `${x.numeroConvenio || idReal(x).slice(0, 6)} · ${x.proveedorNombre || ''}`; });
         const uso: Record<string, { convC: string[]; convP: string[]; opsCount: number; detIds: string[] }> = {};
         const asegura = (t: string) => { if (!uso[t]) uso[t] = { convC: [], convP: [], opsCount: 0, detIds: [] }; return uso[t]; };
-        detC.docs.forEach((d) => { const x: any = d.data(); const t = String(x.tipoConvenioId || ''); if (!t) return; const u = asegura(t); u.detIds.push(d.id); u.convC.push(nomC[String(x.convenioId)] || String(x.convenioId || '').slice(0, 8)); });
-        detP.docs.forEach((d) => { const x: any = d.data(); const t = String(x.tipoConvenioId || ''); if (!t) return; const u = asegura(t); u.detIds.push(d.id); u.convP.push(nomP[String(x.convenioId)] || String(x.convenioId || '').slice(0, 8)); });
+        detC.forEach((x) => { const t = String(x.tipoConvenioId || ''); if (!t) return; const u = asegura(t); u.detIds.push(idReal(x)); u.convC.push(nomC[String(x.convenioId)] || String(x.convenioId || '').slice(0, 8)); });
+        detP.forEach((x) => { const t = String(x.tipoConvenioId || ''); if (!t) return; const u = asegura(t); u.detIds.push(idReal(x)); u.convP.push(nomP[String(x.convenioId)] || String(x.convenioId || '').slice(0, 8)); });
         // Conteo por tarifa: una consulta agregada por cada 10 detalles ('in').
         const tareas: Promise<void>[] = [];
         Object.values(uso).forEach((u) => {
@@ -265,32 +293,31 @@ const CatalogosDashboard = () => {
       try {
         const tarifaId = String(regUso.id);
         const detIds: string[] = modalUsoTarifa?.u?.detIds || usoTarifas?.[tarifaId]?.detIds || [];
+        // ✅ V00439 (Fase 3.x): detalles y tarifarios desde los catálogos compartidos.
         const [snapDetC, snapDetP, snapTarC, snapTarP] = await Promise.all([
-          getDocs(collection(db, 'convenios_clientes_detalles')),
-          getDocs(collection(db, 'convenios_proveedores_detalles')),
-          getDocs(collection(db, 'tarifario_clientes')),
-          getDocs(collection(db, 'tarifario_proveedores')),
+          obtenerCatalogo('convenios_clientes_detalles'),
+          obtenerCatalogo('convenios_proveedores_detalles'),
+          obtenerCatalogo('tarifario_clientes'),
+          obtenerCatalogo('tarifario_proveedores'),
         ]);
 
         // Convenios (detalles) que usan la tarifa + mapa id → dueño.
         const dueñoDetalle: Record<string, string> = {};
         const convenios: UsoFila[] = [];
-        type Snap = { docs: { id: string; data: () => Record<string, unknown> }[] };
-        const armarDet = (snap: Snap, modulo: string, tarifarios: Snap) => {
-          snap.docs.forEach((d) => {
-            const x = d.data() as Record<string, unknown>;
+        const armarDet = (detalles: DocCatalogo[], modulo: string, tarifarios: DocCatalogo[]) => {
+          detalles.forEach((x) => {
             if (String(x.tipoConvenioId || '') !== tarifaId) return;
             // el nombre del cliente/proveedor se toma del tarifario vinculado
-            const tar = tarifarios.docs.find((t) => String(t.data().convenioId || '') === String(x.convenioId || ''));
-            const nombre = tar ? String(tar.data().clienteNombre || tar.data().proveedorNombre || '') : '';
-            dueñoDetalle[d.id] = nombre;
+            const tar = tarifarios.find((t) => String(t.convenioId || '') === String(x.convenioId || ''));
+            const nombre = tar ? String(tar.clienteNombre || tar.proveedorNombre || '') : '';
+            dueñoDetalle[idReal(x)] = nombre;
             convenios.push({
-              ref: String(x.consecutivo || d.id),
+              ref: String(x.consecutivo || idReal(x)),
               entidad: nombre || '—',
               extra: `${Number(x.tarifa) || 0} ${String(x.moneda || '')}`.trim(),
               modulo,
               coleccion: modulo === 'detallesConvenioClientes' ? 'convenios_clientes_detalles' : 'convenios_proveedores_detalles',
-              docId: d.id,
+              docId: idReal(x),
               tipo: 'convenio',
             });
           });
@@ -300,19 +327,18 @@ const CatalogosDashboard = () => {
 
         // Tarifarios que contienen la tarifa.
         const tarifarios: UsoFila[] = [];
-        const armarTar = (snap: Snap, campoNombre: string, modulo: string) => {
-          snap.docs.forEach((d) => {
-            const t = d.data() as Record<string, unknown>;
+        const armarTar = (lista: DocCatalogo[], campoNombre: string, modulo: string) => {
+          lista.forEach((t) => {
             const lineas = Array.isArray(t.tarifas) ? (t.tarifas as Record<string, unknown>[]) : [];
             const usadas = lineas.filter((l) => String(l.tarifaReferenciaId || '') === tarifaId);
             if (usadas.length === 0) return;
             tarifarios.push({
-              ref: String(t.consecutivo || d.id),
+              ref: String(t.consecutivo || idReal(t)),
               entidad: String(t[campoNombre] || '—'),
               extra: `${usadas.length} línea(s) · ${String(t.status || '')}`,
               modulo,
               coleccion: modulo === 'tarifarioClientes' ? 'tarifario_clientes' : 'tarifario_proveedores',
-              docId: d.id,
+              docId: idReal(t),
               tipo: 'tarifario',
             });
           });
@@ -360,30 +386,30 @@ const CatalogosDashboard = () => {
   const [auxRef, setAuxRef] = useState<Record<string, Record<string, string>>>({});
   const cargarAuxiliares = async () => {
     if (Object.keys(auxRef).length > 0) return auxRef;
-    const mapaDe = (docs: { id: string; data: () => Record<string, unknown> }[], campos: string[]) => {
+    const mapaDe = (docs: DocCatalogo[], campos: string[]) => {
       const m: Record<string, string> = {};
-      docs.forEach((d) => {
-        const x = d.data();
+      docs.forEach((x) => {
         const v = campos.map((c) => x[c]).find((y) => String(y || '').trim());
-        m[d.id] = String(v || '');
+        m[idReal(x)] = String(v || '');
       });
       return m;
     };
+    // ✅ V00439 (Fase 3.x): catálogos auxiliares desde los listeners compartidos.
     const [emp, st, tipos, uni, emple, mon] = await Promise.all([
-      getDocs(collection(db, 'empresas')),
-      getDocs(collection(db, 'catalogo_status_servicio')),
-      getDocs(collection(db, 'catalogo_tipo_operacion')),
-      getDocs(collection(db, 'unidades')),
-      getDocs(collection(db, 'empleados')),
-      getDocs(collection(db, 'catalogo_moneda')),
+      obtenerCatalogo('empresas'),
+      obtenerCatalogo('catalogo_status_servicio'),
+      obtenerCatalogo('catalogo_tipo_operacion'),
+      obtenerCatalogo('unidades'),
+      obtenerCatalogo('empleados'),
+      obtenerCatalogo('catalogo_moneda'),
     ]);
     const aux = {
-      empresas: mapaDe(emp.docs, ['nombre', 'nombreCorto']),
-      status: mapaDe(st.docs, ['nombre']),
-      tipos: mapaDe(tipos.docs, ['nombre', 'tipo_operacion']),
-      unidades: mapaDe(uni.docs, ['numeroUnidad', 'unidad', 'nombre']),
-      empleados: mapaDe(emple.docs, ['nombreCompleto', 'nombre']),
-      monedas: mapaDe(mon.docs, ['moneda', 'nombre']),
+      empresas: mapaDe(emp, ['nombre', 'nombreCorto']),
+      status: mapaDe(st, ['nombre']),
+      tipos: mapaDe(tipos, ['nombre', 'tipo_operacion']),
+      unidades: mapaDe(uni, ['numeroUnidad', 'unidad', 'nombre']),
+      empleados: mapaDe(emple, ['nombreCompleto', 'nombre']),
+      monedas: mapaDe(mon, ['moneda', 'nombre']),
     };
     setAuxRef(aux);
     return aux;
@@ -454,10 +480,10 @@ const CatalogosDashboard = () => {
     let activo = true;
     (async () => {
       try {
-        const snap = await getDocs(collection(db, 'catalogo_tarifas_referencia'));
+        const tarifas = await obtenerCatalogo('catalogo_tarifas_referencia'); // ✅ V00439 (Fase 3.x)
         const c: Record<string, number> = {};
-        snap.docs.forEach((d) => {
-          const t = String((d.data() as any)?.tipo_operacion || '');
+        tarifas.forEach((d) => {
+          const t = String(d.tipo_operacion || '');
           if (t) c[t] = (c[t] || 0) + 1;
         });
         if (activo) setUsoTarifarios(c);
@@ -471,14 +497,37 @@ const CatalogosDashboard = () => {
   const [formData, setFormData] = useState<any>({});
   
   const [camposRequeridos, setCamposRequeridos] = useState<Record<string, string[]>>({});
-  const [opcionesDinamicas, setOpcionesDinamicas] = useState<Record<string, any[]>>({});
+  // ✅ V00439 (Fase 3.x): opciones dinámicas del catálogo abierto (campos y
+  //   detalles): las de catálogos compartidos llegan EN VIVO por useCatalogos;
+  //   las demás conservan su lectura propia con caché (cargarOpcionesDinamicas).
+  const coleccionesOpciones = useMemo(() => {
+    const s = new Set<string>();
+    catalogoSeleccionado?.fields.forEach((f) => { if (f.dynamicOptions) s.add(f.dynamicOptions.collection); });
+    catalogoSeleccionado?.details?.forEach((det) => det.fields?.forEach((f) => { if (f.dynamicOptions) s.add(f.dynamicOptions.collection); }));
+    return Array.from(s);
+  }, [catalogoSeleccionado]);
+  const { datos: opcionesCompartidas } = useCatalogos(
+    Object.fromEntries(coleccionesOpciones.filter(esColeccionCatalogo).map((c) => [c, c])) as Record<string, ColeccionCatalogo>,
+  );
+  const [opcionesPropias, setOpcionesPropias] = useState<Record<string, any[]>>({});
+  // Igual que antes, una colección aún sin datos no aparece en el mapa.
+  const opcionesDinamicas = useMemo<Record<string, any[]>>(() => ({
+    ...opcionesPropias,
+    ...Object.fromEntries(Object.entries(opcionesCompartidas).filter(([, v]) => v.length > 0)),
+  }), [opcionesPropias, opcionesCompartidas]);
   const [busqueda, setBusqueda] = useState('');
   useBusquedaGlobal((t) => setBusqueda(t), 'el catálogo abierto'); // ✅ V00263: buscador global del topbar
   const [filtroFijo, setFiltroFijo] = useState<string>('');
 
   
   // 🔥 ESTADO CENTRALIZADO PARA SUB-COLECCIONES (0 LECTURAS AL HACER CLIC)
-  const [subDocsSnapshot, setSubDocsSnapshot] = useState<Record<string, any[]>>({});
+  // ✅ V00439 (Fase 3.x): las sub-colecciones que son catálogo compartido
+  //   (tarifas_gastos_incluidos, tarifas_rendimiento) llegan por useCatalogos.
+  const [subDocsPropios, setSubDocsPropios] = useState<Record<string, any[]>>({});
+  const { datos: subDocsCompartidos } = useCatalogos(
+    Object.fromEntries((catalogoSeleccionado?.details || []).map((d) => d.collection).filter(esColeccionCatalogo).map((c) => [c, c])) as Record<string, ColeccionCatalogo>,
+  );
+  const subDocsSnapshot = useMemo<Record<string, any[]>>(() => ({ ...subDocsPropios, ...subDocsCompartidos }), [subDocsPropios, subDocsCompartidos]);
 
   const [subModalEstado, setSubModalEstado] = useState<'cerrado' | 'abierto'>('cerrado');
   const [subColeccionActual, setSubColeccionActual] = useState<any | null>(null);
@@ -568,40 +617,24 @@ const CatalogosDashboard = () => {
   // ✅ V00438 (Fase 2.7): el catálogo abierto y sus sub-colecciones solo se
   //   escuchan con el módulo VISIBLE; al volver se re-suscribe sin limpiar
   //   búsqueda, filtro, página ni selección (eso vive en el efecto de abajo).
+  // ✅ V00439 (Fase 3.x): listener propio SOLO si el catálogo abierto no es un
+  //   catálogo compartido (esos llegan por useCatalogos, siempre en vivo). Ya no
+  //   se purgan cachés locales: los demás módulos también leen en vivo.
   const visible = useModuloVivoActivo();
-  const coleccionCatalogo = catalogoSeleccionado ? `catalogo_${catalogoSeleccionado.id}` : null;
   useEffect(() => {
-    if (!visible || !coleccionCatalogo) return;
-    let primerSnapshot = true;
+    if (!visible || !coleccionCatalogo || coleccionCompartida) return;
     const unsubscribe = onSnapshot(collection(db, coleccionCatalogo), (snapshot) => {
-      // ✅ NUEVO — al cambiar un catálogo se INVALIDAN los cachés locales
-      //   (cat_v2__/cat_v1__) para que Operaciones y demás módulos muestren
-      //   las opciones nuevas en su siguiente carga, sin datos viejos.
-      // ✅ V00438 (Fase 2.8): antes bastaba ABRIR un catálogo para borrar la
-      //   caché de toda la app (el 1er snapshot del servidor). Ahora se ignora
-      //   el primer snapshot y solo se purga si el servidor trae cambios reales.
-      //   Purga global: las claves usan alias (statusServicio, catalogoMoneda…),
-      //   no el nombre de la colección, así que no se puede acotar.
-      try {
-        if (!primerSnapshot && !snapshot.metadata.fromCache && snapshot.docChanges().length > 0) {
-          Object.keys(localStorage)
-            .filter((k) => k.startsWith('cat_v2__') || k.startsWith('cat_v1__'))
-            .forEach((k) => localStorage.removeItem(k));
-          localStorage.setItem('catalogos_invalidados_en', String(Date.now()));
-        }
-      } catch { /* almacenamiento no disponible */ }
-      primerSnapshot = false;
-      setRegistrosGlobales(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setRegistrosPropios({ col: coleccionCatalogo, datos: snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) });
     });
     return () => unsubscribe();
-  }, [visible, coleccionCatalogo]);
+  }, [visible, coleccionCatalogo, coleccionCompartida]);
 
   // ✅ CARGA PRINCIPAL OPTIMIZADA CON CACHÉ (Reduce las lecturas)
   useEffect(() => {
     if (!catalogoSeleccionado) return;
     setViendoDetalles(false);
     setRegistroActual(null);
-    setSubDocsSnapshot({});
+    setSubDocsPropios({});
 
     const cargarOpcionesDinamicas = async () => {
       const nuevasOpciones: Record<string, any[]> = { ...CACHE_OPCIONES_DINAMICAS };
@@ -620,6 +653,7 @@ const CatalogosDashboard = () => {
       }
 
       for (const col of Array.from(collectionsToFetch)) {
+        if (esColeccionCatalogo(col)) continue; // ✅ V00439 (Fase 3.x): en vivo por useCatalogos
         try {
           let querySnapshot = await getDocs(collection(db, col));
           if (querySnapshot.empty && !col.startsWith('catalogo_')) {
@@ -631,7 +665,7 @@ const CatalogosDashboard = () => {
           nuevasOpciones[col] = data;
         } catch (error) {}
       }
-      setOpcionesDinamicas(nuevasOpciones);
+      setOpcionesPropias(nuevasOpciones);
     };
     recargarOpcionesRef.current = async () => { await cargarOpcionesDinamicas(); };
 
@@ -650,6 +684,7 @@ const CatalogosDashboard = () => {
 
     const loadSubCollections = async () => {
       for (const detail of catalogoSeleccionado.details!) {
+        if (esColeccionCatalogo(detail.collection)) continue; // ✅ V00439 (Fase 3.x): en vivo por useCatalogos
         let realCollection = detail.collection;
         
         // Uso de caché para no hacer reads extra validando el nombre de la colección
@@ -669,7 +704,7 @@ const CatalogosDashboard = () => {
         if (!isMounted) return;
 
         const unsub = onSnapshot(collection(db, realCollection), (snapshot) => {
-          setSubDocsSnapshot(prev => ({
+          setSubDocsPropios(prev => ({
             ...prev,
             [detail.collection]: snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
           }));
@@ -802,13 +837,12 @@ const CatalogosDashboard = () => {
       const mapasOpciones: Record<string, Record<string, string>> = {};
       for (const f of fuentes) {
         if (!f.dynamicOptions || mapasOpciones[f.dynamicOptions.collection]) continue;
-        const snapOpc = await getDocs(collection(db, f.dynamicOptions.collection));
+        const opciones = await leerColeccion(f.dynamicOptions.collection); // ✅ V00439 (Fase 3.x)
         const vField = f.dynamicOptions.valueField || 'id';
         const lField = f.dynamicOptions.labelField || 'nombre';
         const m: Record<string, string> = {};
-        snapOpc.docs.forEach((dd) => {
-          const o: Record<string, unknown> = { id: dd.id, ...(dd.data() as Record<string, unknown>) };
-          m[String(o[vField] || dd.id)] = String(o[lField] || '');
+        opciones.forEach((o) => {
+          m[String(o[vField] || idReal(o))] = String(o[lField] || '');
         });
         mapasOpciones[f.dynamicOptions.collection] = m;
       }
@@ -825,6 +859,8 @@ const CatalogosDashboard = () => {
         fuentes.map((f) => legible(f, datos[f.name])).filter(Boolean).join(' - '); // ✅ V00214
 
       // 1) Rearmar descripciones del catálogo.
+      // ✅ V00439 (Fase 3.x): los pasos 1-3 siguen con getDocs a propósito: leen y
+      //   ESCRIBEN de vuelta por d.ref (el catálogo compartido no trae la referencia).
       const snapTar = await getDocs(collection(db, 'catalogo_tarifas_referencia'));
       const mapaDesc: Record<string, string> = {};
       let catalogoActualizados = 0;
@@ -986,27 +1022,26 @@ const CatalogosDashboard = () => {
       // Alias legados en descripciones viejas → nombre del catálogo.
       const ALIAS_CV: Record<string, string> = { cargada: 'cargado', vacia: 'vacio' };
       const claveCV = (seg: string) => ALIAS_CV[seg] || seg;
-      const [snapCV, snapAdu, snapOps] = await Promise.all([
-        getDocs(collection(db, 'catalogo_carga_vacia')),
-        getDocs(collection(db, 'catalogo_aduanas')),
+      // ✅ V00439 (Fase 3.x): C/V y aduanas desde los catálogos compartidos.
+      const [catCV, catAdu, snapOps] = await Promise.all([
+        obtenerCatalogo('catalogo_carga_vacia'),
+        obtenerCatalogo('catalogo_aduanas'),
         getDocs(collection(db, 'operaciones')),
       ]);
       const cvPorId = new Map<string, string>();
       const cvPorNorm = new Map<string, string>();
-      snapCV.docs.forEach((d) => {
-        const x = d.data() as Record<string, unknown>;
+      catCV.forEach((x) => {
         const nombre = String(x.nombre || x.estado_carga || '').trim();
         if (!nombre) return;
-        cvPorId.set(d.id, nombre);
+        cvPorId.set(idReal(x), nombre);
         cvPorNorm.set(normx(nombre), nombre);
       });
       const aduPorId = new Map<string, string>();
       const aduPorNorm = new Map<string, string>();
-      snapAdu.docs.forEach((d) => {
-        const x = d.data() as Record<string, unknown>;
+      catAdu.forEach((x) => {
         const nombre = String(x.aduana || x.nombre || '').trim();
         if (!nombre) return;
-        aduPorId.set(d.id, nombre);
+        aduPorId.set(idReal(x), nombre);
         aduPorNorm.set(normx(nombre), nombre);
       });
 

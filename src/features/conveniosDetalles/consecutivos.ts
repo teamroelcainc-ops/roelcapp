@@ -13,26 +13,28 @@
 // ✅ V00203: el mecanismo se generaliza — también sirve para el consecutivo
 //   TAR-### de los tarifarios (contador contadores/tarifario_clientes).
 // ---------------------------------------------------------------------------
-import { collection, doc, getDocs, runTransaction } from 'firebase/firestore';
+import { doc, runTransaction } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { idReal, obtenerCatalogo } from '../../shared/data/catalogos';
+import type { ColeccionCatalogo } from '../../shared/data/catalogos';
 
 const pad3 = (n: number): string => String(n).padStart(3, '0');
 
-/** Máximo consecutivo ya usado en una colección (semilla del contador). */
-const semillaDesdeColeccion = async (coleccion: string, prefijo: string): Promise<number> => {
-  const snap = await getDocs(collection(db, coleccion));
-  return snap.docs.reduce((max, d) => {
-    const x = d.data() as Record<string, unknown>;
+/** Máximo consecutivo ya usado en una colección (semilla del contador).
+ *  ✅ V00439 (Fase 3.x): del catálogo compartido (antes un getDocs completo por reserva). */
+const semillaDesdeColeccion = async (coleccion: ColeccionCatalogo, prefijo: string): Promise<number> => {
+  const lista = await obtenerCatalogo(coleccion);
+  return lista.reduce((max, x) => {
     const porCampo = parseInt(String(x.consecutivo || '').replace(/\D/g, ''), 10) || 0;
-    const porId = parseInt(String(d.id).replace(/\D/g, ''), 10) || 0;
-    return Math.max(max, porCampo, String(d.id).startsWith(prefijo) ? porId : 0);
+    const porId = parseInt(String(idReal(x)).replace(/\D/g, ''), 10) || 0;
+    return Math.max(max, porCampo, String(idReal(x)).startsWith(prefijo) ? porId : 0);
   }, 0);
 };
 
 /** Reserva atómica de `cantidad` consecutivos en la colección dada. */
 // ✅ V00346: prefijoLegacy = el que traen los datos viejos (para la semilla);
 //   prefijoNuevo = con el que NACEN los consecutivos (los convenios ya sin CONV-).
-const reservarConsecutivos = async (coleccion: string, prefijoLegacy: string, prefijoNuevo: string, cantidad: number): Promise<string[]> => {
+const reservarConsecutivos = async (coleccion: ColeccionCatalogo, prefijoLegacy: string, prefijoNuevo: string, cantidad: number): Promise<string[]> => {
   if (cantidad <= 0) return [];
   const semilla = await semillaDesdeColeccion(coleccion, prefijoLegacy);
   const contador = doc(db, 'contadores', coleccion);

@@ -12,19 +12,19 @@ import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/fire
 import { db } from '../../../config/firebase';
 import './AuditoriaCadenaEmpresa.css';
 import { sinPruebas } from '../../../utils/operacionPrueba';
+import { monedaCanonica } from '../../../shared/dominio/moneda';
 
 interface Props { empresaId: string; empresaNombre: string; onCerrar: () => void; }
 
 type Papel = 'paga' | 'mercancia' | 'proveedor';
 
 const money = (n: number) => `$${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const ID_USD = '7dca62b3'; const ID_MXN = 'f95d8894';
+// ✅ V00439 (Fase 3.x): USD/MXN con el helper compartido (ID, código o nombre);
+//   un texto no reconocido se sigue mostrando tal cual si es corto.
 const nombreMoneda = (v: unknown): string => {
   const t = String(v || '').trim();
   if (!t) return '';
-  if (t.includes(ID_USD) || /d[oó]lar|usd/i.test(t)) return 'USD';
-  if (t.includes(ID_MXN) || /peso|mxn/i.test(t)) return 'MXN';
-  return t.length > 12 ? '' : t.toUpperCase();
+  return monedaCanonica(t) ?? (t.length > 12 ? '' : t.toUpperCase());
 };
 const num = (v: unknown): number => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 /** ✅ V00335: fecha a ISO aaaa-mm-dd (acepta ISO o d/m/aaaa de las migradas). */

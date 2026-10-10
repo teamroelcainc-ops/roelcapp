@@ -1,10 +1,11 @@
 // src/features/unidadesProveedor/components/FormularioUnidadProveedor.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import { camposModificadosDe } from '../../autorizaciones/autorizaciones';
-import { collection, getDocs } from 'firebase/firestore';
-import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
+import { agregarRegistro, actualizarRegistro } from '../../../config/firebase';
+import { useCatalogo } from '../../../shared/data/catalogos';
+import { TIPO_EMPRESA } from '../../../shared/dominio/constantes';
 import type { UnidadProveedorRecord } from '../../../types/unidadProveedor';
 import './FormularioUnidadProveedor.css';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
@@ -28,38 +29,26 @@ export const FormularioUnidadProveedor = ({ estado, initialData, onClose, onMini
     estadoUbicacion: ''
   });
 
-  const [empresasProveedoras, setEmpresasProveedoras] = useState<any[]>([]);
   const [cargando, setCargando] = useState(false);
 
   // Obtener y filtrar empresas inteligentemente
-  useEffect(() => {
-    const obtenerProveedores = async () => {
-      try {
-        const querySnapshot = await getDocs(collection(db, 'empresas'));
-        const todasLasEmpresas = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        
-        // El ID explícito que solicitaste
-        const ID_PROVEEDOR = 'ca21ab07';
-
-        const filtradas = todasLasEmpresas.filter((emp: any) => {
-          // Si tiene el formato nuevo de Array
-          if (Array.isArray(emp.tiposEmpresa)) {
-            return emp.tiposEmpresa.some((valor: string) => 
-              valor === ID_PROVEEDOR || valor.toLowerCase().includes('proveedor (transporte)')
-            );
-          }
-          // Respaldo agresivo por si el valor viene como un String viejo
-          const stringData = JSON.stringify(emp).toLowerCase();
-          return stringData.includes(ID_PROVEEDOR.toLowerCase()) || stringData.includes('proveedor (transporte)');
-        });
-        
-        setEmpresasProveedoras(filtradas);
-      } catch (error) {
-        console.error("Error al obtener proveedores:", error);
+  // ✅ V00439 (Fase 3.x): `empresas` del listener compartido de catálogos (antes getDocs propio).
+  const { datos: empresasCat } = useCatalogo('empresas');
+  const empresasProveedoras = useMemo(() => {
+    // El ID explícito que solicitaste (TIPO_EMPRESA.proveedorUnidad = ca21ab07)
+    const ID_PROVEEDOR: string = TIPO_EMPRESA.proveedorUnidad;
+    return empresasCat.filter((emp) => {
+      // Si tiene el formato nuevo de Array
+      if (Array.isArray(emp.tiposEmpresa)) {
+        return emp.tiposEmpresa.some((valor: unknown) =>
+          valor === ID_PROVEEDOR || String(valor).toLowerCase().includes('proveedor (transporte)')
+        );
       }
-    };
-    obtenerProveedores();
-  }, []);
+      // Respaldo agresivo por si el valor viene como un String viejo
+      const stringData = JSON.stringify(emp).toLowerCase();
+      return stringData.includes(ID_PROVEEDOR.toLowerCase()) || stringData.includes('proveedor (transporte)');
+    });
+  }, [empresasCat]);
 
   // Cargar datos iniciales si se está editando
   useEffect(() => {
@@ -83,7 +72,7 @@ export const FormularioUnidadProveedor = ({ estado, initialData, onClose, onMini
     setFormData(prev => ({
       ...prev,
       proveedorId: idSeleccionado,
-      proveedorNombre: empresaEncontrada ? empresaEncontrada.nombre || empresaEncontrada.empresa : '' 
+      proveedorNombre: empresaEncontrada ? (empresaEncontrada.nombre || empresaEncontrada.empresa) as string : '' 
     }));
   };
 
@@ -138,7 +127,7 @@ export const FormularioUnidadProveedor = ({ estado, initialData, onClose, onMini
                 >
                   <option value="">Seleccione un proveedor...</option>
                   {empresasProveedoras.map(emp => (
-                    <option key={emp.id} value={emp.id}>{emp.nombre || emp.empresa || `Proveedor ID: ${emp.id}`}</option>
+                    <option key={emp.id} value={emp.id}>{String(emp.nombre || emp.empresa || `Proveedor ID: ${emp.id}`)}</option>
                   ))}
                 </select>
               </div>

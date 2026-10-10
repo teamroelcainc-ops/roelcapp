@@ -1,11 +1,16 @@
 // src/features/tipoCambio/components/TipoCambioDashboard.tsx
-import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, doc, deleteDoc, getDoc, setDoc } from 'firebase/firestore'; 
+import React, { useState, useEffect, useMemo } from 'react';
+import { doc, deleteDoc, getDoc, setDoc } from 'firebase/firestore'; 
 import { db } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger';
 import { FormularioTipoCambio } from './FormularioTipoCambio';
 import * as XLSX from 'xlsx';
 import './TipoCambioDashboard.css';
+import { useCatalogo } from '../../../shared/data/catalogos';
+import type { DocCatalogo } from '../../../shared/data/catalogos';
+
+// Campos de `tipo_cambio` que usa esta vista (el resto llega tal cual del catálogo).
+type FilaTipoCambio = DocCatalogo & { fecha: string; dia?: string; tcDof?: number | string; tendencia?: string; tipoTendencia?: string };
 
 // ✅ TODAS LAS COLUMNAS BASE DE LA TABLA TIPO DE CAMBIO
 const COLUMNAS_BASE = [
@@ -16,7 +21,13 @@ const COLUMNAS_BASE = [
 ];
 
 export const TipoCambioDashboard = () => {
-  const [registrosGlobales, setRegistrosGlobales] = useState<any[]>([]);
+  // ✅ V00439 (Fase 3.x): listener compartido del catálogo `tipo_cambio` (antes onSnapshot propio).
+  const { datos: tiposCambioCat } = useCatalogo('tipo_cambio');
+  // Ordenar por fecha (más reciente primero)
+  const registrosGlobales = useMemo(
+    () => [...(tiposCambioCat as FilaTipoCambio[])].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()),
+    [tiposCambioCat],
+  );
   const [estadoFormulario, setEstadoFormulario] = useState<'cerrado' | 'abierto' | 'minimizado'>('cerrado');
   const [registroEditando, setRegistroEditando] = useState<any | null>(null);
 
@@ -88,16 +99,6 @@ export const TipoCambioDashboard = () => {
   const [modalColumnas, setModalColumnas] = useState(false);
   const [columnasTabla, setColumnasTabla] = useState(COLUMNAS_BASE.map(c => ({ ...c })));
   const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
-
-  useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'tipo_cambio'), (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      // Ordenar por fecha (más reciente primero)
-      data.sort((a: any, b: any) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
-      setRegistrosGlobales(data);
-    });
-    return () => unsubscribe();
-  }, []);
 
   // Resetear página al buscar/filtrar
   useEffect(() => {

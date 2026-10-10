@@ -16,14 +16,18 @@
 // Exportación: Excel (XLSX) y PDF horizontal con el logo de la empresa.
 // ---------------------------------------------------------------------------
 import { useRef, useState, useMemo, useEffect, useDeferredValue } from 'react';
-import { obtenerUsuarioAut } from '../../autorizaciones/autorizaciones';
 import { addDoc, collection, deleteDoc, doc, getDocs, onSnapshot, query, updateDoc, where } from 'firebase/firestore'; // ✅ V00340: configuraciones del Excel
 import { EditorOperacionEmbebido } from '../../operaciones/components/EditorOperacionEmbebido'; // ✅ V00340: auditar/editar desde Estadísticas // ✅ V00339: EN VIVO (documentId ya no se usa: el join se suscribe completo)
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
 import html2pdf from 'html2pdf.js';
 import { cargarLogoDataUrl } from '../../../utils/pdfGenerator';
-import { cargarCatalogo, TTL } from '../../../hooks/useCatalogoCache'; // ✅ V00255
+import { useCatalogo, useCatalogos } from '../../../shared/data/catalogos';
+import type { DocCatalogo } from '../../../shared/data/catalogos';
+import { useEsAdmin } from '../../../shared/data/sesion';
+import { useUsuarioStore } from '../../../stores/useUsuarioStore';
+import { STATUS_CANCELADO } from '../../../shared/dominio/constantes';
+import { esMXN, esUSD, monedaCanonica } from '../../../shared/dominio/moneda';
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
 import { Download, RefreshCw, X, Settings2, Truck, Wallet } from 'lucide-react';
 import { useEstadoPersistente } from '../../../hooks/useEstadoPersistente';
@@ -36,7 +40,28 @@ import { FacturasClienteMoneda } from './FacturasClienteMoneda';
 import './EstadisticasDashboard.css';
 import { esOperacionPrueba } from '../../../utils/operacionPrueba';
 
-const STATUS_CANCELADO_ID = '7607f692';
+// ✅ V00439 (Fase 3.4): catálogos del formulario de Operaciones (mismos alias que usa el formulario).
+const COLECCIONES_FORM = {
+  statusServicio: 'catalogo_status_servicio', tiposOperacion: 'catalogo_tipo_operacion',
+  embalajes: 'catalogo_embalaje', catalogoMoneda: 'catalogo_moneda', tarifas: 'catalogo_tarifas_referencia',
+  empresas: 'empresas', remolques: 'remolques', unidades: 'unidades', empleados: 'empleados',
+  unidades_proveedor: 'unidades_proveedor', proveedores_unidad: 'proveedores_unidad',
+  conveniosProv: 'convenios_proveedores', catalogoConvProvDetalles: 'convenios_proveedores_detalles',
+  catalogoConvClientes: 'convenios_clientes', catalogoConvDetalles: 'convenios_clientes_detalles',
+  catalogoTC: 'tipo_cambio', direcciones: 'direcciones',
+} as const;
+
+// Catálogos para resolver IDs a nombres en la ficha y la tabla.
+const COLECCIONES_NOMBRES = {
+  remolques: 'remolques', unidades: 'unidades', empleados: 'empleados', direcciones: 'direcciones', empresas: 'empresas',
+} as const;
+const NOMBRE_DE: Record<keyof typeof COLECCIONES_NOMBRES, (r: DocCatalogo) => string> = {
+  remolques: (r) => String(r.numeroRemolque || r.placa || r.nombre || ''),
+  unidades: (r) => String(r.unidad || r.nombre || ''),
+  empleados: (r) => `${String(r.firstName || '')} ${String(r.lastNamePaternal || '')}`.trim(),
+  direcciones: (r) => String(r.nombre || r.alias || r.direccion || ''),
+  empresas: (r) => String(r.nombre || ''),
+};
 
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
@@ -102,14 +127,13 @@ const montoClienteDe = (op: Op) => {
   }
   const tc = Number(op.tipoCambioAprobado) || 0;
   const subtotal = Number(op.montoConvenioCliente || 0) + Number(op.cargosAdicionales || 0);
-  const nombreMoneda = String(op.monedaCobroNombre || '').toUpperCase();
-  const factUSD = op.facturadoEnCobrar === '7dca62b3' || nombreMoneda.includes('USD') || nombreMoneda.includes('DOLAR') || nombreMoneda.includes('DÓLAR');
-  const factMXN = op.facturadoEnCobrar === 'f95d8894' || nombreMoneda.includes('MXN') || nombreMoneda.includes('PESO');
+  // ✅ V00439 (Fase 3.6): moneda con la regla compartida (ID, código o nombre).
+  const factUSD = esUSD(op.facturadoEnCobrar) || esUSD(op.monedaCobroNombre);
+  const factMXN = esMXN(op.facturadoEnCobrar) || esMXN(op.monedaCobroNombre);
   // ✅ REGLA DE MONEDAS: si el convenio es USD y se factura en MXN, el monto
   //   en pesos es la CONVERSIÓN (subtotal × TC), igual que en Operaciones.
-  const monConv = String(op.monedaConvenioCliente || '');
-  const convUSD = monConv === '7dca62b3' || (!!monConv && monConv.toUpperCase().includes('USD'));
-  const convMXN = monConv === 'f95d8894' || (!!monConv && monConv.toUpperCase().includes('MXN'));
+  const convUSD = esUSD(op.monedaConvenioCliente);
+  const convMXN = esMXN(op.monedaConvenioCliente);
   const cUSD = convUSD || (!convMXN && factUSD);
   const cMXN = convMXN || (!convUSD && factMXN);
   if (cUSD && factMXN) return { dol: 0, pes: subtotal * tc, conv: subtotal * tc, tc };
@@ -126,10 +150,7 @@ const monedaClienteDe = (op: Op): 'USD' | 'MXN' | 'Mixta' | 'Sin dato' => {
   if (m.dol > 0 && m.pes > 0) return 'Mixta';
   if (m.dol > 0) return 'USD';
   if (m.pes > 0) return 'MXN';
-  const nombre = String(op.monedaCobroNombre || '').toUpperCase();
-  if (nombre.includes('USD') || nombre.includes('DOLAR') || nombre.includes('DÓLAR')) return 'USD';
-  if (nombre.includes('MXN') || nombre.includes('PESO')) return 'MXN';
-  return 'Sin dato';
+  return monedaCanonica(op.monedaCobroNombre) ?? 'Sin dato';
 };
 
 // ── Costo del PROVEEDOR (mismo criterio que Facturación de Proveedores,
@@ -143,13 +164,13 @@ const montoProveedorDe = (op: Op): { dol: number; pes: number; conv: number } =>
   const tc = Number(op.tipoCambioAprobado) || 0;
   const subtotal = Number(op.subtotalProv) || ((Number(op.totalAPagarProv) || 0) + (Number(op.cargosAdicionalesProv) || 0));
   if (subtotal <= 0) return { dol: 0, pes: 0, conv: 0 };
-  const fact = String(op.facturadoEnUnidad || '');
-  const nombreFact = String(op.monedaUnidadNombre || op.monedaPagoProvNombre || '').toUpperCase();
-  const factUSD = fact === '7dca62b3' || nombreFact.includes('USD') || nombreFact.includes('DOLAR') || nombreFact.includes('DÓLAR');
-  const factMXN = fact === 'f95d8894' || nombreFact.includes('MXN') || nombreFact.includes('PESO');
-  const monConv = String(op.monedaConvenioProv || '');
-  const convUSD = monConv === '7dca62b3' || (!!monConv && monConv.toUpperCase().includes('USD'));
-  const convMXN = monConv === 'f95d8894' || (!!monConv && monConv.toUpperCase().includes('MXN'));
+  // ✅ V00439 (Fase 3.6): moneda con la regla compartida (ID, código o nombre).
+  const fact = op.facturadoEnUnidad;
+  const nombreFact = op.monedaUnidadNombre || op.monedaPagoProvNombre;
+  const factUSD = esUSD(fact) || esUSD(nombreFact);
+  const factMXN = esMXN(fact) || esMXN(nombreFact);
+  const convUSD = esUSD(op.monedaConvenioProv);
+  const convMXN = esMXN(op.monedaConvenioProv);
   const cUSD = convUSD || (!convMXN && factUSD);
   const cMXN = convMXN || (!convUSD && factMXN);
   if (cUSD && factMXN) return { dol: 0, pes: subtotal * tc, conv: subtotal * tc };
@@ -199,8 +220,8 @@ export function EstadisticasDashboard() {
   const { config } = useEmpresaConfig();
   // ✅ V00255: catálogo Cargada/Vacía para DERIVAR el C/V desde el nombre del
   //   convenio cuando la operación no trae el campo (igual que Operativas).
-  const [catCVDesglose, setCatCVDesglose] = useState<{ id?: unknown; nombre?: unknown; estado_carga?: unknown }[]>([]);
-  useEffect(() => { cargarCatalogo('catalogo_carga_vacia', { ttlMs: TTL.MEDIO }).then(setCatCVDesglose).catch(() => {}); }, []);
+  // ✅ V00439 (Fase 3.4): desde el listener compartido (antes cargarCatalogo con caché local).
+  const { datos: catCVDesglose } = useCatalogo('catalogo_carga_vacia');
   const cvDeOp = (op: Op): string => {
     // ✅ V00258: EL CONVENIO MANDA; el campo directo es respaldo.
     const conv = String(op.convenioNombre || '').trim();
@@ -222,8 +243,10 @@ export function EstadisticasDashboard() {
   // ✅ V00167: EDITOR DE ENCABEZADOS (pestañas y modos) — solo Admin.
   //   Escribe en settings_ui/etiquetas (mismo motor de "Personalizar Etiquetas"),
   //   así el cambio aplica para todos y también es editable desde ese módulo.
-  const [esAdminUI, setEsAdminUI] = useState(false);
-  useEffect(() => { obtenerUsuarioAut().then((u) => setEsAdminUI(!!u?.esAdmin || (u as any)?.puedeEditarApp === true)).catch(() => setEsAdminUI(false)); }, []);
+  // ✅ V00439 (Fase 3.7): permiso desde la sesión (sin volver a leer usuarios/{uid}).
+  const esAdminRoles = useEsAdmin();
+  const puedeEditarApp = useUsuarioStore((s) => s.usuario?.puedeEditarApp === true);
+  const esAdminUI = esAdminRoles || puedeEditarApp;
   const [editandoEncabezados, setEditandoEncabezados] = useState(false);
   const [encDraft, setEncDraft] = useState<Record<string, string>>({});
   const [guardandoEnc, setGuardandoEnc] = useState(false);
@@ -310,72 +333,42 @@ export function EstadisticasDashboard() {
   // ✅ NUEVO — RESOLUCIÓN DE IDs A NOMBRES en la ficha y la tabla.
   //   Algunos registros guardan el ID del catálogo (remolque, unidad,
   //   operador, origen/destino) sin el nombre denormalizado; se resuelven
-  //   contra la MISMA caché local de catálogos que usa Operaciones
-  //   (cat_v2__) y, si falta alguna colección, contra Firestore una sola vez.
-  const [mapasNombres, setMapasNombres] = useState<Record<string, Record<string, string>> | null>(null);
-  useEffect(() => {
-    let cancelado = false;
-    (async () => {
-      const fuentes: { alias: string; col: string; nombreDe: (r: any) => string }[] = [
-        { alias: 'remolques', col: 'remolques', nombreDe: (r) => String(r.numeroRemolque || r.placa || r.nombre || '') },
-        { alias: 'unidades', col: 'unidades', nombreDe: (r) => String(r.unidad || r.nombre || '') },
-        { alias: 'empleados', col: 'empleados', nombreDe: (r) => `${r.firstName || ''} ${r.lastNamePaternal || ''}`.trim() },
-        { alias: 'direcciones', col: 'direcciones', nombreDe: (r) => String(r.nombre || r.alias || r.direccion || '') },
-        { alias: 'empresas', col: 'empresas', nombreDe: (r) => String(r.nombre || '') },
-      ];
-      const resultado: Record<string, Record<string, string>> = {};
-      for (const fte of fuentes) {
-        let registros: any[] = [];
-        try {
-          // Misma caché que Operaciones/Facturación (cat_v2__ con respaldo cat_v1__).
-          const raw = localStorage.getItem(`cat_v2__${fte.alias}`) || localStorage.getItem(`cat_v1__${fte.alias}`);
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            registros = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.data) ? parsed.data : []);
-          }
-        } catch { /* caché ilegible */ }
-        if (registros.length === 0) {
-          try {
-            const snap = await getDocs(collection(db, fte.col));
-            registros = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
-          } catch { registros = []; }
-        }
-        const mapa: Record<string, string> = {};
-        registros.forEach((r: any) => { const n = fte.nombreDe(r); if (r.id && n) mapa[String(r.id)] = n; });
-        resultado[fte.alias] = mapa;
-      }
-      if (!cancelado) setMapasNombres(resultado);
-    })();
-    return () => { cancelado = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  //   contra los catálogos.
+  // ✅ V00439 (Fase 3.4): catálogos del listener compartido (antes caché local
+  //   cat_v2__/cat_v1__ con respaldo a getDocs, y otro getDocs de empresas).
+  const { datos: catNombres } = useCatalogos(COLECCIONES_NOMBRES);
+  const mapasNombres = useMemo(() => {
+    const resultado: Record<string, Record<string, string>> = {};
+    (Object.keys(COLECCIONES_NOMBRES) as (keyof typeof COLECCIONES_NOMBRES)[]).forEach((alias) => {
+      const mapa: Record<string, string> = {};
+      catNombres[alias].forEach((r) => { const n = NOMBRE_DE[alias](r); if (r.id && n) mapa[String(r.id)] = n; });
+      resultado[alias] = mapa;
+    });
+    return resultado;
+  }, [catNombres]);
 
   // Devuelve el nombre si el valor es un ID conocido en alguno de los
   //   catálogos indicados (en orden); si no, el valor tal cual.
   // ✅ V00189: MONEDA DE FACTURACIÓN por cliente — sale de la colección EMPRESAS
   //   (la moneda de la empresa manda). Mapa nombre normalizado → USD/MXN.
-  const [monedaPorEmpresa, setMonedaPorEmpresa] = useState<Record<string, string>>({});
-  useEffect(() => {
-    getDocs(collection(db, 'empresas')).then((snap) => {
-      const mp: Record<string, string> = {};
-      const canon = (x: any) => {
-        const t = String(x.monedaNombre || x.moneda || '').toUpperCase();
-        if (t.includes('USD') || t.includes('DOLAR')) return 'USD';
-        if (t.includes('MXN') || t.includes('PESO') || t.includes('MN')) return 'MXN';
-        return t.trim() ? t.trim() : '';
-      };
-      snap.docs.forEach((d) => {
-        const x: any = d.data();
-        const mon = canon(x);
-        if (!mon) return;
-        const clave = String(x.nombre || '').trim().toLowerCase();
-        if (clave) mp[clave] = mon;
-        const corto = String(x.nombreCorto || '').trim().toLowerCase();
-        if (corto) mp[corto] = mon;
-      });
-      setMonedaPorEmpresa(mp);
-    }).catch(() => setMonedaPorEmpresa({}));
-  }, []);
+  const monedaPorEmpresa = useMemo(() => {
+    const mp: Record<string, string> = {};
+    const canon = (x: DocCatalogo) => {
+      const t = String(x.monedaNombre || x.moneda || '').toUpperCase();
+      if (t.includes('USD') || t.includes('DOLAR')) return 'USD';
+      if (t.includes('MXN') || t.includes('PESO') || t.includes('MN')) return 'MXN';
+      return t.trim() ? t.trim() : '';
+    };
+    catNombres.empresas.forEach((x) => {
+      const mon = canon(x);
+      if (!mon) return;
+      const clave = String(x.nombre || '').trim().toLowerCase();
+      if (clave) mp[clave] = mon;
+      const corto = String(x.nombreCorto || '').trim().toLowerCase();
+      if (corto) mp[corto] = mon;
+    });
+    return mp;
+  }, [catNombres.empresas]);
   const monedaDeCliente = (nombre: any): string => monedaPorEmpresa[String(nombre || '').trim().toLowerCase()] || '';
   const ChipMoneda = ({ nombre }: { nombre: any }) => {
     const mon = monedaDeCliente(nombre);
@@ -417,46 +410,11 @@ export function EstadisticasDashboard() {
     return v === null || v === undefined ? '' : String(v);
   };
   const [editandoOp, setEditandoOp] = useState<Op | null>(null);
-  const [catalogosForm, setCatalogosForm] = useState<Record<string, unknown[]> | null>(null);
-  const [cargandoCatalogos, setCargandoCatalogos] = useState(false);
-
-  // Mismas colecciones y MISMA caché local (cat_v2__) que usa Operaciones.
-  const COLECCIONES_FORM: Record<string, string> = {
-    statusServicio: 'catalogo_status_servicio', tiposOperacion: 'catalogo_tipo_operacion',
-    embalajes: 'catalogo_embalaje', catalogoMoneda: 'catalogo_moneda', tarifas: 'catalogo_tarifas_referencia',
-    empresas: 'empresas', remolques: 'remolques', unidades: 'unidades', empleados: 'empleados',
-    unidades_proveedor: 'unidades_proveedor', proveedores_unidad: 'proveedores_unidad',
-    conveniosProv: 'convenios_proveedores', catalogoConvProvDetalles: 'convenios_proveedores_detalles',
-    catalogoConvClientes: 'convenios_clientes', catalogoConvDetalles: 'convenios_clientes_detalles',
-    catalogoTC: 'tipo_cambio', direcciones: 'direcciones',
-  };
-
-  const abrirEdicionOperacion = async (op: Op) => {
-    if (catalogosForm) { setEditandoOp(op); return; }
-    setCargandoCatalogos(true);
-    try {
-      const resultado: Record<string, unknown[]> = {};
-      await Promise.all(Object.entries(COLECCIONES_FORM).map(async ([alias, col]) => {
-        // 1º la caché compartida con Operaciones; 2º Firestore.
-        try {
-          const raw = localStorage.getItem(`cat_v2__${alias}`);
-          if (raw) {
-            const obj = JSON.parse(raw);
-            if (obj && Array.isArray(obj.data) && obj.data.length > 0) { resultado[alias] = obj.data; return; }
-          }
-        } catch { /* caché ilegible: se baja de Firestore */ }
-        const snap = await getDocs(collection(db, col));
-        resultado[alias] = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      }));
-      setCatalogosForm(resultado);
-      setEditandoOp(op);
-    } catch (e) {
-      console.error('No se pudieron cargar los catálogos para editar:', e);
-      alert('No se pudieron cargar los catálogos para abrir el formulario.');
-    } finally {
-      setCargandoCatalogos(false);
-    }
-  };
+  // ✅ V00439 (Fase 3.4): catálogos del formulario BAJO DEMANDA desde el listener
+  //   compartido: se piden al abrir Editar (antes caché cat_v2__ + getDocs).
+  const { datos: catalogosForm, listo: catalogosFormListos } = useCatalogos(COLECCIONES_FORM, { activo: editandoOp !== null });
+  const cargandoCatalogos = editandoOp !== null && !catalogosFormListos;
+  const abrirEdicionOperacion = (op: Op) => setEditandoOp(op);
 
   // ✅ V00339: EN VIVO — Buscar ya no descarga una vez: se SUSCRIBE al rango.
   //   Cualquier cambio en Operaciones (crear, editar, completar, cancelar)
@@ -477,7 +435,7 @@ export function EstadisticasDashboard() {
       (snap) => {
         const lista = snap.docs
           .map((d) => ({ id: d.id, ...d.data() } as Op))
-          .filter((op) => String(op.status || '') !== STATUS_CANCELADO_ID)
+          .filter((op) => String(op.status || '') !== STATUS_CANCELADO)
           .filter((op) => !esOperacionPrueba(op)); // ✅ V00380
         setOps(lista);
         setBusquedaHecha(true);
@@ -2273,7 +2231,7 @@ export function EstadisticasDashboard() {
       )}
 
       {/* ✅ EL MISMO FORMULARIO DE OPERACIONES, para editar desde aquí */}
-      {editandoOp && catalogosForm && (
+      {editandoOp && catalogosFormListos && (
         // ✅ FIX: el FormularioOperacion trae z-index 1000 y la ficha de
         //   Estadísticas 2000 — el wrapper crea un stacking context por encima
         //   para que el formulario de edición se abra DELANTE, no detrás.

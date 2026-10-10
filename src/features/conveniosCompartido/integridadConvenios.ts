@@ -21,27 +21,36 @@
 //     tarifa:    la del detalle → la de su línea → por nombre en el catálogo
 //   Lo que no se pueda resolver con certeza se REPORTA.
 // ---------------------------------------------------------------------------
-import { collection, doc, getDocs, setDoc, writeBatch } from 'firebase/firestore';
+import { collection, doc, setDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { idReal, obtenerCatalogo } from '../../shared/data/catalogos';
+import type { ColeccionCatalogo, DocCatalogo } from '../../shared/data/catalogos';
+import { ID_MXN, ID_USD } from '../../shared/dominio/constantes';
+import { esUSD } from '../../shared/dominio/moneda';
 import { claveConsecutivo } from '../../utils/claveConsecutivo';
 import { reservarConsecutivosTarifario, reservarConsecutivosTarifarioProveedor } from '../conveniosDetalles/consecutivos';
 
 export type TipoRel = 'clientes' | 'proveedores';
 type D = Record<string, unknown>;
 
-interface CfgRel { maestros: string; detalles: string; tarifarios: string; campoId: string; campoNombre: string; etiqueta: string }
+interface CfgRel { maestros: ColeccionCatalogo; detalles: ColeccionCatalogo; tarifarios: ColeccionCatalogo; campoId: string; campoNombre: string; etiqueta: string }
 export const CFG_REL: Record<TipoRel, CfgRel> = {
   clientes:    { maestros: 'convenios_clientes',    detalles: 'convenios_clientes_detalles',    tarifarios: 'tarifario_clientes',    campoId: 'clienteId',   campoNombre: 'clienteNombre',   etiqueta: 'cliente' },
   proveedores: { maestros: 'convenios_proveedores', detalles: 'convenios_proveedores_detalles', tarifarios: 'tarifario_proveedores', campoId: 'proveedorId', campoNombre: 'proveedorNombre', etiqueta: 'proveedor' },
 };
 
-const ID_USD = '7dca62b3';
-const ID_MXN = 'f95d8894';
-
 const norm = (v: unknown): string => String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 const s = (v: unknown): string => String(v ?? '').trim();
 const pad3 = (n: number): string => String(n).padStart(3, '0');
-const esUSD = (m: unknown): boolean => { const t = norm(m).toUpperCase(); return t.includes('USD') || t.includes('DOLAR') || s(m) === ID_USD; };
+// ✅ V00439 (Fase 3.x): esUSD e IDs de moneda vienen de src/shared/dominio (antes copia local).
+/** Datos del documento sin el `id` (la forma que antes daba d.data()). */
+const sinId = (d: DocCatalogo): D => {
+  const x: D = { ...d };
+  // El `id` lo agrega el catálogo; si el documento guarda su propio campo `id`
+  // (distinto del id real), es dato del documento y se conserva.
+  if (d.id === idReal(d)) delete x.id;
+  return x;
+};
 const monedaDetalle = (m: unknown): string => (s(m) ? (esUSD(m) ? 'Dólares' : 'Pesos') : '');
 const monedaLinea = (m: unknown): string => (s(m) ? (esUSD(m) ? 'USD' : 'MXN') : '');
 
@@ -115,23 +124,25 @@ export const asegurarIntegridad = async (tipo: TipoRel, opciones?: { soloIds?: s
     revisados: 0, fkEscritas: 0, entidadEscrita: 0, maestroReapuntado: 0, tarifaResuelta: 0, lineasCreadas: 0, lineasCompletadas: 0,
     detallesCreados: 0, maestrosCreados: 0, tarifariosCreados: 0, tarifariosReligados: 0, sinTarifario: [], sinEntidad: [], sinTarifa: [],
   };
-  const [snapTar, snapMae, snapDet, snapCat] = await Promise.all([
-    getDocs(collection(db, cfg.tarifarios)),
-    getDocs(collection(db, cfg.maestros)),
-    getDocs(collection(db, cfg.detalles)),
-    getDocs(collection(db, 'catalogo_tarifas_referencia')),
+  // ✅ V00439 (Fase 3.x): desde los catálogos compartidos (en vivo). Antes, cada
+  //   alta/aprobación releía las 4 colecciones completas.
+  const [catTar, catMae, catDet, catTarifas] = await Promise.all([
+    obtenerCatalogo(cfg.tarifarios),
+    obtenerCatalogo(cfg.maestros),
+    obtenerCatalogo(cfg.detalles),
+    obtenerCatalogo('catalogo_tarifas_referencia'),
   ]);
 
   // ── Catálogo de tarifas: id → nombre, y nombre → id (solo si es único) ──
   const catNombre = new Map<string, string>();
   const catPorNombre = new Map<string, string>();
   const nombresRepetidos = new Set<string>();
-  snapCat.docs.forEach((d) => {
-    const nombre = s((d.data() as D).descripcion);
-    catNombre.set(d.id, nombre);
+  catTarifas.forEach((d) => {
+    const nombre = s(d.descripcion);
+    catNombre.set(idReal(d), nombre);
     const k = norm(nombre);
     if (!k) return;
-    if (catPorNombre.has(k)) nombresRepetidos.add(k); else catPorNombre.set(k, d.id);
+    if (catPorNombre.has(k)) nombresRepetidos.add(k); else catPorNombre.set(k, idReal(d));
   });
   nombresRepetidos.forEach((k) => catPorNombre.delete(k));
   const tarifaPorNombre = (nombre: unknown): string => catPorNombre.get(norm(nombre)) || '';
@@ -139,10 +150,10 @@ export const asegurarIntegridad = async (tipo: TipoRel, opciones?: { soloIds?: s
   // ── Maestros ──
   const maestros = new Map<string, D>();
   const duenio = new Map<string, string>();
-  snapMae.docs.forEach((d) => { const x = d.data() as D; maestros.set(d.id, x); duenio.set(d.id, entidadDeMaestro(tipo, x)); });
+  catMae.forEach((d) => { const x = sinId(d); maestros.set(idReal(d), x); duenio.set(idReal(d), entidadDeMaestro(tipo, x)); });
 
   // ── Tarifarios ──
-  const tarifarios = snapTar.docs.map((d) => ({ id: d.id, data: { ...(d.data() as D) } }));
+  const tarifarios = catTar.map((d) => ({ id: idReal(d), data: sinId(d) }));
   type Tar = (typeof tarifarios)[number];
   const tarPorId = new Map<string, Tar>();
   tarifarios.forEach((t) => { tarPorId.set(t.id, t); const c = s(t.data.consecutivo); if (c) tarPorId.set(c, t); });
@@ -236,7 +247,7 @@ export const asegurarIntegridad = async (tipo: TipoRel, opciones?: { soloIds?: s
   };
 
   // ── Detalles ──
-  const detalles = snapDet.docs.map((d) => ({ id: d.id, data: d.data() as D })).filter((d) => d.data._eliminado !== true);
+  const detalles = catDet.map((d) => ({ id: idReal(d), data: sinId(d) })).filter((d) => d.data._eliminado !== true);
   const soloIds = opciones?.soloIds ? new Set(opciones.soloIds.map(String)) : null;
   const clavesConDetalle = new Set<string>();
   detalles.forEach((d) => { const k = claveConsecutivo(d.data.consecutivo || d.id); if (k) clavesConDetalle.add(k); });

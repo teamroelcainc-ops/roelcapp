@@ -11,9 +11,10 @@
 //   Storage en <coleccion>/<registro>/<tipo>/<tipo>.<ext> y doc en `documentos`.
 // ---------------------------------------------------------------------------
 import React, { useMemo, useState } from 'react';
-import { collection, doc, getDocs, setDoc } from 'firebase/firestore';
+import { doc, setDoc } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../../config/firebase';
+import { obtenerCatalogo } from '../../shared/data/catalogos';
 import './CargaMasivaDocumentosModal.css';
 
 interface Props {
@@ -61,11 +62,11 @@ export const CargaMasivaDocumentosModal: React.FC<Props> = ({ isOpen, onClose, c
       // catálogo de tipos (para saber cuáles vencen)
       let catalogo: { nombre: string; vence: boolean; modulos: string[] }[] = [];
       try {
-        const snap = await getDocs(collection(db, 'catalogo_tipo_archivo'));
-        catalogo = snap.docs.map((d) => {
-          const x: any = d.data();
+        // ✅ V00439 (Fase 3.x): del listener compartido de catálogos (antes getDocs propio).
+        const tiposArchivo = await obtenerCatalogo('catalogo_tipo_archivo');
+        catalogo = tiposArchivo.map((x) => {
           const mods = Array.isArray(x.modulo) ? x.modulo : String(x.modulo || '').split(',');
-          return { nombre: String(x.nombre || ''), vence: esVenceSi(x.vence), modulos: mods.map((m: any) => normalizar(String(m))) };
+          return { nombre: String(x.nombre || ''), vence: esVenceSi(x.vence), modulos: mods.map((m: unknown) => normalizar(String(m))) };
         }).filter((t) => t.nombre);
       } catch { /* sin catálogo: todo se trata como no-vence */ }
       const modsColeccion = (MODULO_POR_COLECCION[coleccionOrigen] || []).map(normalizar);

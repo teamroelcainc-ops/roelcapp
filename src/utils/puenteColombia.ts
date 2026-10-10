@@ -5,24 +5,26 @@
 //   2) PUENTE (pisarlo): "Puente Mx Colombia", monto FIJO del catálogo Tipos de
 //      Gastos (hoy $90) hasta que se modifique allá — va en `saldoPuentePiso…`.
 //   Nuevo Laredo (y cualquier otra aduana) solo tiene UN cobro: la caseta.
-import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
+import { idReal, obtenerCatalogo } from '../shared/data/catalogos';
+import { monedaCanonica, nombreMoneda } from '../shared/dominio/moneda';
 
 export const normPuente = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 export const NOMBRE_PISO_COLOMBIA = 'Puente Mx Colombia';
 export const esGastoPisoColombia = (nombreGasto: unknown) => normPuente(nombreGasto) === normPuente(NOMBRE_PISO_COLOMBIA);
 export const esAduanaColombia = (nombreAduana: unknown) => normPuente(nombreAduana).includes('colombia');
 
-const monedaNombre = (m: unknown) => (String(m || '') === '7dca62b3' ? 'Dólares' : String(m || '') === 'f95d8894' ? 'Pesos' : String(m || ''));
+// ✅ V00439 (Fase 3.x): moneda con el helper compartido (ID, código o nombre);
+//   lo que no reconoce se deja tal cual, como antes.
+const monedaNombre = (m: unknown) => nombreMoneda(monedaCanonica(m)) || String(m || '');
 
-let cacheAduanas: { ts: number; mapa: Map<string, string> } | null = null;
-/** Mapa id → nombre del catálogo de aduanas (caché 10 min). */
+// ✅ V00439 (Fase 3.x): los catálogos salen del listener compartido
+//   (obtenerCatalogo, siempre en vivo); sin getDocs por clic ni caché de 10 min.
+/** Mapa id → nombre del catálogo de aduanas. */
 export const nombresAduana = async (): Promise<Map<string, string>> => {
-  if (cacheAduanas && Date.now() - cacheAduanas.ts < 10 * 60 * 1000) return cacheAduanas.mapa;
-  const snap = await getDocs(collection(db, 'catalogo_aduanas'));
-  const mapa = new Map(snap.docs.map((d) => [d.id, String((d.data() as Record<string, unknown>).aduana ?? (d.data() as Record<string, unknown>).nombre ?? '')]));
-  cacheAduanas = { ts: Date.now(), mapa };
-  return mapa;
+  const aduanas = await obtenerCatalogo('catalogo_aduanas');
+  return new Map(aduanas.map((d) => [idReal(d), String(d.aduana ?? d.nombre ?? '')]));
 };
 
 /** Nombre de una aduana guardada como id del catálogo (o ya como nombre). */
@@ -58,10 +60,9 @@ export const camposPisoColombia = async (
     if (Number(op?.saldoPuentePiso) > 0) return {};
     const aduana = await aduanaDeConvenio(op?.convenio);
     if (!esAduanaColombia(aduana)) return {};
-    const snap = await getDocs(collection(db, 'catalogo_tipos_gastos'));
-    const d = snap.docs.find((x) => esGastoPisoColombia((x.data() as Record<string, unknown>).nombre_gasto));
-    if (!d) return {};
-    const x = d.data() as Record<string, unknown>;
+    const tipos = await obtenerCatalogo('catalogo_tipos_gastos');
+    const x = tipos.find((t) => esGastoPisoColombia(t.nombre_gasto));
+    if (!x) return {};
     const monto = Number(x.importe) || 0;
     if (monto <= 0) return {};
     return {
@@ -77,11 +78,10 @@ export const camposPisoColombia = async (
 /** Caseta de respaldo para Colombia cuando la tarifa no trae caseta: trompo → Trompo Colombia; si no, Caseta Mx Colombia. */
 export const casetaRespaldoColombia = async (esTrompo: boolean): Promise<{ saldoPuente: number; saldoPuentePuente: string; saldoPuenteMoneda: string } | null> => {
   try {
-    const snap = await getDocs(collection(db, 'catalogo_tipos_gastos'));
+    const tipos = await obtenerCatalogo('catalogo_tipos_gastos');
     const buscado = esTrompo ? 'trompo colombia' : 'caseta mx colombia';
-    const d = snap.docs.find((x) => normPuente((x.data() as Record<string, unknown>).nombre_gasto) === buscado);
-    if (!d) return null;
-    const x = d.data() as Record<string, unknown>;
+    const x = tipos.find((t) => normPuente(t.nombre_gasto) === buscado);
+    if (!x) return null;
     return { saldoPuente: Number(x.importe) || 0, saldoPuentePuente: String(x.nombre_gasto || ''), saldoPuenteMoneda: monedaNombre(x.moneda) };
   } catch { return null; }
 };
@@ -96,21 +96,30 @@ export interface CtxCobroPuente {
   aduanas: Map<string, string>;
 }
 
+// ✅ V00439 (Fase 3.x): sin TTL. Cada snapshot del listener compartido trae un
+//   arreglo nuevo, así que el contexto se reutiliza mientras los MISMOS arreglos
+//   sigan vigentes (en lotes no se rearman los mapas por operación) y se rearma
+//   en cuanto cambia cualquiera de los catálogos.
+let ultimoCtx: { fuentes: readonly unknown[]; ctx: CtxCobroPuente } | null = null;
 export const cargarCtxCobroPuente = async (): Promise<CtxCobroPuente> => {
-  const [det, tar, gi, tg, adu] = await Promise.all([
-    getDocs(collection(db, 'convenios_clientes_detalles')),
-    getDocs(collection(db, 'catalogo_tarifas_referencia')),
-    getDocs(collection(db, 'tarifas_gastos_incluidos')),
-    getDocs(collection(db, 'catalogo_tipos_gastos')),
-    nombresAduana(),
+  const fuentes = await Promise.all([
+    obtenerCatalogo('convenios_clientes_detalles'),
+    obtenerCatalogo('catalogo_tarifas_referencia'),
+    obtenerCatalogo('tarifas_gastos_incluidos'),
+    obtenerCatalogo('catalogo_tipos_gastos'),
+    obtenerCatalogo('catalogo_aduanas'),
   ]);
-  return {
-    detalles: new Map(det.docs.map((d) => [d.id, d.data() as Record<string, unknown>])),
-    tarifas: new Map(tar.docs.map((d) => [d.id, d.data() as Record<string, unknown>])),
-    gastosIncluidos: gi.docs.map((d) => d.data() as Record<string, unknown>),
-    tiposGasto: new Map(tg.docs.map((d) => [d.id, d.data() as Record<string, unknown>])),
-    aduanas: adu,
+  if (ultimoCtx && ultimoCtx.fuentes.every((f, i) => f === fuentes[i])) return ultimoCtx.ctx;
+  const [det, tar, gi, tg, adu] = fuentes;
+  const ctx: CtxCobroPuente = {
+    detalles: new Map(det.map((d) => [idReal(d), d])),
+    tarifas: new Map(tar.map((d) => [idReal(d), d])),
+    gastosIncluidos: gi,
+    tiposGasto: new Map(tg.map((d) => [idReal(d), d])),
+    aduanas: new Map(adu.map((d) => [idReal(d), String(d.aduana ?? d.nombre ?? '')])),
   };
+  ultimoCtx = { fuentes, ctx };
+  return ctx;
 };
 
 const gastoPorNombre = (ctx: CtxCobroPuente, nombres: string[]) => {

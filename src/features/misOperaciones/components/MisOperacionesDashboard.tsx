@@ -16,11 +16,14 @@ import {
   collection, query, where, onSnapshot, getDocs, writeBatch, doc, deleteDoc, updateDoc,
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { idReal, obtenerCatalogo, useCatalogo } from '../../../shared/data/catalogos';
+import { STATUS_FINALES } from '../../../shared/dominio/constantes';
 import { useUsuarioStore } from '../../../stores/useUsuarioStore';
 import { useEstadoConexion } from '../../../hooks/useEstadoConexion';
 import { useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
 import { registrarLog } from '../../../utils/logger';
 import { nombreDeEmpleado } from '../../../utils/nombreEmpleado';
+import type { EmpleadoNombreCampos } from '../../../utils/nombreEmpleado';
 import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
 import { ChevronLeft, MapPin, Truck, CheckCircle2, Clock } from 'lucide-react';
 import './MisOperacionesDashboard.css';
@@ -28,7 +31,8 @@ import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
 import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
 
 // Status que ya no son "activos" (mismos IDs que usa Operaciones Activas).
-const IDS_STATUS_EXCLUIDOS = ['7607f692', 'f557b751', 'c2d57403'];
+// ✅ V00439 (Fase 3.x): IDs desde las constantes compartidas (Cancelado + Completados).
+const IDS_STATUS_EXCLUIDOS = STATUS_FINALES;
 
 interface StatusCatalogo {
   id: string;
@@ -87,7 +91,6 @@ export function MisOperacionesDashboard() {
 
   const [idsOperador, setIdsOperador] = useState<string[] | null>(null); // null = cargando
   const [operaciones, setOperaciones] = useState<OperacionAsignada[]>([]);
-  const [statuses, setStatuses] = useState<StatusCatalogo[]>([]);
   const [opAbierta, setOpAbierta] = useState<OperacionAsignada | null>(null);
   const [horariosOp, setHorariosOp] = useState<HorarioMarcado[]>([]);
   const [marcando, setMarcando] = useState(false);
@@ -107,11 +110,12 @@ export function MisOperacionesDashboard() {
       }
       if (!usuario?.nombre) { setIdsOperador([]); return; }
       try {
-        const snap = await getDocs(collection(db, 'empleados'));
+        // ✅ V00439 (Fase 3.x): empleados del listener compartido de catálogos.
+        const empleados = await obtenerCatalogo('empleados');
         const objetivo = normalizar(usuario.nombre);
-        const ids = snap.docs
-          .filter((d) => normalizar(nombreDeEmpleado(d.data())) === objetivo)
-          .map((d) => d.id);
+        const ids = empleados
+          .filter((d) => normalizar(nombreDeEmpleado(d as EmpleadoNombreCampos)) === objetivo)
+          .map((d) => idReal(d));
         if (activo) setIdsOperador(ids);
       } catch (e) {
         console.error('No se pudo vincular el colaborador:', e);
@@ -123,19 +127,11 @@ export function MisOperacionesDashboard() {
   }, [usuario?.nombre, usuario?.colaboradorId]);
 
   // [2] Catálogo de status ordenado (para saber cuál sigue).
-  useEffect(() => {
-    let activo = true;
-    getDocs(collection(db, 'catalogo_status_servicio'))
-      .then((snap) => {
-        if (!activo) return;
-        const lista = snap.docs
-          .map((d) => ({ id: d.id, nombre: String((d.data() as { nombre?: string }).nombre || '') }))
-          .sort((a, b) => prefijoNumerico(a.nombre) - prefijoNumerico(b.nombre));
-        setStatuses(lista);
-      })
-      .catch((e) => console.error('No se pudo cargar el catálogo de status:', e));
-    return () => { activo = false; };
-  }, []);
+  // ✅ V00439 (Fase 3.x): del listener compartido de catálogos (antes getDocs al montar).
+  const { datos: statusCat } = useCatalogo('catalogo_status_servicio');
+  const statuses = useMemo<StatusCatalogo[]>(() => statusCat
+    .map((d) => ({ id: idReal(d), nombre: String(d.nombre || '') }))
+    .sort((a, b) => prefijoNumerico(a.nombre) - prefijoNumerico(b.nombre)), [statusCat]);
 
   // [3] Operaciones ACTIVAS asignadas al operador, en tiempo real.
   // ✅ V00438 (Fase 2.7): solo mientras el módulo se ve; oculto conserva la

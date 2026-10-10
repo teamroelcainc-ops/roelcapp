@@ -1,9 +1,16 @@
 import { useState, useEffect, useEffectEvent, useMemo, useCallback, useRef, cloneElement, Fragment, memo } from 'react';
 import { createPortal } from 'react-dom'; // ✅ V00264: el formulario vive en document.body
-import { doc, getDoc, updateDoc, collection, getDocs, setDoc, addDoc, query, where, limit, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, getDocs, setDoc, addDoc, query, where, limit } from 'firebase/firestore';
 import type { DocumentData } from 'firebase/firestore';
 import { prefijoTipoOperacion } from '../../../utils/generarReferencia';
 import { db, storage, auth } from '../../../config/firebase';
+// ✅ V00439 (Fase 3.6): catálogos, permisos y constantes desde la capa compartida.
+import { idReal, obtenerCatalogo, useCatalogos } from '../../../shared/data/catalogos';
+import type { DocCatalogo } from '../../../shared/data/catalogos';
+import { usePermisoRol } from '../../../shared/data/sesion';
+import { ContextoModuloVivoActivo, useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
+import { ID_MXN, ID_USD, PUENTE_EXPORTACION_ID, PUENTE_IMPORTACION_ID, STATUS_CANCELADO, STATUS_COMPLETADOS, TIPO_EMPRESA } from '../../../shared/dominio/constantes';
+import { esUSD, monedaCanonica, nombreMoneda as nombreMonedaCanonica } from '../../../shared/dominio/moneda';
 import { DocumentosLista } from '../../documentos/DocumentosLista'; // ✅ V00341: consultar los documentos guardados
 import { EditorTarifaOrigenDestino } from './EditorTarifaOrigenDestino'; // ✅ V00224
 import { puedeClave } from '../../../utils/permisos'; // ✅ V00224
@@ -32,7 +39,6 @@ import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
 import { esOperacionPrueba, PREFIJO_PRUEBA } from '../../../utils/operacionPrueba';
 import { EditorDetalleConvenioModal } from './EditorDetalleConvenioModal';
 import { AlertaDocumentos } from '../../documentos/AlertaDocumentos';
-import { almacenSesion } from '../../../utils/cacheMemoria';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 import { validarFormularioConfigurable } from '../../formularios/configFormularios';
@@ -122,9 +128,7 @@ const CAMPO_TAB_MAP: Record<string, TabType> = {
   tipoCambioAprobado: 'cobrar', observacionesCobrar: 'cobrar',
 };
 
-const ID_USD = '7dca62b3';
-const ID_MXN = 'f95d8894';
-
+// ✅ V00439 (Fase 3.6): ID_USD / ID_MXN vienen de shared/dominio/constantes.
 const ID_GASTO_SUELDO = '25b772d3';
 
 const TIPO_OP_PROVEEDOR_FIJO = '8ec24dfe';
@@ -220,12 +224,15 @@ const COSTO_MANIFIESTO_DEFAULT = 8.52;
 //   tiposEmpresa que contenga 11894dfd Y tiposServicio que contenga alguno de
 //   los dos servicios permitidos. Solo el servicio 42afffd3 coloca el costo
 //   por defecto del manifiesto; cualquier otro coloca 0.
-const TIPO_EMPRESA_PROV_SERVICIOS_ID = '11894dfd';
 const TIPOS_SERVICIO_PROV_MANIFIESTO = ['42afffd3', '7e70a3f7'];
 const TIPO_SERVICIO_CON_COSTO_MANIFIESTO = '42afffd3';
 // ✅ (Caseta/Puente automático según tráfico)
-const PUENTE_IMPORTACION_ID = '4614ec51'; // Caseta Avi
-const PUENTE_EXPORTACION_ID = '49ce0a0e'; // Caseta Puente III
+// ✅ V00439 (Fase 3.6): PUENTE_IMPORTACION_ID (Caseta Avi) y PUENTE_EXPORTACION_ID
+//   (Caseta Puente III) y el tipo de empresa Proveedor (Servicios) vienen de shared/dominio/constantes.
+
+// ✅ V00439 (Fase 3.6): nombre de la moneda de un tipo de gasto ('Dólares'/'Pesos');
+//   si no se reconoce, el valor tal cual (antes comparaba contra los IDs a mano).
+const textoMonedaGasto = (v: unknown): string => nombreMonedaCanonica(monedaCanonica(v)) || String(v || '');
 
 // ✅ V00252: TIPO_EMP_CLIENTE_PAGA ('Cliente (Paga)') y TIPO_EMP_PROV_TRANSPORTE
 //   ('Proveedor (Transporte)') se retiraron: el buscador de la operación ya no
@@ -320,6 +327,18 @@ const filaTCEsDeLaFecha = (row: any, objetivoISO: string): boolean => {
   return Object.values(row).some((v: any) => normalizarFechaISO(v) === objetivoISO);
 };
 
+// ✅ V00439 (Fase 3.6): T.C. de una fecha en una lista de renglones de tipo_cambio
+//   (antes vivía dentro del efecto del formulario).
+const buscarTCDeFecha = (fuente: unknown, objetivoISO: string): number | null => {
+  for (const row of (Array.isArray(fuente) ? fuente : [])) {
+    if (filaTCEsDeLaFecha(row, objetivoISO)) {
+      const r = extraerRateDeFilaTC(row);
+      if (r !== null) return r;
+    }
+  }
+  return null;
+};
+
 const subirDocumentoOperacion = async (
   file: File,
   idOp: string,
@@ -382,26 +401,21 @@ const IconPlus          = (p: { size?: number }) => <svg className="fo-x2" width
 
 const tipoTarifarioCache = new Map<string, any>();
 
-// ✅ V00258: caché del catálogo Cargada/Vacía para resolver el estado_carga de
+// ✅ V00258: catálogo Cargada/Vacía para resolver el estado_carga de
 //   la tarifa (que puede venir como ID) al NOMBRE exacto del catálogo antes de
 //   guardarlo en la operación (caso reportado: convenio Hazmat con carga
 //   "Cargado" — la operación debe guardar el C/V que dicta el convenio).
-let cargaVaciaCachePromesa: Promise<Map<string, string>> | null = null;
-const obtenerMapaCargaVacia = (): Promise<Map<string, string>> => {
-  if (!cargaVaciaCachePromesa) {
-    cargaVaciaCachePromesa = getDocs(collection(db, 'catalogo_carga_vacia')).then((snap) => {
-      const mapa = new Map<string, string>();
-      snap.docs.forEach((d) => {
-        const x = d.data() as Record<string, unknown>;
-        const nombre = String(x.nombre || x.estado_carga || '').trim();
-        if (!nombre) return;
-        mapa.set(d.id, nombre);
-        mapa.set(nombre.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase(), nombre);
-      });
-      return mapa;
-    }).catch(() => { cargaVaciaCachePromesa = null; return new Map<string, string>(); });
-  }
-  return cargaVaciaCachePromesa;
+// ✅ V00439 (Fase 3.6): sale del listener compartido de catálogos (antes un
+//   getDocs por sesión guardado en una promesa del módulo).
+const obtenerMapaCargaVacia = async (): Promise<Map<string, string>> => {
+  const mapa = new Map<string, string>();
+  (await obtenerCatalogo('catalogo_carga_vacia')).forEach((x) => {
+    const nombre = String(x.nombre || x.estado_carga || '').trim();
+    if (!nombre) return;
+    mapa.set(idReal(x), nombre);
+    mapa.set(nombre.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase(), nombre);
+  });
+  return mapa;
 };
 const resolverNombreCarga = async (valor: unknown): Promise<string> => {
   const v = String(valor ?? '').trim();
@@ -544,6 +558,11 @@ const CampoArchivo = ({
   );
 };
 
+// ✅ V00439 (Fase 3.6): fila de catálogo tal como la lee este archivo (campos legacy uno
+//   por uno, sin tipo canónico todavía). Antes cada lista era un useState<any[]>.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- datos de catálogo dinámicos (mismo criterio del archivo).
+type FilaCatalogo = any;
+
 type CatalogoCreable =
   | { tipo: 'empresa'; tipoEmpresaPreseleccionado: string; coleccion: 'empresas' }
   | { tipo: 'remolque'; coleccion: 'remolques' }
@@ -569,7 +588,9 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
   const [detalleConvProvEditando, setDetalleConvProvEditando] = useState<any | null>(null);
   const [guardandoDetalleConvProv, setGuardandoDetalleConvProv] = useState(false);
 
-  const [puedeEditarRef, setPuedeEditarRef] = useState(false);
+  // ✅ V00439 (Fase 3.6): permiso "EDITAR REF" desde la sesión (antes releía usuarios/{uid}
+  //   y TODA la colección roles; además .includes('ADMIN') contaba 'ADMINISTRATIVO' como admin).
+  const puedeEditarRef = usePermisoRol('EDITAR REF', 'contiene');
 
   // ✅ AUTORIZACIONES: config del módulo 'operaciones' y usuario actual.
   const [configAut, setConfigAut] = useState<any>(undefined); // undefined = aún cargando
@@ -599,174 +620,75 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
   const [camposSiguienteStatus, setCamposSiguienteStatus] = useState<{ campo: string; etiqueta: string; cumplido: boolean }[]>([]);
   const [nombreSiguienteAuto, setNombreSiguienteAuto] = useState<string>('');
 
-  const [pestanasVisiblesConfig, setPestanasVisiblesConfig] = useState<TabType[] | null>(null);
-  const [camposObligatoriosConfig, setCamposObligatoriosConfig] = useState<string[] | null>(null);
-
-  const [flujosIndex, setFlujosIndex] = useState<{ id: string; tipoServicio: string; trafico: string; carga: string }[]>([]);
-
   const [modalCatalogo, setModalCatalogo] = useState<{
     catalogo: CatalogoCreable;
     idsPrevios: Set<string>;
     onCreado: (nuevoId: string, registro: any) => void;
   } | null>(null);
 
-  const [empresasLocal, setEmpresasLocal] = useState<any[]>(catalogosCacheados?.empresas || []);
-  const [remolquesLocal, setRemolquesLocal] = useState<any[]>(catalogosCacheados?.remolques || []);
-  const [unidadesLocal, setUnidadesLocal] = useState<any[]>(catalogosCacheados?.unidades || []);
-  const [empleadosLocalState, setEmpleadosLocalState] = useState<any[]>(catalogosCacheados?.empleados || []);
-  const [tarifasLocal, setTarifasLocal] = useState<any[]>(catalogosCacheados?.tarifas || []);
-  const [embalajesLocal, setEmbalajesLocal] = useState<any[]>(catalogosCacheados?.embalajes || []);
-  const [convClientesLocal, setConvClientesLocal] = useState<any[]>(catalogosCacheados?.catalogoConvClientes || []);
-  const [convDetallesLocal, setConvDetallesLocal] = useState<any[]>(catalogosCacheados?.catalogoConvDetalles || []);
-  const [convProvLocal, setConvProvLocal] = useState<any[]>(catalogosCacheados?.conveniosProv || []);
-  const [convProvDetallesLocal, setConvProvDetallesLocal] = useState<any[]>(catalogosCacheados?.catalogoConvProvDetalles || []);
-  const [gastosIncluidosLocal, setGastosIncluidosLocal] = useState<any[]>(catalogosCacheados?.tarifasGastosIncluidos || []);
-  const [rendimientoLocal, setRendimientoLocal] = useState<any[]>(catalogosCacheados?.tarifasRendimiento || []);
-  const [tiposGastosLocal, setTiposGastosLocal] = useState<any[]>(catalogosCacheados?.tiposGastos || []);
-
-  useEffect(() => { setEmpresasLocal(catalogosCacheados?.empresas || []); }, [catalogosCacheados?.empresas]);
-  useEffect(() => { setRemolquesLocal(catalogosCacheados?.remolques || []); }, [catalogosCacheados?.remolques]);
-  useEffect(() => { setUnidadesLocal(catalogosCacheados?.unidades || []); }, [catalogosCacheados?.unidades]);
-  useEffect(() => { setEmpleadosLocalState(catalogosCacheados?.empleados || []); }, [catalogosCacheados?.empleados]);
-  useEffect(() => { setTarifasLocal(catalogosCacheados?.tarifas || []); }, [catalogosCacheados?.tarifas]);
-  useEffect(() => { setEmbalajesLocal(catalogosCacheados?.embalajes || []); }, [catalogosCacheados?.embalajes]);
-  useEffect(() => { setConvClientesLocal(catalogosCacheados?.catalogoConvClientes || []); }, [catalogosCacheados?.catalogoConvClientes]);
+  // ✅ V00439 (Fase 3.6): CATÁLOGOS desde la capa compartida (src/shared/data/catalogos):
+  //   un listener por colección para toda la app, siempre en vivo. Antes, al abrir:
+  //   9 getDocs + 6 onSnapshot propios, copias en localStorage (cat_v2__) y
+  //   catalogosCacheados como base. Ya no hay copias locales que parchar después de
+  //   escribir (crear empresa, editar un detalle de convenio): el listener trae el cambio.
+  //   `base` = lo que el formulario necesita para pintarse (antes lo entregaba el padre).
+  const { datos: base, listo: catalogosBaseListos } = useCatalogos({
+    empresas: 'empresas',
+    remolques: 'remolques',
+    unidades: 'unidades',
+    empleados: 'empleados',
+    unidadesProveedor: 'unidades_proveedor',
+    proveedoresUnidad: 'proveedores_unidad',
+    tiposOperacion: 'catalogo_tipo_operacion',
+    statusServicio: 'catalogo_status_servicio',
+    catalogoMoneda: 'catalogo_moneda',
+  });
+  const { datos: cat } = useCatalogos({
+    tarifas: 'catalogo_tarifas_referencia',
+    embalajes: 'catalogo_embalaje',
+    tarifasGastosIncluidos: 'tarifas_gastos_incluidos',
+    tarifasRendimiento: 'tarifas_rendimiento',
+    tiposGastos: 'catalogo_tipos_gastos',
+    catalogoConvClientes: 'convenios_clientes',
+    catalogoConvDetalles: 'convenios_clientes_detalles',
+    catalogoTarifarios: 'tarifario_clientes',
+    catalogoTarifariosProv: 'tarifario_proveedores',
+    conveniosProv: 'convenios_proveedores',
+    catalogoConvProvDetalles: 'convenios_proveedores_detalles',
+    catalogoTrafico: 'catalogo_trafico',
+    direcciones: 'direcciones',
+    flujos: 'config_flujos_operacion',
+  });
+  const empresasLocal: FilaCatalogo[] = base.empresas;
+  const remolquesLocal: FilaCatalogo[] = base.remolques;
+  const unidadesLocal: FilaCatalogo[] = base.unidades;
+  const empleadosLocalState: FilaCatalogo[] = base.empleados;
+  const tarifasLocal: FilaCatalogo[] = cat.tarifas;
+  const embalajesLocal: FilaCatalogo[] = cat.embalajes;
+  const convClientesLocal: FilaCatalogo[] = cat.catalogoConvClientes;
+  const convDetallesLocal: FilaCatalogo[] = cat.catalogoConvDetalles;
+  const convProvLocal: FilaCatalogo[] = cat.conveniosProv;
+  const convProvDetallesLocal: FilaCatalogo[] = cat.catalogoConvProvDetalles;
+  const gastosIncluidosLocal: FilaCatalogo[] = cat.tarifasGastosIncluidos;
+  const rendimientoLocal: FilaCatalogo[] = cat.tarifasRendimiento;
+  const tiposGastosLocal: FilaCatalogo[] = cat.tiposGastos;
   // ✅ V00202: tarifarios de clientes — sus clientes también aparecen en la operación.
-  const [tarifariosLocal, setTarifariosLocal] = useState<any[]>([]);
+  const tarifariosLocal: FilaCatalogo[] = cat.catalogoTarifarios;
+  // ✅ V00211: tarifarios de PROVEEDORES — sus proveedores también aparecen.
+  const tarifariosProvLocal: FilaCatalogo[] = cat.catalogoTarifariosProv;
   // ✅ V00313: tarifa ALTERNA elegida en el modal (convenios con varios montos).
   //   El efecto que trae el monto vigente la respeta mientras siga elegido ese convenio.
   const montoAltCliRef = useRef<{ id: string; monto: number } | null>(null);
   const montoAltProvRef = useRef<{ id: string; monto: number } | null>(null);
   const [convMontosAbierto, setConvMontosAbierto] = useState('');
-  useEffect(() => { setTarifariosLocal(catalogosCacheados?.catalogoTarifarios || []); }, [catalogosCacheados?.catalogoTarifarios]);
-  // ✅ V00281: RESPALDO — si el caché llegó sin tarifarios (o vacío), se cargan
-  //   directo para que el # de tarifario del modal aparezca de inmediato.
-  useEffect(() => {
-    if ((catalogosCacheados?.catalogoTarifarios || []).length > 0) return;
-    let activo = true;
-    (async () => {
-      try {
-        const snap = await getDocs(collection(db, 'tarifario_clientes'));
-        if (activo && snap.docs.length > 0) setTarifariosLocal(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      } catch (e) { console.error('Respaldo de tarifarios (clientes):', e); }
-    })();
-    return () => { activo = false; };
-  }, [catalogosCacheados?.catalogoTarifarios]);
-  // ✅ V00211: tarifarios de PROVEEDORES — sus proveedores también aparecen.
-  const [tarifariosProvLocal, setTarifariosProvLocal] = useState<any[]>([]);
-  useEffect(() => { setTarifariosProvLocal(catalogosCacheados?.catalogoTarifariosProv || []); }, [catalogosCacheados?.catalogoTarifariosProv]);
-  // ✅ V00281: respaldo espejo para el lado proveedor.
-  useEffect(() => {
-    if ((catalogosCacheados?.catalogoTarifariosProv || []).length > 0) return;
-    let activo = true;
-    (async () => {
-      try {
-        const snap = await getDocs(collection(db, 'tarifario_proveedores'));
-        if (activo && snap.docs.length > 0) setTarifariosProvLocal(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      } catch (e) { console.error('Respaldo de tarifarios (proveedores):', e); }
-    })();
-    return () => { activo = false; };
-  }, [catalogosCacheados?.catalogoTarifariosProv]);
-  useEffect(() => { setConvDetallesLocal(catalogosCacheados?.catalogoConvDetalles || []); }, [catalogosCacheados?.catalogoConvDetalles]);
-  useEffect(() => { setConvProvLocal(catalogosCacheados?.conveniosProv || []); }, [catalogosCacheados?.conveniosProv]);
-  useEffect(() => { setConvProvDetallesLocal(catalogosCacheados?.catalogoConvProvDetalles || []); }, [catalogosCacheados?.catalogoConvProvDetalles]);
 
-  useEffect(() => {
-    let activo = true;
-    const fuentes: { alias: string; coleccion: string; setter: (d: any[]) => void }[] = [
-      { alias: 'empresas',                 coleccion: 'empresas',                       setter: setEmpresasLocal },
-      { alias: 'remolques',                coleccion: 'remolques',                      setter: setRemolquesLocal },
-      { alias: 'unidades',                 coleccion: 'unidades',                       setter: setUnidadesLocal },
-      { alias: 'empleados',                coleccion: 'empleados',                      setter: setEmpleadosLocalState },
-      { alias: 'tarifas',                  coleccion: 'catalogo_tarifas_referencia',    setter: setTarifasLocal },
-      { alias: 'embalajes',                coleccion: 'catalogo_embalaje',              setter: setEmbalajesLocal },
-      /* ✅ V00313: convenios/detalles/tarifarios pasan a onSnapshot EN VIVO (abajo) —
-         cambios en Convenio de Clientes/Proveedores o en los tarifarios se
-         reflejan AL MOMENTO en este formulario y su modal. */
-      { alias: 'tarifasGastosIncluidos',   coleccion: 'tarifas_gastos_incluidos',       setter: setGastosIncluidosLocal },
-      { alias: 'tarifasRendimiento',       coleccion: 'tarifas_rendimiento',            setter: setRendimientoLocal },
-      { alias: 'tiposGastos',              coleccion: 'catalogo_tipos_gastos',          setter: setTiposGastosLocal },
-    ];
-    (async () => {await Promise.all(fuentes.map(async ({ alias, coleccion, setter }) => {
-        try {
-          const snap = await getDocs(collection(db, coleccion));
-          const docs = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-          if (!activo) return;
-          setter(docs);
-          // ✅ CORREGIDO: los dashboards leen las cachés con clave "cat_v2__" (las
-          //   v1 se ELIMINAN en cada arranque). Antes se escribía en v1 y por eso
-          //   los clientes/proveedores/bodegas nuevos tardaban hasta 24 h (TTL) en
-          //   verse en tablas y documentos. Nunca se cachean listas vacías.
-          try { if (docs.length > 0) localStorage.setItem(`cat_v2__${alias}`, JSON.stringify({ ts: Date.now(), data: docs })); } catch { /* noop */ }
-        } catch (e) {
-          console.error(`Error refrescando catálogo "${coleccion}":`, e);
-        }
-      }));
-    })();
-    return () => { activo = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // ✅ V00313: BASE RELACIONAL EN VIVO — mientras el formulario está abierto,
-  //   convenios (maestros y detalles) y tarifarios de AMBOS lados se escuchan
-  //   con onSnapshot: editar en Convenio de Clientes/Proveedores o en los
-  //   tarifarios se ve al instante aquí (tabla del modal, montos y monedas).
-  useEffect(() => {
-    const vivas = [
-      { alias: 'catalogoConvClientes',     coleccion: 'convenios_clientes',             setter: setConvClientesLocal },
-      { alias: 'catalogoConvDetalles',     coleccion: 'convenios_clientes_detalles',    setter: setConvDetallesLocal },
-      { alias: 'catalogoTarifarios',       coleccion: 'tarifario_clientes',             setter: setTarifariosLocal },
-      { alias: 'catalogoTarifariosProv',   coleccion: 'tarifario_proveedores',          setter: setTarifariosProvLocal },
-      { alias: 'conveniosProv',            coleccion: 'convenios_proveedores',          setter: setConvProvLocal },
-      { alias: 'catalogoConvProvDetalles', coleccion: 'convenios_proveedores_detalles', setter: setConvProvDetallesLocal },
-    ];
-    const bajas = vivas.map(({ alias, coleccion, setter }) => onSnapshot(collection(db, coleccion), (snap) => {
-      const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      setter(docs);
-      try { if (docs.length > 0) localStorage.setItem(`cat_v2__${alias}`, JSON.stringify({ ts: Date.now(), data: docs })); } catch { /* noop */ }
-    }, (e) => console.error(`Suscripción en vivo "${coleccion}":`, e)));
-    return () => { bajas.forEach((b) => b()); };
-  }, []);
-
-  useEffect(() => {
-    let activo = true;
-    const norm = (s: any) => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase();
-    (async () => {
-      try {
-        const u = auth.currentUser;
-        if (!u) { if (activo) setPuedeEditarRef(true); return; }
-        const snap = await getDoc(doc(db, 'usuarios', u.uid));
-        if (!activo) return;
-        if (!snap.exists()) { setPuedeEditarRef(true); return; }
-        const data = snap.data() as any;
-        const rolesUsuario: string[] = Array.isArray(data.roles) ? data.roles : (data.rol ? [String(data.rol)] : []);
-        const rolesSet = new Set(rolesUsuario.map(norm));
-
-        if ([...rolesSet].some((r) => r.includes('ADMIN'))) { setPuedeEditarRef(true); return; }
-
-        const rolesSnap = await getDocs(collection(db, 'roles'));
-        if (!activo) return;
-        const permitido = rolesSnap.docs.some((d: any) => {
-          const rd = d.data() || {};
-          const esDelUsuario = rolesSet.has(norm(rd.nombre)) || rolesSet.has(norm(d.id));
-          if (!esDelUsuario) return false;
-          const mods: string[] = Array.isArray(rd.modulosPermitidos) ? rd.modulosPermitidos : [];
-          return mods.some((m) => norm(m).includes('EDITAR REF'));
-        });
-        if (activo) setPuedeEditarRef(permitido);
-      } catch { if (activo) setPuedeEditarRef(false); }
-    })();
-    return () => { activo = false; };
-  }, []);
-
-  const {
-    tiposOperacion = [],
-    catalogoTC = [],
-    statusServicio = [],
-    catalogoMoneda = [],
-    unidadesProveedor = catalogosCacheados?.unidades_proveedor || [],
-    proveedoresUnidad = catalogosCacheados?.proveedores_unidad || []
-  } = catalogosCacheados || {};
+  // ✅ V00439 (Fase 3.6): solo el T.C. sigue llegando de catalogosCacheados (ver
+  //   catalogoTCResuelto); lo demás sale de la capa compartida.
+  const tiposOperacion: FilaCatalogo[] = base.tiposOperacion;
+  const statusServicio: FilaCatalogo[] = base.statusServicio;
+  const catalogoMoneda: FilaCatalogo[] = base.catalogoMoneda;
+  const unidadesProveedor: FilaCatalogo[] = base.unidadesProveedor;
+  const proveedoresUnidad: FilaCatalogo[] = base.proveedoresUnidad;
 
   const empresas = empresasLocal;
   const remolques = remolquesLocal;
@@ -788,16 +710,14 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
   const catalogoConvClientes = convClientesLocal;
   const catalogoConvDetalles = convDetallesLocal;
 
-  const catalogoTrafico = useMemo(() =>
-    catalogosCacheados?.catalogo_trafico
-    || catalogosCacheados?.traficos
-    || catalogosCacheados?.trafico
-    || [],
-  [catalogosCacheados]);
+  const catalogoTrafico: FilaCatalogo[] = cat.catalogoTrafico; // ✅ V00439 (Fase 3.6)
 
   // ✅ FIX TIPO DE CAMBIO: resuelve el catálogo de TC venga como venga en
   //   catalogosCacheados (a veces la clave no es exactamente `catalogoTC`).
+  // ✅ V00439 (Fase 3.6): tipo_cambio crece un renglón por día y aquí solo hace falta el
+  //   de una fecha: sin él en catalogosCacheados se consulta esa fecha (obtenerFilaTipoCambioDeFecha).
   const catalogoTCResuelto = useMemo(() => {
+    const catalogoTC = catalogosCacheados?.catalogoTC ?? [];
     if (Array.isArray(catalogoTC) && catalogoTC.length) return catalogoTC;
     return (
       catalogosCacheados?.tipoCambio
@@ -811,7 +731,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
       || catalogoTC
       || []
     );
-  }, [catalogoTC, catalogosCacheados]);
+  }, [catalogosCacheados]);
 
   const listaEmpleadosLocal: any[] = empleados;
   const listaUniProvLocal: any[] = unidadesProveedor;
@@ -832,7 +752,6 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
       const monId = emp ? resolverMonedaIdDeEmpresa(emp) : '';
       if (!monId) { alert('Esta empresa no tiene moneda registrada en la tabla Empresas. Asígnala en el módulo Empresas y vuelve a intentar.'); return; }
       const nombre = listaMonedasLocal.find((m: any) => String(m.id) === monId)?.moneda || monId;
-      setEmpresasLocal(prev => prev.some((e: any) => String(e.id) === empresaId) ? prev.map((e: any) => String(e.id) === empresaId ? { ...e, ...emp } : e) : prev);
       if (lado === 'cliente') setFormData(prev => ({ ...prev, facturadoEnCobrar: monId }));
       else setFormData(prev => ({ ...prev, facturadoEnUnidad: monId }));
       alert(`Facturado En actualizado a "${nombre}" (moneda actual de la empresa).\n\nRecuerda presionar Guardar para que quede en la operación.`);
@@ -1010,35 +929,6 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
   }, [formData.unidad]);
 
 
-  const recargarColeccion = useCallback(async (coleccion: string) => {
-    const snap = await getDocs(collection(db, coleccion));
-    return snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-  }, []);
-
-  const aplicarColeccionRecargada = useCallback((coleccion: string, docs: any[]) => {
-    if (coleccion === 'empresas') setEmpresasLocal(docs);
-    else if (coleccion === 'remolques') setRemolquesLocal(docs);
-    else if (coleccion === 'unidades') setUnidadesLocal(docs);
-    else if (coleccion === 'empleados') setEmpleadosLocalState(docs);
-
-    try {
-      const cacheStr = almacenSesion.getItem('roelca_catalogos_v2');
-      if (cacheStr) {
-        const cache = JSON.parse(cacheStr);
-        if (coleccion === 'empresas') cache.empresas = docs;
-        else if (coleccion === 'remolques') cache.remolques = docs;
-        else if (coleccion === 'unidades') cache.unidades = docs;
-        else if (coleccion === 'empleados') cache.empleados = docs;
-        almacenSesion.setItem('roelca_catalogos_v2', JSON.stringify(cache));
-      }
-    } catch { /* noop */ }
-
-    try {
-      // ✅ CORREGIDO: clave v2 (la que leen los dashboards) y sin cachear vacíos.
-      if (docs.length > 0) localStorage.setItem(`cat_v2__${coleccion}`, JSON.stringify({ ts: Date.now(), data: docs }));
-    } catch { /* noop */ }
-  }, []);
-
   const abrirCreacion = useCallback((
     catalogo: CatalogoCreable,
     onCreado: (nuevoId: string, registro: any) => void
@@ -1052,6 +942,10 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     setModalCatalogo({ catalogo, idsPrevios, onCreado });
   }, [empresasLocal, remolquesLocal, unidadesLocal, empleadosLocalState]);
 
+  // ✅ V00439 (Fase 3.6): tras crear un registro ya no se relee la colección completa ni
+  //   se copia a localStorage/almacenSesion: el listener compartido trae el registro nuevo
+  //   (al instante con la escritura local) y las listas del formulario lo ven solas. Se
+  //   consulta la lista viva unas veces por si el modal cerró antes de que llegara.
   const cerrarCreacion = useCallback(async () => {
     if (!modalCatalogo) return;
     const { catalogo, idsPrevios, onCreado } = modalCatalogo;
@@ -1059,17 +953,14 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     setModalCatalogo(null);
 
     try {
-      let docs: any[] = [];
-      let nuevos: any[] = [];
+      let nuevos: DocCatalogo[] = [];
 
       for (let intento = 0; intento < 4; intento++) {
-        docs = await recargarColeccion(catalogo.coleccion);
-        nuevos = docs.filter((d: any) => !idsPrevios.has(String(d.id)));
+        const docs = await obtenerCatalogo(catalogo.coleccion);
+        nuevos = docs.filter((d) => !idsPrevios.has(String(d.id)));
         if (nuevos.length > 0) break;
         await new Promise((r) => setTimeout(r, 300));
       }
-
-      aplicarColeccionRecargada(catalogo.coleccion, docs);
 
       if (nuevos.length >= 1) {
         const elegido = nuevos[nuevos.length - 1];
@@ -1078,7 +969,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     } catch (e) {
       console.error('Error recargando catálogo tras crear:', e);
     }
-  }, [modalCatalogo, recargarColeccion, aplicarColeccionRecargada]);
+  }, [modalCatalogo]);
 
   const nombreCortoEmpresa = (e: any): string => String(
     e?.nombreCorto ?? e?.nombre_corto ?? e?.nombrecorto ?? e?.shortName ?? e?.alias ?? ''
@@ -1103,7 +994,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
   //   puente del día: Importación → saldo de Caseta AVI · Exportación → saldo
   //   de Caseta Puente III (del catálogo Tipos de Gastos, que Saldos de
   //   Puentes mantiene al día). Solo se coloca una vez (no se pisa).
-  const STATUS_COMPLETADOS_IDS_SP = ['c2d57403', 'f557b751'];
+  // ✅ V00439 (Fase 3.6): los IDs de "Servicio Completado" son STATUS_COMPLETADOS (constantes).
   // ✅ V00388: aduana COLOMBIA → además de la caseta, el PISO del puente
   //   ("Puente Mx Colombia", monto fijo del catálogo). Nuevo Laredo: uno solo.
   const camposSaldoPuente = async (statusFinal: string, statusNombreSP?: string): Promise<Record<string, unknown>> => {
@@ -1119,7 +1010,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
       //   el peaje se descuenta al marcar el verde, con Completado de respaldo.
       const nSt = String(statusNombreSP || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
       const esVerdeSP = nSt.includes('verde mx') || nSt.includes('verde mexico') || nSt.includes('verde usa');
-      const esCompletadoSP = STATUS_COMPLETADOS_IDS_SP.includes(String(statusFinal || '').trim());
+      const esCompletadoSP = STATUS_COMPLETADOS.includes(String(statusFinal || '').trim());
       // ✅ V00377: la REGLA DE ESTATUS del flujo manda — el estatus marcado con
       //   "🌉 aquí se descuenta el puente" dispara; verdes solo sin regla.
       const infoFlujoSP = { ...(initialData as Record<string, unknown> | undefined || {}), tipoServicio: formData.tipoServicio, tipoOperacionId: formData.tipoOperacionId, trafico: formData.trafico, carga: formData.carga ?? (initialData as Record<string, unknown> | undefined)?.carga };
@@ -1156,7 +1047,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
             const cat = (tiposGastosLocal as any[]).find((t: any) => String(t.id) === gastoId);
             const montoCT = Number(vinculo.monto ?? vinculo.importe ?? vinculo.cantidad ?? vinculo.valor ?? 0) || Number(cat?.importe) || 0;
             if (montoCT > 0) {
-              const monCT = String(cat?.moneda || '') === '7dca62b3' ? 'Dólares' : String(cat?.moneda || '') === 'f95d8894' ? 'Pesos' : String(cat?.moneda || '');
+              const monCT = textoMonedaGasto(cat?.moneda); // ✅ V00439 (Fase 3.6)
               return { saldoPuente: montoCT, saldoPuentePuente: String(cat?.nombre_gasto || ''), saldoPuenteMoneda: monCT, saldoPuenteFecha: fechaSP0, saldoPuenteEvento: eventoSP0 };
             }
           }
@@ -1171,35 +1062,26 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
       const traf = String(formData.trafico || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
       const objetivo = traf.includes('import') ? 'caseta avi' : traf.includes('export') ? 'caseta puente' : '';
       if (!objetivo) return {};
-      const snap = await getDocs(collection(db, 'catalogo_tipos_gastos'));
+      // ✅ V00439 (Fase 3.6): tipos de gasto del listener compartido (antes getDocs de la colección).
+      const gastosSP = await obtenerCatalogo('catalogo_tipos_gastos');
       const normSP = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-      const d = snap.docs.find((x) => {
-        const n = normSP((x.data() as Record<string, unknown>).nombre_gasto);
+      const x = gastosSP.find((g) => {
+        const n = normSP(g.nombre_gasto);
         return objetivo === 'caseta avi' ? n === 'caseta avi' : (n === 'caseta puente iii' || n === 'caseta puente 3');
       });
-      if (!d) return {};
-      const x = d.data() as Record<string, unknown>;
-      const monedaSP = String(x.moneda || '') === '7dca62b3' ? 'Dólares' : String(x.moneda || '') === 'f95d8894' ? 'Pesos' : String(x.moneda || '');
+      if (!x) return {};
+      const monedaSP = textoMonedaGasto(x.moneda);
       return { saldoPuente: Number(x.importe) || 0, saldoPuentePuente: String(x.nombre_gasto || ''), saldoPuenteMoneda: monedaSP, saldoPuenteFecha: fechaSP0, saldoPuenteEvento: eventoSP0 };
     } catch (e) { console.warn('Saldo de puente al completar:', e); return {}; }
   };
 
-  useEffect(() => {
-    let activo = true;
-    (async () => {
-      try {
-        const snap = await getDocs(collection(db, 'config_flujos_operacion'));
-        if (!activo) return;
-        setFlujosIndex(snap.docs.map(d => {
-          const x = d.data() as any;
-          return { id: d.id, tipoServicio: x.tipoServicio || '', trafico: x.trafico || '', carga: x.carga || '' };
-        }));
-      } catch (e) { console.warn('No se pudo cargar el índice de flujos:', e); }
-    })();
-    return () => { activo = false; };
-  }, []);
+  // ✅ V00439 (Fase 3.6): índice de flujos desde el catálogo compartido config_flujos_operacion
+  //   (antes getDocs de la colección al abrir; ahora en vivo).
+  const flujosIndex = useMemo(() => cat.flujos.map((x) => ({
+    id: idReal(x), tipoServicio: String(x.tipoServicio || ''), trafico: String(x.trafico || ''), carga: String(x.carga || ''),
+  })), [cat.flujos]);
 
-  const buildConfigId = () => {
+  const buildConfigId = useCallback(() => {
     const tipoOpText = tiposOperacion?.find((op: any) => op.id === formData.tipoOperacionId)?.tipo_operacion || 'N/A';
     const traficoTxt = formData.trafico || 'N/A';
     const cargaTxt = formData.carga || 'N/A';
@@ -1222,7 +1104,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     const idGenerado = match ? match.id : idCrudo;
     console.log('🔑 configId generado:', idGenerado, match ? '(resuelto por índice)' : '(crudo)');
     return idGenerado;
-  };
+  }, [tiposOperacion, formData.tipoOperacionId, formData.trafico, formData.carga, flujosIndex]);
 
   const statusPrevioParaCalculo = (): string | undefined => {
     if (!initialData) return undefined;
@@ -1251,33 +1133,15 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     return den || idOp;
   }, [initialData, statusServicio]);
 
-  useEffect(() => {
-    let cancelado = false;
+  // ✅ V00439 (Fase 3.6): pestañas visibles y campos obligatorios del flujo salen del
+  //   catálogo compartido (antes un getDoc por combinación guardado en estado).
+  const configFormularioFlujo = useMemo(() => {
     const configId = buildConfigId();
-
-    if (!configId || configId.includes('N/A') || configId === '__' || !formData.tipoOperacionId) {
-      setPestanasVisiblesConfig(null);
-      setCamposObligatoriosConfig(null);
-      return;
-    }
-
-    (async () => {
-      try {
-        const snap = await getDoc(doc(db, 'config_flujos_operacion', idDocFlujo(configId)));
-        if (cancelado) return;
-        const data = snap.exists() ? (snap.data() as any) : null;
-        setPestanasVisiblesConfig(data && Array.isArray(data.pestanasVisibles) ? data.pestanasVisibles : null);
-        setCamposObligatoriosConfig(data && Array.isArray(data.camposObligatorios) ? data.camposObligatorios : null);
-      } catch {
-        if (!cancelado) {
-          setPestanasVisiblesConfig(null);
-          setCamposObligatoriosConfig(null);
-        }
-      }
-    })();
-
-    return () => { cancelado = true; };
-  }, [formData.tipoOperacionId, formData.trafico, formData.carga, tiposOperacion, flujosIndex]);
+    if (!configId || configId.includes('N/A') || configId === '__' || !formData.tipoOperacionId) return null;
+    return cat.flujos.find((f) => idReal(f) === idDocFlujo(configId)) ?? null;
+  }, [buildConfigId, formData.tipoOperacionId, cat.flujos]);
+  const pestanasVisiblesConfig = Array.isArray(configFormularioFlujo?.pestanasVisibles) ? configFormularioFlujo.pestanasVisibles as TabType[] : null;
+  const camposObligatoriosConfig = Array.isArray(configFormularioFlujo?.camposObligatorios) ? configFormularioFlujo.camposObligatorios as string[] : null;
 
   const pestanasVisibles = useMemo<TabType[]>(
     () => (pestanasVisiblesConfig === null ? TODAS_LAS_PESTANAS : pestanasVisiblesConfig),
@@ -1465,7 +1329,11 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     setFormData(prev => ({ ...prev, totalGastos: manifiesto + sueldo }));
   }, [formData.montoManifiesto, formData.sueldoTotal]);
 
-  useEffect(() => {
+  // ✅ V00439 (Fase 3.6): los catálogos ahora llegan EN VIVO. Si este paso dependiera de
+  //   las listas, cualquier cambio en Empresas/Unidades/Empleados (de otro usuario)
+  //   volvería a cargar initialData y borraría lo capturado. Se aplica al abrir y una vez
+  //   más cuando los catálogos base terminan de llegar (como antes al refrescarlos).
+  const aplicarDatosIniciales = useEffectEvent(() => {
     if (initialData && empresas && remolques) {
       const safeInitialData = {
         ...initialData,
@@ -1546,11 +1414,19 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
       setSearchConvenioProveedor(''); // ✅ V00239: se arma desde la lista de convenios
       setReferencia(initialData.ref || (initialData as any).referencia || '');
     }
-  }, [initialData, empresas, remolques, unidades, listaEmpleadosLocal, listaUniProvLocal, listaOpeProvLocal]);
+  });
+  useEffect(() => { aplicarDatosIniciales(); }, [initialData, catalogosBaseListos]);
 
   // ✅ FIX TIPO DE CAMBIO: al colocar la fecha busca el TC de forma TOLERANTE al
   //   formato (Timestamp/ISO/DD-MM-YYYY, etc.). Si no está en memoria lo trae
   //   DIRECTO de Firestore y lo autocompleta.
+  // ✅ V00439 (Fase 3.6): el catálogo de T.C. del padre ahora llega EN VIVO; el efecto
+  //   depende del T.C. de ESA fecha (no de la lista entera) para no pisar un ajuste
+  //   manual cada vez que cambia otro renglón de tipo_cambio.
+  const tcCatalogoDeFecha = useMemo(
+    () => buscarTCDeFecha(catalogoTCResuelto, normalizarFechaISO(formData.fechaServicio)),
+    [catalogoTCResuelto, formData.fechaServicio],
+  );
   useEffect(() => {
     if (!formData.fechaServicio) return;
 
@@ -1559,26 +1435,16 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
 
     const objetivoISO = normalizarFechaISO(formData.fechaServicio);
 
-    const buscarEn = (fuente: any[]): number | null => {
-      for (const row of (Array.isArray(fuente) ? fuente : [])) {
-        if (filaTCEsDeLaFecha(row, objetivoISO)) {
-          const r = extraerRateDeFilaTC(row);
-          if (r !== null) return r;
-        }
-      }
-      return null;
-    };
-
     (async () => {
       if (!objetivoISO) { if (!cancelado) { setTipoCambioDia(null); setBuscandoTC(false); } return; }
 
-      let tcEncontrado = buscarEn(catalogoTCResuelto);
+      let tcEncontrado = tcCatalogoDeFecha;
 
       if (tcEncontrado === null) {
         try {
           // ✅ V00438 (Fase 2.9): una consulta por fecha (limit 1) en vez de la colección completa.
           const fila = await obtenerFilaTipoCambioDeFecha(objetivoISO);
-          if (!cancelado && fila) tcEncontrado = buscarEn([fila]);
+          if (!cancelado && fila) tcEncontrado = buscarTCDeFecha([fila], objetivoISO);
         } catch { /* noop */ }
       }
 
@@ -1594,7 +1460,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     })();
 
     return () => { cancelado = true; };
-  }, [formData.fechaServicio, catalogoTCResuelto, initialData]);
+  }, [formData.fechaServicio, tcCatalogoDeFecha, initialData]);
 
   const refMaestroDetalle = (d: any): string => String(
     d.convenioId ?? d.convenio ?? d.id_convenio ?? d.convenioClienteId ?? d.convenioProveedorId ??
@@ -1611,12 +1477,29 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     d.tarifaMonto ?? d.valor ?? 0
   ) || 0;
 
-  const listaConveniosCliente = useMemo(() => {
+  // ✅ V00439 (Fase 3.6): con Empresas EN VIVO, los convenios dependen del cliente/proveedor
+  //   ya resuelto (id, o por nombre si aún no hay id) y no de la lista completa: un cambio
+  //   en OTRA empresa no recalcula los convenios ni vuelve a aplicar monto/sueldo/combustible.
+  const clientePagaIdResuelto = useMemo(() => {
     let clientId = formData.clientePaga;
     if (!clientId && searchClientePaga && empresas) {
       const emp = empresas.find((e: any) => e.nombre?.toLowerCase().trim() === searchClientePaga.toLowerCase().trim());
       if (emp) clientId = emp.id;
     }
+    return String(clientId || '').trim();
+  }, [formData.clientePaga, searchClientePaga, empresas]);
+
+  const proveedorIdResuelto = useMemo(() => {
+    let provId = formData.proveedorUnidad;
+    if (!provId && searchProvTransporte && empresas) {
+      const prov = empresas.find((e: any) => e.nombre?.toLowerCase().trim() === searchProvTransporte.toLowerCase().trim());
+      if (prov) provId = prov.id;
+    }
+    return String(provId || '').trim();
+  }, [formData.proveedorUnidad, searchProvTransporte, empresas]);
+
+  const listaConveniosCliente = useMemo(() => {
+    const clientId = clientePagaIdResuelto;
     if (!clientId || !catalogoConvClientes || !catalogoConvDetalles) {
       const convId = String(initialData?.convenio || '').trim();
       if (initialData && convId) {
@@ -1779,14 +1662,10 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     const numDe = (c: { consecutivo?: unknown; id?: unknown }) => Number(claveConsecutivo(c.consecutivo || c.id)) || Number.MAX_SAFE_INTEGER;
     lista.sort((a: { consecutivo?: unknown; id?: unknown }, b: { consecutivo?: unknown; id?: unknown }) => numDe(a) - numDe(b));
     return lista;
-  }, [formData.clientePaga, searchClientePaga, catalogoConvClientes, catalogoConvDetalles, tarifas, empresas, initialData, tarifariosLocal]); // ✅ V00272
+  }, [clientePagaIdResuelto, catalogoConvClientes, catalogoConvDetalles, tarifas, initialData, tarifariosLocal]); // ✅ V00272 · V00439
 
   const listaConveniosProveedor = useMemo(() => {
-    let provId = formData.proveedorUnidad;
-    if (!provId && searchProvTransporte && empresas) {
-      const prov = empresas.find((e: any) => e.nombre?.toLowerCase().trim() === searchProvTransporte.toLowerCase().trim());
-      if (prov) provId = prov.id;
-    }
+    const provId = proveedorIdResuelto; // ✅ V00439 (Fase 3.6)
     if (!provId || !conveniosProv || !Array.isArray(conveniosProv)) {
       const convProvId = String(initialData?.convenioProveedor || '').trim();
       if (initialData && convProvId) {
@@ -1888,7 +1767,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     }
 
     return lista;
-  }, [formData.proveedorUnidad, searchProvTransporte, conveniosProv, catalogoConvProvDetalles, tarifas, empresas, initialData, tarifariosProvLocal]); // ✅ V00272
+  }, [proveedorIdResuelto, conveniosProv, catalogoConvProvDetalles, tarifas, initialData, tarifariosProvLocal]); // ✅ V00272 · V00439
 
   useEffect(() => {
     if (!initialData) return;
@@ -1928,15 +1807,6 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialData, remolques, searchRemolque, formData.numeroRemolque]);
 
-  const clientePagaIdResuelto = useMemo(() => {
-    let clientId = formData.clientePaga;
-    if (!clientId && searchClientePaga && empresas) {
-      const emp = empresas.find((e: any) => e.nombre?.toLowerCase().trim() === searchClientePaga.toLowerCase().trim());
-      if (emp) clientId = emp.id;
-    }
-    return String(clientId || '').trim();
-  }, [formData.clientePaga, searchClientePaga, empresas]);
-
   const convenioClienteMaestroId = useMemo(() => {
     if (!clientePagaIdResuelto || !catalogoConvClientes) return '';
     const maestro = catalogoConvClientes.find((c: any) => String(
@@ -1944,15 +1814,6 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     ).trim() === clientePagaIdResuelto);
     return maestro ? String(maestro.id) : '';
   }, [clientePagaIdResuelto, catalogoConvClientes]);
-
-  const proveedorIdResuelto = useMemo(() => {
-    let provId = formData.proveedorUnidad;
-    if (!provId && searchProvTransporte && empresas) {
-      const prov = empresas.find((e: any) => e.nombre?.toLowerCase().trim() === searchProvTransporte.toLowerCase().trim());
-      if (prov) provId = prov.id;
-    }
-    return String(provId || '').trim();
-  }, [formData.proveedorUnidad, searchProvTransporte, empresas]);
 
   const convenioProvMaestroId = useMemo(() => {
     if (!proveedorIdResuelto || !conveniosProv) return '';
@@ -2241,8 +2102,11 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
   //   - Convenio MXN + Factura MXN: Pesos = monto; Conversión = monto directo.
   //   - Convenio MXN + Factura USD: Dólares = monto ÷ TC; Conversión = monto (ya es MXN).
   //   Si la moneda del convenio no se identifica, se usa la de la factura (regla anterior).
-  const esMonedaUSD = (id: any) => id === ID_USD || (listaMonedasLocal.find((m: any) => m.id === id)?.moneda || '').toUpperCase().includes('USD') || (listaMonedasLocal.find((m: any) => m.id === id)?.moneda || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().includes('DOLAR');
-  const esMonedaMXN = (id: any) => id === ID_MXN || (listaMonedasLocal.find((m: any) => m.id === id)?.moneda || '').toUpperCase().includes('MXN') || (listaMonedasLocal.find((m: any) => m.id === id)?.moneda || '').toUpperCase().includes('PESO');
+  // ✅ V00439 (Fase 3.6): moneda con la regla compartida (monedaCanonica: ID, código o
+  //   nombre) y, si es otro ID del catálogo de Monedas, por el nombre de ese registro.
+  const monedaDe = (v: unknown) => monedaCanonica(v) ?? monedaCanonica(listaMonedasLocal.find((m: { id?: unknown }) => String(m.id) === String(v ?? ''))?.moneda);
+  const esMonedaUSD = (v: unknown) => monedaDe(v) === 'USD';
+  const esMonedaMXN = (v: unknown) => monedaDe(v) === 'MXN';
   const desglosarPorMonedas = (subtotal: number, tc: number, monConvenio: any, monFactura: any) => {
     let dol = 0, pes = 0, conv = 0;
     const convUSD = esMonedaUSD(monConvenio), convMXN = esMonedaMXN(monConvenio);
@@ -2399,33 +2263,22 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
   const filClientesMercancia = useMemo(() => empresas?.filter((e:any) => (contieneId(e.tiposEmpresa, '51246232') || contieneId(e.tiposEmpresa, TIPO_EMP_CLIENTE_MERCANCIA)) && e.status === 'Activa') || [], [empresas]);
   // ✅ Solo empresas con tiposEmpresa 11894dfd (o su nombre) Y tiposServicio 42afffd3 o 7e70a3f7.
   const filProveedoresServicios = useMemo(() => empresas?.filter((e:any) =>
-    (contieneId(e.tiposEmpresa, TIPO_EMPRESA_PROV_SERVICIOS_ID) || contieneId(e.tiposEmpresa, TIPO_EMP_PROV_SERVICIOS)) &&
+    (contieneId(e.tiposEmpresa, TIPO_EMPRESA.proveedorServicios) || contieneId(e.tiposEmpresa, TIPO_EMP_PROV_SERVICIOS)) &&
     TIPOS_SERVICIO_PROV_MANIFIESTO.some(idServ => contieneId(e.tiposServicio, idServ))
   ) || [], [empresas]);
   // ✅ Costo del manifiesto automático según el tipo de servicio del proveedor:
   //   42afffd3 -> costo por defecto ($8.52); cualquier otro -> 0.
   const montoManifiestoDeProveedor = (emp: any): number =>
     contieneId(emp?.tiposServicio, TIPO_SERVICIO_CON_COSTO_MANIFIESTO) ? COSTO_MANIFIESTO_DEFAULT : 0;
-  const filOrigenesDestinos = useMemo(() => empresas?.filter((e:any) => (contieneId(e.tiposEmpresa, '6e7af5ab') || contieneId(e.tiposEmpresa, TIPO_EMP_ORIGEN_DESTINO)) && e.status === 'Activa') || [], [empresas]);
+  const filOrigenesDestinos = useMemo(() => empresas?.filter((e:any) => (contieneId(e.tiposEmpresa, TIPO_EMPRESA.bodega) || contieneId(e.tiposEmpresa, TIPO_EMP_ORIGEN_DESTINO)) && e.status === 'Activa') || [], [empresas]);
 
   // ✅ Catálogo de DIRECCIONES por id (las empresas guardan direccionId).
-  //   Se lee UNA vez al abrir el formulario con getDocs (ya importado).
-  const [mapaDirecciones, setMapaDirecciones] = useState<Record<string, any>>({});
-  useEffect(() => {
-    let cancelado = false;
-    (async () => {
-      try {
-        const snap = await getDocs(collection(db, 'direcciones'));
-        if (cancelado) return;
-        const m: Record<string, any> = {};
-        snap.docs.forEach(d => { m[d.id] = { id: d.id, ...(d.data() as any) }; });
-        setMapaDirecciones(m);
-      } catch (e) {
-        console.warn('[FormularioOperacion] No se pudo leer el catálogo de direcciones:', e);
-      }
-    })();
-    return () => { cancelado = true; };
-  }, []);
+  // ✅ V00439 (Fase 3.6): sale del catálogo compartido (antes getDocs al abrir el formulario).
+  const mapaDirecciones = useMemo(() => {
+    const m: Record<string, FilaCatalogo> = {};
+    cat.direcciones.forEach((d) => { m[idReal(d)] = d; });
+    return m;
+  }, [cat.direcciones]);
 
   const direccionDeEmpresaOD = (e: any) => mapaDirecciones[String(e?.direccionId || '')] || null;
   const direccionFormateadaOD = (e: any) => formatearDireccionPorPais(direccionDeEmpresaOD(e), e?.direccion || e?.direccionLabel || '');
@@ -2703,7 +2556,6 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formData.trafico, formData.puenteId, mostrarPuente, opcionesPuente.length, initialData]);
 
-  const ID_STATUS_CANCELADO = '7607f692';
   const usuarioActualCancel = useUsuarioStore((s) => s.usuario);
 
   // ✅ V00438 (Fase 2.10): el guardado completo (incluidas las subidas de documentos que
@@ -2729,7 +2581,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- initialData sin tipo canónico (mismo criterio del archivo).
     const statusPrevio = String((initialData as any)?.status || '');
     let datosCancelacion: Record<string, string> | null = null;
-    if (statusNuevo === ID_STATUS_CANCELADO && statusPrevio !== ID_STATUS_CANCELADO) {
+    if (statusNuevo === STATUS_CANCELADO && statusPrevio !== STATUS_CANCELADO) { // ✅ V00439 (Fase 3.6): ID desde constantes
       let motivo = '';
       while (!motivo.trim()) {
         const respuesta = window.prompt('Para CANCELAR esta referencia escribe el motivo de la cancelación (obligatorio):', '');
@@ -3088,16 +2940,8 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     }
   }, [mostrarConveniosCliente, mostrarConveniosProveedor, detalleConvEditando, detalleConvProvEditando, cargarUsoTarifas]);
 
-  const refrescarConvDetallesCliente = useCallback(async () => {
-    try {
-      const snap = await getDocs(collection(db, 'convenios_clientes_detalles'));
-      const docs = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-      setConvDetallesLocal(docs);
-      try { if (docs.length > 0) localStorage.setItem('cat_v2__catalogoConvDetalles', JSON.stringify({ ts: Date.now(), data: docs })); } catch { /* noop */ }
-    } catch (e) {
-      console.error('Error refrescando detalles de convenios:', e);
-    }
-  }, []);
+  // ✅ V00439 (Fase 3.6): sin releer convenios_clientes_detalles al guardar: el listener
+  //   compartido trae el cambio (antes getDocs + copia en localStorage).
 
   const abrirEditorConvenio = (c: any) => {
     setDetalleConvEditando({
@@ -3136,7 +2980,6 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
       } else {
         await updateDoc(doc(db, 'convenios_clientes_detalles', String(detalleConvEditando.id)), payload);
       }
-      await refrescarConvDetallesCliente();
       setDetalleConvEditando(null);
     } catch (e) {
       console.error('Error guardando detalle de convenio:', e);
@@ -3148,16 +2991,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
 
   // ✅ V00272: eliminarDetalleConvenio retirado — el alta/baja de convenios vive en los módulos de Convenios.
 
-  const refrescarConvProvDetalles = useCallback(async () => {
-    try {
-      const snap = await getDocs(collection(db, 'convenios_proveedores_detalles'));
-      const docs = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-      setConvProvDetallesLocal(docs);
-      try { if (docs.length > 0) localStorage.setItem('cat_v2__catalogoConvProvDetalles', JSON.stringify({ ts: Date.now(), data: docs })); } catch { /* noop */ }
-    } catch (e) {
-      console.error('Error refrescando detalles de convenios de proveedor:', e);
-    }
-  }, []);
+  // ✅ V00439 (Fase 3.6): igual para convenios_proveedores_detalles (listener compartido).
 
   const abrirEditorConvenioProv = (c: any) => {
     setDetalleConvProvEditando({
@@ -3193,7 +3027,6 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
       } else {
         await updateDoc(doc(db, 'convenios_proveedores_detalles', String(detalleConvProvEditando.id)), payload);
       }
-      await refrescarConvProvDetalles();
       setDetalleConvProvEditando(null);
     } catch (e) {
       console.error('Error guardando detalle de convenio de proveedor:', e);
@@ -3209,7 +3042,9 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
   const idOperacion = (initialData as any)?.id || '';
   const referenciaOperacion = referenciaDeOperacion(idOperacion, (initialData as any)?.ref);
 
-  if (!catalogosCacheados || !catalogosCacheados.empresas) return createPortal(<div className={`modal-overlay`}><div className="form-card fo-x6">Cargando catálogos de Roelca...</div></div>, document.body); // ✅ V00264
+  // ✅ V00439 (Fase 3.6): espera los catálogos base de la capa compartida (antes, que el padre
+  //   entregara catalogosCacheados.empresas).
+  if (!catalogosBaseListos) return createPortal(<div className={`modal-overlay`}><div className="form-card fo-x6">Cargando catálogos de Roelca...</div></div>, document.body); // ✅ V00264
 
   // ✅ V00264: el formulario (abierto O minimizado) se monta con un PORTAL en
   //   document.body. Así, con los módulos "vivos" (que se ocultan con
@@ -4132,12 +3967,11 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
           onClose={() => setDetalleConvenioEdit(null)}
           onGuardado={(det) => {
             const monId = resolverMonedaIdDeEmpresa({ moneda: det.moneda });
+            // ✅ V00439 (Fase 3.6): el detalle editado llega por el listener compartido (sin parchar copia local).
             if (detalleConvenioEdit.tipo === 'cliente') {
-              setConvDetallesLocal(prev => prev.map((d: any) => String(d.id) === det.id ? { ...d, tarifa: det.tarifa, moneda: det.moneda } : d));
               setFormData(prev => ({ ...prev, montoConvenioCliente: det.tarifa, monedaConvenioCliente: monId || prev.monedaConvenioCliente }));
               setSearchConvenio('');
             } else {
-              setConvProvDetallesLocal(prev => prev.map((d: any) => String(d.id) === det.id ? { ...d, tarifa: det.tarifa, moneda: det.moneda } : d));
               setFormData(prev => ({ ...prev, totalAPagarProv: det.tarifa, monedaConvenioProv: monId || prev.monedaConvenioProv }));
               setSearchConvenioProveedor('');
             }
@@ -4208,7 +4042,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
                         <td className="fo-x60 fo-col-consec">{String(c.tarifarioConsec || c.tarifarioId || '—')}</td>{/* ✅ V00272 */}
                         <td className="fo-x60 fo-col-consec">{String(c.consecutivo || c.id || '—')}</td>
                         <td className="fo-x60">{c.descripcion}{aduanaDeConv(c) && <span className="fo-chip-aduana" title="Aduana de la tarifa">{aduanaDeConv(c)}</span>}</td>
-                        <td className="fo-x61"><span className={`fo-chip-moneda${String(c.monedaMaestro) === ID_USD ? ' fo-chip-moneda--usd' : ' fo-chip-moneda--mxn'}`}>{String(c.monedaMaestro) === ID_USD ? 'USD' : 'MXN'}</span></td>{/* ✅ V00281 */}
+                        <td className="fo-x61"><span className={`fo-chip-moneda${esUSD(c.monedaMaestro) ? ' fo-chip-moneda--usd' : ' fo-chip-moneda--mxn'}`}>{esUSD(c.monedaMaestro) ? 'USD' : 'MXN'}</span></td>{/* ✅ V00281 */}
                         <td className="fo-x61">
                           {fmtMoney(c.tarifaMonto)}
                           {(c.montosAlt || []).length > 1 && (
@@ -4233,7 +4067,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
                           <td className="fo-x60" />
                           <td className="fo-x60 fo-col-consec fo-sub-tarifa">↳ Tarifa {String.fromCharCode(65 + i)}</td>
                           <td className="fo-x60">{c.descripcion}{aduanaDeConv(c) && <span className="fo-chip-aduana" title="Aduana de la tarifa">{aduanaDeConv(c)}</span>}</td>
-                          <td className="fo-x61"><span className={`fo-chip-moneda${String(c.monedaMaestro) === ID_USD ? ' fo-chip-moneda--usd' : ' fo-chip-moneda--mxn'}`}>{String(c.monedaMaestro) === ID_USD ? 'USD' : 'MXN'}</span></td>
+                          <td className="fo-x61"><span className={`fo-chip-moneda${esUSD(c.monedaMaestro) ? ' fo-chip-moneda--usd' : ' fo-chip-moneda--mxn'}`}>{esUSD(c.monedaMaestro) ? 'USD' : 'MXN'}</span></td>
                           <td className="fo-x61">{fmtMoney(m)}{m === Number(c.tarifaMonto) ? <span className="fo-vigente-tag">vigente</span> : null}</td>
                           <td className="fo-x62" />
                         </tr>
@@ -4326,7 +4160,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
                         <td className="fo-x60 fo-col-consec">{String(c.tarifarioConsec || c.tarifarioId || '—')}</td>{/* ✅ V00272 */}
                         <td className="fo-x60 fo-col-consec">{String(c.consecutivo || c.id || '—')}</td>{/* ✅ V00271 */}
                         <td className="fo-x60">{c.tipoConvenioNombre}</td>
-                        <td className="fo-x61"><span className={`fo-chip-moneda${String(c.monedaBase) === ID_USD ? ' fo-chip-moneda--usd' : ' fo-chip-moneda--mxn'}`}>{String(c.monedaBase) === ID_USD ? 'USD' : 'MXN'}</span></td>{/* ✅ V00281 */}
+                        <td className="fo-x61"><span className={`fo-chip-moneda${esUSD(c.monedaBase) ? ' fo-chip-moneda--usd' : ' fo-chip-moneda--mxn'}`}>{esUSD(c.monedaBase) ? 'USD' : 'MXN'}</span></td>{/* ✅ V00281 */}
                         <td className="fo-x61">
                           {fmtMoney(c.tarifaMonto)}
                           {(c.montosAlt || []).length > 1 && (
@@ -4351,7 +4185,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
                           <td className="fo-x60" />
                           <td className="fo-x60 fo-col-consec fo-sub-tarifa">↳ Tarifa {String.fromCharCode(65 + i)}</td>
                           <td className="fo-x60">{c.tipoConvenioNombre}</td>
-                          <td className="fo-x61"><span className={`fo-chip-moneda${String(c.monedaBase) === ID_USD ? ' fo-chip-moneda--usd' : ' fo-chip-moneda--mxn'}`}>{String(c.monedaBase) === ID_USD ? 'USD' : 'MXN'}</span></td>
+                          <td className="fo-x61"><span className={`fo-chip-moneda${esUSD(c.monedaBase) ? ' fo-chip-moneda--usd' : ' fo-chip-moneda--mxn'}`}>{esUSD(c.monedaBase) ? 'USD' : 'MXN'}</span></td>
                           <td className="fo-x61">{fmtMoney(m)}{m === Number(c.tarifaMonto) ? <span className="fo-vigente-tag">vigente</span> : null}</td>
                           <td className="fo-x62" />
                         </tr>
@@ -4402,6 +4236,19 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
   );
 };
 
+// ✅ V00439 (Fase 3.6): el formulario vive en un portal: ABIERTO se ve aunque su módulo
+//   esté oculto por MantenerVivo (p. ej. restaurado desde la píldora en otro módulo).
+//   Mientras está abierto sus catálogos compartidos siguen en vivo (como sus listeners
+//   propios de antes); minimizado, siguen la visibilidad de su módulo.
+function FormularioOperacionVisible(props: FormProps) {
+  const moduloVisible = useModuloVivoActivo();
+  return (
+    <ContextoModuloVivoActivo.Provider value={moduloVisible || props.estado === 'abierto'}>
+      <FormularioOperacionBase {...props} />
+    </ContextoModuloVivoActivo.Provider>
+  );
+}
+
 // ✅ V00438 (Fase 2.3): memo — no se vuelve a renderizar cuando el tablero padre se
 //   re-renderiza con las mismas props (los padres pasan props estables).
-export const FormularioOperacion = memo(FormularioOperacionBase);
+export const FormularioOperacion = memo(FormularioOperacionVisible);

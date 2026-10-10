@@ -2,8 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import { camposModificadosDe } from '../../autorizaciones/autorizaciones';
-import { collection, onSnapshot } from 'firebase/firestore';
-import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
+import { agregarRegistro, actualizarRegistro } from '../../../config/firebase';
+import { idReal, useCatalogo } from '../../../shared/data/catalogos';
 import './FormularioContacto.css';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 
@@ -24,18 +24,15 @@ export const FormularioContacto: React.FC<Props> = ({ estado, initialData, onClo
     correo: ''
   });
 
-  const [empresas, setEmpresas] = useState<any[]>([]);
+  // ✅ V00439 (Fase 3.x): empresas del listener compartido de catálogos (antes onSnapshot propio).
+  const { datos: empresasCat } = useCatalogo('empresas');
+  const empresas = useMemo(
+    () => empresasCat.map(d => ({ id: idReal(d), nombre: String(d.nombre || 'Sin nombre') })),
+    [empresasCat],
+  );
   const [busquedaEmpresa, setBusquedaEmpresa] = useState('');
   const [mostrarDropdown, setMostrarDropdown] = useState(false);
   const [guardando, setGuardando] = useState(false);
-
-  // Cargar empresas para el buscador
-  useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'empresas'), (snapshot) => {
-      setEmpresas(snapshot.docs.map(doc => ({ id: doc.id, nombre: doc.data().nombre || 'Sin nombre' })));
-    });
-    return () => unsub();
-  }, []);
 
   // Cargar datos si es edición
   useEffect(() => {

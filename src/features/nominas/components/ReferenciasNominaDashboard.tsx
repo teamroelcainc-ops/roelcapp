@@ -30,11 +30,29 @@ import './ReferenciasNominaDashboard.css';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { docsSinPruebas } from '../../../utils/operacionPrueba';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
+import { idReal, obtenerCatalogo, useCatalogos } from '../../../shared/data/catalogos';
+import { STATUS_COMPLETADOS } from '../../../shared/dominio/constantes';
 
 const ID_CARGO_OPERADOR = 'edda3a2b';
 // ✅ IDs de status "completada" en el catálogo (los mismos que usa Facturación
 //   de Clientes para su universo de operaciones facturables).
-const STATUS_COMPLETADOS_NOMINA = ['f557b751', 'c2d57403'];
+// ✅ V00439 (Fase 3.6): desde las constantes compartidas.
+const STATUS_COMPLETADOS_NOMINA = STATUS_COMPLETADOS;
+
+// ✅ V00439 (Fase 3.4): catálogos que usa el módulo, del listener compartido.
+const CATALOGOS_NOMINA = {
+  operadoresList: 'empleados', empresasList: 'empresas', formasPagoList: 'catalogo_formas_pago',
+  bancosList: 'catalogo_bancos', remolques: 'remolques',
+} as const;
+// Catálogos del FormularioOperacion (detalle de una operación), bajo demanda.
+const CATALOGOS_FORMULARIO = {
+  empresas: 'empresas', tiposOperacion: 'catalogo_tipo_operacion', embalajes: 'catalogo_embalaje',
+  remolques: 'remolques', tarifas: 'catalogo_tarifas_referencia', conveniosProv: 'convenios_proveedores',
+  catalogoConvProvDetalles: 'convenios_proveedores_detalles', catalogoTC: 'tipo_cambio',
+  catalogoConvClientes: 'convenios_clientes', catalogoConvDetalles: 'convenios_clientes_detalles',
+  unidades: 'unidades', empleados: 'empleados', statusServicio: 'catalogo_status_servicio',
+  unidades_proveedor: 'unidades_proveedor', proveedores_unidad: 'proveedores_unidad', catalogoMoneda: 'catalogo_moneda',
+} as const;
 
 // ✅ Quita el MONTO al inicio del nombre del Convenio Tarifa (ej.
 //   "$5,700.00 - Transfer Nuevo Laredo" → "Transfer Nuevo Laredo";
@@ -96,11 +114,10 @@ export const ReferenciasNominaDashboard = () => {
   // Esquema heredado sin tipo canónico: el resto del módulo lo lee campo por campo.
   const nominasGlobales: any[] = nominasPaginadas.nominas;
 
-  const [operadoresList, setOperadoresList] = useState<any[]>([]);
-  const [formasPagoList, setFormasPagoList] = useState<any[]>([]);
-  const [bancosList, setBancosList] = useState<any[]>([]);
+  // ✅ V00439 (Fase 3.4): empleados, empresas, formas de pago, bancos y remolques
+  //   del listener compartido (antes un onSnapshot propio de cada uno).
+  const { datos: { operadoresList, empresasList, formasPagoList, bancosList, remolques: catRemolques } } = useCatalogos(CATALOGOS_NOMINA);
   const [deduccionesList, setDeduccionesList] = useState<any[]>([]);
-  const [empresasList, setEmpresasList] = useState<any[]>([]);
   const [conveniosList, setConveniosList] = useState<any[]>([]);
 
   const [filtroOperador, setFiltroOperador] = useState('');
@@ -117,7 +134,13 @@ export const ReferenciasNominaDashboard = () => {
   const [draggedColOpsIndex, setDraggedColOpsIndex] = useState<number | null>(null);
   // ✅ Mapa id -> etiqueta de remolque (para la columna # Remolque cuando la
   //   operación guarda solo el id del catálogo).
-  const [mapaRemolques, setMapaRemolques] = useState<Record<string, string>>({});
+  const mapaRemolques = useMemo(() => {
+    const m: Record<string, string> = {};
+    catRemolques.forEach(r => {
+      m[idReal(r)] = `${String(r.nombre || '')} ${String(r.placas || r.placa || '')}`.trim() || idReal(r);
+    });
+    return m;
+  }, [catRemolques]);
 
   // ✅ Configuración de columnas COMPARTIDA: se escucha en vivo desde Firestore,
   //   así lo que guarda un usuario lo ven todos y sobrevive a las recargas.
@@ -128,18 +151,6 @@ export const ReferenciasNominaDashboard = () => {
         setColumnasOps(fusionarColumnasNominaGuardadas(data.columnas));
       }
     }, (err) => console.warn('[Nómina] No se pudo leer la configuración de columnas compartida:', err));
-    return () => unSub();
-  }, []);
-
-  useEffect(() => {
-    const unSub = onSnapshot(collection(db, 'remolques'), (snap) => {
-      const m: Record<string, string> = {};
-      snap.docs.forEach(d => {
-        const r: any = d.data();
-        m[d.id] = `${r?.nombre || ''} ${r?.placas || r?.placa || ''}`.trim() || d.id;
-      });
-      setMapaRemolques(m);
-    }, () => {});
     return () => unSub();
   }, []);
 
@@ -215,33 +226,18 @@ export const ReferenciasNominaDashboard = () => {
   // ═══════════════════════════════════════════════════════════════════════
   // ✅ (Detalle de operación desde nómina) Estados y utilidades:
   //   - opDetalle: operación abierta en el FormularioOperacion (editable).
-  //   - catalogosFormulario: catálogos que el formulario necesita; se cargan
-  //     UNA sola vez, bajo demanda, la primera vez que se abre un detalle.
+  //   - catalogosFormulario: catálogos que el formulario necesita; se piden
+  //     bajo demanda al abrir un detalle.
   // ═══════════════════════════════════════════════════════════════════════
   const [opDetalle, setOpDetalle] = useState<any | null>(null);
-  const [catalogosFormulario, setCatalogosFormulario] = useState<any | null>(null);
+  // ✅ V00439 (Fase 3.4): listener compartido mientras el detalle está abierto
+  //   (antes getDocs de 16 colecciones la primera vez, guardados en estado).
+  const { datos: catalogosFormulario } = useCatalogos(CATALOGOS_FORMULARIO, { activo: opDetalle !== null });
   const [cargandoDetalleOp, setCargandoDetalleOp] = useState(false);
 
-  const cargarCatalogosFormulario = async (): Promise<any> => {
-    if (catalogosFormulario) return catalogosFormulario;
-    const ALIAS: Record<string, string> = {
-      empresas: 'empresas', tiposOperacion: 'catalogo_tipo_operacion', embalajes: 'catalogo_embalaje',
-      remolques: 'remolques', tarifas: 'catalogo_tarifas_referencia', conveniosProv: 'convenios_proveedores',
-      catalogoConvProvDetalles: 'convenios_proveedores_detalles', catalogoTC: 'tipo_cambio',
-      catalogoConvClientes: 'convenios_clientes', catalogoConvDetalles: 'convenios_clientes_detalles',
-      unidades: 'unidades', empleados: 'empleados', statusServicio: 'catalogo_status_servicio',
-      unidades_proveedor: 'unidades_proveedor', proveedores_unidad: 'proveedores_unidad', catalogoMoneda: 'catalogo_moneda',
-    };
-    const resultado: any = {};
-    await Promise.all(Object.entries(ALIAS).map(async ([alias, col]) => {
-      try {
-        const snap = await getDocs(collection(db, col));
-        resultado[alias] = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-      } catch { resultado[alias] = []; }
-    }));
-    setCatalogosFormulario(resultado);
-    return resultado;
-  };
+  // Espera los catálogos del formulario (abre el listener compartido) antes de mostrarlo.
+  const cargarCatalogosFormulario = () =>
+    Promise.all(Object.values(CATALOGOS_FORMULARIO).map((col) => obtenerCatalogo(col)));
 
   // Relee UNA operación de Firestore y sincroniza sueldos en memoria
   // (tabla de asignación, tarjetas, modal de nómina y ficha).
@@ -483,24 +479,12 @@ export const ReferenciasNominaDashboard = () => {
   useEffect(() => {
     // ✅ Fase 1.8b: el listener de `referencias_nomina` (antes limit(400) SIN
     //   orderBy = 400 nóminas arbitrarias) vive en useNominasPaginadas.
-    const unSubEmpleados = onSnapshot(collection(db, 'empleados'), (snap) => {
-      setOperadoresList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-    });
-    const unSubEmpresas = onSnapshot(collection(db, 'empresas'), (snap) => {
-      setEmpresasList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-    });
     const unSubConvenios = onSnapshot(collection(db, 'catalogo_convenios'), (snap) => {
       setConveniosList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
     }, (err) => console.warn('[Nómina] No se pudo leer catalogo_convenios:', err));
     const unSubDeducciones = onSnapshot(collection(db, 'deducciones'), (snap) => {
       setDeduccionesList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
     }, (err) => console.warn('[Nómina] No se pudo leer deducciones:', err));
-    const unSubFormasPago = onSnapshot(collection(db, 'catalogo_formas_pago'), (snap) => {
-      setFormasPagoList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-    }, (err) => console.warn('[Nómina] No se pudo leer catalogo_formas_pago:', err));
-    const unSubBancos = onSnapshot(collection(db, 'catalogo_bancos'), (snap) => {
-      setBancosList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-    }, (err) => console.warn('[Nómina] No se pudo leer catalogo_bancos:', err));
     // ✅ NUEVO: catálogos de lugares/plazas para resolver Origen/Destino a NOMBRE.
     //   Se intentan varias colecciones candidatas; las que no existan simplemente
     //   se ignoran (sin romper nada). Todos los ids encontrados se combinan en un
@@ -525,7 +509,7 @@ export const ReferenciasNominaDashboard = () => {
       }, () => { /* colección inexistente o sin permiso: se ignora */ })
     );
 
-    return () => { unSubEmpleados(); unSubEmpresas(); unSubConvenios(); unSubDeducciones(); unSubFormasPago(); unSubBancos(); unsubsLugares.forEach(u => u()); };
+    return () => { unSubConvenios(); unSubDeducciones(); unsubsLugares.forEach(u => u()); };
   }, []);
 
   // Operaciones: solo se necesitan en la pestaña "Asignar Operaciones".
@@ -2507,7 +2491,7 @@ export const ReferenciasNominaDashboard = () => {
         <FormularioOperacion
           estado="abierto"
           initialData={opDetalle}
-          catalogosCacheados={catalogosFormulario || {}}
+          catalogosCacheados={catalogosFormulario}
           onClose={() => { const id = String(opDetalle?.id || ''); setOpDetalle(null); if (id) refrescarOpEnMemoria(id); }}
           onMinimize={() => {}}
           onRestore={() => {}}
@@ -2784,14 +2768,14 @@ export const ReferenciasNominaDashboard = () => {
                       <label style={labelNomStyle}>Forma de Pago</label>
                       <select value={formaPagoSeleccionada} onChange={e => setFormaPagoSeleccionada(e.target.value)} style={{ ...inputBaseStyle, color: '#fff' }}>
                         <option value="">Seleccionar...</option>
-                        {formasPagoList.map(f => <option key={f.id} value={f.id}>{f.forma_pago || f.nombre}</option>)}
+                        {formasPagoList.map(f => <option key={f.id} value={f.id}>{String(f.forma_pago || f.nombre || '')}</option>)}
                       </select>
                     </div>
                     <div>
                       <label style={labelNomStyle}>Banco</label>
                       <select value={bancoSeleccionado} onChange={e => setBancoSeleccionado(e.target.value)} style={{ ...inputBaseStyle, color: '#fff' }}>
                         <option value="">Seleccionar...</option>
-                        {bancosList.map(b => <option key={b.id} value={b.id}>{b.nombre || b.banco}</option>)}
+                        {bancosList.map(b => <option key={b.id} value={b.id}>{String(b.nombre || b.banco || '')}</option>)}
                       </select>
                     </div>
                   </div>

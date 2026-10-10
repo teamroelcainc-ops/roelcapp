@@ -1,10 +1,10 @@
 // src/features/contactos/components/ContactosDashboard.tsx
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot } from 'firebase/firestore';
 import { db, eliminarRegistro } from '../../../config/firebase';
 import { FormularioContacto } from './FormularioContacto';
 import './ContactosDashboard.css';
-import { almacenSesion } from '../../../utils/cacheMemoria';
+import { idReal, useCatalogo } from '../../../shared/data/catalogos';
 import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 
 // ✅ TODAS LAS COLUMNAS DE LA COLECCIÓN CON NOMBRES LEGIBLES
@@ -22,7 +22,13 @@ export const ContactosDashboard = () => {
   
   const [contactoViendo, setContactoViendo] = useState<any | null>(null);
   const [contactos, setContactos] = useState<any[]>([]);
-  const [empresasDict, setEmpresasDict] = useState<Record<string, string>>({});
+  // ✅ V00439 (Fase 3.x): empresas del listener compartido (antes getDocs + copia en almacenSesion).
+  const { datos: empresasCat } = useCatalogo('empresas');
+  const empresasDict = useMemo(() => {
+    const dict: Record<string, string> = {};
+    empresasCat.forEach(e => { dict[idReal(e)] = String(e.nombre || 'Sin nombre'); });
+    return dict;
+  }, [empresasCat]);
   const [busqueda, setBusqueda] = useState('');
   // ✅ NUEVO: panel lateral derecho de filtros + tabla VACÍA hasta presionar Buscar.
   const [drawerFiltrosAbierto, setDrawerFiltrosAbierto] = useState(false);
@@ -38,32 +44,8 @@ export const ContactosDashboard = () => {
   const [columnasTabla, setColumnasTabla] = useState(COLUMNAS_BASE.map(c => ({ ...c })));
   const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
 
-  // Cargar Contactos y Diccionario de Empresas (Optimizado con Caché)
+  // Cargar Contactos
   useEffect(() => {
-    const fetchEmpresas = async () => {
-      const cacheKey = 'roelca_empresas_contactos_dict';
-      const cacheData = almacenSesion.getItem(cacheKey);
-
-      if (cacheData) {
-        setEmpresasDict(JSON.parse(cacheData));
-        return;
-      }
-
-      console.warn(`[FIREBASE READ] Descargando catálogo de empresas para Contactos...`);
-      try {
-        const snap = await getDocs(collection(db, 'empresas'));
-        const dict: Record<string, string> = {};
-        snap.forEach(doc => { dict[doc.id] = doc.data().nombre || 'Sin nombre'; });
-        
-        almacenSesion.setItem(cacheKey, JSON.stringify(dict));
-        setEmpresasDict(dict);
-      } catch (e) {
-        console.error("Error al cargar empresas:", e);
-      }
-    };
-
-    fetchEmpresas();
-
     const unsubContactos = onSnapshot(collection(db, 'contactos'), (snapshot) => {
       setContactos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });

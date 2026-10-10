@@ -8,8 +8,7 @@
 //   tu PC y luego subes la carpeta completa con el botón 📁.
 // ---------------------------------------------------------------------------
 import JSZip from 'jszip';
-import { collection, getDocs } from 'firebase/firestore';
-import { db } from '../../config/firebase';
+import { estadoCatalogo, obtenerCatalogo } from '../../shared/data/catalogos';
 
 const sanitizar = (s: string) => String(s || '').trim().replace(/[/\\:*?"<>|#]+/g, '').replace(/\s+/g, ' ').trim();
 const normalizar = (s: string) => sanitizar(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -20,13 +19,15 @@ export const exportarEstructuraCarpetas = async (p: {
   /** categorías del catálogo que aplican (ej. ['cliente','empresa'] o ['empleado']) */
   modulos: string[];
 }): Promise<number> => {
-  const snap = await getDocs(collection(db, 'catalogo_tipo_archivo'));
+  // ✅ V00439 (Fase 3.x): del listener compartido de catálogos (antes getDocs propio).
+  const docsTipos = await obtenerCatalogo('catalogo_tipo_archivo');
+  const errorTipos = estadoCatalogo('catalogo_tipo_archivo').error;
+  if (docsTipos.length === 0 && errorTipos) throw new Error(errorTipos);
   const modsBuscados = p.modulos.map(normalizar);
-  const tipos = snap.docs
-    .map((d) => {
-      const x: any = d.data();
+  const tipos = docsTipos
+    .map((x) => {
       const mods = (Array.isArray(x.modulo) ? x.modulo : String(x.modulo || '').split(','))
-        .map((m: any) => normalizar(String(m)));
+        .map((m: unknown) => normalizar(String(m)));
       return { nombre: sanitizar(String(x.nombre || '')), mods, orden: Number(x.orden) || 9999 };
     })
     .filter((t) => t.nombre && (t.mods.includes('todos') || t.mods.some((m: string) => modsBuscados.some((b) => m.includes(b) || b.includes(m)))))

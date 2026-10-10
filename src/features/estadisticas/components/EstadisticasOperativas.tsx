@@ -13,10 +13,10 @@
 //   Los filtros (línea, tipo de operación, C/V) se alimentan de los CATÁLOGOS.
 //   La parte MONETARIA vive en las demás pestañas de EstadisticasDashboard.
 // ---------------------------------------------------------------------------
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { Download } from 'lucide-react';
-import { cargarCatalogo, TTL } from '../../../hooks/useCatalogoCache';
+import { useCatalogos } from '../../../shared/data/catalogos';
 import { capitalizar } from './DesgloseJerarquico';
 import './EstadisticasOperativas.css';
 
@@ -64,16 +64,11 @@ const grupoTipoDe = (nombre: string): 'Exportación' | 'Importación' | 'Movimie
 
 export function EstadisticasOperativas({ ops, fechaDesde, fechaHasta, lineaDeOp, esNoCobrable, nombreCliente, onVerOps }: Props) {
   const [sub, setSub] = useState<SubPestana>('diario');
-  const [catTipos, setCatTipos] = useState<any[]>([]);
-  const [catCV, setCatCV] = useState<any[]>([]);
+  // ✅ V00439 (Fase 3.4): catálogos desde el listener compartido (antes cargarCatalogo con caché local).
+  const { datos: { catTipos, catCV } } = useCatalogos({ catTipos: 'catalogo_tipo_operacion', catCV: 'catalogo_carga_vacia' });
   const filtroLinea: 'Todas' | Linea = 'Todas';
   const [filtroTipos, setFiltroTipos] = useState<string[]>([]);
   const [filtroCV, setFiltroCV] = useState<string>('Todas');
-
-  useEffect(() => {
-    cargarCatalogo('catalogo_tipo_operacion', { ttlMs: TTL.MEDIO }).then(setCatTipos).catch(() => {});
-    cargarCatalogo('catalogo_carga_vacia', { ttlMs: TTL.MEDIO }).then(setCatCV).catch(() => {});
-  }, []);
 
   // ✅ V00253: RESOLVEDORES TOLERANTES A DATOS MIGRADOS de AppSheet.
   //   Las operaciones de meses anteriores guardan estos datos distinto y por
@@ -141,14 +136,14 @@ export function EstadisticasOperativas({ ops, fechaDesde, fechaHasta, lineaDeOp,
   // Opciones de filtro: catálogo ∪ valores presentes en las operaciones (por si hay nombres viejos)
   const opcionesTipo = useMemo(() => {
     const set = new Map<string, string>();
-    catTipos.forEach((t: any) => { const n = String(t.tipo_operacion || t.nombre || '').trim(); if (n) set.set(norm(n), n); });
+    catTipos.forEach((t) => { const n = String(t.tipo_operacion || t.nombre || '').trim(); if (n) set.set(norm(n), n); });
     ops.forEach((op) => { const n = tipoDe(op); if (n && !set.has(norm(n))) set.set(norm(n), n); });
     return Array.from(set.values()).sort((a, b) => a.localeCompare(b, 'es'));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- tipoDe se recrea por render; catTipos ya está en deps
   }, [catTipos, ops]);
   const opcionesCV = useMemo(() => {
     const set = new Map<string, string>();
-    catCV.forEach((c: any) => { const n = String(c.nombre || c.estado_carga || '').trim(); if (n) set.set(norm(n), n); });
+    catCV.forEach((c) => { const n = String(c.nombre || c.estado_carga || '').trim(); if (n) set.set(norm(n), n); });
     ops.forEach((op) => { const n = cvDe(op); if (n && !set.has(norm(n))) set.set(norm(n), n); });
     return Array.from(set.values());
     // eslint-disable-next-line react-hooks/exhaustive-deps -- cvDe se recrea por render; catCV ya está en deps

@@ -1,7 +1,7 @@
 // src/features/unidadesProveedor/components/ProveedoresUnidadDashboard.tsx
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
-import { db, eliminarRegistro } from '../../../config/firebase'; 
+import { eliminarRegistro } from '../../../config/firebase'; 
+import { useCatalogo } from '../../../shared/data/catalogos';
 import { FormularioProveedorUnidad } from './FormularioProveedorUnidad';
 import type { UnidadProveedorRecord } from '../../../types/unidadProveedor';
 import * as XLSX from 'xlsx';
@@ -22,7 +22,14 @@ const ProveedoresUnidadDashboard: React.FC = () => {
   const [estadoFormulario, setEstadoFormulario] = useState<'cerrado' | 'abierto' | 'minimizado'>('cerrado');
   const [registroEditando, setRegistroEditando] = useState<any | null>(null);
   
-  const [registrosGlobales, setRegistrosGlobales] = useState<UnidadProveedorRecord[]>([]);
+  // ✅ V00439 (Fase 3.x): listener compartido del catálogo (antes onSnapshot propio).
+  //   Ojo: esta vista lee `unidades_proveedor` aunque su formulario guarda en `proveedores_unidad` (sin cambio).
+  const { datos: unidadesProvCat } = useCatalogo('unidades_proveedor');
+  const registrosGlobales = useMemo(
+    () => [...(unidadesProvCat as unknown as UnidadProveedorRecord[])]
+      .sort((a, b) => (a.proveedorNombre || '').localeCompare(b.proveedorNombre || '')),
+    [unidadesProvCat],
+  );
   const [busqueda, setBusqueda] = useState('');
   // ✅ NUEVO: panel lateral derecho de filtros + tabla VACÍA hasta presionar Buscar.
   const [drawerFiltrosAbierto, setDrawerFiltrosAbierto] = useState(false);
@@ -37,15 +44,6 @@ const ProveedoresUnidadDashboard: React.FC = () => {
   const [modalColumnas, setModalColumnas] = useState(false);
   const [columnasTabla, setColumnasTabla] = useState(COLUMNAS_BASE.map(c => ({ ...c })));
   const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
-
-  useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'unidades_proveedor'), (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as UnidadProveedorRecord[];
-      data.sort((a, b) => (a.proveedorNombre || '').localeCompare(b.proveedorNombre || ''));
-      setRegistrosGlobales(data);
-    });
-    return () => unsubscribe();
-  }, []);
 
   useEffect(() => {
     setPaginaActual(1);

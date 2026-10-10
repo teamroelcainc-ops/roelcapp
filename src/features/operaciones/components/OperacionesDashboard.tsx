@@ -9,7 +9,6 @@ import { FormularioOperacion } from './FormularioOperacion';
 import { ResumenDiarioOperaciones } from '../../reportes/components/ResumenDiarioOperaciones';
 import { collection, doc, writeBatch, query, getDoc, getDocs, limit, where, startAfter, orderBy, onSnapshot, setDoc } from 'firebase/firestore';
 import { DocumentosLista } from '../../documentos/DocumentosLista'; // ✅ V00344
-import { obtenerUsuarioAut } from '../../autorizaciones/autorizaciones'; // ✅ V00344
 import { db, eliminarRegistro } from '../../../config/firebase';
 import { useUsuarioStore } from '../../../stores/useUsuarioStore'; // ✅ V00430
 import { CambioSueldoOperador, HistorialCambiosSueldo } from './CambioSueldoOperador'; // ✅ V00433 
@@ -27,6 +26,12 @@ import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
 import { aduanaDeConvenio, camposPisoColombia, casetaRespaldoColombia, esAduanaColombia, esGastoPisoColombia, normPuente } from '../../../utils/puenteColombia';
 import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
 import { docPorId, nombreEmpresaPdf } from '../../../utils/docPorId';
+import type { DocLibre } from '../../../utils/docPorId';
+import { idReal, obtenerCatalogo, useCatalogo, useCatalogos } from '../../../shared/data/catalogos';
+import type { ColeccionCatalogo } from '../../../shared/data/catalogos';
+import { usePermisoRol } from '../../../shared/data/sesion';
+import { ID_MXN, ID_USD, STATUS_CANCELADO, STATUS_COMPLETADOS, STATUS_FINALES } from '../../../shared/dominio/constantes';
+import { monedaCanonica, nombreMoneda } from '../../../shared/dominio/moneda';
 import { mostrarCartaPara, useConfigCarta } from '../../../utils/configCartaInstrucciones';
 import { ConfigCartaModal } from './ConfigCartaModal';
 import { usePermisoFormularios } from '../../formularios/configFormularios';
@@ -40,49 +45,34 @@ const fmtFechaAuditoria = (iso: any): string => {
   } catch { return String(iso || ''); }
 };
 
-const ID_USD = '7dca62b3';
-const ID_MXN = 'f95d8894';
-
 const TAMANO_PAGINA = 50;
 
-const DIA_MS = 24 * 60 * 60 * 1000;
-const CATALOGOS_TTL_MS: Record<string, number> = {
-  statusServicio: 7 * DIA_MS, tiposOperacion: 7 * DIA_MS, embalajes: 7 * DIA_MS,
-  catalogoMoneda: 7 * DIA_MS, tarifas: 7 * DIA_MS,
-  empresas: DIA_MS, remolques: DIA_MS, unidades: DIA_MS, empleados: DIA_MS,
-  unidades_proveedor: DIA_MS, proveedores_unidad: DIA_MS,
-  conveniosProv: DIA_MS, catalogoConvProvDetalles: DIA_MS,
-  catalogoConvClientes: DIA_MS, catalogoConvDetalles: DIA_MS, catalogoTC: DIA_MS,
-};
-const TTL_DEFAULT = DIA_MS;
-// ✅ v2: se sube la versión de la clave para INVALIDAR cualquier caché vieja
-// (incluidas las que quedaron VACÍAS cuando un bloqueador cortó la llamada a
-// Firestore). Con v2, las cachés v1 dañadas se ignoran y todo se baja de nuevo.
-const claveCacheCatalogo = (alias: string) => `cat_v2__${alias}`;
-const leerCacheCatalogo = (alias: string): { ts: number; data: any[] } | null => {
-  try {
-    const raw = localStorage.getItem(claveCacheCatalogo(alias));
-    if (!raw) return null;
-    const obj = JSON.parse(raw);
-    return obj && Array.isArray(obj.data) ? obj : null;
-  } catch { return null; }
-};
-// ✅ NO guardar un catálogo VACÍO. Si una descarga vuelve con 0 documentos
-// (p. ej. la bloqueó una extensión), NO se cachea, para que se reintente en la
-// siguiente carga en lugar de quedarse pegado mostrando IDs para siempre.
-const escribirCacheCatalogo = (alias: string, data: any[]) => {
-  try {
-    if (!Array.isArray(data) || data.length === 0) return;
-    localStorage.setItem(claveCacheCatalogo(alias), JSON.stringify({ ts: Date.now(), data }));
-  } catch {}
-};
-// ✅ Una caché VACÍA NO se considera vigente → fuerza re-descarga.
-const cacheVigente = (alias: string): boolean => {
-  const obj = leerCacheCatalogo(alias);
-  if (!obj || !Array.isArray(obj.data) || obj.data.length === 0) return false;
-  const ttl = CATALOGOS_TTL_MS[alias] ?? TTL_DEFAULT;
-  return (Date.now() - (obj.ts || 0)) < ttl;
-};
+// ✅ V00439 (Fase 3.x): catálogos del módulo (alias → colección) desde el
+//   listener compartido (useCatalogos): sin getDocs propios ni copia en
+//   localStorage (cat_v2__) ni TTL. Mismos alias que antes (los recibe el
+//   formulario como `catalogosCacheados`).
+const COLECCIONES_CATALOGOS = {
+  statusServicio:            'catalogo_status_servicio',
+  tiposOperacion:            'catalogo_tipo_operacion',
+  embalajes:                 'catalogo_embalaje',
+  catalogoMoneda:            'catalogo_moneda',
+  tarifas:                   'catalogo_tarifas_referencia',
+  empresas:                  'empresas',
+  remolques:                 'remolques',
+  unidades:                  'unidades',
+  empleados:                 'empleados',
+  unidades_proveedor:        'unidades_proveedor',
+  proveedores_unidad:        'proveedores_unidad',
+  conveniosProv:             'convenios_proveedores',
+  catalogoConvProvDetalles:  'convenios_proveedores_detalles',
+  catalogoConvClientes:      'convenios_clientes',
+  catalogoConvDetalles:      'convenios_clientes_detalles',
+  catalogoTC:                'tipo_cambio',
+  // ✅ Las EMPRESAS guardan solo direccionId; los datos estructurados de la
+  //   dirección (calle, colonia, C.P., ciudad) viven en esta colección.
+  direcciones:               'direcciones',
+} as const satisfies Record<string, ColeccionCatalogo>;
+type AliasCatalogoOD = keyof typeof COLECCIONES_CATALOGOS;
 
 // ✅ NUEVO: ordena nombres de status por su número inicial (1, 3, 4.1, 5, 6,
 //    8.1, 8.2, 9, 10.1, 10.3, 10.5, 11, 11.2, 12.1, 13.1, 16, 18, 19) y, dentro
@@ -213,7 +203,7 @@ const OperacionesDashboard = () => {
         const snap = await getDocs(query(collection(db, 'operaciones'), where('__name__', '==', String(ped.docId)), limit(1)));
         if (!snap.empty) {
           const op = { id: snap.docs[0].id, ...(snap.docs[0].data() as any) };
-          await cargarCatalogosSiEsNecesario();
+          // ✅ V00439 (Fase 3.x): abrir el formulario/ficha activa los catálogos.
           // ✅ V00225: con vista 'detalle' se abre la FICHA (no el formulario).
           if (String(ped.vista || '') === 'detalle') {
             setOperacionViendo(op);
@@ -227,7 +217,6 @@ const OperacionesDashboard = () => {
         }
       } catch { /* noop */ }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
@@ -244,23 +233,12 @@ const OperacionesDashboard = () => {
   const [verDocsOp, setVerDocsOp] = useState(false);
   const [editandoVista, setEditandoVista] = useState(false);
   const [botonesOcultos, setBotonesOcultos] = useState<string[]>([]);
-  const [puedePersonalizarVista, setPuedePersonalizarVista] = useState(false);
-  useEffect(() => {
-    // ✅ V00364: el permiso viene de la casilla "Personalizar Vista (Operaciones)"
-    //   de Roles (modulosPermitidos del rol del usuario); Admin siempre puede.
-    obtenerUsuarioAut().then(async (u) => {
-      if (u.esAdmin) { setPuedePersonalizarVista(true); return; }
-      if ((u.roles || []).some((r) => String(r).toLowerCase().includes('personalizarvista'))) { setPuedePersonalizarVista(true); return; }
-      try {
-        const rolesSnap = await getDocs(collection(db, 'roles'));
-        const permitido = rolesSnap.docs.some((d) => {
-          const x = d.data() as Record<string, unknown>;
-          return (u.roles || []).includes(String(x.nombre || '')) && Array.isArray(x.modulosPermitidos) && (x.modulosPermitidos as unknown[]).includes('Personalizar Vista (Operaciones)');
-        });
-        setPuedePersonalizarVista(permitido);
-      } catch { setPuedePersonalizarVista(false); }
-    }).catch(() => {});
-  }, []);
+  // ✅ V00364: el permiso viene de la casilla "Personalizar Vista (Operaciones)"
+  //   de Roles (modulosPermitidos del rol del usuario); Admin siempre puede.
+  // ✅ V00439 (Fase 3.x): desde la sesión (usePermisoRol), sin leer la colección roles.
+  const permisoPersonalizarVista = usePermisoRol('Personalizar Vista (Operaciones)');
+  const rolesSesionOD = useUsuarioStore((st) => st.rolesEfectivos);
+  const puedePersonalizarVista = permisoPersonalizarVista || rolesSesionOD.some((r) => String(r).toLowerCase().includes('personalizarvista'));
   // ✅ V00438 (Fase 2.7): el listener de la vista solo vive mientras el módulo
   //   se ve; oculto conserva los botones ya leídos y al volver se re-suscribe.
   const moduloVisible = useModuloVivoActivo();
@@ -324,7 +302,14 @@ const OperacionesDashboard = () => {
   const [statusDelFlujo, setStatusDelFlujo] = useState<string[] | null>(null);
   // ✅ V00431: id de la operación cuyo flujo YA se consultó (null = sin reglas, no "cargando")
   const [flujoConsultadoDe, setFlujoConsultadoDe] = useState('');
-  const [catalogosGlobales, setCatalogosGlobales] = useState<any>({});
+  // ✅ V00439 (Fase 3.x): status siempre (botones de siguiente paso y modal de
+  //   movimientos); el resto solo con el formulario o la ficha abiertos (PDF,
+  //   carta). La tabla se pinta con los nombres ya guardados en cada operación.
+  useCatalogo('catalogo_status_servicio');
+  const necesitaCatalogos = estadoFormulario !== 'cerrado' || !!operacionViendo;
+  const { datos: datosCatalogos } = useCatalogos(COLECCIONES_CATALOGOS, { activo: necesitaCatalogos });
+  // Filas sin esquema fijo: mismo trato que docPorId (DocLibre).
+  const catalogosGlobales: Record<AliasCatalogoOD, DocLibre[]> = datosCatalogos;
 
   const [busqueda, setBusqueda] = useState('');
 
@@ -390,73 +375,26 @@ const OperacionesDashboard = () => {
     return { id: v, nombre: v };
   };
 
-  const COLECCIONES_CATALOGOS: Record<string, string> = {
-    statusServicio:            'catalogo_status_servicio',
-    tiposOperacion:            'catalogo_tipo_operacion',
-    embalajes:                 'catalogo_embalaje',
-    catalogoMoneda:            'catalogo_moneda',
-    tarifas:                   'catalogo_tarifas_referencia',
-    empresas:                  'empresas',
-    remolques:                 'remolques',
-    unidades:                  'unidades',
-    empleados:                 'empleados',
-    unidades_proveedor:        'unidades_proveedor',
-    proveedores_unidad:        'proveedores_unidad',
-    conveniosProv:             'convenios_proveedores',
-    catalogoConvProvDetalles:  'convenios_proveedores_detalles',
-    catalogoConvClientes:      'convenios_clientes',
-    catalogoConvDetalles:      'convenios_clientes_detalles',
-    catalogoTC:                'tipo_cambio',
-    // ✅ Las EMPRESAS guardan solo direccionId; los datos estructurados de la
-    //   dirección (calle, colonia, C.P., ciudad) viven en esta colección.
-    direcciones:               'direcciones',
-  };
-
-  const catalogosEnVueloRef = useRef<Set<string>>(new Set());
-
-  // ✅ `soloAlias` permite cargar SOLO ciertos catálogos. Al abrir el dashboard
-  //    cargamos únicamente lo mínimo (status), y los catálogos pesados (empresas,
-  //    unidades, empleados, convenios, tarifas…) se cargan bajo demanda al abrir
-  //    el formulario o generar un PDF. Esto reduce mucho el consumo de lecturas.
-  const cargarCatalogosSiEsNecesario = async (soloAlias?: string[]) => {
-    const entradas = soloAlias
-      ? Object.entries(COLECCIONES_CATALOGOS).filter(([alias]) => soloAlias.includes(alias))
-      : Object.entries(COLECCIONES_CATALOGOS);
-    const pendientes = entradas
-      .filter(([alias]) => !cacheVigente(alias) && !catalogosEnVueloRef.current.has(alias))
-      .map(([alias, col]) => ({ alias, col }));
-    if (pendientes.length === 0) return;
-    pendientes.forEach(p => catalogosEnVueloRef.current.add(p.alias));
-    await Promise.all(pendientes.map(async ({ alias, col }) => {
-      try {
-        const snap = await getDocs(collection(db, col));
-        const data = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-        escribirCacheCatalogo(alias, data);
-        setCatalogosGlobales((prev: any) => ({ ...prev, [alias]: data }));
-      } catch (e) {
-        console.error(`Error cargando catálogo "${col}":`, e);
-      } finally {
-        catalogosEnVueloRef.current.delete(alias);
-      }
-    }));
-  };
-
-  const hidratarCatalogosDesdeCache = () => {
-    const inicial: any = {};
-    Object.keys(COLECCIONES_CATALOGOS).forEach(alias => {
-      const c = leerCacheCatalogo(alias);
-      if (c && Array.isArray(c.data)) inicial[alias] = c.data;
-    });
-    if (Object.keys(inicial).length) {
-      setCatalogosGlobales((prev: any) => ({ ...prev, ...inicial }));
-    }
+  // ✅ V00439 (Fase 3.x): los PDF necesitan empresas y remolques AL MOMENTO
+  //   (el estado de React no cambia dentro del mismo clic): se esperan del
+  //   listener compartido; si ya está abierto, responde sin leer.
+  // ✅ V00439 (Fase 3.x): los PDF piden sus catálogos al momento del clic (el
+  //   listener de la ficha puede no haber llegado todavía si se abre y se descarga
+  //   de inmediato); si ya están abiertos, obtenerCatalogo responde al instante.
+  interface CatalogosPdf { empresas: DocLibre[]; remolques: DocLibre[]; unidades: DocLibre[]; unidadesProveedor: DocLibre[]; proveedoresUnidad: DocLibre[] }
+  const catalogosPdf = async (): Promise<CatalogosPdf> => {
+    const [empresas, remolques, unidades, unidadesProveedor, proveedoresUnidad] = await Promise.all([
+      obtenerCatalogo('empresas'), obtenerCatalogo('remolques'), obtenerCatalogo('unidades'),
+      obtenerCatalogo('unidades_proveedor'), obtenerCatalogo('proveedores_unidad'),
+    ]);
+    return { empresas, remolques, unidades, unidadesProveedor, proveedoresUnidad };
   };
 
   // ✅ Cursor robusto de paginación: guardamos el ÚLTIMO documento (snapshot),
   //    no solo su fecha, para no depender de que exista el campo `fechaServicio`.
   const ultimoDocRef = useRef<any>(null);
 
-  const IDS_STATUS_EXCLUIDOS = ['7607f692', 'f557b751', 'c2d57403'];
+  const IDS_STATUS_EXCLUIDOS = STATUS_FINALES; // ✅ V00439 (Fase 3.x): constantes compartidas
   // ✅ V00432: además de los ids, se excluye por NOMBRE del status (catálogo o
   //   guardado): Cancelado, Falso y Servicio Completado nunca son "activas",
   //   aunque el id venga de otro registro del catálogo o de un dato viejo.
@@ -623,11 +561,14 @@ const OperacionesDashboard = () => {
     )) return;
     setSincronizandoMonedas(true);
     try {
-      const [snapMon, snapEmp] = await Promise.all([
-        getDocs(collection(db, 'catalogo_moneda')),
-        getDocs(collection(db, 'empresas')),
+      // ✅ V00439 (Fase 3.x): monedas y empresas del listener compartido de catálogos.
+      const [monedasDocs, empresasDocs] = await Promise.all([
+        obtenerCatalogo('catalogo_moneda'),
+        obtenerCatalogo('empresas'),
       ]);
-      const monedasCat = snapMon.docs.map((d) => ({ id: d.id, moneda: String((d.data() as any).moneda || '') }));
+      // Sin empresas no hay contra qué comparar (antes el getDocs fallaba aquí).
+      if (empresasDocs.length === 0) throw new Error('No se pudo leer el catálogo de empresas.');
+      const monedasCat = monedasDocs.map((d) => ({ id: idReal(d), moneda: String(d.moneda || '') }));
       const resolver = (raw: string): string => {
         const v = String(raw || '').trim();
         if (!v) return '';
@@ -641,10 +582,9 @@ const OperacionesDashboard = () => {
       };
       const monedaEmpresa: Record<string, string> = {};
       const nombreEmpresa: Record<string, string> = {};
-      snapEmp.docs.forEach((d) => {
-        const e: any = d.data();
-        monedaEmpresa[d.id] = resolver(String(e.moneda ?? e.monedaId ?? e.monedaRef ?? ''));
-        nombreEmpresa[d.id] = String(e.nombre || e.empresa || d.id);
+      empresasDocs.forEach((e) => {
+        monedaEmpresa[idReal(e)] = resolver(String(e.moneda ?? e.monedaId ?? e.monedaRef ?? ''));
+        nombreEmpresa[idReal(e)] = String(e.nombre || e.empresa || idReal(e));
       });
 
       let revisadas = 0, cambiadasCli = 0, cambiadasProv = 0, opsEscritas = 0;
@@ -773,21 +713,6 @@ const OperacionesDashboard = () => {
   };
 
   useEffect(() => {
-    // ✅ V00438 (Fase 2.8): ya NO se purgan las claves cat_v1__/cat_v2__ al
-    //   montar: borraba la caché L2 de useCatalogoCache que usan otros módulos.
-    //   Una caché vacía o corrupta ya se ignora al leerla (leerCacheCatalogo /
-    //   cacheVigente) y se vuelve a descargar.
-
-    // Hidrata TODO lo que ya esté en caché local (localStorage) sin costo de
-    // lecturas, y desde Firestore SOLO baja el catálogo de status (necesario
-    // para los botones de "siguiente paso" y el modal de registrar movimiento).
-    // La tabla se pinta con los nombres ya guardados en cada operación.
-    hidratarCatalogosDesdeCache();
-    cargarCatalogosSiEsNecesario(['statusServicio']);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
     descargarOperaciones();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -824,13 +749,11 @@ const OperacionesDashboard = () => {
   }, [operacionViendo, mapaStatus]);
 
   const handleNuevo = async () => { 
-    await cargarCatalogosSiEsNecesario();
     setOperacionEditando(null); 
     setEstadoFormulario('abierto'); 
   };
   
   const editarOperacion = async (operacion: any) => { 
-    await cargarCatalogosSiEsNecesario();
     setOperacionEditando(operacion); 
     setOperacionViendo(null); 
     setEstadoFormulario('abierto'); 
@@ -873,7 +796,7 @@ const OperacionesDashboard = () => {
   //    muestra un ID: si no hay nombre guardado, devuelve '-'. Para monedas cae
   //    a la conversión ID→USD/MXN, que es local (sin catálogo).
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const mostrarDatoMapeado = (id: string | null | undefined, catalogo: keyof typeof catalogosGlobales, _campoRetorno: string = 'nombre', valorDesnormalizado?: string) => {
+  const mostrarDatoMapeado = (id: string | null | undefined, catalogo: string, _campoRetorno: string = 'nombre', valorDesnormalizado?: string) => {
     const v = valorDesnormalizado != null ? String(valorDesnormalizado).trim() : '';
     if (v && v !== '-' && v !== String(id ?? '').trim()) return String(valorDesnormalizado);
     if ((catalogo === 'catalogoMoneda' || catalogo === 'catalogo_moneda') && id) {
@@ -892,7 +815,7 @@ const OperacionesDashboard = () => {
   //   Verde USA (importación) → Caseta AVI en dólares · Verde MX (exportación)
   //   → Caseta Puente III en pesos. Al COMPLETAR queda como respaldo (por
   //   tráfico) si el verde no se registró. Nunca se cobra dos veces.
-  const STATUS_COMPLETADOS_IDS_SP = ['c2d57403', 'f557b751'];
+  const STATUS_COMPLETADOS_IDS_SP = STATUS_COMPLETADOS; // ✅ V00439 (Fase 3.x)
   // ✅ V00369: el peaje aplica SOLO a (1) Transfer y (2) Logística de Cruces
   //   con proveedor Roelca; Logística de Fletes NUNCA.
   const aplicaPeajeSP = (op: { tipoOperacionNombre?: unknown; proveedorUnidadNombre?: unknown }): boolean => {
@@ -914,12 +837,12 @@ const OperacionesDashboard = () => {
       const dd = det.data() as Record<string, unknown>;
       const tarifaBase = String(dd.tarifaBaseId ?? dd.tarifa_base_id ?? dd.tarifaReferenciaId ?? dd.tarifa_referencia_id ?? '').trim();
       if (!tarifaBase) return null;
-      const [vs, gs] = await Promise.all([getDocs(collection(db, 'tarifas_gastos_incluidos')), getDocs(collection(db, 'catalogo_tipos_gastos'))]);
+      // ✅ V00439 (Fase 3.x): gastos incluidos y tipos de gasto del listener compartido (antes getDocs por clic).
+      const [gastosIncluidos, tiposGastos] = await Promise.all([obtenerCatalogo('tarifas_gastos_incluidos'), obtenerCatalogo('catalogo_tipos_gastos')]);
       const normSP = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-      const gastoPorId = new Map(gs.docs.map((g) => [g.id, g.data() as Record<string, unknown>]));
+      const gastoPorId = new Map(tiposGastos.map((g) => [idReal(g), g]));
       const esColSP = esAduanaColombia(await aduanaDeConvenio(op?.convenio)); // ✅ V00416
-      for (const v of vs.docs) {
-        const g = v.data() as Record<string, unknown>;
+      for (const g of gastosIncluidos) {
         const ref = String(g.tarifa_referencia_id ?? g.tarifaReferenciaId ?? g.tarifa_referencia ?? g.tarifaReferencia ?? g.ID_SERVICES ?? g.id_services ?? g.idServices ?? g.tarifaId ?? '').trim();
         if (ref !== tarifaBase) continue;
         const gastoId = String(g.gasto ?? g.gastoId ?? g.gasto_id ?? '').trim();
@@ -963,7 +886,7 @@ const OperacionesDashboard = () => {
       // ✅ V00373: primero la caseta de los GASTOS INCLUIDOS de la tarifa
       const casetaTarifa = await casetaDeGastosSP(op);
       if (casetaTarifa && casetaTarifa.monto > 0) {
-        const monedaCT = String(casetaTarifa.moneda || '') === '7dca62b3' ? 'Dólares' : String(casetaTarifa.moneda || '') === 'f95d8894' ? 'Pesos' : String(casetaTarifa.moneda || '');
+        const monedaCT = nombreMoneda(monedaCanonica(casetaTarifa.moneda)) || String(casetaTarifa.moneda || ''); // ✅ V00439 (Fase 3.x)
         return { saldoPuente: casetaTarifa.monto, saldoPuentePuente: casetaTarifa.nombre, saldoPuenteMoneda: monedaCT, saldoPuenteFecha: fechaSP0, saldoPuenteEvento: eventoSP0 };
       }
       // ✅ V00388: aduana Colombia sin caseta en la tarifa → Caseta Mx Colombia (o Trompo Colombia)
@@ -979,15 +902,14 @@ const OperacionesDashboard = () => {
       const traf = String(op?.trafico || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
       const objetivo = traf.includes('import') ? 'avi' : traf.includes('export') ? 'p3' : esVerdeUSA ? 'avi' : esVerdeMX ? 'p3' : '';
       if (!objetivo) return {};
-      const snap = await getDocs(collection(db, 'catalogo_tipos_gastos'));
+      const tiposGastos = await obtenerCatalogo('catalogo_tipos_gastos'); // ✅ V00439 (Fase 3.x)
       const normSP = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-      const d = snap.docs.find((x) => {
-        const n = normSP((x.data() as Record<string, unknown>).nombre_gasto);
+      const x = tiposGastos.find((t) => {
+        const n = normSP(t.nombre_gasto);
         return objetivo === 'avi' ? n === 'caseta avi' : (n === 'caseta puente iii' || n === 'caseta puente 3');
       });
-      if (!d) return {};
-      const x = d.data() as Record<string, unknown>;
-      const monedaSP = String(x.moneda || '') === '7dca62b3' ? 'Dólares' : String(x.moneda || '') === 'f95d8894' ? 'Pesos' : String(x.moneda || '');
+      if (!x) return {};
+      const monedaSP = nombreMoneda(monedaCanonica(x.moneda)) || String(x.moneda || '');
       return { saldoPuente: Number(x.importe) || 0, saldoPuentePuente: String(x.nombre_gasto || ''), saldoPuenteMoneda: monedaSP, saldoPuenteFecha: fechaSP0, saldoPuenteEvento: eventoSP0 };
     } catch (e) { console.warn('Saldo de puente al completar:', e); return {}; }
   };
@@ -1081,8 +1003,8 @@ const OperacionesDashboard = () => {
     return `$ ${parseFloat(monto).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
-  const resolverRemolqueParaPDF = (): { nombre: string; placa: string } => {
-    const lista: any[] = Array.isArray(catalogosGlobales.remolques) ? catalogosGlobales.remolques : [];
+  const resolverRemolqueParaPDF = (cats: CatalogosPdf): { nombre: string; placa: string } => {
+    const lista: any[] = cats.remolques;
     const ref = operacionViendo?.numeroRemolque;
     const combinado = String(operacionViendo?.remolqueNombre || ref || '').trim();
     const primerToken = combinado.split(/\s+/)[0] || '';
@@ -1108,9 +1030,9 @@ const OperacionesDashboard = () => {
     return { nombre: nombre || 'N/A', placa: placa || 'N/A' };
   };
 
-  const resolverUnidadParaPDF = (): { nombre: string; placa: string } => {
+  const resolverUnidadParaPDF = (cats: CatalogosPdf): { nombre: string; placa: string } => {
     const refUnidad = operacionViendo?.unidad;
-    const listaU: any[] = Array.isArray(catalogosGlobales.unidades) ? catalogosGlobales.unidades : [];
+    const listaU: any[] = cats.unidades;
     const uObj = refUnidad ? listaU.find((u: any) => String(u.id).trim() === String(refUnidad).trim()) : undefined;
 
     let nombre = String(
@@ -1126,7 +1048,7 @@ const OperacionesDashboard = () => {
     ).trim();
 
     if (!nombre && operacionViendo?.unidadProveedor) {
-      const listaP: any[] = Array.isArray(catalogosGlobales.unidades_proveedor) ? catalogosGlobales.unidades_proveedor : [];
+      const listaP: any[] = cats.unidadesProveedor;
       const pObj = listaP.find((u: any) => String(u.id).trim() === String(operacionViendo.unidadProveedor).trim());
       if (pObj) {
         nombre = String(pObj.numeroUnidad || pObj.numeroEconomico || pObj.unidad || pObj.nombre || '').trim();
@@ -1137,12 +1059,12 @@ const OperacionesDashboard = () => {
     return { nombre: nombre || 'N/A', placa: placa || 'N/A' };
   };
 
-  const resolverOperadorParaPDF = (): string => {
+  const resolverOperadorParaPDF = (cats: CatalogosPdf): string => {
     if (operacionViendo?.operadorNombre) return String(operacionViendo.operadorNombre).trim();
     const mapeado = mostrarDatoMapeado(operacionViendo?.operador, 'empleados');
     if (mapeado && mapeado !== '-' && mapeado !== operacionViendo?.operador) return String(mapeado).trim();
     if (operacionViendo?.operadorProveedor) {
-      const listaP: any[] = Array.isArray(catalogosGlobales.proveedores_unidad) ? catalogosGlobales.proveedores_unidad : [];
+      const listaP: any[] = cats.proveedoresUnidad;
       const oObj = listaP.find((o: any) => String(o.id).trim() === String(operacionViendo.operadorProveedor).trim());
       if (oObj) return String(oObj.nombre || oObj.firstName || '').trim() || 'N/A';
     }
@@ -1234,7 +1156,7 @@ const OperacionesDashboard = () => {
   // ✅ V00430: CANCELAR LA REFERENCIA aunque la operación no tenga reglas de
   //   estatus (sin flujo no hay botones ni "Registrar Movimiento"). Mismo
   //   control que el formulario: motivo obligatorio y quién/cuándo canceló.
-  const ID_STATUS_CANCELADO_OD = '7607f692';
+  const ID_STATUS_CANCELADO_OD = STATUS_CANCELADO; // ✅ V00439 (Fase 3.x)
   const usuarioCancelaOD = useUsuarioStore((st) => st.usuario);
   const [cancelandoRef, setCancelandoRef] = useState(false);
   // ✅ V00431: obtenerNombresStatusDelFlujo devuelve null cuando NO hay reglas
@@ -1432,10 +1354,8 @@ const OperacionesDashboard = () => {
   };
 
   const handleOperacionGuardada = () => {
-    // ✅ NUEVO: el formulario refresca las cachés cat_v2 (incluye clientes,
-    //   proveedores y bodegas recién creados) — se re-hidratan EN MEMORIA para
-    //   que la tabla y los documentos PDF los muestren al instante.
-    hidratarCatalogosDesdeCache();
+    // ✅ V00439 (Fase 3.x): los catálogos (clientes, proveedores y bodegas recién
+    //   creados) llegan solos por el listener compartido; ya no se re-hidratan.
     descargarOperaciones();
     setEstadoFormulario('cerrado');
     setOperacionEditando(null);
@@ -1444,18 +1364,18 @@ const OperacionesDashboard = () => {
   // ✅ V00438 (Fase 2.3b): props ESTABLES para memo(FormularioOperacion): sin
   //   esto, cada render del módulo (búsqueda, listeners…) re-renderizaba el formulario.
   const onGuardarFormulario = useHandlerEstable(handleOperacionGuardada);
-  const onCerrarFormulario = useHandlerEstable(() => { hidratarCatalogosDesdeCache(); setEstadoFormulario('cerrado'); setOperacionEditando(null); });
+  const onCerrarFormulario = useHandlerEstable(() => { setEstadoFormulario('cerrado'); setOperacionEditando(null); });
   const onMinimizarFormulario = useCallback(() => setEstadoFormulario('minimizado'), []);
   const onRestaurarFormulario = useCallback(() => setEstadoFormulario('abierto'), []);
 
   const handleDescargarSolicitudRetiro = async () => {
-    await cargarCatalogosSiEsNecesario();
+    const cats = await catalogosPdf();
     if (!operacionViendo) return;
     const origen = mostrarDatoMapeado(operacionViendo.origen, 'empresas', 'nombre', operacionViendo.origenNombre);
-    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
-    const remolqueRes = resolverRemolqueParaPDF();
-    const unidadRes = resolverUnidadParaPDF();
-    const operadorRes = resolverOperadorParaPDF();
+    const destinoObj = cats.empresas.find((e) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
+    const remolqueRes = resolverRemolqueParaPDF(cats);
+    const unidadRes = resolverUnidadParaPDF(cats);
+    const operadorRes = resolverOperadorParaPDF(cats);
 
     generarSolicitudRetiroPDF({
       bodegaNombre: origen,
@@ -1472,13 +1392,13 @@ const OperacionesDashboard = () => {
   };
 
   const handleDescargarInstruccionesServicio = async () => {
-    await cargarCatalogosSiEsNecesario();
+    const cats = await catalogosPdf();
     if (!operacionViendo) return;
-    const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
-    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
-    const remolqueRes = resolverRemolqueParaPDF();
-    const unidadRes = resolverUnidadParaPDF();
-    const operadorRes = resolverOperadorParaPDF();
+    const origenObj = cats.empresas.find((e) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
+    const destinoObj = cats.empresas.find((e) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
+    const remolqueRes = resolverRemolqueParaPDF(cats);
+    const unidadRes = resolverUnidadParaPDF(cats);
+    const operadorRes = resolverOperadorParaPDF(cats);
 
     // ✅ CAMBIO 1: si la operación es Logística o Fletes, la Unidad y el Operador
     //    van VACÍOS en el documento (los asigna el proveedor externo).
@@ -1505,13 +1425,13 @@ const OperacionesDashboard = () => {
   };
 
   const handleDescargarCheckList = async () => {
-    await cargarCatalogosSiEsNecesario();
+    const cats = await catalogosPdf();
     if (!operacionViendo) return;
-    const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
-    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
-    const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque) || await docPorId('remolques', operacionViendo.numeroRemolque); // ✅ V00419
-    const unidadRes = resolverUnidadParaPDF();
-    const empNombre = resolverOperadorParaPDF();
+    const origenObj = cats.empresas.find((e) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
+    const destinoObj = cats.empresas.find((e) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
+    const remolqueObj = cats.remolques.find((r) => r.id === operacionViendo.numeroRemolque) || await docPorId('remolques', operacionViendo.numeroRemolque); // ✅ V00419
+    const unidadRes = resolverUnidadParaPDF(cats);
+    const empNombre = resolverOperadorParaPDF(cats);
     const uniNombre = unidadRes.nombre;
     const uniPlacas = unidadRes.placa;
 
@@ -1536,12 +1456,12 @@ const OperacionesDashboard = () => {
   };
 
   const handleDescargarPruebaEntrega = async () => {
-    await cargarCatalogosSiEsNecesario();
+    const cats = await catalogosPdf();
     if (!operacionViendo) return;
-    const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
-    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
-    const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque) || await docPorId('remolques', operacionViendo.numeroRemolque); // ✅ V00419
-    const empNombre = resolverOperadorParaPDF();
+    const origenObj = cats.empresas.find((e) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
+    const destinoObj = cats.empresas.find((e) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
+    const remolqueObj = cats.remolques.find((r) => r.id === operacionViendo.numeroRemolque) || await docPorId('remolques', operacionViendo.numeroRemolque); // ✅ V00419
+    const empNombre = resolverOperadorParaPDF(cats);
     const listaDirsPE = await obtenerDireccionesFrescas(); // ✅ V00419: direcciones frescas
     const dOri = datosDireccionEmpresa(origenObj, listaDirsPE);
     const dDes = datosDireccionEmpresa(destinoObj, listaDirsPE);
@@ -1642,29 +1562,17 @@ const OperacionesDashboard = () => {
     };
   };
 
-  // ✅ Garantiza el catálogo de direcciones FRESCO dentro del mismo clic
-  //   (setCatalogosGlobales es asíncrono y el closure no ve el estado nuevo).
-  const obtenerDireccionesFrescas = async (): Promise<any[]> => {
-    const actual = catalogosGlobales.direcciones;
-    if (Array.isArray(actual) && actual.length > 0) return actual;
-    try {
-      const snap = await getDocs(collection(db, 'direcciones'));
-      const data = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-      setCatalogosGlobales((prev: any) => ({ ...prev, direcciones: data }));
-      return data;
-    } catch (e) {
-      console.error('[PDF] No se pudo leer el catálogo de direcciones:', e);
-      return [];
-    }
-  };
+  // ✅ Garantiza el catálogo de direcciones FRESCO dentro del mismo clic.
+  // ✅ V00439 (Fase 3.x): del listener compartido (antes getDocs si faltaba).
+  const obtenerDireccionesFrescas = (): Promise<DocLibre[]> => obtenerCatalogo('direcciones');
 
   const handleDescargarCartaInstrucciones = async () => {
-    await cargarCatalogosSiEsNecesario();
+    const cats = await catalogosPdf();
     if (!operacionViendo) return;
-    const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
-    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
-    const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque) || await docPorId('remolques', operacionViendo.numeroRemolque); // ✅ V00419
-    const empNombre = resolverOperadorParaPDF();
+    const origenObj = cats.empresas.find((e) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
+    const destinoObj = cats.empresas.find((e) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
+    const remolqueObj = cats.remolques.find((r) => r.id === operacionViendo.numeroRemolque) || await docPorId('remolques', operacionViendo.numeroRemolque); // ✅ V00419
+    const empNombre = resolverOperadorParaPDF(cats);
     const listaDirs = await obtenerDireccionesFrescas();
     const dirOrigen = datosDireccionEmpresa(origenObj, listaDirs);
     const dirDestino = datosDireccionEmpresa(destinoObj, listaDirs);

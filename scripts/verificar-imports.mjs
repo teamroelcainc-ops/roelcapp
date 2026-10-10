@@ -28,7 +28,11 @@ for (const archivo of archivos) {
   for (const m of contenido.matchAll(RE_IMPORT)) {
     const ref = m[1].replace(/\?.*$/, '');
     const base = resolve(dirname(archivo), ref);
-    if (!EXTS.some((e) => existsSync(base + e))) {
+    // ✅ V00439: src/shared/dominio importa con extensión .js (estilo NodeNext,
+    //   porque se copia a functions/); TypeScript y Vite lo resuelven al .ts.
+    const sinJs = base.endsWith('.js') ? base.slice(0, -3) : null;
+    const existe = EXTS.some((e) => existsSync(base + e)) || (sinJs !== null && ['.ts', '.tsx'].some((e) => existsSync(sinJs + e)));
+    if (!existe) {
       faltantes.push({ archivo: archivo.slice(raiz.length + 1), ref });
     }
   }

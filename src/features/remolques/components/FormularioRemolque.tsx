@@ -1,13 +1,13 @@
 // src/features/remolques/components/FormularioRemolque.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import { camposModificadosDe } from '../../autorizaciones/autorizaciones';
 import { collection, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
 import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
-import { useQueryClient } from '@tanstack/react-query';
 import { useEstadoConexion } from '../../../hooks/useEstadoConexion';
-import { REMOLQUES_QUERY_KEY } from '../hooks/useRemolques';
+import { idReal, useCatalogos } from '../../../shared/data/catalogos';
+import type { DocCatalogo } from '../../../shared/data/catalogos';
 import type { RemolqueRecord } from '../../../types/remolque';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 import './FormularioRemolque.css'; // ✅ RUTA CORREGIDA
@@ -137,10 +137,57 @@ export const FormularioRemolque = ({ estado, initialData, onClose, onMinimize, o
   const [cargando, setCargando] = useState(false);
 
   // Estados para los catálogos
-  const [tiposRemolque, setTiposRemolque] = useState<{id: string, label: string}[]>([]);
-  const [estadosCatalogo, setEstadosCatalogo] = useState<{id: string, label: string}[]>([]);
-  const [paisesCatalogo, setPaisesCatalogo] = useState<{id: string, label: string}[]>([]);
-  const [empresasPropietarias, setEmpresasPropietarias] = useState<{id: string, label: string}[]>([]);
+  // ✅ V00439 (Fase 3.x): tipos de remolque, estados, países y empresas desde los
+  //   listeners compartidos de catálogos (antes getDocs propios al montar).
+  const { datos: catRem } = useCatalogos({
+    tipos: 'catalogo_tipo_remolque', estados: 'catalogo_estados', paises: 'catalogo_paises', empresas: 'empresas',
+  });
+  // 1. Catálogo de Tipos de Remolque
+  const tiposRemolque = useMemo(
+    () => catRem.tipos.map(d => ({ id: idReal(d), label: String(d.nombre || d.descripcion || `Tipo (${idReal(d).substring(0,4)})`) })),
+    [catRem.tipos],
+  );
+  // 2. Catálogo de Estados
+  const estadosCatalogo = useMemo(
+    () => catRem.estados.map(d => ({ id: idReal(d), label: String(d.estado || d.nombre || `Estado (${idReal(d).substring(0,4)})`) })),
+    [catRem.estados],
+  );
+  // 3. Catálogo de Países
+  const paisesCatalogo = useMemo(
+    () => catRem.paises.map(d => ({ id: idReal(d), label: String(d.nombre || d.pais || `País (${idReal(d).substring(0,4)})`) })),
+    [catRem.paises],
+  );
+  // 4. Empresas Propietarias: `empresas` del catálogo compartido + las colecciones
+  //   heredadas 'empresa' y 'catalogo_empresas' (no son catálogos; se leen una vez).
+  const [empresasLegado, setEmpresasLegado] = useState<{ empresa: DocCatalogo[]; catalogoEmpresas: DocCatalogo[] }>({ empresa: [], catalogoEmpresas: [] });
+  useEffect(() => {
+    let activo = true;
+    const leer = async (col: string): Promise<DocCatalogo[]> => {
+      try {
+        const snap = await getDocs(collection(db, col));
+        return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      } catch { return []; /* Ignorar si no existe */ }
+    };
+    Promise.all([leer('empresa'), leer('catalogo_empresas')]).then(([empresa, catalogoEmpresas]) => {
+      if (activo) setEmpresasLegado({ empresa, catalogoEmpresas });
+    });
+    return () => { activo = false; };
+  }, []);
+  // (Escáner Universal filtrando por 5d92b3a2)
+  const empresasPropietarias = useMemo(() => {
+    const todasLasEmpresas = [...empresasLegado.empresa, ...catRem.empresas, ...empresasLegado.catalogoEmpresas];
+    const empresasUnicas = Array.from(new Map(todasLasEmpresas.map(item => [item.id, item])).values());
+    const ID_PROPIETARIO = '5d92b3a2';
+    const filtradas = empresasUnicas.filter((emp) => {
+      if (Array.isArray(emp.tiposEmpresa)) return emp.tiposEmpresa.includes(ID_PROPIETARIO);
+      const stringData = JSON.stringify(emp).toLowerCase();
+      return stringData.includes(ID_PROPIETARIO.toLowerCase());
+    });
+    return filtradas.map(emp => ({
+      id: emp.id,
+      label: String(emp.nombre || emp.empresa || emp.razonSocial || `Empresa (${emp.id.substring(0,4)})`),
+    }));
+  }, [empresasLegado, catRem.empresas]);
 
   // ✅ NUEVO: configuración de campos obligatorios (compartida)
   const [obligatorios, setObligatorios] = useState<Record<string, boolean>>(OBLIGATORIOS_DEFAULT);
@@ -149,7 +196,6 @@ export const FormularioRemolque = ({ estado, initialData, onClose, onMinimize, o
   // ✅ PWA: lógica preventiva de conexión — sin internet el botón Guardar se
   //   deshabilita y se muestra el aviso (evita dobles envíos al reconectar).
   const { enLinea } = useEstadoConexion();
-  const queryClient = useQueryClient();
 
   const esOblig = (campo: string) => !!obligatorios[campo];
 
@@ -185,61 +231,6 @@ export const FormularioRemolque = ({ estado, initialData, onClose, onMinimize, o
       setGuardandoConfig(false);
     }
   };
-
-  // Cargar todos los catálogos al montar el componente
-  useEffect(() => {
-    const cargarCatalogos = async () => {
-      // 1. Catálogo de Tipos de Remolque
-      try {
-        const snapTipos = await getDocs(collection(db, 'catalogo_tipo_remolque'));
-        setTiposRemolque(snapTipos.docs.map(d => ({ id: d.id, label: d.data().nombre || d.data().descripcion || `Tipo (${d.id.substring(0,4)})` })));
-      } catch (error) { console.error("Error al cargar tipos de remolque", error); }
-
-      // 2. Catálogo de Estados
-      try {
-        const snapEstados = await getDocs(collection(db, 'catalogo_estados'));
-        setEstadosCatalogo(snapEstados.docs.map(d => ({ id: d.id, label: d.data().estado || d.data().nombre || `Estado (${d.id.substring(0,4)})` })));
-      } catch (error) { console.error("Error al cargar estados", error); }
-
-      // 3. Catálogo de Países
-      try {
-        const snapPaises = await getDocs(collection(db, 'catalogo_paises'));
-        setPaisesCatalogo(snapPaises.docs.map(d => ({ id: d.id, label: d.data().nombre || d.data().pais || `País (${d.id.substring(0,4)})` })));
-      } catch (error) { console.error("Error al cargar países", error); }
-
-      // 4. Catálogo de Empresas Propietarias (Escáner Universal filtrando por 5d92b3a2)
-      try {
-        let todasLasEmpresas: any[] = [];
-        const coleccionesPosibles = ['empresa', 'empresas', 'catalogo_empresas'];
-        
-        for (const nombreCol of coleccionesPosibles) {
-          try {
-            const snap = await getDocs(collection(db, nombreCol));
-            if (!snap.empty) {
-              const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-              todasLasEmpresas = [...todasLasEmpresas, ...docs];
-            }
-          } catch (e) { /* Ignorar si no existe */ }
-        }
-
-        const empresasUnicas = Array.from(new Map(todasLasEmpresas.map(item => [item.id, item])).values());
-        const ID_PROPIETARIO = '5d92b3a2';
-        
-        const filtradas = empresasUnicas.filter((emp: any) => {
-          if (Array.isArray(emp.tiposEmpresa)) return emp.tiposEmpresa.includes(ID_PROPIETARIO);
-          const stringData = JSON.stringify(emp).toLowerCase();
-          return stringData.includes(ID_PROPIETARIO.toLowerCase());
-        });
-
-        setEmpresasPropietarias(filtradas.map(emp => ({ 
-          id: emp.id, 
-          label: emp.nombre || emp.empresa || emp.razonSocial || `Empresa (${emp.id.substring(0,4)})` 
-        })));
-      } catch (error) { console.error("Error al cargar propietarios", error); }
-    };
-
-    cargarCatalogos();
-  }, []);
 
   // Setear datos si es edición
   useEffect(() => {
@@ -278,8 +269,7 @@ export const FormularioRemolque = ({ estado, initialData, onClose, onMinimize, o
       } else {
         await agregarRegistro('remolques', formData);
       }
-      // El caché central de Query se refresca (el snapshot lo confirmará).
-      queryClient.invalidateQueries({ queryKey: REMOLQUES_QUERY_KEY });
+      // ✅ V00439 (Fase 3.x): la lista se actualiza sola por el listener compartido de `remolques`.
       onClose();
     } catch (error) {
       console.error("Error al guardar:", error);

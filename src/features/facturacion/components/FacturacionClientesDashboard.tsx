@@ -44,7 +44,11 @@ import { limpiarCachesPorPrefijo } from '../../../utils/cacheMemoria'; // ✅ V0
 import { registrarLog } from '../../../utils/logger'; // ✅ V00262
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
-import { esUSD as esMonedaUSD } from '../../../shared/dominio/moneda';
+import { esUSD as esMonedaUSD, monedaCanonica as monedaCanonicaComun, nombreMoneda } from '../../../shared/dominio/moneda';
+import { ID_MXN, ID_USD, STATUS_COMPLETADOS, TIPO_EMPRESA } from '../../../shared/dominio/constantes'; // ✅ V00439 (Fase 3.x)
+import { useCatalogo, useCatalogos } from '../../../shared/data/catalogos'; // ✅ V00439 (Fase 3.x)
+import { CATALOGOS_NOMBRES_FACTURACION, construirMapaCatalogos } from '../services/mapaCatalogos';
+import type { EmpresaFacturacion } from '../services/mapaCatalogos';
 import { r2 } from '../../../shared/dominio/numeros';
 import {
   MAX_ESCRITURAS_LOTE,
@@ -61,10 +65,7 @@ import {
 // ──────────────────────────────────────────────────────────────────────
 // Constantes
 // ──────────────────────────────────────────────────────────────────────
-const ID_TIPO_CLIENTE_PAGA = '7eec9cbb';
-const STATUS_COMPLETADOS = ['f557b751', 'c2d57403'];
-const ID_USD = '7dca62b3';
-const ID_MXN = 'f95d8894';
+// ✅ V00439 (Fase 3.x): IDs de moneda, status y tipo de empresa desde shared/dominio/constantes.
 
 // ✅ (D) Cargar TODAS las operaciones completadas (sin filtro de fecha).
 const LIMITE_OPS_TODAS = 20000;
@@ -104,68 +105,9 @@ const EMISOR_USD_DEFAULT: EmisorRemision = {
 const LS_COLS_OPS = 'cfgcols_facturacion_ops_v2';
 const LS_COLS_HIST = 'cfgcols_facturacion_hist_v2';
 
-// ✅ Lee un catálogo desde la caché local (cat_v1__<alias>).
-const leerCacheLocal = (alias: string): any[] | null => {
-  try {
-    const raw = localStorage.getItem(`cat_v1__${alias}`) || localStorage.getItem(`cat_v2__${alias}`);
-    if (!raw) return null;
-    const obj = JSON.parse(raw);
-    return obj && Array.isArray(obj.data) ? obj.data : null;
-  } catch { return null; }
-};
-
-// ──────────────────────────────────────────────────────────────────────
-// ✅ (B) Mapa id→nombre con TODOS los catálogos cacheados. Cero lecturas.
-// ──────────────────────────────────────────────────────────────────────
-const construirMapaCatalogos = (): Record<string, string> => {
-  const mapa: Record<string, string> = {};
-  const tomarNombre = (item: any): string | null => {
-    if (!item || item.id === undefined || item.id === null) return null;
-    const fn = item.firstName ?? item.first_name;
-    const lp = item.lastNamePaternal ?? item.last_name_paternal ?? item.apellidoPaterno;
-    if (fn || lp) {
-      const full = `${fn || ''} ${lp || ''}`.trim();
-      if (full) return full;
-    }
-    if (item.unidad && typeof item.unidad === 'string' && item.unidad.trim() !== '') return String(item.unidad).trim();
-    const placa = item.placas ?? item.placa;
-    if (item.nombre && placa) return `${item.nombre} ${placa}`.trim();
-    const n = item.nombre ?? item.nombreCorto ?? item.label ?? item.descripcion ?? item.name ?? item.titulo ?? item.moneda ?? item.tipo_operacion;
-    return (n !== undefined && n !== null && String(n) !== '') ? String(n) : null;
-  };
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (!key || (key.indexOf('cat_v1__') !== 0 && key.indexOf('cat_v2__') !== 0)) continue;
-      const raw = localStorage.getItem(key);
-      if (!raw) continue;
-      try {
-        const obj = JSON.parse(raw);
-        const arr = obj && Array.isArray(obj.data) ? obj.data : (Array.isArray(obj) ? obj : null);
-        if (!arr) continue;
-        arr.forEach((item: any) => {
-          const n = tomarNombre(item);
-          if (n) mapa[String(item.id)] = n;
-        });
-      } catch { /* catálogo corrupto: ignorar */ }
-    }
-  } catch { /* localStorage no disponible */ }
-  try {
-    const rawV2 = localStorage.getItem('roelca_catalogos_v2');
-    if (rawV2) {
-      const obj = JSON.parse(rawV2);
-      Object.values(obj || {}).forEach((val: any) => {
-        const arr = Array.isArray(val) ? val : (val && Array.isArray(val.data) ? val.data : null);
-        if (!arr) return;
-        arr.forEach((item: any) => {
-          const n = tomarNombre(item);
-          if (n && !mapa[String(item.id)]) mapa[String(item.id)] = n;
-        });
-      });
-    }
-  } catch { /* noop */ }
-  return mapa;
-};
+// ✅ V00439 (Fase 3.x): el mapa id→nombre ya no se arma desde las copias de
+//   catálogos en localStorage (cat_v1__/cat_v2__/roelca_catalogos_v2): sale de
+//   los catálogos en vivo (ver services/mapaCatalogos.ts).
 
 // ✅ (A) Reconstruye las columnas a partir de la BASE aplicando orden + visibilidad.
 const aplicarConfigColumnasGuardada = (base: any[], guardadas: any): any[] => {
@@ -522,7 +464,13 @@ export const FacturacionClientesDashboard = () => {
   const [cargandoOperaciones, setCargandoOperaciones] = useState(false);
   const [cargandoFacturas, setCargandoFacturas] = useState(false);
 
-  const [empresasList, setEmpresasList] = useState<any[]>([]);
+  // ✅ V00439 (Fase 3.x): empresas y catálogos de nombres desde los listeners
+  //   compartidos (antes: getDocs + copias en localStorage).
+  const empresasList = useCatalogo('empresas').datos as EmpresaFacturacion[];
+  const { datos: catalogosNombres } = useCatalogos(CATALOGOS_NOMBRES_FACTURACION);
+  // Los status "Falso" (facturables) salen de este catálogo: las operaciones se
+  // descargan cuando ya llegó (de la caché local o del servidor).
+  const { listo: statusListos } = useCatalogo('catalogo_status_servicio');
 
   const [fechaDesdeOps, setFechaDesdeOps] = useState('');
   const [fechaHastaOps, setFechaHastaOps] = useState('');
@@ -748,16 +696,11 @@ export const FacturacionClientesDashboard = () => {
     );
   };
 
-  const mapaCatalogos = useMemo(() => {
-    const m = construirMapaCatalogos();
-    empresasList.forEach((e: any) => {
-      if (e?.id) m[String(e.id)] = e.nombre || e.nombreCorto || m[String(e.id)] || String(e.id);
-    });
-    m[ID_USD] = 'USD';
-    m[ID_MXN] = 'MXN';
-    return m;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [empresasList]);
+  // ✅ V00439 (Fase 3.x): derivado de los catálogos en vivo (mismo contenido).
+  const mapaCatalogos = useMemo(
+    () => construirMapaCatalogos(Object.values(catalogosNombres), empresasList),
+    [catalogosNombres, empresasList],
+  );
 
   // ✅ V00438 (Fase 2.4): useCallback para que las claves de orden de operaciones
   //   (memo) dependan de algo estable.
@@ -784,22 +727,6 @@ export const FacturacionClientesDashboard = () => {
     }
     return '-';
   };
-
-  useEffect(() => {
-    const cache = leerCacheLocal('empresas');
-    if (cache && cache.length) { setEmpresasList(cache); return; }
-    let activo = true;
-    (async () => {
-      try {
-        const snap = await getDocs(collection(db, 'empresas'));
-        if (!activo) return;
-        const docs = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-        setEmpresasList(docs);
-        try { localStorage.setItem('cat_v1__empresas', JSON.stringify({ data: docs, ts: Date.now() })); } catch { /* noop */ }
-      } catch (e) { console.error('Error cargando empresas:', e); }
-    })();
-    return () => { activo = false; };
-  }, []);
 
   useEffect(() => {
     const aplicarOps = (guardadas: any) => {
@@ -1071,9 +998,11 @@ export const FacturacionClientesDashboard = () => {
   useEffect(() => {
     if (activeTab !== 'operaciones') return;
     if (operacionesGlobales.length > 0) return;
+    // ✅ V00439 (Fase 3.x): espera el catálogo de status (los "Falso" entran en el filtro).
+    if (!statusListos) return;
     descargarOpsCompletadas();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, operacionesGlobales.length]);
+  }, [activeTab, operacionesGlobales.length, statusListos]);
 
   // ✅ V00126: cualquier guardado en la colección `operaciones` (formulario,
   //   cambio de status, etc.) se refleja aquí al instante sin recargar.
@@ -1124,41 +1053,17 @@ export const FacturacionClientesDashboard = () => {
     return porCatalogo || idOrName;
   }, [empresaPorClave, mapaCatalogos]);
 
-  // ✅ FIX — IDs sin resolver (empresas creadas DESPUÉS de cargar la lista o
-  //   con el caché viejo): se detectan en las operaciones visibles y se leen
-  //   de Firestore bajo demanda, agregándolas a la lista en memoria.
-  const idsResueltosRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    const pareceId = (s: string) => /^[A-Za-z0-9]{15,}$/.test(s) || /^[a-f0-9]{8}$/.test(s);
-    const pendientes = Array.from(new Set(
-      operacionesGlobales
-        .map((op: any) => String(op.clientePaga || ''))
-        .filter((id) => id && pareceId(id) && !idsResueltosRef.current.has(id) &&
-          !empresasList.some((e: any) => e.id === id))
-    )).slice(0, 60);
-    if (pendientes.length === 0) return;
-    pendientes.forEach((id) => idsResueltosRef.current.add(id));
-    (async () => {
-      try {
-        const nuevas: any[] = [];
-        for (let i = 0; i < pendientes.length; i += 10) {
-          const lote = pendientes.slice(i, i + 10);
-          const snap = await getDocs(query(collection(db, 'empresas'), where(documentId(), 'in', lote)));
-          snap.docs.forEach((d) => nuevas.push({ id: d.id, ...(d.data() as any) }));
-        }
-        if (nuevas.length > 0) setEmpresasList((prev: any[]) => [...prev, ...nuevas.filter((n) => !prev.some((p) => p.id === n.id))]);
-      } catch (e) { console.warn('No se pudieron resolver empresas faltantes:', e); }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [operacionesGlobales, empresasList]);
+  // ✅ V00439 (Fase 3.x): se quitó la lectura de "empresas sin resolver" (las
+  //   creadas después de cargar la lista o con la caché vieja): el listener en
+  //   vivo de `empresas` ya las trae.
 
   const clientesFiltradosBuscador = useMemo(() => {
     if (!empresasList.length) return [];
     const esClientePaga = (emp: any) => {
       const tipos = emp?.tiposEmpresa;
-      if (Array.isArray(tipos)) return tipos.some((t: any) => String(t).trim() === ID_TIPO_CLIENTE_PAGA);
-      if (typeof tipos === 'string') return tipos.includes(ID_TIPO_CLIENTE_PAGA);
-      if (tipos && typeof tipos === 'object') return Object.values(tipos).some((v: any) => String(v).trim() === ID_TIPO_CLIENTE_PAGA);
+      if (Array.isArray(tipos)) return tipos.some((t: any) => String(t).trim() === TIPO_EMPRESA.clientePaga);
+      if (typeof tipos === 'string') return tipos.includes(TIPO_EMPRESA.clientePaga);
+      if (tipos && typeof tipos === 'object') return Object.values(tipos).some((v: any) => String(v).trim() === TIPO_EMPRESA.clientePaga);
       return false;
     };
     const clientes = empresasList
@@ -1192,15 +1097,14 @@ export const FacturacionClientesDashboard = () => {
 
   // ✅ V00262: MONEDA CANÓNICA — en el catálogo solo existen DOS monedas:
   //   "Dólares" y "Pesos". USD/DÓLARES/DOLARES → Dólares; MXN/PESOS → Pesos.
+  // ✅ V00439 (Fase 3.x): reconoce USD/MXN con el helper compartido (acepta las
+  //   mismas formas y algunas más: 'DLS', 'M.N.'…); lo no reconocido sigue igual.
   const monedaCanonica = (val: unknown): string => {
     const s = String(val || '').trim();
     if (!s) return '';
-    if (s === ID_USD) return 'Dólares';
-    if (s === ID_MXN) return 'Pesos';
-    const plano = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-    if (plano === 'n/a') return '';
-    if (plano === 'usd' || plano.startsWith('dolar')) return 'Dólares';
-    if (plano === 'mxn' || plano.startsWith('peso')) return 'Pesos';
+    const comun = monedaCanonicaComun(s);
+    if (comun) return nombreMoneda(comun);
+    if (s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() === 'n/a') return '';
     const nombre = mapaCatalogos[s];
     if (nombre && String(nombre) !== s) return monedaCanonica(nombre);
     return s;
@@ -1417,11 +1321,12 @@ export const FacturacionClientesDashboard = () => {
   const coincideTipoOp = (op: any) => !filtroTipoOp || tipoOpNombre(op) === filtroTipoOp;
 
   // ✅ V00126: moneda en la que se factura la operación (USD / MXN / '')
+  //   ✅ V00439 (Fase 3.x): helper compartido (ID del catálogo, código o nombre).
   const monedaFacturacionOp = (op: any): 'USD' | 'MXN' | '' => {
     const fact = String(op.facturadoEnCobrar || '');
-    const nom = String(op.monedaCobroNombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
-    if (fact === ID_USD || nom.includes('USD') || nom.includes('DOLAR')) return 'USD';
-    if (fact === ID_MXN || nom.includes('MXN') || nom.includes('PESO')) return 'MXN';
+    const nom = String(op.monedaCobroNombre || '');
+    if (monedaCanonicaComun(fact) === 'USD' || monedaCanonicaComun(nom) === 'USD') return 'USD';
+    if (monedaCanonicaComun(fact) === 'MXN' || monedaCanonicaComun(nom) === 'MXN') return 'MXN';
     return '';
   };
   const resumenMonedaOps = useMemo(() => {
@@ -2332,9 +2237,8 @@ export const FacturacionClientesDashboard = () => {
       // ✅ FIX: la moneda puede venir como nombre de catálogo ("Dólares",
       //   "Pesos") y las tarjetas comparaban contra 'USD'/'MXN' exactos, por
       //   lo que TOTAL FACTURADO marcaba $0.00. Se normaliza antes de sumar.
-      const monTxt = monedaFacturaMostrar(f).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
-      const mon = (monTxt === 'USD' || monTxt.startsWith('DOLAR') || monTxt === 'DLS' || monTxt === 'US$') ? 'USD'
-        : (monTxt === 'MXN' || monTxt.startsWith('PESO') || monTxt === 'MN') ? 'MXN' : monTxt;
+      //   ✅ V00439 (Fase 3.x): con el helper compartido (acepta las mismas formas y más).
+      const mon = monedaCanonicaComun(monedaFacturaMostrar(f));
       if (mon === 'USD') totalUSD += monto;
       else if (mon === 'MXN') totalMXN += monto;
       else totalSinMoneda += monto;
@@ -2736,10 +2640,9 @@ export const FacturacionClientesDashboard = () => {
   const [tarjetaAbierta, setTarjetaAbierta] = useState<TarjetaResumen | null>(null);
   const [exportandoTarjeta, setExportandoTarjeta] = useState(false);
   const monedaTarjetaDe = (f: FacturaLike): 'usd' | 'mxn' | 'otra' => {
-    const monTxt = monedaFacturaMostrar(f).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
-    if (monTxt === 'USD' || monTxt.startsWith('DOLAR') || monTxt === 'DLS' || monTxt === 'US$') return 'usd';
-    if (monTxt === 'MXN' || monTxt.startsWith('PESO') || monTxt === 'MN') return 'mxn';
-    return 'otra';
+    // ✅ V00439 (Fase 3.x): helper compartido (acepta las mismas formas y más).
+    const mon = monedaCanonicaComun(monedaFacturaMostrar(f));
+    return mon === 'USD' ? 'usd' : mon === 'MXN' ? 'mxn' : 'otra';
   };
   const facturasDeTarjeta = useMemo(() => {
     if (!tarjetaAbierta) return [] as FacturaLike[];

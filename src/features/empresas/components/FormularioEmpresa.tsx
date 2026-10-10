@@ -1,11 +1,12 @@
 // src/features/empresas/components/FormularioEmpresa.tsx
-import React, { useState, useEffect, useRef } from 'react';
-import { obtenerCacheMemoria, guardarCacheMemoria } from '../../../utils/cacheMemoria'; // ✅ V00269
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { idReal, useCatalogos } from '../../../shared/data/catalogos';
+import { TIPO_EMPRESA } from '../../../shared/dominio/constantes';
 import { propagarMonedaEmpresa } from '../services/propagarMoneda';
 import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import { valoresEquivalentesAut } from '../../autorizaciones/autorizaciones';
-import { collection, getDocs, onSnapshot, addDoc, query, where, writeBatch } from 'firebase/firestore';
+import { collection, getDocs, addDoc, query, where, writeBatch } from 'firebase/firestore';
 import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
 import { FormularioDireccion } from '../../direcciones/components/FormularioDireccion'; 
 import { registrarLog } from '../../../utils/logger'; 
@@ -35,7 +36,7 @@ export const TIPOS_DOCUMENTO_EMPRESA = [
 // ✅ ID del tipo de empresa "Cliente (Paga)" en el catálogo catalogo_tipo_empresa.
 //    En la base de datos, las empresas guardan su tiposEmpresa con ESTE id (no
 //    con el texto). Es el mismo id que usa FormularioOperacion.tsx.
-const ID_TIPO_CLIENTE_PAGA = '7eec9cbb';
+const ID_TIPO_CLIENTE_PAGA = TIPO_EMPRESA.clientePaga;
 
 // =========================================
 // SUB-COMPONENTE: SELECTOR MULTIPLE CON CHECKBOXES
@@ -387,18 +388,28 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
   const [cargando, setCargando] = useState(false);
   const [activeTab, setActiveTab] = useState<'general' | 'fiscal' | 'contacto'>('general');
   
-  const [regimenesFiscales, setRegimenesFiscales] = useState<{id: string, label: string}[]>([]);
-  const [direccionesDB, setDireccionesDB] = useState<any[]>([]);
-  const [monedas, setMonedas] = useState<any[]>([]);
-  const [tiposFacturas, setTiposFacturas] = useState<any[]>([]);
-  
-  const [catalogoTiposEmpresa, setCatalogoTiposEmpresa] = useState<string[]>([]);
-  const [catalogoTiposServicio, setCatalogoTiposServicio] = useState<string[]>([]);
+  // ✅ V00439 (Fase 3.x): catálogos desde los listeners compartidos (useCatalogos):
+  //   ya no hay siembra desde caché en memoria ni getDocs propios; siempre en vivo.
+  const { datos: cat } = useCatalogos({
+    regimenes: 'catalogo_regimen_fiscal', direcciones: 'direcciones', tiposFactura: 'catalogo_tipo_factura',
+    tiposEmpresa: 'catalogo_tipo_empresa', tiposServicio: 'catalogo_tipo_servicio', monedas: 'catalogo_moneda',
+  });
+  const regimenesFiscales = useMemo<{ id: string; label: string }[]>(
+    () => cat.regimenes.map((d) => ({ id: idReal(d), label: `${d.clave} - ${d.descripcion}` })), [cat.regimenes]);
+  // Se conservan TODOS los campos estructurados (país, estado, colonia, calle, C.P., números).
+  const direccionesDB = useMemo<({ id: string; label: string } & Record<string, unknown>)[]>(
+    () => cat.direcciones.map((d) => ({ label: String(d.direccionCompleta || 'Dirección sin formato'), ...d })), [cat.direcciones]);
+  const monedas = cat.monedas as { id: string; moneda?: string }[];
+  const tiposFacturas = cat.tiposFactura as { id: string; moneda?: unknown; nombre?: string }[];
   // ✅ Catálogos completos {id, nombre}: en la interfaz se trabaja con NOMBRES,
   //   pero en Firestore se guardan los IDs del catálogo (que es lo que filtran
   //   los buscadores del formulario de Operaciones).
-  const [catTiposEmpresaFull, setCatTiposEmpresaFull] = useState<{ id: string; nombre: string }[]>([]);
-  const [catTiposServicioFull, setCatTiposServicioFull] = useState<{ id: string; nombre: string }[]>([]);
+  const catTiposEmpresaFull = useMemo(
+    () => cat.tiposEmpresa.map((d) => ({ id: idReal(d), nombre: String(d.tipo || '') })).filter((x) => x.nombre), [cat.tiposEmpresa]);
+  const catTiposServicioFull = useMemo(
+    () => cat.tiposServicio.map((d) => ({ id: idReal(d), nombre: String(d.nombre || '') })).filter((x) => x.nombre), [cat.tiposServicio]);
+  const catalogoTiposEmpresa = useMemo(() => catTiposEmpresaFull.map((x) => x.nombre), [catTiposEmpresaFull]);
+  const catalogoTiposServicio = useMemo(() => catTiposServicioFull.map((x) => x.nombre), [catTiposServicioFull]);
 
   const [modalDireccionAbierto, setModalDireccionAbierto] = useState(false);
   // ✅ V00268: selección temporal del buscador de cada bloque "Dirección {tipo}".
@@ -461,89 +472,6 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
     telefono: '',
     correo: ''
   });
-
-  useEffect(() => {
-    // ✅ V00269: EDITAR/ABRIR RÁPIDO — el formulario se monta en cada apertura
-    //   y antes esperaba TODAS sus colecciones desde cero (por eso los selects
-    //   salían vacíos unos segundos y "la información no estaba"). Ahora cada
-    //   catálogo se SIEMBRA desde el caché del módulo (últimos datos conocidos,
-    //   pintado instantáneo) y el snapshot en vivo lo actualiza y re-cachea.
-    const sembrar = <T,>(clave: string, setter: (v: T) => void) => {
-      const c = obtenerCacheMemoria<T>(clave, 10 * 60 * 1000);
-      if (c) setter(c);
-    };
-    sembrar<{ id: string; label: string }[]>('fe_cat_regimenes', setRegimenesFiscales);
-    sembrar<Record<string, unknown>[]>('fe_cat_direcciones', setDireccionesDB as (v: Record<string, unknown>[]) => void);
-    sembrar<Record<string, unknown>[]>('fe_cat_tipos_factura', setTiposFacturas as (v: Record<string, unknown>[]) => void);
-
-    const unsubRegimenes = onSnapshot(collection(db, 'catalogo_regimen_fiscal'), (snap) => {
-      const lista = snap.docs.map(doc => {
-        const d = doc.data();
-        return { id: doc.id, label: `${d.clave} - ${d.descripcion}` };
-      });
-      guardarCacheMemoria('fe_cat_regimenes', lista);
-      setRegimenesFiscales(lista);
-    });
-
-    const unsubDirecciones = onSnapshot(collection(db, 'direcciones'), (snap) => {
-      const lista = snap.docs.map(doc => {
-        const d: any = doc.data();
-        // ✅ Se conservan TODOS los campos estructurados (país, estado, colonia,
-        //   calle, C.P., números) para mostrarlos separados en el formulario.
-        return { id: doc.id, label: d.direccionCompleta || 'Dirección sin formato', ...d };
-      });
-      guardarCacheMemoria('fe_cat_direcciones', lista);
-      setDireccionesDB(lista);
-    });
-
-    const unsubFacturas = onSnapshot(collection(db, 'catalogo_tipo_factura'), (snap) => {
-      const lista = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      guardarCacheMemoria('fe_cat_tipos_factura', lista);
-      setTiposFacturas(lista);
-    });
-
-    const fetchTiposLists = async () => {
-      try {
-        // ✅ V00269: siembra instantánea de tipos y monedas desde el caché.
-        const cE = obtenerCacheMemoria<{ id: string; nombre: string }[]>('fe_cat_tipos_empresa', 10 * 60 * 1000);
-        if (cE) { setCatTiposEmpresaFull(cE); setCatalogoTiposEmpresa(cE.map(x => x.nombre)); }
-        const cS = obtenerCacheMemoria<{ id: string; nombre: string }[]>('fe_cat_tipos_servicio', 10 * 60 * 1000);
-        if (cS) { setCatTiposServicioFull(cS); setCatalogoTiposServicio(cS.map(x => x.nombre)); }
-        const cM = obtenerCacheMemoria<Record<string, unknown>[]>('fe_cat_monedas', 10 * 60 * 1000) as never[] | null;
-        if (cM) setMonedas(cM);
-        const tEmpresas = await getDocs(collection(db, 'catalogo_tipo_empresa'));
-        const emp = tEmpresas.docs
-          .map(doc => ({ id: doc.id, nombre: String((doc.data() as any).tipo || '') }))
-          .filter(x => x.nombre);
-        guardarCacheMemoria('fe_cat_tipos_empresa', emp); // ✅ V00269
-        setCatTiposEmpresaFull(emp);
-        setCatalogoTiposEmpresa(emp.map(x => x.nombre));
-
-        const tServicios = await getDocs(collection(db, 'catalogo_tipo_servicio'));
-        const serv = tServicios.docs
-          .map(doc => ({ id: doc.id, nombre: String((doc.data() as any).nombre || '') }))
-          .filter(x => x.nombre);
-        guardarCacheMemoria('fe_cat_tipos_servicio', serv); // ✅ V00269
-        setCatTiposServicioFull(serv);
-        setCatalogoTiposServicio(serv.map(x => x.nombre));
-
-        const monedaSnap = await getDocs(collection(db, 'catalogo_moneda'));
-        const listaMon = monedaSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        guardarCacheMemoria('fe_cat_monedas', listaMon); // ✅ V00269
-        setMonedas(listaMon);
-      } catch (error) {
-        console.error("Error cargando catálogos secundarios", error);
-      }
-    };
-
-    fetchTiposLists();
-
-    return () => {
-      unsubRegimenes();
-      unsubDirecciones();
-      unsubFacturas();
-    };
-  }, []);
 
   // ✅ Conversión entre NOMBRES (interfaz) e IDs (Firestore) de los catálogos.
   const idTipoEmpresaDeNombre = (nombre: string) => catTiposEmpresaFull.find(x => x.nombre === nombre)?.id || nombre;

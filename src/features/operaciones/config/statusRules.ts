@@ -1,5 +1,5 @@
 // src/features/operaciones/config/statusRules.ts
-import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import type { DocumentData } from 'firebase/firestore';
 
 // ✅ V00407: un id de documento de Firestore NO puede llevar "/" (p. ej. el servicio
@@ -7,63 +7,21 @@ import type { DocumentData } from 'firebase/firestore';
 //   igual al guardar y al leer; es idempotente.
 export const idDocFlujo = (configId: unknown): string => String(configId ?? '').replace(/\//g, '／');
 import { db } from '../../../config/firebase';
+import { idReal, obtenerCatalogo } from '../../../shared/data/catalogos';
+import type { DocCatalogo } from '../../../shared/data/catalogos';
 
-// ✅ CACHÉ DE FLUJOS EN MEMORIA + localStorage (sin cambios)
-const flujoCache = new Map<string, { data: any; ts: number }>();
-const FLUJO_TTL_MS = 6 * 60 * 60 * 1000; // 6 horas
+// ✅ V00439 (Fase 3.x): los flujos salen del listener compartido de catálogos
+//   (config_flujos_operacion, siempre en vivo). Sin caché propia en memoria ni
+//   en localStorage (flujo_v1__) ni TTL de 6 h: un cambio en Reglas de Estatus
+//   llega al instante a todos los usuarios.
 
-const lsGetFlujo = (configId: string): { data: any; ts: number } | null => {
-  try {
-    const raw = localStorage.getItem(`flujo_v1__${configId}`);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed.ts !== 'number') return null;
-    return parsed;
-  } catch { return null; }
-};
+/** Ya no hay caché que limpiar; se conserva por compatibilidad con quien la llama. */
+export const limpiarCacheFlujos = (configId?: string): void => { void configId; };
 
-const lsSetFlujo = (configId: string, data: any) => {
-  try {
-    localStorage.setItem(`flujo_v1__${configId}`, JSON.stringify({ data, ts: Date.now() }));
-  } catch {}
-};
-
-export const limpiarCacheFlujos = (configId?: string) => {
-  indiceFlujos = null; // ✅ V00379
-  if (configId) {
-    flujoCache.delete(configId);
-    try { localStorage.removeItem(`flujo_v1__${configId}`); } catch {}
-  } else {
-    flujoCache.clear();
-    try {
-      Object.keys(localStorage)
-        .filter(k => k.startsWith('flujo_v1__'))
-        .forEach(k => localStorage.removeItem(k));
-    } catch {}
-  }
-};
-
-const obtenerFlujoConCache = async (configId: string): Promise<any | null> => {
-  const enMem = flujoCache.get(configId);
-  if (enMem && Date.now() - enMem.ts < FLUJO_TTL_MS) {
-    return enMem.data;
-  }
-
-  const enLS = lsGetFlujo(configId);
-  if (enLS && Date.now() - enLS.ts < FLUJO_TTL_MS) {
-    flujoCache.set(configId, enLS);
-    return enLS.data;
-  }
-
-  console.log(`[statusRules] 📡 Leyendo flujo "${configId}" de Firestore...`);
-  const snap = await getDoc(doc(db, 'config_flujos_operacion', idDocFlujo(configId)));
-  if (!snap.exists()) return null;
-
-  const data = snap.data();
-  const entry = { data, ts: Date.now() };
-  flujoCache.set(configId, entry);
-  lsSetFlujo(configId, data);
-  return data;
+const obtenerFlujoConCache = async (configId: string): Promise<DocCatalogo | null> => {
+  const idDoc = idDocFlujo(configId);
+  const flujos = await obtenerCatalogo('config_flujos_operacion');
+  return flujos.find((f) => idReal(f) === idDoc) ?? null;
 };
 
 const formatTitleCase = (str: string): string => {
@@ -152,25 +110,18 @@ const construirConfigId = (operacionInfo: any): string => {
   return `${tipoOpText}_${trafico}_${carga}`;
 };
 
-// ✅ V00379: índice de flujos (id + tipoServicio/trafico/carga) en memoria, 5 min.
+// ✅ V00379: índice de flujos (id + tipoServicio/trafico/carga).
+// ✅ V00439 (Fase 3.x): sale del listener compartido (sin caché de 5 min).
 type EntradaIndiceFlujo = { id: string; tipoServicio: string; trafico: string; carga: string };
-let indiceFlujos: { lista: EntradaIndiceFlujo[]; ts: number } | null = null;
-const INDICE_TTL_MS = 5 * 60 * 1000;
 
 const obtenerIndiceFlujos = async (): Promise<EntradaIndiceFlujo[]> => {
-  if (indiceFlujos && Date.now() - indiceFlujos.ts < INDICE_TTL_MS) return indiceFlujos.lista;
-  const snap = await getDocs(collection(db, 'config_flujos_operacion'));
-  const lista = snap.docs.map(d => {
-    const x = d.data() as Record<string, unknown>;
-    return {
-      id: d.id,
-      tipoServicio: String(x.tipoServicio ?? ''),
-      trafico: String(x.trafico ?? ''),
-      carga: String(x.carga ?? ''),
-    };
-  });
-  indiceFlujos = { lista, ts: Date.now() };
-  return lista;
+  const flujos = await obtenerCatalogo('config_flujos_operacion');
+  return flujos.map(x => ({
+    id: idReal(x),
+    tipoServicio: String(x.tipoServicio ?? ''),
+    trafico: String(x.trafico ?? ''),
+    carga: String(x.carga ?? ''),
+  }));
 };
 
 // Cargado/Cargada/Llena/Lleno → 'cargado'; Vacio/Vacía → 'vacio'
@@ -234,6 +185,9 @@ const buscarFlujoPorIndice = async (operacionInfo: Record<string, unknown>): Pro
   }
 };
 
+// Misma forma que un DocumentSnapshot (exists/data) para no tocar a quien lo usa.
+const docFlujo = (data: DocCatalogo) => ({ exists: () => true, data: () => data });
+
 const obtenerDocFlujo = async (operacionInfo: any) => {
   const idPrincipal = construirConfigId(operacionInfo);
 
@@ -247,7 +201,7 @@ const obtenerDocFlujo = async (operacionInfo: any) => {
   let data = await obtenerFlujoConCache(idPrincipal);
   if (data) {
     console.log('[statusRules] ✅ Match exacto con:', idPrincipal);
-    return { exists: () => true, data: () => data };
+    return docFlujo(data);
   }
 
   const idSinAcentos = sinAcentos(idPrincipal);
@@ -255,7 +209,7 @@ const obtenerDocFlujo = async (operacionInfo: any) => {
     data = await obtenerFlujoConCache(idSinAcentos);
     if (data) {
       console.log('[statusRules] ✅ Match (sin acentos) con:', idSinAcentos);
-      return { exists: () => true, data: () => data };
+      return docFlujo(data);
     }
   }
 
@@ -271,7 +225,7 @@ const obtenerDocFlujo = async (operacionInfo: any) => {
     data = await obtenerFlujoConCache(idVar);
     if (data) {
       console.log('[statusRules] ✅ Match (variante) con:', idVar);
-      return { exists: () => true, data: () => data };
+      return docFlujo(data);
     }
   }
 
@@ -286,7 +240,7 @@ const obtenerDocFlujo = async (operacionInfo: any) => {
     data = await obtenerFlujoConCache(porIndice);
     if (data) {
       console.log('[statusRules] ✅ Match (índice tolerante) con:', porIndice);
-      return { exists: () => true, data: () => data };
+      return docFlujo(data);
     }
   }
 

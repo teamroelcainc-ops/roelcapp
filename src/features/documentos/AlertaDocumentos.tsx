@@ -13,6 +13,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { DocumentoUploadModal } from './DocumentoUploadModal';
+import { TIPO_EMPRESA } from '../../shared/dominio/constantes';
 import './AlertaDocumentos.css';
 
 interface DocInfo {
@@ -62,7 +63,7 @@ export const AlertaDocumentos: React.FC<Props> = ({ coleccionOrigen, registroId,
         ...(Array.isArray(x.tiposEmpresa) ? x.tiposEmpresa : []),
         ...(Array.isArray(x._tiposEmpresaArray) ? x._tiposEmpresaArray : []),
       ];
-      setEsBodega(valores.some((v) => String(v) === '6e7af5ab' || normB(v).startsWith('bodega')));
+      setEsBodega(valores.some((v) => String(v) === TIPO_EMPRESA.bodega || normB(v).startsWith('bodega'))); // ✅ V00439 (Fase 3.x): ID desde constantes
     }).catch(() => { if (vivo) setEsBodega(false); });
     return () => { vivo = false; };
   }, [registroId, coleccionOrigen]);

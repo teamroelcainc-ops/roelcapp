@@ -12,6 +12,7 @@
 //       o rechaza desde el módulo "Autorizaciones".
 // ============================================================================
 import { doc, getDoc, getDocs, collection, setDoc, addDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { useUsuarioStore } from '../../stores/useUsuarioStore'; // ✅ V00439
 import { db, auth } from '../../config/firebase';
 import { almacenSesion } from '../../utils/cacheMemoria';
 
@@ -323,6 +324,19 @@ export const obtenerUsuarioAut = async (): Promise<{ uid: string; nombre: string
   const simulados = vistaComoRoles();
   const u = auth.currentUser;
   if (!u) return { uid: '', nombre: 'Sin sesión', roles: [], esAdmin: false };
+  // ✅ V00439 (Fase 3.7): la sesión ya está en el store (App.tsx la publica, con la
+  //   vista previa resuelta solo para admins reales): no se vuelve a leer usuarios/{uid}.
+  const sesion = useUsuarioStore.getState();
+  if (sesion.usuario && sesion.usuario.id === u.uid) {
+    const roles = sesion.rolesEfectivos;
+    return {
+      uid: u.uid,
+      nombre: String(sesion.usuario.nombre || u.email || 'Usuario') + (sesion.vistaPrevia ? ' (vista previa)' : ''),
+      puedeEditarApp: sesion.usuario.puedeEditarApp === true,
+      roles,
+      esAdmin: esRolAdmin(roles),
+    };
+  }
   try {
     const snap = await getDoc(doc(db, 'usuarios', u.uid));
     const data: Record<string, unknown> | null = snap.exists() ? snap.data() : null;

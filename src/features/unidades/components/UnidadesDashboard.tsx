@@ -1,8 +1,8 @@
 // src/features/unidades/components/UnidadesDashboard.tsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { exportarEstructuraCarpetas } from '../../documentos/exportarEstructuraCarpetas';
-import { collection, onSnapshot } from 'firebase/firestore';
-import { db, eliminarRegistro } from '../../../config/firebase'; 
+import { eliminarRegistro } from '../../../config/firebase'; 
+import { useCatalogo } from '../../../shared/data/catalogos';
 import { FormularioUnidad, TIPOS_DOCUMENTO_UNIDAD } from './FormularioUnidad';
 import { DocumentosLista } from '../../documentos/DocumentosLista';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
@@ -30,7 +30,14 @@ export const UnidadesDashboard: React.FC = () => {
   const [registroEditando, setRegistroEditando] = useState<UnidadRecord | null>(null);
   
   // Lista de TODOS los registros bajados de la BD
-  const [registrosGlobales, setRegistrosGlobales] = useState<UnidadRecord[]>([]);
+  // ✅ V00439 (Fase 3.x): listener compartido del catálogo `unidades` (antes onSnapshot propio).
+  const { datos: unidadesCat } = useCatalogo('unidades');
+  // Ordenar alfabéticamente por Unidad
+  const registrosGlobales = useMemo(
+    () => [...(unidadesCat as unknown as UnidadRecord[])]
+      .sort((a, b) => String(a.unidad ?? '').localeCompare(String(b.unidad ?? ''))),
+    [unidadesCat],
+  );
   const [busqueda, setBusqueda] = useState('');
   // ✅ NUEVO: panel lateral derecho de filtros + tabla VACÍA hasta presionar Buscar.
   const [drawerFiltrosAbierto, setDrawerFiltrosAbierto] = useState(false);
@@ -56,17 +63,6 @@ export const UnidadesDashboard: React.FC = () => {
   const [unidadSubirDocs, setUnidadSubirDocs] = useState<UnidadRecord | null>(null);
   // ✅ V00134: DETALLE de la unidad (clic en la fila) con sus documentos integrados
   const [unidadDetalle, setUnidadDetalle] = useState<UnidadRecord | null>(null);
-
-  // Suscripción en tiempo real a Firebase
-  useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'unidades'), (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as UnidadRecord[];
-      // Ordenar alfabéticamente por Unidad
-      data.sort((a, b) => a.unidad.localeCompare(b.unidad));
-      setRegistrosGlobales(data);
-    });
-    return () => unsubscribe();
-  }, []);
 
   // Si el usuario busca o filtra algo, reseteamos a la página 1
   useEffect(() => {

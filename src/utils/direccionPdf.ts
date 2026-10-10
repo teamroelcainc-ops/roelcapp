@@ -4,26 +4,14 @@
 //   1) Registro del catálogo `direcciones` por direccionId (o por texto igual).
 //   2) Campos estructurados; lo que falte se completa parseando el texto.
 //   3) Sin registro: se parsea el texto guardado en la empresa.
-//   El catálogo se lee FRESCO de Firestore (con caché corta) para no depender
-//   de que el estado de la pantalla ya lo tenga cargado.
-import { collection, getDocs } from 'firebase/firestore';
-import { db } from '../config/firebase';
+// ✅ V00439 (Fase 3.x): el catálogo `direcciones` sale del listener compartido
+//   (obtenerCatalogo, siempre en vivo); sin getDocs ni caché propia de 5 min.
+import { obtenerCatalogo } from '../shared/data/catalogos';
 
 type Fila = Record<string, unknown> & { id: string };
 export type DireccionPdf = { direccion: string; colonia: string; cp: string; ciudad: string; municipio: string; estado: string; pais: string; completa: string };
 
-let cache: { ts: number; data: Fila[] } | null = null;
-export const direccionesParaPdf = async (): Promise<Fila[]> => {
-  if (cache && Date.now() - cache.ts < 5 * 60 * 1000 && cache.data.length) return cache.data;
-  try {
-    const snap = await getDocs(collection(db, 'direcciones'));
-    cache = { ts: Date.now(), data: snap.docs.map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) })) };
-    return cache.data;
-  } catch (e) {
-    console.error('[PDF] No se pudo leer el catálogo de direcciones:', e);
-    return cache?.data || [];
-  }
-};
+export const direccionesParaPdf = (): Promise<Fila[]> => obtenerCatalogo('direcciones');
 
 export const parsearDireccionTexto = (texto: string) => {
   const t = String(texto || '');

@@ -16,8 +16,9 @@
 //   La usan: Operaciones Activas, Servicios Completados y Servicios
 //   Cancelados (botón "Sincronizar nombres" en cada toolbar).
 
-import { collection, doc, getDocs, writeBatch } from 'firebase/firestore';
+import { doc, writeBatch } from 'firebase/firestore';
 import { db } from '../config/firebase';
+import { idReal, obtenerCatalogo } from '../shared/data/catalogos';
 import { registrarLog } from './logger';
 
 // Campos de operación que apuntan a EMPRESAS por id → su campo de nombre.
@@ -49,21 +50,22 @@ export async function sincronizarNombresOperaciones(
   operaciones: Array<Record<string, unknown> & { id: string }>,
   origenLog: string
 ): Promise<ResultadoSincronizacion> {
-  // Catálogos actuales (lectura directa; colecciones pequeñas salvo empresas)
-  const [snapTipoOp, snapStatus, snapEmp, snapCV] = await Promise.all([
-    getDocs(collection(db, 'catalogo_tipo_operacion')),
-    getDocs(collection(db, 'catalogo_status_servicio')),
-    getDocs(collection(db, 'empresas')),
-    getDocs(collection(db, 'catalogo_carga_vacia')),
+  // ✅ V00439 (Fase 3.x): catálogos actuales desde el listener compartido
+  //   (obtenerCatalogo espera el dato del servidor), sin getDocs propios.
+  const [tiposOp, statusCat, empresas, cargaVacia] = await Promise.all([
+    obtenerCatalogo('catalogo_tipo_operacion'),
+    obtenerCatalogo('catalogo_status_servicio'),
+    obtenerCatalogo('empresas'),
+    obtenerCatalogo('catalogo_carga_vacia'),
   ]);
   const mapTipoOp: Record<string, string> = {};
-  snapTipoOp.docs.forEach((d) => { mapTipoOp[d.id] = String((d.data() as { tipo_operacion?: unknown }).tipo_operacion || ''); });
+  tiposOp.forEach((d) => { mapTipoOp[idReal(d)] = String(d.tipo_operacion || ''); });
   const mapStatus: Record<string, string> = {};
-  snapStatus.docs.forEach((d) => { mapStatus[d.id] = String((d.data() as { nombre?: unknown }).nombre || ''); });
+  statusCat.forEach((d) => { mapStatus[idReal(d)] = String(d.nombre || ''); });
   const mapEmp: Record<string, string> = {};
-  snapEmp.docs.forEach((d) => { mapEmp[d.id] = String((d.data() as { nombre?: unknown }).nombre || ''); });
-  const nombresCV = snapCV.docs
-    .map((d) => String((d.data() as { nombre?: unknown }).nombre || ''))
+  empresas.forEach((d) => { mapEmp[idReal(d)] = String(d.nombre || ''); });
+  const nombresCV = cargaVacia
+    .map((d) => String(d.nombre || ''))
     .filter(Boolean);
 
   // "Carga" se guarda como TEXTO (sin id): los valores que ya no existen en el

@@ -6,8 +6,9 @@
 //   (updateDoc status) y las tarjetas se reacomodan en vivo (onSnapshot).
 // ---------------------------------------------------------------------------
 import { useEffect, useMemo, useState } from 'react';
-import { collection, doc, getDocs, limit, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
+import { collection, doc, limit, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { idReal, useCatalogo } from '../../shared/data/catalogos';
 import './TableroOperacionesDashboard.css';
 
 const norm = (s: string) => String(s || '').trim();
@@ -20,12 +21,9 @@ export const TableroOperacionesDashboard = () => {
   const [arrastrando, setArrastrando] = useState('');
   const [guardandoId, setGuardandoId] = useState('');
   // ✅ V00171: catálogo de status (Reglas de Estatus) — id → nombre, y TODAS las columnas
-  const [catStatus, setCatStatus] = useState<{ id: string; nombre: string }[]>([]);
-  useEffect(() => {
-    getDocs(collection(db, 'catalogo_status_servicio')).then((snap) => {
-      setCatStatus(snap.docs.map((d) => ({ id: d.id, nombre: String((d.data() as any).nombre || d.id) })));
-    }).catch(() => setCatStatus([]));
-  }, []);
+  // ✅ V00439 (Fase 3.x): del listener compartido de catálogos (antes getDocs al montar).
+  const { datos: statusCat } = useCatalogo('catalogo_status_servicio');
+  const catStatus = useMemo(() => statusCat.map((d) => ({ id: idReal(d), nombre: String(d.nombre || idReal(d)) })), [statusCat]);
 
   useEffect(() => {
     const q = query(collection(db, 'operaciones'), orderBy('fechaServicio', 'desc'), limit(200));

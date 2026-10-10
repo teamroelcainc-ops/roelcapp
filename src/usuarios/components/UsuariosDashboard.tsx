@@ -1,10 +1,11 @@
 // src/usuarios/components/UsuariosDashboard.tsx
-import React, { useState, useEffect, useRef } from 'react';
-import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, query, where, getDocs } from 'firebase/firestore';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, query, where } from 'firebase/firestore';
 import { createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
 import { db, secondaryAuth } from '../../config/firebase';
 import { registrarLog } from '../../utils/logger';
 import { nombreDeEmpleado } from '../../utils/nombreEmpleado';
+import type { EmpleadoNombreCampos } from '../../utils/nombreEmpleado';
 import { DIAS_SEMANA, HORARIO_VACIO, horarioDeHoy, type HorarioTrabajo } from '../../utils/horarioTrabajo';
 import './UsuariosDashboard.css'; 
 import { FormularioConfigurable } from '../../features/formularios/FormularioConfigurable';
@@ -12,6 +13,7 @@ import { useFlags } from '../../shared/data/flags';
 import { gestionarUsuarioServidor, sincronizarClaimsServidor } from '../../features/auth/services/usuariosServidor';
 import { esAdminPorRoles } from '../../features/auth/services/acceso';
 import { useUsuarioStore } from '../../stores/useUsuarioStore';
+import { idReal, useCatalogo } from '../../shared/data/catalogos';
 
 // Comprime y redimensiona la imagen a un cuadrado pequeño (máx 256px) en base64,
 // para que la foto pese pocos KB y quepa sin problema en el documento de Firestore.
@@ -44,7 +46,9 @@ const procesarImagen = (file: File, maxLado = 256): Promise<string> =>
 
 export const UsuariosDashboard = () => {
   const [usuarios, setUsuarios] = useState<any[]>([]);
-  const [rolesDisponibles, setRolesDisponibles] = useState<any[]>([]);
+  // ✅ V00439 (Fase 3.x): roles desde el catálogo compartido (el mismo listener que App).
+  const { datos: datosRoles } = useCatalogo('roles');
+  const rolesDisponibles: any[] = datosRoles;
   const [modalAbierto, setModalAbierto] = useState(false);
   const [usuarioActual, setUsuarioActual] = useState<any | null>(null);
   const [cargando, setCargando] = useState(false);
@@ -63,7 +67,14 @@ export const UsuariosDashboard = () => {
   const [exentoIpChecador, setExentoIpChecador] = useState(false);
   // ✅ NUEVO: vínculo Usuario ↔ Colaborador (empleados). Un colaborador solo
   //   puede estar conectado a UN usuario: los ya conectados no se ofrecen.
-  const [colaboradores, setColaboradores] = useState<{ id: string; nombre: string }[]>([]);
+  // ✅ V00439 (Fase 3.x): colaboradores desde el catálogo compartido `empleados`.
+  //   Los empleados NO tienen campo `nombre`: se compone con firstName + apellidos
+  //   (o alias) — ver utils/nombreEmpleado.
+  const { datos: empleadosCat } = useCatalogo('empleados');
+  const colaboradores = useMemo(() => empleadosCat
+    .map((d) => ({ id: idReal(d), nombre: nombreDeEmpleado(d as EmpleadoNombreCampos) }))
+    .filter((c) => c.nombre)
+    .sort((a, b) => a.nombre.localeCompare(b.nombre)), [empleadosCat]);
   const [colaboradorId, setColaboradorId] = useState('');
   const [busquedaColab, setBusquedaColab] = useState('');
   // ✅ V00435: ACCESO DE CLIENTE (app móvil). Un usuario cliente NO entra a la
@@ -73,7 +84,14 @@ export const UsuariosDashboard = () => {
   const [esCliente, setEsCliente] = useState(false);
   const [empresasCliente, setEmpresasCliente] = useState<{ id: string; nombre: string }[]>([]);
   const [busquedaEmpresa, setBusquedaEmpresa] = useState('');
-  const [catalogoEmpresas, setCatalogoEmpresas] = useState<{ id: string; nombre: string }[] | null>(null);
+  // ✅ V00435: catálogo de empresas — solo cuando se marca "Acceso de cliente"
+  //   (la mayoría de los usuarios son personal). ✅ V00439 (Fase 3.x): desde el
+  //   catálogo compartido, bajo demanda; null mientras no ha llegado.
+  const { datos: empresasCat, listo: empresasListas } = useCatalogo('empresas', { activo: modalAbierto && esCliente });
+  const catalogoEmpresas = useMemo<{ id: string; nombre: string }[] | null>(() => (!empresasListas ? null : empresasCat
+    .map((x) => ({ id: idReal(x), nombre: String(x.razonSocial || x.nombre || idReal(x)).trim(), corto: String(x.nombre || '').trim() }))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre))
+    .map(({ id, nombre, corto }) => ({ id, nombre: corto && corto !== nombre ? `${nombre} (${corto})` : nombre }))), [empresasListas, empresasCat]);
   // ✅ NUEVO: horario de trabajo semanal (lo usan el Reloj Checador y la
   //   alerta global de "no has marcado").
   const [horarioTrabajo, setHorarioTrabajo] = useState<HorarioTrabajo>({ ...HORARIO_VACIO });
@@ -130,50 +148,11 @@ export const UsuariosDashboard = () => {
       setUsuarios(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
-    const unsubColabs = onSnapshot(collection(db, 'empleados'), (snapshot) => {
-      // ✅ Los empleados NO tienen campo `nombre`: se compone con
-      //   firstName + apellidos (o alias) — ver utils/nombreEmpleado.
-      const lista = snapshot.docs
-        .map(d => ({ id: d.id, nombre: nombreDeEmpleado(d.data()) }))
-        .filter(c => c.nombre)
-        .sort((a, b) => a.nombre.localeCompare(b.nombre));
-      setColaboradores(lista);
-    });
-
-    const unsubRoles = onSnapshot(collection(db, 'roles'), (snapshot) => {
-      setRolesDisponibles(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-
+    // (✅ V00439: empleados y roles llegan por useCatalogo, arriba.)
     return () => {
       unsubUsuarios();
-      unsubRoles();
-      unsubColabs();
     };
   }, []);
-
-  // ✅ V00435: catálogo de empresas — se lee UNA vez y solo cuando se marca
-  //   "Acceso de cliente" (la mayoría de los usuarios son personal).
-  useEffect(() => {
-    if (!modalAbierto || !esCliente || catalogoEmpresas !== null) return;
-    let activo = true;
-    getDocs(collection(db, 'empresas'))
-      .then((snap) => {
-        if (!activo) return;
-        const lista = snap.docs
-          .map((d) => {
-            const x = d.data() as { razonSocial?: string; nombre?: string };
-            return { id: d.id, nombre: String(x.razonSocial || x.nombre || d.id).trim(), corto: String(x.nombre || '').trim() };
-          })
-          .sort((a, b) => a.nombre.localeCompare(b.nombre))
-          .map(({ id, nombre, corto }) => ({ id, nombre: corto && corto !== nombre ? `${nombre} (${corto})` : nombre }));
-        setCatalogoEmpresas(lista);
-      })
-      .catch((e) => {
-        console.error('No se pudo leer el catálogo de empresas:', e);
-        if (activo) setCatalogoEmpresas([]);
-      });
-    return () => { activo = false; };
-  }, [modalAbierto, esCliente, catalogoEmpresas]);
 
   // EFECTO PARA BUSCAR EL HISTORIAL CUANDO SE ABRE EL MODAL
   useEffect(() => {

@@ -8,7 +8,7 @@
 //     se marca qué requiere autorización y a qué roles aplica (vacío = todos).
 //   · Pestaña "Historial": solicitudes ya resueltas.
 // ============================================================================
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import type { CSSProperties } from 'react';
 import { onSnapshot, query, where, orderBy } from 'firebase/firestore';
 import {
@@ -22,6 +22,9 @@ import { guardarOperacionSegura } from '../../operaciones/services/operacionesSe
 import { registrarLog } from '../../../utils/logger';
 import './AutorizacionesDashboard.css';
 import { useConfigsFormularios, guardarCamposFormulario, type CampoFormCfg } from '../../formularios/configFormularios';
+import { useCatalogo } from '../../../shared/data/catalogos';
+import { rolesTienenPermiso } from '../../../shared/data/sesion';
+import { useUsuarioStore } from '../../../stores/useUsuarioStore';
 
 const REGLA_VACIA: ReglaAut = { requiere: false, roles: [] };
 
@@ -46,8 +49,16 @@ MODULOS_AUTORIZABLES.forEach(m => {
 
 export const AutorizacionesDashboard = () => {
   const [usuario, setUsuario] = useState<{ nombre: string; esAdmin: boolean } | null>(null);
+  // ✅ V00439 (Fase 3.x): el catálogo de roles llega del listener compartido (el
+  //   mismo que usa App) y los roles efectivos de la sesión (useUsuarioStore):
+  //   ya no se relee la colección `roles` dos veces.
+  const { datos: rolesDocs, listo: rolesListos } = useCatalogo('roles');
+  const rolesEfectivos = useUsuarioStore((s) => s.rolesEfectivos);
   // ✅ Acceso por ROL: Admin siempre, o cualquier rol con el módulo 'Autorizaciones' asignado.
-  const [accesoPermitido, setAccesoPermitido] = useState<boolean | null>(null);
+  const accesoPermitido: boolean | null = usuario === null ? null
+    : usuario.esAdmin ? true
+    : !rolesListos ? null
+    : rolesTienenPermiso(rolesEfectivos, rolesDocs, 'Autorizaciones');
   const [pestana, setPestana] = useState<'pendientes' | 'configuracion' | 'historial'>('pendientes');
 
   // ── Configuración ──
@@ -64,7 +75,12 @@ export const AutorizacionesDashboard = () => {
   const [previewModulo, setPreviewModulo] = useState<string>('');
   const [previewRol, setPreviewRol] = useState<string>('');
   const [moduloAbierto, setModuloAbierto] = useState<string>('');
-  const [rolesCatalogo, setRolesCatalogo] = useState<string[]>([]);
+  // Roles disponibles (para "aplica a roles"); Admin siempre exento.
+  const rolesCatalogo = useMemo(() => {
+    const nombres = rolesDocs.map((d) => String(d.nombre || '')).filter(Boolean)
+      .filter((n) => !n.toUpperCase().includes('ADMIN'));
+    return [...new Set(nombres)].sort((a, b) => a.localeCompare(b, 'es'));
+  }, [rolesDocs]);
   const [guardandoModulo, setGuardandoModulo] = useState<string>('');
   const [cargandoConfig, setCargandoConfig] = useState(true);
 
@@ -81,30 +97,6 @@ export const AutorizacionesDashboard = () => {
     (async () => {
       const u = await obtenerUsuarioAut();
       setUsuario({ nombre: u.nombre, esAdmin: u.esAdmin });
-      if (u.esAdmin) { setAccesoPermitido(true); return; }
-      try {
-        const normA = (x: any) => String(x ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase();
-        const rolesSet = new Set((u.roles || []).map(normA));
-        const snap = await getDocs(collection(db, 'roles'));
-        const permitido = snap.docs.some((d: any) => {
-          const rd = d.data() || {};
-          if (!rolesSet.has(normA(rd.nombre)) && !rolesSet.has(normA(d.id))) return false;
-          return (rd.modulosPermitidos || []).some((m: string) => normA(m) === 'AUTORIZACIONES');
-        });
-        setAccesoPermitido(permitido);
-      } catch { setAccesoPermitido(false); }
-    })();
-  }, []);
-
-  // Roles disponibles (para "aplica a roles")
-  useEffect(() => {
-    (async () => {
-      try {
-        const snap = await getDocs(collection(db, 'roles'));
-        const nombres = snap.docs.map((d: any) => String((d.data() || {}).nombre || '')).filter(Boolean)
-          .filter(n => !n.toUpperCase().includes('ADMIN')); // Admin siempre exento
-        setRolesCatalogo([...new Set(nombres)].sort((a, b) => a.localeCompare(b, 'es')));
-      } catch (e) { console.error('Error cargando roles:', e); }
     })();
   }, []);
 

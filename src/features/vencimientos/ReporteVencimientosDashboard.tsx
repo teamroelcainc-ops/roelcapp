@@ -9,7 +9,7 @@
 //     instante en Firestore).
 // ---------------------------------------------------------------------------
 import { useEffect, useMemo, useState } from 'react';
-import { addDoc, collection, doc, getDocs, onSnapshot, updateDoc } from 'firebase/firestore';
+import { addDoc, collection, doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { obtenerUsuarioAut, cargarConfigModulo, evaluarAutorizacion, crearSolicitudAutorizacion } from '../autorizaciones/autorizaciones'; // ✅ V00325
 import type { ConfigModuloAut } from '../autorizaciones/autorizaciones'; // ✅ V00325
 import * as XLSX from 'xlsx';
@@ -17,6 +17,7 @@ import { db } from '../../config/firebase';
 import { EditorEncabezados } from '../../components/EditorEncabezados';
 import { useEtiquetas } from '../../contexts/EtiquetasContext';
 import './ReporteVencimientosDashboard.css';
+import { idReal, useCatalogos } from '../../shared/data/catalogos';
 
 interface DocVenc {
   id: string;
@@ -49,19 +50,20 @@ export const ReporteVencimientosDashboard = () => {
   const [cargando, setCargando] = useState(true);
   const [pestana, setPestana] = useState<'vencimientos' | 'sinFechas' | 'sinClasificar'>('vencimientos');
   // ✅ V00179: DOCUMENTOS SIN CLASIFICAR — catálogo de tipos para reubicarlos aquí mismo.
-  const [tiposCatalogo, setTiposCatalogo] = useState<{ nombre: string; vence: boolean; modulos: string[] }[]>([]);
+  // ✅ V00439 (Fase 3.x): tipos de archivo, empleados, empresas y unidades desde los
+  //   listeners compartidos de catálogos (antes 4 getDocs propios al montar).
+  const { datos: catVenc } = useCatalogos({
+    tiposArchivo: 'catalogo_tipo_archivo', empleados: 'empleados', empresas: 'empresas', unidades: 'unidades',
+  });
+  const tiposCatalogo = useMemo(() => {
+    const esSi = (v: unknown) => v === true || /^(s|y|1|true)/i.test(String(v ?? ''));
+    const nrm = (t: unknown) => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+    return catVenc.tiposArchivo.map((x) => {
+      const mods = (Array.isArray(x.modulo) ? x.modulo : String(x.modulo || '').split(',')).map((m: unknown) => nrm(m)).filter(Boolean);
+      return { nombre: String(x.nombre || '').trim(), vence: esSi(x.vence), modulos: mods };
+    }).filter((t) => t.nombre).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+  }, [catVenc.tiposArchivo]);
   const [reubicandoId, setReubicandoId] = useState('');
-  useEffect(() => {
-    getDocs(collection(db, 'catalogo_tipo_archivo')).then((snap) => {
-      const esSi = (v: any) => v === true || /^(s|y|1|true)/i.test(String(v ?? ''));
-      const nrm = (t: any) => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-      setTiposCatalogo(snap.docs.map((d) => {
-        const x: any = d.data();
-        const mods = (Array.isArray(x.modulo) ? x.modulo : String(x.modulo || '').split(',')).map((m: any) => nrm(m)).filter(Boolean);
-        return { nombre: String(x.nombre || '').trim(), vence: esSi(x.vence), modulos: mods };
-      }).filter((t) => t.nombre).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')));
-    }).catch(() => setTiposCatalogo([]));
-  }, []);
   // tipos que aplican según la colección de origen del documento
   const tiposParaDoc = (d: DocVenc) => {
     const col = String(d.coleccionOrigen || '').toLowerCase();
@@ -131,27 +133,16 @@ export const ReporteVencimientosDashboard = () => {
   // ✅ V00155: nombres reales de los registros — muchos documentos guardan solo
   //   el ID (registroNombre vacío o con pinta de id); se resuelven contra
   //   empleados / empresas / unidades.
-  const [nombres, setNombres] = useState<Record<string, Record<string, string>>>({});
   // ✅ V00189: dueños DE BAJA/INACTIVOS — sus documentos NO aparecen en el
   //   reporte ni cuentan como vencidos (ids por colección).
-  const [bajas, setBajas] = useState<Record<string, Set<string>>>({ empleados: new Set(), empresas: new Set(), unidades: new Set() });
-  useEffect(() => {
-    (async () => {
-      const out: Record<string, Record<string, string>> = { empleados: {}, empresas: {}, unidades: {} };
-      const bj: Record<string, Set<string>> = { empleados: new Set(), empresas: new Set(), unidades: new Set() };
-      try {
-        const [se, sm, su] = await Promise.all([
-          getDocs(collection(db, 'empleados')),
-          getDocs(collection(db, 'empresas')),
-          getDocs(collection(db, 'unidades')),
-        ]);
-        se.docs.forEach((d) => { const x: any = d.data(); if (x.activo === false || /^(baja|inactiv)/i.test(String(x.status || ''))) bj.empleados.add(d.id); out.empleados[d.id] = (`${x.firstName || x.nombres || ''} ${x.lastNamePaternal || x.apellidoPaterno || ''} ${x.lastNameMaternal || x.apellidoMaterno || ''}`.replace(/\s+/g, ' ').trim()) || String(x.nombre || x.nombreCompleto || x.employeeId || d.id); });
-        sm.docs.forEach((d) => { const x: any = d.data(); if (/^(baja|inactiv)/i.test(String(x.status || ''))) bj.empresas.add(d.id); out.empresas[d.id] = String(x.nombre || x.empresa || d.id); });
-        su.docs.forEach((d) => { const x: any = d.data(); if ((x.activa ?? x.activo) === false || /^(baja|inactiv)/i.test(String(x.status || ''))) bj.unidades.add(d.id); out.unidades[d.id] = String(x.unidad || x.placas || x.nombre || d.id); });
-      } catch (e) { console.error('[Reporte Vencimiento] nombres:', e); }
-      setNombres(out); setBajas(bj);
-    })();
-  }, []);
+  const { nombres, bajas } = useMemo(() => {
+    const out: Record<string, Record<string, string>> = { empleados: {}, empresas: {}, unidades: {} };
+    const bj: Record<string, Set<string>> = { empleados: new Set(), empresas: new Set(), unidades: new Set() };
+    catVenc.empleados.forEach((x) => { if (x.activo === false || /^(baja|inactiv)/i.test(String(x.status || ''))) bj.empleados.add(idReal(x)); out.empleados[idReal(x)] = (`${x.firstName || x.nombres || ''} ${x.lastNamePaternal || x.apellidoPaterno || ''} ${x.lastNameMaternal || x.apellidoMaterno || ''}`.replace(/\s+/g, ' ').trim()) || String(x.nombre || x.nombreCompleto || x.employeeId || idReal(x)); });
+    catVenc.empresas.forEach((x) => { if (/^(baja|inactiv)/i.test(String(x.status || ''))) bj.empresas.add(idReal(x)); out.empresas[idReal(x)] = String(x.nombre || x.empresa || idReal(x)); });
+    catVenc.unidades.forEach((x) => { if ((x.activa ?? x.activo) === false || /^(baja|inactiv)/i.test(String(x.status || ''))) bj.unidades.add(idReal(x)); out.unidades[idReal(x)] = String(x.unidad || x.placas || x.nombre || idReal(x)); });
+    return { nombres: out, bajas: bj };
+  }, [catVenc.empleados, catVenc.empresas, catVenc.unidades]);
   const pareceId = (t: string) => /^[0-9a-f]{8,}$/i.test(String(t || '').trim());
   // ✅ V00189: ¿el dueño del documento está de baja? (id exacto o por prefijo)
   const duenioDeBaja = (d: DocVenc): boolean => {
@@ -301,7 +292,7 @@ export const ReporteVencimientosDashboard = () => {
     const vence = window.confirm('¿Este tipo de documento VENCE (controla fecha de vencimiento)?\n\nAceptar = Sí vence · Cancelar = No vence');
     try {
       await addDoc(collection(db, 'catalogo_tipo_archivo'), { nombre, vence, modulo: ['todos'], creadoDesde: 'reporte_vencimientos', createdAt: new Date().toISOString() });
-      setTiposCatalogo((prev) => [...prev, { nombre, vence, modulos: ['todos'] }].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')));
+      // ✅ V00439 (Fase 3.x): el alta llega sola por el listener compartido del catálogo.
       return nombre;
     } catch (e) { alert(`No se pudo guardar el tipo: ${(e as { message?: string })?.message || e}`); return ''; }
   };

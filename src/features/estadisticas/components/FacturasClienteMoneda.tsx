@@ -17,10 +17,8 @@ import { collection, doc, getDoc, getDocs, query, updateDoc, where } from 'fireb
 import { db } from '../../../config/firebase';
 import { propagarMonedaEmpresa, type ReporteMoneda } from '../../empresas/services/propagarMoneda';
 import { registrarLog } from '../../../utils/logger';
+import { idMoneda, monedaCanonica, nombreMoneda } from '../../../shared/dominio/moneda';
 import './FacturasClienteMoneda.css';
-
-const ID_USD = '7dca62b3';
-const ID_MXN = 'f95d8894';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docs sin tipo canónico (mismo criterio de Estadísticas).
 type Doc = any;
@@ -34,16 +32,8 @@ interface Props {
 }
 
 /** Canoniza cualquier representación de moneda (id de catálogo, nombre o canon) a USD/MXN. */
-const canonMoneda = (v: unknown): 'USD' | 'MXN' | '' => {
-  const t = String(v ?? '').trim();
-  if (!t) return '';
-  if (t === ID_USD) return 'USD';
-  if (t === ID_MXN) return 'MXN';
-  const u = t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
-  if (u.includes('USD') || u.includes('DOLAR') || u === 'US$' || u === 'DLS') return 'USD';
-  if (u.includes('MXN') || u.includes('PESO') || u === 'MN') return 'MXN';
-  return '';
-};
+// ✅ V00439 (Fase 3.6): regla compartida monedaCanonica (antes copia local).
+const canonMoneda = (v: unknown): 'USD' | 'MXN' | '' => monedaCanonica(v) ?? '';
 
 const montoFactura = (f: Doc): number =>
   Number(f?.subtotalFactura) || Number(f?.total) || Number(f?.montoFactura) || 0;
@@ -118,8 +108,8 @@ export function FacturasClienteMoneda({ cliente, ops, onCerrar }: Props) {
       // Se escribe el ID de catálogo (formato que Empresas resuelve contra el
       // diccionario de monedas) + el nombre desnormalizado.
       await updateDoc(doc(db, 'empresas', clienteId), {
-        moneda: monedaEdit === 'USD' ? ID_USD : ID_MXN,
-        monedaNombre: monedaEdit === 'USD' ? 'Dólares' : 'Pesos',
+        moneda: idMoneda(monedaEdit),
+        monedaNombre: nombreMoneda(monedaEdit),
       });
       await registrarLog('Empresas', 'Edición', `Cambió la moneda de "${cliente}" a ${monedaEdit} desde Estadísticas (facturas del cliente).`);
       await cargar(clienteId);

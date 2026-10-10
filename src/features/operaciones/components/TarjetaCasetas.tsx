@@ -8,20 +8,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
+import { idReal, useCatalogo } from '../../../shared/data/catalogos';
+import { monedaCanonica, nombreMoneda as nombreMonedaCanonica } from '../../../shared/dominio/moneda';
 import './TarjetaCasetas.css';
 
-const ID_USD = '7dca62b3';
-const ID_MXN = 'f95d8894';
 const norm = (s: unknown): string => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
-const nombreMoneda = (v: unknown): string => {
-  const t = String(v ?? '');
-  if (t === ID_USD) return 'Dólares';
-  if (t === ID_MXN) return 'Pesos';
-  const n = norm(t);
-  if (n.includes('dolar') || n === 'usd') return 'Dólares';
-  if (n.includes('peso') || n === 'mxn') return 'Pesos';
-  return t;
-};
+// ✅ V00439 (Fase 3.x): moneda con el helper compartido; lo no reconocido se deja tal cual.
+const nombreMoneda = (v: unknown): string => nombreMonedaCanonica(monedaCanonica(v)) || String(v ?? '');
 const fmtMonto = (v: unknown): string => {
   const n = Number(v);
   return Number.isFinite(n) ? `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
@@ -53,7 +46,12 @@ const grupoDePuente = (nombre: string): GrupoPuente | null => {
 };
 
 export const TarjetaCasetas: React.FC = () => {
-  const [puentes, setPuentes] = useState<Puente[]>([]);
+  // ✅ V00439 (Fase 3.x): puentes del catálogo Tipos de Gastos vía el listener compartido.
+  const { datos: tiposGastos } = useCatalogo('catalogo_tipos_gastos');
+  const puentes = useMemo<Puente[]>(() => tiposGastos
+    .filter((x) => norm(x.categoria_gasto) === 'puente')
+    .map((x) => ({ id: idReal(x), nombre: String(x.nombre_gasto || ''), moneda: nombreMoneda(x.moneda) }))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre)), [tiposGastos]);
   const [recargas, setRecargas] = useState<RecargaMin[]>([]);
   const [crucesOps, setCruces] = useState<CruceMin[]>([]);
   // ✅ V00395: OTROS CRUCES (sin operación, registrados en Referencias de Puentes) también descuentan
@@ -78,16 +76,6 @@ export const TarjetaCasetas: React.FC = () => {
   const moduloVisible = useModuloVivoActivo();
   useEffect(() => {
     if (!moduloVisible) return;
-    const u1 = onSnapshot(collection(db, 'catalogo_tipos_gastos'), (snap) => {
-      const lista: Puente[] = [];
-      snap.docs.forEach((d) => {
-        const x = d.data() as Record<string, unknown>;
-        if (norm(x.categoria_gasto) !== 'puente') return;
-        lista.push({ id: d.id, nombre: String(x.nombre_gasto || ''), moneda: nombreMoneda(x.moneda) });
-      });
-      lista.sort((a, b) => a.nombre.localeCompare(b.nombre));
-      setPuentes(lista);
-    }, (e) => console.warn('Casetas del día:', e));
     const u2 = onSnapshot(collection(db, 'saldos_puentes'), (snap) => {
       setRecargas(snap.docs.map((d) => {
         const x = d.data() as Record<string, unknown>;
@@ -116,7 +104,7 @@ export const TarjetaCasetas: React.FC = () => {
         return { puenteNombre: String(x.puenteNombre || ''), fecha: String(x.fechaCruce || x.fechaGeneracion || ''), fechaServicio: String(x.fechaCruce || x.fechaGeneracion || ''), monto: Number(x.monto ?? x.subtotalPuentes) || 0, moneda: nombreMoneda(x.moneda), ref: String(x.consecutivo || d.id), statusNombre: 'Otro cruce', evento: String(x.unidad || '') };
       }));
     }, () => setCrucesOtros([]));
-    return () => { u1(); u2(); u3(); u4(); };
+    return () => { u2(); u3(); u4(); };
   }, [moduloVisible]);
 
   /** Saldo pendiente (disponible) del puente = Σ recargas − Σ cruces desde la 1ª recarga. */

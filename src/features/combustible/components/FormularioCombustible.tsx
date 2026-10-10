@@ -1,6 +1,6 @@
 // src/features/combustible/components/FormularioCombustible.tsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import { valoresEquivalentesAut } from '../../autorizaciones/autorizaciones'; // ✅ V00332
 import { useEffect as useEffectAut } from 'react'; // ✅ V00332
@@ -11,6 +11,9 @@ import { getMonedasCatalogo, saveCombustible } from '../services/combustibleServ
 import './FormularioCombustible.css';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
+import { idReal, useCatalogos } from '../../../shared/data/catalogos';
+import type { DocCatalogo } from '../../../shared/data/catalogos';
+import { TIPO_EMPRESA } from '../../../shared/dominio/constantes';
 
 // =========================================
 // SUB-COMPONENTE: SELECTOR CON BUSCADOR
@@ -115,7 +118,6 @@ export const FormularioCombustible: React.FC<FormProps> = ({
   const [monedaSeleccionada, setMonedaSeleccionada] = useState<Moneda | null>(null);
   const [tipoMedida, setTipoMedida] = useState<string>(''); 
   
-  const [proveedoresDB, setProveedoresDB] = useState<any[]>([]);
   const [proveedorId, setProveedorId] = useState<string>('');
   const [proveedorNombre, setProveedorNombre] = useState<string>('');
 
@@ -151,54 +153,47 @@ export const FormularioCombustible: React.FC<FormProps> = ({
     }
   }, [initialData, monedas, todayISO]);
 
-  useEffect(() => {
-    const cargarProveedores = async () => {
-      try {
-        // ✅ CORREGIDO: solo PROVEEDORES DE DIESEL. Antes el filtro aceptaba a
-        //   cualquier empresa cuyo registro contuviera la palabra "proveedor"
-        //   (por eso aparecían clientes, cámaras y personas). Ahora se resuelven
-        //   los NOMBRES de los tipos de empresa y de servicio desde sus
-        //   catálogos y solo pasan las empresas cuyo tipo mencione
-        //   "diesel" o "combustible".
-        const [empSnapshot, tipoEmpSnap, tipoServSnap] = await Promise.all([
-          getDocs(collection(db, 'empresas')),
-          getDocs(collection(db, 'catalogo_tipo_empresa')),
-          getDocs(collection(db, 'catalogo_tipo_servicio')),
-        ]);
-        const todasEmpresas = empSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        const nombresTipo: Record<string, string> = {};
-        tipoEmpSnap.docs.forEach(d => { nombresTipo[d.id] = String((d.data() as any).nombre || ''); });
-        tipoServSnap.docs.forEach(d => { nombresTipo[d.id] = String((d.data() as any).nombre || ''); });
-        const nombreDeTipo = (item: any): string => {
-          if (!item) return '';
-          if (typeof item === 'object') return String(item.nombre || item.tipo || nombresTipo[item.id] || '');
-          return String(nombresTipo[String(item)] || item);
-        };
-        const esProveedorDiesel = (emp: any): boolean => {
-          const etiquetas = [
-            ...(Array.isArray(emp.tiposEmpresa) ? emp.tiposEmpresa : []),
-            ...(Array.isArray(emp.tiposServicio) ? emp.tiposServicio : []),
-          ].map(nombreDeTipo).join(' | ').toLowerCase();
-          return etiquetas.includes('diesel') || etiquetas.includes('combustible');
-        };
-        let proveedoresFiltrados = todasEmpresas.filter(esProveedorDiesel);
-        // Respaldo: si el catálogo aún no tiene un tipo "Diesel"/"Combustible"
-        // asignado a ninguna empresa, se muestran los proveedores generales
-        // para no dejar la lista vacía (y poder capturar mientras se asigna).
-        if (proveedoresFiltrados.length === 0) {
-          const ID_PROVEEDOR = '11894dfd';
-          proveedoresFiltrados = todasEmpresas.filter((emp: any) =>
-            Array.isArray(emp.tiposEmpresa) && emp.tiposEmpresa.some((t: any) =>
-              (typeof t === 'object' ? String(t.id) : String(t)) === ID_PROVEEDOR || nombreDeTipo(t).toLowerCase().includes('proveedor')));
-        }
-        proveedoresFiltrados.sort((a: any, b: any) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' }));
-        setProveedoresDB(proveedoresFiltrados);
-      } catch (error) {
-        console.error("Error al obtener proveedores:", error);
+  // ✅ V00439 (Fase 3.x): empresas y tipos desde los listeners compartidos de catálogos.
+  const { datos: catProv } = useCatalogos({
+    empresas: 'empresas', tiposEmpresa: 'catalogo_tipo_empresa', tiposServicio: 'catalogo_tipo_servicio',
+  });
+  const proveedoresDB = useMemo<DocCatalogo[]>(() => {
+    // ✅ CORREGIDO: solo PROVEEDORES DE DIESEL. Antes el filtro aceptaba a
+    //   cualquier empresa cuyo registro contuviera la palabra "proveedor"
+    //   (por eso aparecían clientes, cámaras y personas). Ahora se resuelven
+    //   los NOMBRES de los tipos de empresa y de servicio desde sus
+    //   catálogos y solo pasan las empresas cuyo tipo mencione
+    //   "diesel" o "combustible".
+    const todasEmpresas = catProv.empresas;
+    const nombresTipo: Record<string, string> = {};
+    catProv.tiposEmpresa.forEach(d => { nombresTipo[idReal(d)] = String(d.nombre || ''); });
+    catProv.tiposServicio.forEach(d => { nombresTipo[idReal(d)] = String(d.nombre || ''); });
+    const nombreDeTipo = (item: unknown): string => {
+      if (!item) return '';
+      if (typeof item === 'object') {
+        const o = item as Record<string, unknown>;
+        return String(o.nombre || o.tipo || nombresTipo[String(o.id)] || '');
       }
+      return String(nombresTipo[String(item)] || item);
     };
-    cargarProveedores();
-  }, []);
+    const lista = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+    const esProveedorDiesel = (emp: DocCatalogo): boolean => {
+      const etiquetas = [...lista(emp.tiposEmpresa), ...lista(emp.tiposServicio)]
+        .map(nombreDeTipo).join(' | ').toLowerCase();
+      return etiquetas.includes('diesel') || etiquetas.includes('combustible');
+    };
+    let proveedoresFiltrados = todasEmpresas.filter(esProveedorDiesel);
+    // Respaldo: si el catálogo aún no tiene un tipo "Diesel"/"Combustible"
+    // asignado a ninguna empresa, se muestran los proveedores generales
+    // para no dejar la lista vacía (y poder capturar mientras se asigna).
+    if (proveedoresFiltrados.length === 0) {
+      proveedoresFiltrados = todasEmpresas.filter(emp =>
+        lista(emp.tiposEmpresa).some(t =>
+          (typeof t === 'object' ? String((t as { id?: unknown } | null)?.id) : String(t)) === TIPO_EMPRESA.proveedorServicios
+          || nombreDeTipo(t).toLowerCase().includes('proveedor')));
+    }
+    return [...proveedoresFiltrados].sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' }));
+  }, [catProv]);
 
   // ✅ LOGICA ACTUALIZADA: Buscar T.C. en la colección 'tipo_cambio' de Firestore
   useEffect(() => {
@@ -296,7 +291,7 @@ export const FormularioCombustible: React.FC<FormProps> = ({
 
   const opcionesProveedores = proveedoresDB.map(prov => ({
     id: prov.id,
-    label: prov.nombre || prov.nombreCorto || prov.empresa || `Proveedor ID: ${prov.id.slice(0,4)}`
+    label: String(prov.nombre || prov.nombreCorto || prov.empresa || `Proveedor ID: ${prov.id.slice(0,4)}`)
   }));
 
   return (

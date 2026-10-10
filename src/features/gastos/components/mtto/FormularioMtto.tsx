@@ -1,11 +1,13 @@
 // src/features/gastos/components/mtto/FormularioMtto.tsx
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useEffectEvent, useRef } from 'react';
 import { ModalAccesoCampo } from '../../../autorizaciones/ModalAccesoCampo';
 import { useAutorizacionesCampos } from '../../../autorizaciones/useAutorizacionesCampos';
 import { camposModificadosDe } from '../../../autorizaciones/autorizaciones';
 // ✅ IMPORTAMOS 'doc' y 'updateDoc' DE FIREBASE
 import { collection, getDocs, query, limit, orderBy, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../../../config/firebase';
+import { useCatalogos } from '../../../../shared/data/catalogos';
+import { TIPO_EMPRESA } from '../../../../shared/dominio/constantes';
 import { guardarMttoSeguro } from '../services/mttoService';
 import './FormularioMtto.css';
 import { hoyLocalISO } from '../../../../utils/fechaHoraLocal';
@@ -110,12 +112,14 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
   const [searchAutorizadorConfig, setSearchAutorizadorConfig] = useState(configuracion.autorizadorNombreFijo || '');
   const [showAutorizadorConfig, setShowAutorizadorConfig] = useState(false);
 
-  // Estados locales de auto-reparación
-  const [listaEmpleadosLocal, setListaEmpleadosLocal] = useState<any[]>(catalogos?.empleados || []);
-  const [listaUnidadesLocal, setListaUnidadesLocal] = useState<any[]>(catalogos?.unidades || []);
-  const [listaMonedasLocal, setListaMonedasLocal] = useState<any[]>(catalogos?.catalogo_moneda || catalogos?.monedas || []);
-  const [listaFormasPagoLocal, setListaFormasPagoLocal] = useState<any[]>(catalogos?.catalogo_formas_pago || catalogos?.formasPago || []);
-  const [listaTiposServicioLocal, setListaTiposServicioLocal] = useState<any[]>(catalogos?.catalogo_tipo_servicio || catalogos?.tiposServicio || []);
+  // ✅ V00439 (Fase 3.4): listas del listener compartido (antes copia del prop
+  //   con getDocs de respaldo cuando venía vacío).
+  const { datos: {
+    listaEmpleadosLocal, listaUnidadesLocal, listaMonedasLocal, listaFormasPagoLocal, listaTiposServicioLocal,
+  } } = useCatalogos({
+    listaEmpleadosLocal: 'empleados', listaUnidadesLocal: 'unidades', listaMonedasLocal: 'catalogo_moneda',
+    listaFormasPagoLocal: 'catalogo_formas_pago', listaTiposServicioLocal: 'catalogo_tipo_servicio',
+  });
 
   // Estados visuales de búsqueda principal
   const [searchUnidad, setSearchUnidad] = useState('');
@@ -179,41 +183,6 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
     guardarConfiguracion(nueva);
   };
 
-  // DESCARGA FORZADA DE COLECCIONES FALTANTES
-  useEffect(() => {
-    const cargarCatalogosFaltantes = async () => {
-      try {
-        if (!catalogos?.empleados || catalogos.empleados.length === 0) {
-          const snap = await getDocs(collection(db, 'empleados'));
-          setListaEmpleadosLocal(snap.docs.map(d => ({id: d.id, ...d.data()})));
-        }
-
-        if (!catalogos?.unidades || catalogos.unidades.length === 0) {
-          const snapUni = await getDocs(collection(db, 'unidades'));
-          setListaUnidadesLocal(snapUni.docs.map(d => ({id: d.id, ...d.data()})));
-        }
-
-        if (!(catalogos?.catalogo_moneda || catalogos?.monedas)?.length) {
-          const snapMon = await getDocs(collection(db, 'catalogo_moneda'));
-          setListaMonedasLocal(snapMon.docs.map(d => ({id: d.id, ...d.data()})));
-        }
-
-        if (!(catalogos?.catalogo_formas_pago || catalogos?.formasPago)?.length) {
-          const snapFP = await getDocs(collection(db, 'catalogo_formas_pago'));
-          setListaFormasPagoLocal(snapFP.docs.map(d => ({id: d.id, ...d.data()})));
-        }
-
-        if (!(catalogos?.catalogo_tipo_servicio || catalogos?.tiposServicio)?.length) {
-          const snapTS = await getDocs(collection(db, 'catalogo_tipo_servicio'));
-          setListaTiposServicioLocal(snapTS.docs.map(d => ({id: d.id, ...d.data()})));
-        }
-      } catch (error) {
-        console.warn("Error cargando colecciones de respaldo", error);
-      }
-    };
-    cargarCatalogosFaltantes();
-  }, [catalogos]);
-
   useEffect(() => {
     const predecirConsecutivo = async () => {
       if (initialData && initialData.numeroGasto) {
@@ -253,7 +222,14 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
     predecirConsecutivo();
   }, [formData.fecha, initialData]);
 
-  useEffect(() => {
+  // ✅ V00439 (Fase 3.4): con catálogos en vivo, los datos iniciales se aplican al
+  //   abrir y cuando llega cada catálogo (no en cada cambio del catálogo, que
+  //   borraría lo que el usuario ya editó).
+  const empleadosListos = listaEmpleadosLocal.length > 0;
+  const unidadesListas = listaUnidadesLocal.length > 0;
+  const empresasListas = (catalogos?.empresas?.length ?? 0) > 0;
+  const operacionesListas = (catalogos?.operaciones?.length ?? 0) > 0;
+  const aplicarDatosIniciales = useEffectEvent(() => {
     if (initialData && catalogos) {
       
       let safeTipos = [];
@@ -277,7 +253,7 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
 
       if (initialData.unidadId && listaUnidadesLocal.length > 0) {
         const uni = listaUnidadesLocal.find((u:any) => u.id === initialData.unidadId);
-        setSearchUnidad(uni ? (uni.unidad || uni.numeroEconomico || uni.nombre) : '');
+        setSearchUnidad(uni ? ((uni.unidad || uni.numeroEconomico || uni.nombre) as string) : '');
       } else if (initialData.unidadId === 'Oficina') {
         setSearchUnidad('Oficina');
       }
@@ -301,7 +277,8 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
         setSearchOperador(initialData.operadorNombre);
       }
     }
-  }, [initialData, catalogos, listaEmpleadosLocal, listaUnidadesLocal]);
+  });
+  useEffect(() => { aplicarDatosIniciales(); }, [initialData, empleadosListos, unidadesListas, empresasListas, operacionesListas]);
 
   const prevGastoRef = useRef(formData.tipoGasto);
   useEffect(() => {
@@ -455,7 +432,7 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
     }
   };
 
-  const proveedoresFiltro = catalogos?.empresas?.filter((e:any) => e.tiposEmpresa?.includes('11894dfd') && (e.nombre || '').toLowerCase().includes(searchProveedor.toLowerCase())) || [];
+  const proveedoresFiltro = catalogos?.empresas?.filter((e:any) => e.tiposEmpresa?.includes(TIPO_EMPRESA.proveedorServicios) && (e.nombre || '').toLowerCase().includes(searchProveedor.toLowerCase())) || [];
   
   const unidadesFiltro = listaUnidadesLocal.filter((u:any) => {
     const valUnidad = u.unidad || u.numeroEconomico || u.nombre || '';

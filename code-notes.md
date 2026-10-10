@@ -36,3 +36,17 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - **Flujos de estatus**: la vista previa del formulario ya no usa la caché de 6 h (`flujo_v1__`); lee fresco una vez por formulario. Los botones de estatus siguen con la caché de 6 h (preexistente). PENDIENTE Fase 3.5: versionar `config_flujos_operacion` en `meta/versionesCatalogos` para invalidar en todos los navegadores.
 - **Bug preexistente anotado (no corregido)**: `ServiciosCompletados.css` y `ServiciosCancelados.css` definen las mismas clases (`.sc-x1`…) con estilos distintos; el que carga después gana.
 - **`src/utils/operacionesBus.ts`** sigue borrando llaves viejas de caché de operaciones en cada evento (inofensivo; borrar al tocarlo).
+
+## Fase 3 (V00439)
+- **Catálogos en vivo compartidos en lugar de `meta/versionesCatalogos` (3.5 del prompt)**: el prompt proponía lectura única + caché versionada por un documento `meta/versionesCatalogos` que un trigger incrementa. Se eligió un `onSnapshot` compartido por colección sobre la caché persistente de Firestore: con IndexedDB un listener que se reabre antes de 30 min solo cobra lo que cambió, no necesita trigger ni documento de versiones, y elimina toda invalidación manual (regla de Caché del CLAUDE.md: no apilar capas). Costo: un listener abierto por catálogo en uso (15 min de permanencia). `DOC_VERSIONES_CATALOGOS` queda en constantes sin uso por si se retoma.
+- **`useColeccionViva` con store propio** (ver Decisiones de diseño), no el queryClient.
+- **`_docId` / `idReal()`**: los módulos armaban `{ id: d.id, ...d.data() }` (un campo `id` guardado gana) y otros usaban `d.id` directo. El catálogo conserva la primera forma y expone el id real como propiedad NO enumerable (`{...doc}` no la copia ni se escribe de vuelta). Regla: para escribir o guardar una llave foránea usa `idReal(x)`. Se revisaron ≈60 archivos contra el diff para conservar el id que usaba cada sitio.
+- **Una sola pestaña con caché en disco** (`persistentSingleTabManager`) hasta la Fase 7: `almacenSesion` (Servicios Completados) y el conteo de Empresas todavía copian operaciones a localStorage; el manager multi-pestaña escribe en localStorage y con la cuota llena tumbaba Firestore (V00109). El guardián de 3.5 MB se conserva para esas claves.
+- **Arreglos compartidos congelados en DEV**: varias vistas comparten el mismo arreglo; un `.sort()` en sitio en una afectaría a las demás. En producción no se congela (costo).
+- **`obtenerCatalogo` espera al servidor (6 s máx.)**: los servicios que escriben (integridad de convenios, sincronizar nombres) no deben decidir con la copia local; sin red devuelve la caché.
+- **EDITAR REF** pasa de `includes('ADMIN')` a admin exacto (corrige que ADMINISTRATIVO contara como admin). Documentado como cambio visible en CAMBIOS-V00439.md.
+- **Pendientes detectados (no corregidos, preexistentes)**:
+  - Facturación: el filtro "Dólares/Pesos" del historial compara texto y falla con monedas guardadas por ID.
+  - `utilidadTransfer`: compara contra `ID_MXN` en mayúsculas (nunca coincide).
+  - Proveedores de unidad: el formulario escribe en `proveedores_unidad` pero una vista lee `proveedoresUnidad`.
+  - `ServiciosCompletados` sigue con `almacenSesion` (Fase 7) y `EmpresasDashboard` con `empresas_conteo_ops_v2` (Fase 6.5/7.6).

@@ -10,6 +10,7 @@ import { FormularioConvenioProveedor } from './FormularioConvenioProveedor';
 import type { ConvenioProveedorRecord } from '../../../types/convenioProveedor';
 import './ConveniosProveedoresDashboard.css';
 import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
+import { idReal, obtenerCatalogo, useCatalogos } from '../../../shared/data/catalogos';
 
 // ============================================================
 // HELPER DE NORMALIZACIÓN PARA EL CRUCE
@@ -38,25 +39,27 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
 
   // Datos crudos en vivo — base para todos los cruces.
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
-  const [detallesGlobales, setDetallesGlobales] = useState<any[]>([]);
+  // ✅ V00439 (Fase 3.x): convenios, sus detalles y las tarifas de referencia
+  //   desde los listeners compartidos (antes 2 onSnapshot propios + 1 getDocs).
+  const { datos: cat } = useCatalogos({
+    convenios: 'convenios_proveedores', detalles: 'convenios_proveedores_detalles', tarifas: 'catalogo_tarifas_referencia',
+  });
+  const detallesGlobales: any[] = cat.detalles;
 
-  // ✅ catálogo catalogo_tarifas_referencia indexado por id (carga directa).
-  const [tarifasReferencia, setTarifasReferencia] = useState<Record<string, any>>({});
-  useEffect(() => {
-    (async () => {
-      try {
-        const snap = await getDocs(collection(db, 'catalogo_tarifas_referencia'));
-        const map: Record<string, any> = {};
-        snap.docs.forEach(d => { map[String(d.id)] = { id: d.id, ...d.data() }; });
-        setTarifasReferencia(map);
-      } catch (err) {
-        console.error('[ConveniosProveedoresDashboard] Error cargando catalogo_tarifas_referencia:', err);
-        setTarifasReferencia({});
-      }
-    })();
-  }, []);
+  // ✅ catálogo catalogo_tarifas_referencia indexado por id.
+  const tarifasReferencia = useMemo(() => {
+    const map: Record<string, any> = {};
+    cat.tarifas.forEach((d) => { map[idReal(d)] = d; });
+    return map;
+  }, [cat.tarifas]);
 
-  const [registrosGlobales, setRegistrosGlobales] = useState<ConvenioProveedorRecord[]>([]);
+  // Convenios ordenados por número, del más reciente al más antiguo.
+  //   (Cast en el punto de lectura: el catálogo no tiene convertidor tipado.)
+  const registrosGlobales = useMemo(() => ([...cat.convenios] as unknown as ConvenioProveedorRecord[]).sort((a, b) => {
+    const numA = parseInt((a.numeroConvenio || '').replace(/\D/g, ''), 10) || 0;
+    const numB = parseInt((b.numeroConvenio || '').replace(/\D/g, ''), 10) || 0;
+    return numB - numA;
+  }), [cat.convenios]);
   const [busqueda, setBusqueda] = useState('');
   // ✅ NUEVO: panel lateral derecho de filtros + tabla VACÍA hasta presionar Buscar.
   const [drawerFiltrosAbierto, setDrawerFiltrosAbierto] = useState(false);
@@ -91,29 +94,14 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
   // =========================================================
   // 1. CARGA EN TIEMPO REAL: CONVENIOS + DETALLES + OPERACIONES
   // =========================================================
+  // (✅ V00439: convenios y detalles llegan por useCatalogos, arriba.)
   useEffect(() => {
-    const unsubscribeConvenios = onSnapshot(collection(db, 'convenios_proveedores'), (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as ConvenioProveedorRecord[];
-      data.sort((a, b) => {
-        const numA = parseInt((a.numeroConvenio || '').replace(/\D/g, ''), 10) || 0;
-        const numB = parseInt((b.numeroConvenio || '').replace(/\D/g, ''), 10) || 0;
-        return numB - numA;
-      });
-      setRegistrosGlobales(data);
-    });
-
-    const unsubscribeDetalles = onSnapshot(collection(db, 'convenios_proveedores_detalles'), (snap) => {
-      setDetallesGlobales(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-
     const qOps = query(collection(db, 'operaciones'), orderBy('fechaServicio', 'desc'), limit(3000));
     const unsubscribeOperaciones = onSnapshot(qOps, (snap) => {
       setOperacionesGlobales(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
     return () => {
-      unsubscribeConvenios();
-      unsubscribeDetalles();
       unsubscribeOperaciones();
     };
   }, []);
@@ -509,10 +497,10 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
             {/* ✅ NUEVO (V00119): revisar convenios duplicados por proveedorId */}
           <button className="btn btn-outline" style={{ marginRight: '8px' }} title="Mostrar clientes/proveedores con más de un convenio" onClick={async () => {
             try {
-              const snapDup = await getDocs(collection(db, 'convenios_proveedores'));
+              const conveniosTodos = await obtenerCatalogo('convenios_proveedores'); // ✅ V00439 (Fase 3.x)
               const grupos: Record<string, string[]> = {};
               const gruposIds: Record<string, string[]> = {};
-              snapDup.docs.forEach((d) => { const x: any = d.data(); const k = String(x.proveedorId || ''); if (!k) return; (gruposIds[k] = gruposIds[k] || []).push(d.id); (grupos[k] = grupos[k] || []).push(`${x.numeroConvenio || d.id} (${x.proveedorNombre || ''})`); });
+              conveniosTodos.forEach((x) => { const k = String(x.proveedorId || ''); if (!k) return; (gruposIds[k] = gruposIds[k] || []).push(idReal(x)); (grupos[k] = grupos[k] || []).push(`${x.numeroConvenio || idReal(x)} (${x.proveedorNombre || ''})`); });
               const dups = Object.values(grupos).filter((g) => g.length > 1);
               alert(dups.length === 0
                 ? 'Sin duplicados: ningún registro tiene más de un convenio. ✅'
@@ -530,11 +518,9 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
               <button className="btn btn-outline cpd-btn-masivo" onClick={() => setSeleccionados([])} title="Quitar selección">✕</button>
             </>
           )}
-          {/* ✅ NUEVO (V00123): recarga catálogos y referencias (monedas, tarifas) */}
-          <button className="btn btn-outline" style={{ marginRight: '8px' }} title="Actualizar referencias: limpia cachés de catálogos y recarga" onClick={() => {
-            try { Object.keys(localStorage).filter((k) => k.startsWith('cat_v2__') || k.startsWith('cat_v1__')).forEach((k) => localStorage.removeItem(k)); } catch { /* sin almacenamiento */ }
-            window.location.reload();
-          }}>↻ Referencias</button>
+          {/* ✅ NUEVO (V00123): recarga catálogos y referencias (monedas, tarifas)
+              ✅ V00439 (Fase 3.x): los catálogos ya llegan en vivo; ya no hay caché que borrar. */}
+          <button className="btn btn-outline" style={{ marginRight: '8px' }} title="Actualizar referencias: limpia cachés de catálogos y recarga" onClick={() => window.location.reload()}>↻ Referencias</button>
           <button 
               className="btn btn-primary cpd-x12" 
               title="Agregar Nuevo Convenio"

@@ -14,10 +14,11 @@
 //   Los campos se DESCUBREN solos: al abrir un formulario envuelto en
 //   <FormularioConfigurable>, cada etiqueta con su control se registra aquí.
 // ============================================================================
-import { useEffect, useState } from 'react';
-import { collection, doc, getDocs, onSnapshot, setDoc } from 'firebase/firestore';
+import { useEffect, useMemo, useState } from 'react';
+import { collection, doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
-import { obtenerUsuarioAut } from '../autorizaciones/autorizaciones';
+import { useEsAdmin, usePermisoRol } from '../../shared/data/sesion';
+import { useUsuarioStore } from '../../stores/useUsuarioStore';
 
 export interface CampoFormCfg {
   etiquetaOriginal?: string;
@@ -99,35 +100,17 @@ export const guardarCamposFormulario = async (modulo: string, campos: Record<str
   await setDoc(doc(db, COL_CONFIG_FORMULARIOS, modulo), { campos: limpio, actualizadoEn: new Date().toISOString() }, { merge: true });
 };
 
-/** Usuario actual + si puede usar el editor de formularios (Admin o permiso del rol). */
-let cachePermiso: { ts: number; valor: { usuario: { roles: string[]; esAdmin: boolean }; puedeEditar: boolean } } | null = null;
+/** Usuario actual + si puede usar el editor de formularios (Admin o permiso del rol).
+ *  ✅ V00439 (Fase 3.x): desde la sesión (useUsuarioStore + catálogo de roles en
+ *  vivo); ya no relee usuarios/{uid} ni la colección `roles` (ni su caché de 60 s).
+ *  `usuario` es null mientras la sesión no está publicada (igual que antes al cargar). */
 export const usePermisoFormularios = () => {
-  const [estado, setEstado] = useState<{ usuario: { roles: string[]; esAdmin: boolean } | null; puedeEditar: boolean }>({ usuario: null, puedeEditar: false });
-  useEffect(() => {
-    let activo = true;
-    (async () => {
-      try {
-        if (cachePermiso && Date.now() - cachePermiso.ts < 60_000) { if (activo) setEstado(cachePermiso.valor); return; }
-        const u = await obtenerUsuarioAut();
-        let puede = u.esAdmin;
-        if (!puede) {
-          const rolesSnap = await getDocs(collection(db, 'roles'));
-          const set = new Set((u.roles || []).map(norm));
-          puede = rolesSnap.docs.some((d) => {
-            const x = d.data() as { nombre?: unknown; modulosPermitidos?: unknown };
-            return set.has(norm(x.nombre)) && Array.isArray(x.modulosPermitidos) && (x.modulosPermitidos as unknown[]).includes(PERMISO_EDITAR_FORMULARIOS);
-          });
-        }
-        const valor = { usuario: { roles: u.roles || [], esAdmin: u.esAdmin }, puedeEditar: puede };
-        cachePermiso = { ts: Date.now(), valor };
-        if (activo) setEstado(valor);
-      } catch {
-        if (activo) setEstado({ usuario: null, puedeEditar: false });
-      }
-    })();
-    return () => { activo = false; };
-  }, []);
-  return estado;
+  const haySesion = useUsuarioStore((s) => s.usuario !== null);
+  const roles = useUsuarioStore((s) => s.rolesEfectivos);
+  const esAdmin = useEsAdmin();
+  const conPermiso = usePermisoRol(PERMISO_EDITAR_FORMULARIOS);
+  const usuario = useMemo(() => (haySesion ? { roles, esAdmin } : null), [haySesion, roles, esAdmin]);
+  return { usuario, puedeEditar: haySesion && (esAdmin || conPermiso) };
 };
 
 // ── validadores de los formularios montados (para los que guardan con un botón fuera del <form>) ──

@@ -61,7 +61,8 @@ export const EditorDetalleConvenioModal: React.FC<Props> = ({ tipo, detalleId, m
       const back = await getDoc(ref);
       if (String(back.data()?.moneda || '') !== moneda) throw new Error('Firestore no devolvió la moneda guardada.');
       limpiarCacheMemoria(`detalles_convenio__${tipo === 'cliente' ? 'clientes' : 'proveedores'}`);
-      try { localStorage.removeItem(`cat_v1__${tipo === 'cliente' ? 'catalogoConvDetalles' : 'catalogoConvProvDetalles'}`); } catch { /* noop */ }
+      // ✅ V00439 (Fase 3.x): ya no se borra la copia local del catálogo; el
+      //   listener compartido de detalles de convenio trae el cambio solo.
       onGuardado({ id: detalle.id, tarifa: Number(tarifa), moneda, tipoConvenioNombre: String(detalle.tipoConvenioNombre || '') });
     } catch (e: any) {
       alert(`No se pudo guardar el detalle:\n\n${e?.code || ''} ${e?.message || String(e)}`);

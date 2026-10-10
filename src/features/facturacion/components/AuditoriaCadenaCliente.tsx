@@ -10,7 +10,9 @@
 //   concuerda con la del cliente se marca en ámbar.
 // ---------------------------------------------------------------------------
 import { useEffect, useMemo, useState } from 'react';
-import { collection, doc, getDocs, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
+import { idReal, useCatalogos } from '../../../shared/data/catalogos'; // ✅ V00439 (Fase 3.x)
+import { monedaCanonica } from '../../../shared/dominio/moneda';
 import { DocumentosLista } from '../../documentos/DocumentosLista'; // ✅ V00341
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
@@ -47,8 +49,6 @@ interface FilaPago {
   monto: number; facturaIds: string[]; invoices: string; raw: any; revisado: boolean;
 }
 
-const ID_USD = '7dca62b3';
-const ID_MXN = 'f95d8894';
 const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
 const money = (n: number) => `$${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const normTxt = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
@@ -61,12 +61,11 @@ const fechaISO = (v: unknown): string => {
   return '';
 };
 
+// ✅ V00439 (Fase 3.x): reconoce USD/MXN con el helper compartido (acepta las
+//   mismas formas y algunas más); lo no reconocido se muestra tal cual.
 const nombreMoneda = (v: unknown): string => {
-  const t = normTxt(v);
-  if (!t) return '—';
-  if (t === ID_USD || t === 'usd' || t === 'us$' || t === 'dls' || t.startsWith('dolar')) return 'USD';
-  if (t === ID_MXN || t === 'mxn' || t === 'mn' || t.startsWith('peso')) return 'MXN';
-  return String(v);
+  if (!normTxt(v)) return '—';
+  return monedaCanonica(v) ?? String(v);
 };
 
 /** ✅ V00324: detalle LEGIBLE de la operación — los mismos datos que se ven
@@ -170,7 +169,9 @@ const DetalleDoc = ({ titulo, docu, onCerrar }: { titulo: string; docu: any; onC
 };
 
 export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }: Props) => {
-  const [empresas, setEmpresas] = useState<any[]>([]);
+  // ✅ V00439 (Fase 3.x): empresas, tipos de empresa y tarifario desde los
+  //   listeners compartidos (antes: 3 getDocs de las colecciones completas).
+  const { datos: cat } = useCatalogos({ empresas: 'empresas', tiposEmpresa: 'catalogo_tipo_empresa', tarifario: 'tarifario_clientes' });
   const [busquedaCli, setBusquedaCli] = useState('');
   const [clienteId, setClienteId] = useState('');
   const [clienteNombre, setClienteNombre] = useState('');
@@ -195,31 +196,21 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
   const [pagoEdit, setPagoEdit] = useState<any | null>(null);
   const [guardandoEdit, setGuardandoEdit] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        // ✅ V00319: SOLO clientes que PAGAN (tipo del catálogo + respaldo por tarifario).
-        const [snapEmp, snapTipos, snapTari] = await Promise.all([
-          getDocs(collection(db, 'empresas')),
-          getDocs(collection(db, 'catalogo_tipo_empresa')),
-          getDocs(collection(db, 'tarifario_clientes')),
-        ]);
-        const idsTipoPaga = new Set(
-          snapTipos.docs
-            .filter((d) => { const n = normTxt((d.data() as any).nombre || (d.data() as any).tipo || (d.data() as any).descripcion); return n.includes('cliente') && n.includes('paga'); })
-            .map((d) => d.id)
-        );
-        const conTarifario = new Set(snapTari.docs.map((d) => String((d.data() as any).clienteId || '').trim()).filter(Boolean));
-        const contiene = (campo: any, id: string): boolean => {
-          if (!campo) return false;
-          if (Array.isArray(campo)) return campo.map((x) => String(x)).includes(id);
-          return String(campo).includes(id);
-        };
-        const lista = snapEmp.docs.map((d) => ({ id: d.id, ...d.data() } as any));
-        setEmpresas(lista.filter((e) => [...idsTipoPaga].some((id) => contiene(e.tiposEmpresa, id)) || conTarifario.has(String(e.id))));
-      } catch (e) { console.error('Auditoría: empresas', e); }
-    })();
-  }, []);
+  // ✅ V00319: SOLO clientes que PAGAN (tipo del catálogo + respaldo por tarifario).
+  const empresas = useMemo(() => {
+    const idsTipoPaga = new Set(
+      cat.tiposEmpresa
+        .filter((d) => { const n = normTxt(d.nombre || d.tipo || d.descripcion); return n.includes('cliente') && n.includes('paga'); })
+        .map((d) => idReal(d))
+    );
+    const conTarifario = new Set(cat.tarifario.map((d) => String(d.clienteId || '').trim()).filter(Boolean));
+    const contiene = (campo: unknown, id: string): boolean => {
+      if (!campo) return false;
+      if (Array.isArray(campo)) return campo.map((x) => String(x)).includes(id);
+      return String(campo).includes(id);
+    };
+    return cat.empresas.filter((e) => [...idsTipoPaga].some((id) => contiene(e.tiposEmpresa, id)) || conTarifario.has(String(e.id)));
+  }, [cat]);
 
   // ✅ V00321: BASE RELACIONAL EN VIVO — mientras hay un cliente auditado, sus
   //   operaciones, facturas y pagos se escuchan con onSnapshot: editar

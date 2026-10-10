@@ -11,6 +11,7 @@ import type { Employee } from '../../../types/empleado';
 import * as XLSX from 'xlsx';
 import './EmpleadosDashboard.css';
 import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
+import { useCatalogo } from '../../../shared/data/catalogos';
 
 const COLUMNAS_BASE = [
   { id: 'employeeId', label: '# Empleado', visible: true },
@@ -26,8 +27,11 @@ const COLUMNAS_BASE = [
 ];
 
 export const EmpleadosDashboard = () => {
-  const [empleados, setEmpleados] = useState<Employee[]>([]);
-  const [cargando, setCargando] = useState(true);
+  // ✅ V00439 (Fase 3.x): empleados del listener compartido de catálogos (antes onSnapshot propio).
+  //   Colección completa, sin orderBy (V00284): el orden se aplica en memoria más abajo.
+  const { datos: empleadosCat, listo: empleadosListos } = useCatalogo('empleados');
+  const empleados = empleadosCat as unknown as Employee[];
+  const cargando = !empleadosListos;
   const [busqueda, setBusqueda] = useState('');
   // ✅ NUEVO: panel lateral derecho de filtros + tabla VACÍA hasta presionar Buscar.
   const [drawerFiltrosAbierto, setDrawerFiltrosAbierto] = useState(false);
@@ -53,18 +57,6 @@ export const EmpleadosDashboard = () => {
   const [modalColumnas, setModalColumnas] = useState(false);
   const [columnasTabla, setColumnasTabla] = useState(COLUMNAS_BASE.map(c => ({ ...c })));
   const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
-
-  useEffect(() => {
-    // ✅ V00284: SIN orderBy de Firestore — orderBy('employeeId') EXCLUYE los
-    //   documentos que no traen ese campo (por eso algunos registros "no
-    //   aparecían"). El orden se aplica en memoria más abajo.
-    const unsub = onSnapshot(collection(db, 'empleados'), (snap) => {
-      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Employee));
-      setEmpleados(data);
-      setCargando(false);
-    });
-    return () => unsub();
-  }, []);
 
   useEffect(() => {
     setPaginaActual(1);

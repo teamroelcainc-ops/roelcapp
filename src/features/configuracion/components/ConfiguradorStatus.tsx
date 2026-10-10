@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { collection, doc, getDoc, setDoc, getDocs, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import './ConfiguradorStatus.css';
-import { idDocFlujo, limpiarCacheFlujos } from '../../operaciones/config/statusRules';
+import { idDocFlujo } from '../../operaciones/config/statusRules';
+import { idReal, useCatalogo, useCatalogos } from '../../../shared/data/catalogos';
 
 /* ============================================================
    TIPOS
@@ -647,16 +648,30 @@ const EditorFlujoAppSheet = ({
   onVolver: () => void;
 }) => {
   /* ---------- estado base ---------- */
-  const [catalogoStatus, setCatalogoStatus] = useState<string[]>([]);
-  const [tiposOperacion, setTiposOperacion] = useState<any[]>([]);
+  // ✅ V00439 (Fase 3.x): status, tipos de operación, tráfico y C/V desde los
+  //   catálogos compartidos (en vivo) en vez de 4 getDocs al abrir el editor.
+  const { datos: cat } = useCatalogos({
+    status: 'catalogo_status_servicio', tiposOp: 'catalogo_tipo_operacion', trafico: 'catalogo_trafico', cargaVacia: 'catalogo_carga_vacia',
+  });
+  const catalogoStatus = useMemo(() => cat.status.map((d) => d.nombre as string).sort(), [cat.status]);
+  const tiposOperacion = useMemo(() => cat.tiposOp.map((d) => ({ id: idReal(d), tipo_operacion: d.tipo_operacion as string })), [cat.tiposOp]);
   // ✅ NUEVO: opciones del dropdown "Tráfico" vienen ahora del catálogo `catalogo_trafico`
-  const [traficos, setTraficos] = useState<string[]>([]);
+  const traficos = useMemo(() => cat.trafico
+    .map((d) => d.nombre)
+    .filter((n): n is string => typeof n === 'string' && n.trim() !== '')
+    .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' })), [cat.trafico]);
   const [tipoServicio, setTipoServicio] = useState(flujoInicial?.tipoServicio || '');
   const [trafico, setTrafico]           = useState(flujoInicial?.trafico       || '');
   const [carga, setCarga]               = useState(flujoInicial?.carga         || '');
   // ✅ NUEVO (V00110): opciones del dropdown "Carga" vienen del catálogo C/V
   //   (`catalogo_carga_vacia`); si está vacío, se usa la lista fija de respaldo.
-  const [opcionesCarga, setOpcionesCarga] = useState<string[]>(OPCIONES_CARGA);
+  const opcionesCarga = useMemo(() => {
+    const nombresCV = cat.cargaVacia
+      .map((d) => d.nombre)
+      .filter((n): n is string => typeof n === 'string' && n.trim() !== '')
+      .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+    return nombresCV.length > 0 ? nombresCV : OPCIONES_CARGA;
+  }, [cat.cargaVacia]);
   const [reglas, setReglas]             = useState<ReglaStatus[]>([]);
   const [cargando, setCargando]         = useState(false);
   const [guardando, setGuardando]       = useState(false);
@@ -710,34 +725,6 @@ const EditorFlujoAppSheet = ({
      CARGA INICIAL
   ============================================================ */
   useEffect(() => {
-    const cargarDatos = async () => {
-      try {
-        const statusSnap = await getDocs(collection(db, 'catalogo_status_servicio'));
-        setCatalogoStatus(statusSnap.docs.map(d => d.data().nombre).sort());
-        const opSnap = await getDocs(collection(db, 'catalogo_tipo_operacion'));
-        setTiposOperacion(opSnap.docs.map(d => ({ id: d.id, tipo_operacion: d.data().tipo_operacion })));
-        // ✅ NUEVO: lee `catalogo_trafico` y deja solo los `nombre` ordenados
-        const trafSnap = await getDocs(collection(db, 'catalogo_trafico'));
-        setTraficos(
-          trafSnap.docs
-            .map(d => (d.data() as any).nombre)
-            .filter((n: any) => typeof n === 'string' && n.trim() !== '')
-            .sort((a: string, b: string) => a.localeCompare(b, 'es', { sensitivity: 'base' }))
-        );
-        // ✅ NUEVO (V00110): lee el catálogo C/V (`catalogo_carga_vacia`). Si
-        //   trae registros, sus nombres alimentan el dropdown "Carga"; si está
-        //   vacío, se conserva la lista fija de respaldo (OPCIONES_CARGA).
-        const cvSnap = await getDocs(collection(db, 'catalogo_carga_vacia'));
-        const nombresCV = cvSnap.docs
-          .map(d => (d.data() as { nombre?: unknown }).nombre)
-          .filter((n): n is string => typeof n === 'string' && n.trim() !== '')
-          .sort((a: string, b: string) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
-        if (nombresCV.length > 0) setOpcionesCarga(nombresCV);
-      } catch (e) {
-        console.error(e);
-      }
-    };
-    cargarDatos();
     leerClipboardInfo();
   }, []);
 
@@ -1268,7 +1255,7 @@ const EditorFlujoAppSheet = ({
         flujo: flujoFinal,
         ...configFormulario,
       });
-      limpiarCacheFlujos(); // ✅ V00438: la caché de flujos de ESTE navegador no queda vieja
+      // ✅ V00439 (Fase 3.x): los flujos se leen en vivo (catálogo compartido): no hay caché que limpiar.
       // ✅ NUEVO (V00111): si se está EDITANDO un flujo existente y se cambió
       //   la combinación (p. ej. renombrar la carga Cargada → Cargado), el
       //   flujo viejo sigue guardado bajo la combinación anterior. Se ofrece
@@ -2163,16 +2150,10 @@ const Section = ({ title, hint, children }: { title: string; hint?: string; chil
 export const ConfiguradorStatus = () => {
   const [vista, setVista] = useState<'lista' | 'configurar'>('lista');
   const [combinacion, setCombinacion] = useState<CombinacionEdicion>(undefined);
-  const [flujos, setFlujos] = useState<FlujoGuardado[]>([]);
+  // ✅ V00439 (Fase 3.x): flujos en vivo desde el catálogo compartido (solo en la lista).
+  const { datos: datosFlujos } = useCatalogo('config_flujos_operacion', { activo: vista === 'lista' });
+  const flujos = datosFlujos as unknown as FlujoGuardado[];
   const [filtro, setFiltro] = useState('');
-
-  useEffect(() => {
-    if (vista === 'lista') {
-      getDocs(collection(db, 'config_flujos_operacion')).then(snap => {
-        setFlujos(snap.docs.map(d => ({ id: d.id, ...d.data() } as FlujoGuardado)));
-      });
-    }
-  }, [vista]);
 
   if (vista === 'configurar') {
     return <EditorFlujoAppSheet flujoInicial={combinacion} onVolver={() => setVista('lista')} />;

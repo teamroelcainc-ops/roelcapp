@@ -1,9 +1,9 @@
 // src/features/empleados/components/EmployeeForm.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import { camposModificadosDe } from '../../autorizaciones/autorizaciones';
-import { collection, onSnapshot, getDocs, query, orderBy, limit, addDoc, updateDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, limit, addDoc, updateDoc, doc } from 'firebase/firestore';
 import { db, storage } from '../../../config/firebase';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'; // ✅ V00287: foto del empleado
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
@@ -13,6 +13,11 @@ import type { Employee } from '../../../types/empleado';
 import './EmployeeForm.css';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
+import { idReal, useCatalogos } from '../../../shared/data/catalogos';
+
+// ✅ V00439 (Fase 3.x): tipo de empresa con la que se da de alta a los colaboradores
+//   ("Empresa de Alta"). No está en TIPO_EMPRESA de constantes.
+const TIPO_EMPRESA_ALTA_COLABORADORES = 'f21b15a4';
 
 // Roles disponibles en la empresa
 const ROLES_DISPONIBLES = ['Administrador', 'Recursos Humanos', 'Operaciones', 'Contabilidad', 'Gerencia'];
@@ -188,8 +193,43 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
   const [fieldRoles, setFieldRoles] = useState<Record<string, string[]>>({});
   const currentUserRole = 'Administrador'; 
 
-  const [direccionesDB, setDireccionesDB] = useState<{id: string, label: string}[]>([]);
-  const [cargosDB, setCargosDB] = useState<{id: string, label: string}[]>([]);
+  // ✅ V00439 (Fase 3.x): direcciones, cargos, departamentos, tipos de operación y empresas
+  //   desde los listeners compartidos de catálogos (antes onSnapshot + 4 getDocs propios).
+  //   Las altas rápidas llegan solas por el listener; no se parchea una copia local.
+  const { datos: catEmp } = useCatalogos({
+    direcciones: 'direcciones', cargos: 'catalogo_tipo_cargo', departamentos: 'catalogo_departamentos',
+    operaciones: 'catalogo_tipo_operacion', empresas: 'empresas',
+  });
+  const direccionesDB = useMemo(
+    () => catEmp.direcciones.map(d => ({ id: idReal(d), label: String(d.direccionCompleta || 'Sin formato') })),
+    [catEmp.direcciones],
+  );
+  // Cargo sí muestra su nombre_puesto (como lo solicitaste en la imagen de Firebase anterior)
+  const cargosDB = useMemo(
+    () => catEmp.cargos.map(d => ({ id: idReal(d), label: String(d.nombre_puesto || d.nombre || idReal(d)) })),
+    [catEmp.cargos],
+  );
+  // ✅ CORRECCIÓN: Departamento vuelve a mostrar el nombre
+  const departamentosDB = useMemo(
+    () => catEmp.departamentos.map(d => ({ id: idReal(d), label: String(d.nombre || d.departamento || idReal(d)) })),
+    [catEmp.departamentos],
+  );
+  const operacionesDB = useMemo(
+    () => catEmp.operaciones.map(d => ({ id: idReal(d), label: String(d.tipo_operacion || idReal(d)) })),
+    [catEmp.operaciones],
+  );
+  // ✅ CORRECCIÓN: Empresa vuelve a mostrar la Razón Social / Nombre
+  const empresasDB = useMemo(
+    () => catEmp.empresas
+      .filter(d => {
+        const tipos = d.tiposEmpresa;
+        if (Array.isArray(tipos)) return tipos.includes(TIPO_EMPRESA_ALTA_COLABORADORES);
+        if (typeof tipos === 'string') return tipos.includes(TIPO_EMPRESA_ALTA_COLABORADORES);
+        return false;
+      })
+      .map(d => ({ id: idReal(d), label: String(d.nombre || d.razonSocial || idReal(d)) })),
+    [catEmp.empresas],
+  );
   // ✅ V00287: FOTO del empleado (subida a Storage al guardar).
   const [fotoFile, setFotoFile] = useState<File | null>(null);
   const [fotoPreview, setFotoPreview] = useState<string>('');
@@ -205,7 +245,6 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
     if (!nombre) return;
     try {
       const refN = await addDoc(collection(db, 'catalogo_tipo_cargo'), { nombre_puesto: nombre, creadoDesde: 'formulario_colaboradores', createdAt: new Date().toISOString() });
-      setCargosDB((prev) => [...prev, { id: refN.id, label: nombre }].sort((a, b) => a.label.localeCompare(b.label, 'es')));
       setFormData((prev: typeof formData) => ({ ...prev, cargoId: refN.id, cargoNombre: nombre }));
     } catch (e) { console.error(e); alert('No se pudo guardar el cargo en el catálogo.'); }
   };
@@ -214,13 +253,9 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
     if (!nombre) return;
     try {
       const refN = await addDoc(collection(db, 'catalogo_departamentos'), { nombre, creadoDesde: 'formulario_colaboradores', createdAt: new Date().toISOString() });
-      setDepartamentosDB((prev) => [...prev, { id: refN.id, label: nombre }].sort((a, b) => a.label.localeCompare(b.label, 'es')));
       setFormData((prev: typeof formData) => ({ ...prev, departamentoId: refN.id, departamentoNombre: nombre }));
     } catch (e) { console.error(e); alert('No se pudo guardar el departamento en el catálogo.'); }
   };
-  const [departamentosDB, setDepartamentosDB] = useState<{id: string, label: string}[]>([]);
-  const [operacionesDB, setOperacionesDB] = useState<{id: string, label: string}[]>([]);
-  const [empresasDB, setEmpresasDB] = useState<{id: string, label: string}[]>([]);
 
   const configuracionCampos = [
     { name: 'activo', label: 'Estado (Activo/Baja)' },
@@ -309,57 +344,6 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
     
     generarConsecutivo();
   }, [initialData]);
-
-  useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'direcciones'), (snapshot) => {
-      setDireccionesDB(snapshot.docs.map(doc => ({ id: doc.id, label: doc.data().direccionCompleta || 'Sin formato' })));
-    });
-    return () => unsub();
-  }, []);
-
-  useEffect(() => {
-    const cargarCatalogos = async () => {
-      try {
-        const [cargosSnap, deptosSnap, opSnap, empSnap] = await Promise.all([
-          getDocs(collection(db, 'catalogo_tipo_cargo')),
-          getDocs(collection(db, 'catalogo_departamentos')),
-          getDocs(collection(db, 'catalogo_tipo_operacion')),
-          getDocs(collection(db, 'empresas'))
-        ]);
-
-        // Cargo sí muestra su nombre_puesto (como lo solicitaste en la imagen de Firebase anterior)
-        setCargosDB(cargosSnap.docs.map(d => ({ 
-          id: d.id, 
-          label: d.data().nombre_puesto || d.data().nombre || d.id 
-        })));
-        
-        // ✅ CORRECCIÓN: Departamento vuelve a mostrar el nombre
-        setDepartamentosDB(deptosSnap.docs.map(d => ({ 
-          id: d.id, 
-          label: d.data().nombre || d.data().departamento || d.id 
-        })));
-        
-        setOperacionesDB(opSnap.docs.map(d => ({ id: d.id, label: d.data().tipo_operacion || d.id })));
-        
-        // ✅ CORRECCIÓN: Empresa vuelve a mostrar la Razón Social / Nombre
-        const empresasFiltradas = empSnap.docs
-          .filter(doc => {
-            const tipos = doc.data().tiposEmpresa;
-            if (Array.isArray(tipos)) return tipos.includes('f21b15a4');
-            if (typeof tipos === 'string') return tipos.includes('f21b15a4');
-            return false;
-          })
-          .map(d => ({ 
-            id: d.id, 
-            label: d.data().nombre || d.data().razonSocial || d.id 
-          }));
-          
-        setEmpresasDB(empresasFiltradas);
-
-      } catch (e) { console.error("Error catálogos:", e); }
-    };
-    cargarCatalogos();
-  }, []);
 
   useEffect(() => { 
     if (initialData) {

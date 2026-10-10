@@ -28,6 +28,11 @@ import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
 import './DeduccionesDashboard.css';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
+import { useCatalogo } from '../../../shared/data/catalogos';
+import type { DocCatalogo } from '../../../shared/data/catalogos';
+
+// Campos de `empleados` que usa esta vista (el resto llega tal cual del catálogo).
+type EmpleadoLista = DocCatalogo & { firstName?: string; lastNamePaternal?: string; employeeId?: string };
 
 const COLUMNAS_BASE = [
   { id: 'empleadoNombre',  label: 'Colaborador',      visible: true },
@@ -51,7 +56,9 @@ const COLUMNAS_BASE = [
 
 export const DeduccionesDashboard = () => {
   const [deduccionesGlobales, setDeduccionesGlobales] = useState<any[]>([]);
-  const [empleadosList, setEmpleadosList] = useState<any[]>([]);
+  // ✅ V00439 (Fase 3.x): empleados del listener compartido de catálogos (antes onSnapshot propio).
+  const { datos: empleadosCat } = useCatalogo('empleados');
+  const empleadosList = empleadosCat as EmpleadoLista[];
   const [cargando, setCargando] = useState(true);
   const [busqueda, setBusqueda] = useState('');
   // ✅ NUEVO: panel lateral derecho de filtros + tabla VACÍA hasta presionar Buscar.
@@ -121,11 +128,7 @@ export const DeduccionesDashboard = () => {
       setCargando(false);
     });
 
-    const unSubEmpleados = onSnapshot(collection(db, 'empleados'), (snap) => {
-      setEmpleadosList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-    });
-
-    return () => { unSubDeducciones(); unSubEmpleados(); };
+    return () => { unSubDeducciones(); };
   }, []);
 
   const getNombreEmpleado = (id: string) => {

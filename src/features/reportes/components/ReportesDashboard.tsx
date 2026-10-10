@@ -38,6 +38,9 @@ import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
 import { ResumenDiarioOperaciones } from './ResumenDiarioOperaciones';
 import './ReportesDashboard.css';
 import { docsSinPruebas } from '../../../utils/operacionPrueba';
+import { idReal, obtenerCatalogo, useCatalogo } from '../../../shared/data/catalogos';
+import { ID_MXN, ID_USD } from '../../../shared/dominio/constantes';
+import { esMXN, esUSD } from '../../../shared/dominio/moneda';
 
 // ═══════════════════════════════════════════════════════════════════════
 // ✅ (Conversiones del reporte de ventas) Se RECALCULAN SIEMPRE con la regla
@@ -52,15 +55,13 @@ import { docsSinPruebas } from '../../../utils/operacionPrueba';
 //   ninguna se identifica, se respetan los valores guardados. Aplica al lado
 //   CLIENTE y PROVEEDOR; la utilidad = Conversión Cliente − Conversión Proveedor.
 // ═══════════════════════════════════════════════════════════════════════
-const ID_USD_REP = '7dca62b3';
-const ID_MXN_REP = 'f95d8894';
 const normalizarConversionesOp = (op: any, monedasPorId: Record<string, string>): any => {
   const num = (v: any) => Number(v) || 0;
   const tc = num(op.tipoCambioAprobado);
-  const nombreMon = (id: any) => String((monedasPorId && monedasPorId[String(id)]) || '')
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
-  const esUSD = (id: any) => String(id) === ID_USD_REP || nombreMon(id).includes('USD') || nombreMon(id).includes('DOLAR');
-  const esMXN = (id: any) => String(id) === ID_MXN_REP || nombreMon(id).includes('MXN') || nombreMon(id).includes('PESO');
+  // ✅ V00439 (Fase 3.6): regla compartida de moneda sobre el ID y su nombre del catálogo.
+  const nombreMon = (id: unknown) => monedasPorId?.[String(id)];
+  const esMonUSD = (id: unknown) => esUSD(id) || esUSD(nombreMon(id));
+  const esMonMXN = (id: unknown) => esMXN(id) || esMXN(nombreMon(id));
 
   // ✅ V00298: `base` viene EN LA MONEDA DEL CONVENIO (monto convenio + cargos),
   //   IGUAL que en el formulario Por Cobrar. Antes se partía del subtotal en
@@ -68,8 +69,8 @@ const normalizarConversionesOp = (op: any, monedasPorId: Record<string, string>)
   //   multiplicar por el TC (Pesos Prov salía 30,892 en vez de 1,801).
   //   `tf` = total en la moneda de la factura (para la columna Subtotal).
   const desglosar = (base: number, monConvenio: any, monFactura: any) => {
-    const convUSD = esUSD(monConvenio), convMXN = esMXN(monConvenio);
-    const factUSD = esUSD(monFactura), factMXN = esMXN(monFactura);
+    const convUSD = esMonUSD(monConvenio), convMXN = esMonMXN(monConvenio);
+    const factUSD = esMonUSD(monFactura), factMXN = esMonMXN(monFactura);
     const cUSD = convUSD || (!convMXN && factUSD);
     const cMXN = convMXN || (!convUSD && factMXN);
     if (!cUSD && !cMXN) return null; // moneda no identificable: no tocar
@@ -226,7 +227,7 @@ const MODULOS: ModuloDef[] = [
 const CAMPOS_OCULTOS_SIEMPRE = new Set(['id', '_fechaISO']);
 
 // ✅ NUEVO: monedas conocidas por ID (respaldo si no están en catalogo_moneda).
-const MONEDA_FALLBACK: Record<string, string> = { '7dca62b3': 'USD', 'f95d8894': 'MXN' };
+const MONEDA_FALLBACK: Record<string, string> = { [ID_USD]: 'USD', [ID_MXN]: 'MXN' };
 
 // ✅ NUEVO: convierte una clave de campo ("subtotalCliente") en una etiqueta
 //   legible ("Subtotal Cliente") para mostrarla como nombre de columna.
@@ -290,8 +291,6 @@ export const ReportesDashboard = () => {
   const [statusFiltro, setStatusFiltro] = useState('todos');
   // ✅ V00337: modo "Todos EXCEPTO…" — estatus marcados aquí se EXCLUYEN.
   const [statusExcluidos, setStatusExcluidos] = useState<string[]>([]);
-  // ✅ NUEVO: lista de estatus disponibles (del catálogo) para el selector.
-  const [statusOpciones, setStatusOpciones] = useState<string[]>([]);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resultado, setResultado] = useState<ReporteResult | null>(null);
@@ -311,121 +310,89 @@ export const ReportesDashboard = () => {
   const [guardandoCols, setGuardandoCols] = useState(false); // estado del botón Guardar
   const cargadosCfgRef = useRef<Set<string>>(new Set());     // cfgKeys ya leídos de Firestore
 
-  // Caches de catálogos para resolver tipo/estatus/empresa/convenio
-  const [tiposPorId, setTiposPorId] = useState<Record<string, string>>({});
-  const [statusPorId, setStatusPorId] = useState<Record<string, string>>({});
-  const [empresasPorId, setEmpresasPorId] = useState<Record<string, string>>({});
-  const [convenioPorId, setConvenioPorId] = useState<Record<string, string>>({});
-  const [remolquesPorId, setRemolquesPorId] = useState<Record<string, string>>({});
-  const [unidadesPorId, setUnidadesPorId] = useState<Record<string, string>>({});
-  const [operadoresPorId, setOperadoresPorId] = useState<Record<string, string>>({});
-  const [monedasPorId, setMonedasPorId] = useState<Record<string, string>>({});
-
+  // Catálogos para resolver tipo/estatus/empresa/convenio.
+  // ✅ V00439 (Fase 3.4): se piden al Generar al listener compartido (obtenerCatalogo);
+  //   antes getDocs de 9 colecciones guardados en estado la primera vez.
   const cargarCatalogos = async () => {
-    if (Object.keys(tiposPorId).length > 0 && Object.keys(empresasPorId).length > 0) {
-      return { t: tiposPorId, s: statusPorId, emp: empresasPorId, conv: convenioPorId, rem: remolquesPorId, uni: unidadesPorId, ope: operadoresPorId, mon: monedasPorId };
-    }
     try {
-      const [tSnap, sSnap, eSnap, cdSnap, tarSnap, remSnap, uniSnap, opSnap, monSnap] = await Promise.all([
-        getDocs(collection(db, 'catalogo_tipo_operacion')),
-        getDocs(collection(db, 'catalogo_status_servicio')),
-        getDocs(collection(db, 'empresas')),
-        getDocs(collection(db, 'convenios_clientes_detalles')),
-        getDocs(collection(db, 'catalogo_tarifas_referencia')),
-        getDocs(collection(db, 'remolques')),
-        getDocs(collection(db, 'unidades')),
-        getDocs(collection(db, 'empleados')),
-        getDocs(collection(db, 'catalogo_moneda')),
+      const [tDocs, sDocs, eDocs, cdDocs, tarDocs, remDocs, uniDocs, opDocs, monDocs] = await Promise.all([
+        obtenerCatalogo('catalogo_tipo_operacion'),
+        obtenerCatalogo('catalogo_status_servicio'),
+        obtenerCatalogo('empresas'),
+        obtenerCatalogo('convenios_clientes_detalles'),
+        obtenerCatalogo('catalogo_tarifas_referencia'),
+        obtenerCatalogo('remolques'),
+        obtenerCatalogo('unidades'),
+        obtenerCatalogo('empleados'),
+        obtenerCatalogo('catalogo_moneda'),
       ]);
 
       const t: Record<string, string> = {};
-      tSnap.docs.forEach(d => { t[d.id] = String((d.data() as any).tipo_operacion || ''); });
+      tDocs.forEach(d => { t[idReal(d)] = String(d.tipo_operacion || ''); });
 
       const s: Record<string, string> = {};
-      sSnap.docs.forEach(d => { s[d.id] = String((d.data() as any).nombre || ''); });
+      sDocs.forEach(d => { s[idReal(d)] = String(d.nombre || ''); });
 
       const emp: Record<string, string> = {};
-      eSnap.docs.forEach(d => { emp[d.id] = String((d.data() as any).nombre || ''); });
+      eDocs.forEach(d => { emp[idReal(d)] = String(d.nombre || ''); });
 
       // Remolque → "nombre placas" (igual que en el formulario de operación)
       const rem: Record<string, string> = {};
-      remSnap.docs.forEach(d => {
-        const r = d.data() as any;
-        const txt = `${r.nombre || ''} ${r.placas || r.placa || ''}`.trim();
-        if (txt) rem[d.id] = txt;
+      remDocs.forEach(r => {
+        const txt = `${String(r.nombre || '')} ${String(r.placas || r.placa || '')}`.trim();
+        if (txt) rem[idReal(r)] = txt;
       });
 
       // Unidad → "unidad" o "nombre"
       const uni: Record<string, string> = {};
-      uniSnap.docs.forEach(d => {
-        const u = d.data() as any;
+      uniDocs.forEach(u => {
         const txt = String(u.unidad || u.nombre || '').trim();
-        if (txt) uni[d.id] = txt;
+        if (txt) uni[idReal(u)] = txt;
       });
 
       // Operador (empleado) → "nombre apellido"
       const ope: Record<string, string> = {};
-      opSnap.docs.forEach(d => {
-        const o = d.data() as any;
-        const txt = `${o.firstName || ''} ${o.lastNamePaternal || ''}`.trim() || String(o.nombre || o.nombreCompleto || '').trim();
-        if (txt) ope[d.id] = txt;
+      opDocs.forEach(o => {
+        const txt = `${String(o.firstName || '')} ${String(o.lastNamePaternal || '')}`.trim() || String(o.nombre || o.nombreCompleto || '').trim();
+        if (txt) ope[idReal(o)] = txt;
       });
 
       // Moneda → "moneda" (USD/MXN…), con respaldo de IDs conocidos.
       const mon: Record<string, string> = { ...MONEDA_FALLBACK };
-      monSnap.docs.forEach(d => {
-        const m = d.data() as any;
+      monDocs.forEach(m => {
         const txt = String(m.moneda || m.nombre || m.clave || m.codigo || '').trim();
-        if (txt) mon[d.id] = txt;
+        if (txt) mon[idReal(m)] = txt;
       });
 
       // Mapa de tarifas (para nombrar convenios)
       const tarifas: Record<string, string> = {};
-      tarSnap.docs.forEach(d => {
-        const data = d.data() as any;
-        tarifas[d.id] = String(data.descripcion || data.nombre || '');
+      tarDocs.forEach(d => {
+        tarifas[idReal(d)] = String(d.descripcion || d.nombre || '');
       });
 
       // Convenio (detalle del cliente) → nombre de su tarifa
       const conv: Record<string, string> = {};
-      cdSnap.docs.forEach(d => {
-        const data = d.data() as any;
-        const tarifaId = data.tipoConvenioId || data.tipo_convenio_id || data.tipoConvenio || data.tipo_convenio || data['TIPO DE CONVENIO'];
+      cdDocs.forEach(d => {
+        const tarifaId = d.tipoConvenioId || d.tipo_convenio_id || d.tipoConvenio || d.tipo_convenio || d['TIPO DE CONVENIO'];
         const nombre = tarifas[String(tarifaId)] || '';
-        if (nombre) conv[d.id] = nombre;
+        if (nombre) conv[idReal(d)] = nombre;
       });
 
-      setTiposPorId(t);
-      setStatusPorId(s);
-      setEmpresasPorId(emp);
-      setConvenioPorId(conv);
-      setRemolquesPorId(rem);
-      setUnidadesPorId(uni);
-      setOperadoresPorId(ope);
-      setMonedasPorId(mon);
       return { t, s, emp, conv, rem, uni, ope, mon };
     } catch (e) {
       console.error('Error cargando catálogos de reportes:', e);
-      return { t: tiposPorId, s: statusPorId, emp: empresasPorId, conv: convenioPorId, rem: remolquesPorId, uni: unidadesPorId, ope: operadoresPorId, mon: monedasPorId };
+      return null;
     }
   };
 
-  // ✅ NUEVO: carga (una vez) los nombres de estatus del catálogo para poblar el
-  //   selector "Estatus a incluir". Es independiente de cargarCatalogos (que solo
-  //   corre al Generar) para que el selector ya tenga opciones desde el inicio.
-  useEffect(() => {
-    let activo = true;
-    (async () => {
-      try {
-        const snap = await getDocs(collection(db, 'catalogo_status_servicio'));
-        const nombres = snap.docs
-          .map(d => String((d.data() as any).nombre || '').trim())
-          .filter(Boolean);
-        if (activo) setStatusOpciones(Array.from(new Set(nombres)).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' })));
-      } catch (e) { console.warn('No se pudieron cargar los estatus para el filtro:', e); }
-    })();
-    return () => { activo = false; };
-  }, []);
+  // ✅ NUEVO: nombres de estatus del catálogo para poblar el selector "Estatus a
+  //   incluir" desde el inicio (independiente de cargarCatalogos, que corre al Generar).
+  // ✅ V00439 (Fase 3.4): del listener compartido (antes getDocs al montar).
+  const { datos: catStatus } = useCatalogo('catalogo_status_servicio');
+  const statusOpciones = useMemo(() => {
+    const nombres = catStatus.map(d => String(d.nombre || '').trim()).filter(Boolean);
+    return Array.from(new Set(nombres)).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  }, [catStatus]);
 
   // ---------------- Registro de reportes ----------------
   // `soloOperaciones`: el reporte depende de la lógica de Operaciones (tipo,
@@ -712,14 +679,14 @@ export const ReportesDashboard = () => {
     setCargando(true); setError(null); setResultado(null);
     try {
       const cat = await cargarCatalogos();
-      const tMap = (cat && cat.t) || tiposPorId;
-      const sMap = (cat && cat.s) || statusPorId;
-      const empMap = (cat && cat.emp) || empresasPorId;
-      const convMap = (cat && cat.conv) || convenioPorId;
-      const remMap = (cat && cat.rem) || remolquesPorId;
-      const uniMap = (cat && cat.uni) || unidadesPorId;
-      const opeMap = (cat && cat.ope) || operadoresPorId;
-      const monMap = (cat && cat.mon) || monedasPorId;
+      const tMap = cat?.t || {};
+      const sMap = cat?.s || {};
+      const empMap = cat?.emp || {};
+      const convMap = cat?.conv || {};
+      const remMap = cat?.rem || {};
+      const uniMap = cat?.uni || {};
+      const opeMap = cat?.ope || {};
+      const monMap = cat?.mon || {};
 
       // Módulo elegido → colección + campo de fecha. Operaciones es el caso
       //   completo (resuelve tipos/estatus/nombres). Otros módulos usan el

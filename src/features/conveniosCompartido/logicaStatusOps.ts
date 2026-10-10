@@ -2,8 +2,7 @@
 // ✅ V00429 — lógica del status de las operaciones (nombres del catálogo,
 //   familia de color y conteo por status). Los componentes viven en
 //   StatusOperaciones.tsx.
-import { collection, getDocs } from 'firebase/firestore';
-import { db } from '../../config/firebase';
+import { idReal, obtenerCatalogo } from '../../shared/data/catalogos';
 
 export interface OpConStatus {
   id?: string;
@@ -14,15 +13,11 @@ export interface OpConStatus {
   monto?: string;
 }
 
-let cacheStatus: Promise<Map<string, string>> | null = null;
-/** id → nombre del catálogo de status (se lee una sola vez por sesión). */
-export const cargarNombresStatus = (): Promise<Map<string, string>> => {
-  if (!cacheStatus) {
-    cacheStatus = getDocs(collection(db, 'catalogo_status_servicio'))
-      .then((snap) => new Map(snap.docs.map((d) => [d.id, String((d.data() as Record<string, unknown>).nombre || d.id)])))
-      .catch(() => { cacheStatus = null; return new Map<string, string>(); });
-  }
-  return cacheStatus;
+/** id → nombre del catálogo de status.
+ *  ✅ V00439 (Fase 3.x): del listener compartido (en vivo) en vez de una lectura por sesión. */
+export const cargarNombresStatus = async (): Promise<Map<string, string>> => {
+  const lista = await obtenerCatalogo('catalogo_status_servicio');
+  return new Map(lista.map((d) => [idReal(d), String(d.nombre || idReal(d))]));
 };
 
 /** Nombre legible del status de una operación. */

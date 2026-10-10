@@ -30,3 +30,5 @@ Se crean a mano en Firestore (documento `configuracion/flags`, campos booleanos)
 |---|---|
 | V00436 | Nada en producción (herramientas). |
 | V00437 | Ver "Antes de publicar" en CAMBIOS-V00437.md: perfil del admin → funciones → "Sincronizar permisos" → desactivar registro público → web → (P1) reglas. |
+| V00438 | Solo web. |
+| V00439 | Solo web. Revisar en Roles si ADMINISTRATIVO necesita el permiso `EDITAR REF` (ver CAMBIOS-V00439.md). |

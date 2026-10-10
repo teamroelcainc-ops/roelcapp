@@ -14,7 +14,9 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { suscribirOperacionGuardada } from '../../../utils/operacionesBus';
 import { HiloModal } from '../../hilo/HiloModal';
 import { EditorOperacionEmbebido } from '../../operaciones/components/EditorOperacionEmbebido';
-import { cargarCatalogo, TTL } from '../../../hooks/useCatalogoCache';
+import { useCatalogo } from '../../../shared/data/catalogos'; // ✅ V00439 (Fase 3.x)
+import { ID_MXN, ID_USD } from '../../../shared/dominio/constantes';
+import { monedaCanonica as monedaCanonicaComun } from '../../../shared/dominio/moneda';
 import {
   collection, query, where, getDocs, onSnapshot, writeBatch, doc, arrayUnion, arrayRemove, limit,
   orderBy, startAfter, documentId, runTransaction,
@@ -150,12 +152,10 @@ export function PagosDashboard() {
   const [hiloPago, setHiloPago] = useState<PagoDoc | null>(null);
   const [opEditandoId, setOpEditandoId] = useState<string | null>(null);
   // ✅ V00126: moneda de la EMPRESA junto al cliente/proveedor
-  const [empresasCat, setEmpresasCat] = useState<any[]>([]);
-  const [monedasCat, setMonedasCat] = useState<any[]>([]);
-  useEffect(() => {
-    cargarCatalogo('empresas', { ttlMs: TTL.MEDIO }).then(setEmpresasCat).catch(() => {});
-    cargarCatalogo('catalogo_moneda', { ttlMs: TTL.MEDIO }).then(setMonedasCat).catch(() => {});
-  }, []);
+  // ✅ V00439 (Fase 3.x): catálogos desde los listeners compartidos (antes:
+  //   cargarCatalogo con copia en localStorage y TTL).
+  const { datos: empresasCat } = useCatalogo('empresas');
+  const { datos: monedasCat } = useCatalogo('catalogo_moneda');
   const monedaEmpresaDe = (p: { entidadNombre?: string } & Record<string, any>): string => {
     const raw: any = p;
     const id = String(raw.entidadId || raw.clienteId || raw.proveedorId || raw.empresaId || '');
@@ -1068,8 +1068,6 @@ export function PagosDashboard() {
   //      que Facturación (lotes de 1000, tope 12,000).
   const PAG_FACT_PAGOS = 1000;
   const LIMITE_FACT_PAGOS = 12000; // mismo criterio que Facturación
-  const ID_USD = '7dca62b3';
-  const ID_MXN = 'f95d8894';
 
   // ✅ FIX MONEDA INCONSISTENTE: las facturas guardan la moneda de formas
   //   distintas según la época/módulo — a veces el ID del catálogo, a veces
@@ -1078,13 +1076,9 @@ export function PagosDashboard() {
   //   Facturación y "Dolares"/"Pesos" en Pagos) y hasta bloqueaba pagos por
   //   "monedas distintas" cuando en realidad eran la misma. Este normalizador
   //   convierte CUALQUIER representación a 'USD' o 'MXN'.
-  const monedaCanonica = (val: any): string => {
-    const s = String(val ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
-    if (!s || s === 'n/a') return '';
-    if (s === ID_USD.toLowerCase() || s === 'usd' || s === 'us$' || s === 'dls' || s.startsWith('dolar')) return 'USD';
-    if (s === ID_MXN.toLowerCase() || s === 'mxn' || s === 'mn' || s.startsWith('peso')) return 'MXN';
-    return '';
-  };
+  // ✅ V00439 (Fase 3.x): helper compartido (acepta las mismas formas y algunas
+  //   más: 'DLL', 'M.N.', 'MXP'…).
+  const monedaCanonica = (val: unknown): string => monedaCanonicaComun(val) ?? '';
 
   // Resuelve la moneda canónica de un doc de factura probando TODOS los
   // campos donde puede vivir; si ninguno se reconoce, devuelve el primer

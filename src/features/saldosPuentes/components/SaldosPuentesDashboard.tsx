@@ -10,18 +10,15 @@ import * as XLSX from 'xlsx';
 import { db } from '../../../config/firebase';
 import './SaldosPuentesDashboard.css';
 import { docsSinPruebas } from '../../../utils/operacionPrueba';
+import { idReal, useCatalogo } from '../../../shared/data/catalogos';
+import { STATUS_COMPLETADOS } from '../../../shared/dominio/constantes';
+import { monedaCanonica, nombreMoneda as nombreMonedaCanonica } from '../../../shared/dominio/moneda';
 
-const ID_USD = '7dca62b3';
-const ID_MXN = 'f95d8894';
 const norm = (s: unknown): string => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+// ✅ V00439 (Fase 3.6): regla compartida de moneda; un valor no reconocido se muestra tal cual.
 const nombreMoneda = (v: unknown): string => {
-  const t = String(v ?? '');
-  if (t === ID_USD) return 'Dólares';
-  if (t === ID_MXN) return 'Pesos';
-  const n = norm(t);
-  if (n.includes('dolar') || n === 'usd') return 'Dólares';
-  if (n.includes('peso') || n === 'mxn') return 'Pesos';
-  return t || '—';
+  const m = monedaCanonica(v);
+  return m ? nombreMonedaCanonica(m) : (String(v ?? '') || '—');
 };
 const hoyISO = () => new Date().toISOString().slice(0, 10);
 const fmtMonto = (v: unknown): string => {
@@ -38,7 +35,28 @@ interface Recarga { id: string; fecha: string; puenteId: string; puenteNombre: s
 interface CruceOp { puenteNombre: string; fecha: string; monto: number; ref: string; }
 
 export const SaldosPuentesDashboard: React.FC = () => {
-  const [puentes, setPuentes] = useState<Puente[]>([]);
+  // ✅ V00439 (Fase 3.4): tipos de gasto del listener compartido (antes onSnapshot propio).
+  const { datos: catTiposGastos } = useCatalogo('catalogo_tipos_gastos');
+  const puentes = useMemo(() => {
+    const lista: Puente[] = [];
+    catTiposGastos.forEach((x) => {
+      if (norm(x.categoria_gasto) !== 'puente') return;
+      const tarifa = Number(x.importe) || 0;
+      lista.push({
+        id: idReal(x),
+        nombre: String(x.nombre_gasto || ''),
+        moneda: nombreMoneda(x.moneda),
+        tarifa,
+        // ✅ Umbrales del jefe: AMARILLO a 20 cruces de tarifa, ROJO a 10
+        //   (Puente 3: 2,880/1,440 · AVI: 475/237.50). Se pueden fijar a mano
+        //   con los campos umbralAmarillo/umbralRojo en el catálogo.
+        umbralAmarillo: Number(x.umbralAmarillo) || tarifa * 20,
+        umbralRojo: Number(x.umbralRojo) || tarifa * 10,
+      });
+    });
+    lista.sort((a, b) => a.nombre.localeCompare(b.nombre));
+    return lista;
+  }, [catTiposGastos]);
   const [recargas, setRecargas] = useState<Recarga[]>([]);
   const [crucesOps, setCruces] = useState<CruceOp[]>([]);
   // ✅ V00395: OTROS CRUCES (sin operación, registrados en Referencias de Puentes) también descuentan
@@ -64,27 +82,6 @@ export const SaldosPuentesDashboard: React.FC = () => {
   const [historial, setHistorial] = useState<{ titulo: string; puenteIds: string[]; nombres: string[] } | null>(null);
 
   useEffect(() => {
-    const u1 = onSnapshot(collection(db, 'catalogo_tipos_gastos'), (snap) => {
-      const lista: Puente[] = [];
-      snap.docs.forEach((d) => {
-        const x = d.data() as Record<string, unknown>;
-        if (norm(x.categoria_gasto) !== 'puente') return;
-        const tarifa = Number(x.importe) || 0;
-        lista.push({
-          id: d.id,
-          nombre: String(x.nombre_gasto || ''),
-          moneda: nombreMoneda(x.moneda),
-          tarifa,
-          // ✅ Umbrales del jefe: AMARILLO a 20 cruces de tarifa, ROJO a 10
-          //   (Puente 3: 2,880/1,440 · AVI: 475/237.50). Se pueden fijar a mano
-          //   con los campos umbralAmarillo/umbralRojo en el catálogo.
-          umbralAmarillo: Number(x.umbralAmarillo) || tarifa * 20,
-          umbralRojo: Number(x.umbralRojo) || tarifa * 10,
-        });
-      });
-      lista.sort((a, b) => a.nombre.localeCompare(b.nombre));
-      setPuentes(lista);
-    }, (e) => console.warn('Puentes del catálogo:', e));
     const u2 = onSnapshot(collection(db, 'saldos_puentes'), (snap) => {
       const lista: Recarga[] = snap.docs.map((d) => {
         const x = d.data() as Record<string, unknown>;
@@ -110,7 +107,7 @@ export const SaldosPuentesDashboard: React.FC = () => {
         return { puenteNombre: String(x.puenteNombre || ''), fecha: String(x.fechaCruce || x.fechaGeneracion || ''), monto: Number(x.monto ?? x.subtotalPuentes) || 0, ref: `${String(x.consecutivo || d.id)} (otro cruce)` };
       }));
     }, () => setCrucesOtros([]));
-    return () => { u1(); u2(); u3(); u4(); };
+    return () => { u2(); u3(); u4(); };
   }, []);
 
   /** Cuenta de un puente: recargas, cruces (desde la 1ª recarga) y saldo actual. */
@@ -199,7 +196,7 @@ export const SaldosPuentesDashboard: React.FC = () => {
   // ✅ V00358 (de V00357): colocar el saldo del puente a las operaciones
   //   COMPLETADAS que no lo tengan — así sus cruces descuentan de la cuenta.
   const [aplicando, setAplicando] = useState(false);
-  const STATUS_COMPLETADOS_IDS = ['c2d57403', 'f557b751'];
+  const STATUS_COMPLETADOS_IDS = STATUS_COMPLETADOS; // ✅ V00439 (Fase 3.6): constantes compartidas
   const aplicarAOperaciones = async () => {
     const buscar = (clave: 'avi' | 'p3') => puentes.find((p) => clave === 'avi' ? norm(p.nombre) === 'caseta avi' : (norm(p.nombre) === 'caseta puente iii' || norm(p.nombre) === 'caseta puente 3'));
     const avi = buscar('avi'); const p3 = buscar('p3');

@@ -3,20 +3,22 @@
 import { collection, getDocs, addDoc } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import type { Moneda, CombustibleRecord } from '../../../types/combustible';
+import { estadoCatalogo, idReal, obtenerCatalogo } from '../../../shared/data/catalogos';
+import { esUSD } from '../../../shared/dominio/moneda';
 
 // 1. Obtener catálogo de monedas
+// ✅ V00439 (Fase 3.x): del listener compartido de catalogo_moneda (sin getDocs propio)
+//   y esDolar con esUSD (acepta el ID del catálogo y 'Dólares' con acento).
 export const getMonedasCatalogo = async (): Promise<Moneda[]> => {
   try {
-    const querySnapshot = await getDocs(collection(db, 'catalogo_moneda'));
-    const monedas = querySnapshot.docs.map(doc => {
-      const data = doc.data();
-      return {
-        id: doc.id,
-        nombre: data.moneda || 'Desconocida',
-        esDolar: data.moneda?.toLowerCase().includes('dolar') || data.moneda?.toLowerCase().includes('usd')
-      };
-    });
-    
+    const docs = await obtenerCatalogo('catalogo_moneda');
+    if (docs.length === 0 && estadoCatalogo('catalogo_moneda').error) return [];
+    const monedas = docs.map(d => ({
+      id: idReal(d),
+      nombre: String(d.moneda || 'Desconocida'),
+      esDolar: esUSD(idReal(d)) || esUSD(d.moneda),
+    }));
+
     if (monedas.length === 0) {
       return [
         { id: '1', nombre: 'Dólares (USD)', esDolar: true },

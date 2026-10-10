@@ -54,7 +54,12 @@ import './FacturacionProveedoresDashboard.css';
 import { TarjetaDocumentoFactura } from './TarjetaDocumentoFactura';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
-import { esUSD as esMonedaUSD } from '../../../shared/dominio/moneda';
+import { esUSD as esMonedaUSD, monedaCanonica as monedaCanonicaComun } from '../../../shared/dominio/moneda';
+import { ID_MXN, ID_USD, STATUS_COMPLETADOS } from '../../../shared/dominio/constantes'; // ✅ V00439 (Fase 3.x)
+import { obtenerCatalogo, useCatalogo, useCatalogos } from '../../../shared/data/catalogos';
+import type { DocCatalogo } from '../../../shared/data/catalogos'; // ✅ V00439 (Fase 3.x)
+import { CATALOGOS_NOMBRES_FACTURACION, construirMapaCatalogos } from '../services/mapaCatalogos';
+import type { EmpresaFacturacion } from '../services/mapaCatalogos';
 import { r2 } from '../../../shared/dominio/numeros';
 import {
   MAX_ESCRITURAS_LOTE,
@@ -73,9 +78,7 @@ import {
 // ──────────────────────────────────────────────────────────────────────
 const ID_TIPO_PROVEEDOR = '';                 // ID del tipo "Proveedor" en tiposEmpresa. Vacío = muestra todas las empresas.
 const CAMPO_PROVEEDOR_OP = 'proveedorUnidad'; // campo de la operación que referencia al proveedor
-const STATUS_COMPLETADOS = ['f557b751', 'c2d57403'];
-const ID_USD = '7dca62b3';
-const ID_MXN = 'f95d8894';
+// ✅ V00439 (Fase 3.x): IDs de moneda y status desde shared/dominio/constantes.
 
 const LIMITE_OPS_TODAS = 20000;
 const PAG_OPS = 1000;
@@ -108,64 +111,9 @@ const DOC_COLUMNAS_HISTORIAL = 'facturacion_proveedores_historial_v2';
 const LS_COLS_OPS = 'cfgcols_facturacion_prov_ops_v1';
 const LS_COLS_HIST = 'cfgcols_facturacion_prov_hist_v1';
 
-const leerCacheLocal = (alias: string): any[] | null => {
-  try {
-    const raw = localStorage.getItem(`cat_v1__${alias}`) || localStorage.getItem(`cat_v2__${alias}`);
-    if (!raw) return null;
-    const obj = JSON.parse(raw);
-    return obj && Array.isArray(obj.data) ? obj.data : null;
-  } catch { return null; }
-};
-
-const construirMapaCatalogos = (): Record<string, string> => {
-  const mapa: Record<string, string> = {};
-  const tomarNombre = (item: any): string | null => {
-    if (!item || item.id === undefined || item.id === null) return null;
-    const fn = item.firstName ?? item.first_name;
-    const lp = item.lastNamePaternal ?? item.last_name_paternal ?? item.apellidoPaterno;
-    if (fn || lp) {
-      const full = `${fn || ''} ${lp || ''}`.trim();
-      if (full) return full;
-    }
-    if (item.unidad && typeof item.unidad === 'string' && item.unidad.trim() !== '') return String(item.unidad).trim();
-    const placa = item.placas ?? item.placa;
-    if (item.nombre && placa) return `${item.nombre} ${placa}`.trim();
-    const n = item.nombre ?? item.nombreCorto ?? item.label ?? item.descripcion ?? item.name ?? item.titulo ?? item.moneda ?? item.tipo_operacion;
-    return (n !== undefined && n !== null && String(n) !== '') ? String(n) : null;
-  };
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (!key || (key.indexOf('cat_v1__') !== 0 && key.indexOf('cat_v2__') !== 0)) continue;
-      const raw = localStorage.getItem(key);
-      if (!raw) continue;
-      try {
-        const obj = JSON.parse(raw);
-        const arr = obj && Array.isArray(obj.data) ? obj.data : (Array.isArray(obj) ? obj : null);
-        if (!arr) continue;
-        arr.forEach((item: any) => {
-          const n = tomarNombre(item);
-          if (n) mapa[String(item.id)] = n;
-        });
-      } catch { /* catálogo corrupto: ignorar */ }
-    }
-  } catch { /* localStorage no disponible */ }
-  try {
-    const rawV2 = localStorage.getItem('roelca_catalogos_v2');
-    if (rawV2) {
-      const obj = JSON.parse(rawV2);
-      Object.values(obj || {}).forEach((val: any) => {
-        const arr = Array.isArray(val) ? val : (val && Array.isArray(val.data) ? val.data : null);
-        if (!arr) return;
-        arr.forEach((item: any) => {
-          const n = tomarNombre(item);
-          if (n && !mapa[String(item.id)]) mapa[String(item.id)] = n;
-        });
-      });
-    }
-  } catch { /* noop */ }
-  return mapa;
-};
+// ✅ V00439 (Fase 3.x): el mapa id→nombre ya no se arma desde las copias de
+//   catálogos en localStorage (cat_v1__/cat_v2__/roelca_catalogos_v2): sale de
+//   los catálogos en vivo (ver services/mapaCatalogos.ts).
 
 const aplicarConfigColumnasGuardada = (base: any[], guardadas: any): any[] => {
   if (!Array.isArray(guardadas) || guardadas.length === 0) return base.map((c: any) => ({ ...c }));
@@ -536,7 +484,13 @@ export const FacturacionProveedoresDashboard = () => {
   const [cargandoOperaciones, setCargandoOperaciones] = useState(false);
   const [cargandoFacturas, setCargandoFacturas] = useState(false);
 
-  const [empresasList, setEmpresasList] = useState<any[]>([]);
+  // ✅ V00439 (Fase 3.x): empresas y catálogos de nombres desde los listeners
+  //   compartidos (antes: getDocs + copias en localStorage).
+  const empresasList = useCatalogo('empresas').datos as EmpresaFacturacion[];
+  const { datos: catalogosNombres } = useCatalogos(CATALOGOS_NOMBRES_FACTURACION);
+  // Los status "Falso" (facturables) salen de este catálogo: las operaciones se
+  // descargan cuando ya llegó (de la caché local o del servidor).
+  const { listo: statusListos } = useCatalogo('catalogo_status_servicio');
 
   const [fechaDesdeOps, setFechaDesdeOps] = useState('');
   const [fechaHastaOps, setFechaHastaOps] = useState('');
@@ -754,16 +708,11 @@ export const FacturacionProveedoresDashboard = () => {
     );
   };
 
-  const mapaCatalogos = useMemo(() => {
-    const m = construirMapaCatalogos();
-    empresasList.forEach((e: any) => {
-      if (e?.id) m[String(e.id)] = e.nombre || e.nombreCorto || m[String(e.id)] || String(e.id);
-    });
-    m[ID_USD] = 'USD';
-    m[ID_MXN] = 'MXN';
-    return m;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [empresasList]);
+  // ✅ V00439 (Fase 3.x): derivado de los catálogos en vivo (mismo contenido).
+  const mapaCatalogos = useMemo(
+    () => construirMapaCatalogos(Object.values(catalogosNombres), empresasList),
+    [catalogosNombres, empresasList],
+  );
 
   // ✅ V00438 (Fase 2.4): useCallback para que las claves de orden de operaciones
   //   (memo) dependan de algo estable.
@@ -790,22 +739,6 @@ export const FacturacionProveedoresDashboard = () => {
     }
     return '-';
   };
-
-  useEffect(() => {
-    const cache = leerCacheLocal('empresas');
-    if (cache && cache.length) { setEmpresasList(cache); return; }
-    let activo = true;
-    (async () => {
-      try {
-        const snap = await getDocs(collection(db, 'empresas'));
-        if (!activo) return;
-        const docs = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-        setEmpresasList(docs);
-        try { localStorage.setItem('cat_v1__empresas', JSON.stringify({ data: docs, ts: Date.now() })); } catch { /* noop */ }
-      } catch (e) { console.error('Error cargando empresas:', e); }
-    })();
-    return () => { activo = false; };
-  }, []);
 
   useEffect(() => {
     const aplicarOps = (guardadas: any) => {
@@ -1099,9 +1032,11 @@ export const FacturacionProveedoresDashboard = () => {
   useEffect(() => {
     if (activeTab !== 'operaciones') return;
     if (operacionesGlobales.length > 0) return;
+    // ✅ V00439 (Fase 3.x): espera el catálogo de status (los "Falso" entran en el filtro).
+    if (!statusListos) return;
     descargarOpsCompletadas();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, operacionesGlobales.length]);
+  }, [activeTab, operacionesGlobales.length, statusListos]);
 
   // ✅ V00126: cualquier guardado en `operaciones` se refleja aquí al instante.
   useEffect(() => {
@@ -1335,11 +1270,12 @@ export const FacturacionProveedoresDashboard = () => {
   };
 
   // ✅ V00126: moneda en la que se factura/paga la operación al proveedor (USD / MXN / '')
+  //   ✅ V00439 (Fase 3.x): helper compartido (ID del catálogo, código o nombre).
   const monedaFacturacionOp = (op: any): 'USD' | 'MXN' | '' => {
     const fact = String(op.facturadoEnUnidad || '');
-    const nom = String(op.monedaUnidadNombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
-    if (fact === ID_USD || nom.includes('USD') || nom.includes('DOLAR')) return 'USD';
-    if (fact === ID_MXN || nom.includes('MXN') || nom.includes('PESO')) return 'MXN';
+    const nom = String(op.monedaUnidadNombre || '');
+    if (monedaCanonicaComun(fact) === 'USD' || monedaCanonicaComun(nom) === 'USD') return 'USD';
+    if (monedaCanonicaComun(fact) === 'MXN' || monedaCanonicaComun(nom) === 'MXN') return 'MXN';
     return '';
   };
   const resumenMonedaOps = useMemo(() => {
@@ -1795,24 +1731,21 @@ export const FacturacionProveedoresDashboard = () => {
   };
 
   // Intenta armar la dirección de una bodega/dirección desde los catálogos cacheados.
-  const direccionDeCatalogo = (id: any): string => {
+  const direccionDeCatalogo = (direcciones: readonly DocCatalogo[], id: unknown): string => {
     if (id === undefined || id === null || id === '') return '';
-    const alias = ['bodegas', 'direcciones', 'ubicaciones', 'clientesBodegas'];
-    for (const a of alias) {
-      const arr = leerCacheLocal(a);
-      if (!arr) continue;
-      const item = arr.find((x: any) => String(x.id) === String(id));
-      if (item) {
-        const partes = [
-          item.direccion || item.domicilio || item.calle,
-          item.colonia ? `Col. ${item.colonia}` : '',
-          item.cp || item.codigoPostal ? `C.P. ${item.cp || item.codigoPostal}` : '',
-          item.ciudad || item.municipio,
-          item.estado,
-        ].map((p: any) => String(p || '').trim()).filter(Boolean);
-        if (partes.length) return partes.join(', ');
-        if (item.label) return String(item.label);
-      }
+    // ✅ V00439 (Fase 3.x): 'direcciones' del catálogo compartido (se pide al abrir
+    //   la confirmación); los alias bodegas/ubicaciones/clientesBodegas ya no existían.
+    const item = direcciones.find((x) => String(x.id) === String(id));
+    if (item) {
+      const partes = [
+        item.direccion || item.domicilio || item.calle,
+        item.colonia ? `Col. ${String(item.colonia)}` : '',
+        item.cp || item.codigoPostal ? `C.P. ${String(item.cp || item.codigoPostal)}` : '',
+        item.ciudad || item.municipio,
+        item.estado,
+      ].map((p) => String(p || '').trim()).filter(Boolean);
+      if (partes.length) return partes.join(', ');
+      if (item.label) return String(item.label);
     }
     return '';
   };
@@ -1824,8 +1757,9 @@ export const FacturacionProveedoresDashboard = () => {
     return String(v || '');
   };
 
-  const abrirConfirmacionTarifa = (e: React.MouseEvent, op: any) => {
+  const abrirConfirmacionTarifa = async (e: React.MouseEvent, op: any) => {
     e.stopPropagation();
+    const direcciones = await obtenerCatalogo('direcciones');
     const m = obtenerMontoOperacion(op);
     const monedaFact = op.monedaUnidadNombre || mostrarMoneda(op.facturadoEnUnidad);
     const monedaConvRaw = mostrarMoneda(op.monedaConvenioProv);
@@ -1849,9 +1783,9 @@ export const FacturacionProveedoresDashboard = () => {
       tipoOperacion: limpiar(txt(op.convenioProveedorNombre, op.convenioProveedor, op.convenioNombre, op.convenio)),
       impoExpoMov: limpiar(tipoOpNombre(op)),
       clienteOrigen: limpiar(txt(op.origenNombre, op.origen)),
-      ciudadOrigen: direccionDeCatalogo(op.origen),
+      ciudadOrigen: direccionDeCatalogo(direcciones, op.origen),
       clienteDestino: limpiar(txt(op.destinoNombre, op.destino)),
-      ciudadDestino: direccionDeCatalogo(op.destino),
+      ciudadDestino: direccionDeCatalogo(direcciones, op.destino),
       refCliente: String(op.refCliente || ''),
       facturadoEn: aTextoMoneda(monedaFact),
       monedaConvenio: aTextoMoneda(monedaConv),
@@ -2970,9 +2904,8 @@ export const FacturacionProveedoresDashboard = () => {
       // ✅ FIX: la moneda puede venir como nombre de catálogo ("Dólares",
       //   "Pesos") y las tarjetas comparaban contra 'USD'/'MXN' exactos, por
       //   lo que TOTAL FACTURADO marcaba $0.00. Se normaliza antes de sumar.
-      const monTxt = monedaFacturaMostrar(f).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
-      const mon = (monTxt === 'USD' || monTxt.startsWith('DOLAR') || monTxt === 'DLS' || monTxt === 'US$') ? 'USD'
-        : (monTxt === 'MXN' || monTxt.startsWith('PESO') || monTxt === 'MN') ? 'MXN' : monTxt;
+      //   ✅ V00439 (Fase 3.x): con el helper compartido (acepta las mismas formas y más).
+      const mon = monedaCanonicaComun(monedaFacturaMostrar(f));
       if (mon === 'USD') totalUSD += monto;
       else if (mon === 'MXN') totalMXN += monto;
       else totalSinMoneda += monto;
@@ -3708,13 +3641,13 @@ export const FacturacionProveedoresDashboard = () => {
                           {yaFacturada && op.facturaProveedorId && <button className="fpd-btn-editar-op fpd-btn-hilo" onClick={(e) => { e.stopPropagation(); setHiloFacturaId(String(op.facturaProveedorId)); }} title="Verificar el hilo Operaciones → Facturación → Pagos de esta factura">🔗 Hilo</button>}
                           {yaFacturada ? (
                             <div className="fpd-x90">
-                              <button className="fpd-x91" onClick={(e) => abrirConfirmacionTarifa(e, op)} title="Generar la Confirmación de Tarifa a Proveedor en PDF">Tarifa</button>
+                              <button className="fpd-x91" onClick={(e) => { void abrirConfirmacionTarifa(e, op); }} title="Generar la Confirmación de Tarifa a Proveedor en PDF">Tarifa</button>
                               <button className="fpd-x92" onClick={(e) => abrirGestionOp(e, op)} title="Editar el # de factura de esta operación">✎ #</button>
                               <button className="fpd-x93" onClick={(e) => { e.stopPropagation(); quitarOpDeFactura(op); }} title="Quitar esta operación de la factura (vuelve a Pendientes)">✕ Quitar</button>
                             </div>
                           ) : (
                             <div className="fpd-x90">
-                              <button className="fpd-x91" onClick={(e) => abrirConfirmacionTarifa(e, op)} title="Generar la Confirmación de Tarifa a Proveedor en PDF">Tarifa</button>
+                              <button className="fpd-x91" onClick={(e) => { void abrirConfirmacionTarifa(e, op); }} title="Generar la Confirmación de Tarifa a Proveedor en PDF">Tarifa</button>
                               <button className="fpd-x94" onClick={(e) => { e.stopPropagation(); abrirCostoAdicParaOp(op.id); }} title="Agregar costo adicional a esta operación">＋ Costo</button>
                             </div>
                           )}

@@ -17,12 +17,11 @@
 // ---------------------------------------------------------------------------
 import { collection, doc, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
-import { limpiarCachesPorPrefijo } from '../../../utils/cacheMemoria';
-import { limpiarCacheCatalogos } from '../../../hooks/useCatalogoCache';
-import { invalidarCatalogosParaFormulario } from '../../operaciones/services/catalogosOperacion';
+import { idReal, obtenerCatalogo } from '../../../shared/data/catalogos';
+import { TIPO_EMPRESA } from '../../../shared/dominio/constantes';
 
 /** Id del tipo que se conserva (antes "Origen / Destino"). */
-export const TIPO_BODEGA_ID = '6e7af5ab';
+export const TIPO_BODEGA_ID = TIPO_EMPRESA.bodega;
 export const TIPO_BODEGA_NOMBRE = 'Bódega';
 
 const norm = (v: unknown): string =>
@@ -58,8 +57,8 @@ export interface PlanUnificacion {
 
 /** Lee catálogo y empresas y calcula los cambios SIN escribir nada. */
 export async function planUnificarBodegas(): Promise<PlanUnificacion> {
-  const snapTipos = await getDocs(collection(db, 'catalogo_tipo_empresa'));
-  const tipos = snapTipos.docs.map((d) => ({ id: d.id, nombre: String((d.data() as { nombre?: string }).nombre ?? '') }));
+  // ✅ V00439 (Fase 3.x): el catálogo de tipos sale del listener compartido.
+  const tipos = (await obtenerCatalogo('catalogo_tipo_empresa')).map((d) => ({ id: idReal(d), nombre: String(d.nombre ?? '') }));
 
   const conservado =
     tipos.find((t) => t.id === TIPO_BODEGA_ID) ??
@@ -76,6 +75,9 @@ export async function planUnificarBodegas(): Promise<PlanUnificacion> {
   const esUnificable = (v: string): boolean =>
     v === conservado.id || idsAbsorbidos.has(v) || NOMBRES_UNIFICABLES.has(norm(v)) || norm(v) === norm(TIPO_BODEGA_NOMBRE);
 
+  // ✅ V00439 (Fase 3.x): empresas con getDocs propio A PROPÓSITO: se escribe por
+  //   d.id y el catálogo compartido arma {id, ...datos} (un campo interno "id"
+  //   heredado de AppSheet pisaría el id del documento; ver analizarDuplicadas).
   const snapEmp = await getDocs(collection(db, 'empresas'));
   const empresas: CambioEmpresa[] = [];
 
@@ -151,16 +153,9 @@ export async function aplicarUnificarBodegas(plan: PlanUnificacion): Promise<{ e
   for (const t of plan.tiposAbsorbidos) loteCat.delete(doc(db, 'catalogo_tipo_empresa', t.id));
   await loteCat.commit();
 
-  // 3) Cachés: que ningún módulo siga mostrando "Origen / Destino" o "Bodega".
-  limpiarCachesPorPrefijo('roelca_');
-  limpiarCachesPorPrefijo('cat_v2__');
-  limpiarCacheCatalogos();
-  invalidarCatalogosParaFormulario();
-  try {
-    Object.keys(localStorage)
-      .filter((k) => k.startsWith('cat_v2__') || k.startsWith('roelca_'))
-      .forEach((k) => localStorage.removeItem(k));
-  } catch { /* sin localStorage: las capas en memoria ya quedaron limpias */ }
+  // ✅ V00439 (Fase 3.x): ya no se purgan cachés: los catálogos (tipos y empresas)
+  //   llegan en vivo a todos los módulos. Las claves `roelca_*` que quedan son de
+  //   operaciones/facturas y preferencias de UI, sin nombres de tipo de empresa.
 
   return { empresas: plan.empresas.length, tiposBaja: plan.tiposAbsorbidos.length };
 }

@@ -11,11 +11,11 @@
 // conversiones (USD/MXN según el tipo de cambio guardado) y la utilidad,
 // para que los cálculos del resto del sistema queden consistentes.
 //
-// Lecturas mínimas: catálogos desde caché local (mismas llaves cat_v1__* que el
-// resto de la app), operaciones paginadas (50 + "Cargar más"), y los costos solo
+// Lecturas mínimas: catálogos del listener compartido (solo con una operación
+// seleccionada), operaciones paginadas (50 + "Cargar más"), y los costos solo
 // de la operación seleccionada.
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAutorizacionesCampos } from '../autorizaciones/useAutorizacionesCampos';
 import {
   collection, getDocs, query, orderBy, limit, startAfter,
@@ -24,43 +24,21 @@ import {
 import { db } from '../../config/firebase';
 import './CostosAdicionalesDashboard.css';
 import { FormularioConfigurable } from '../formularios/FormularioConfigurable';
+import { useCatalogos } from '../../shared/data/catalogos';
+import { esMXN, esUSD } from '../../shared/dominio/moneda';
 
-const ID_USD = '7dca62b3';
-const ID_MXN = 'f95d8894';
 const TAMANO_PAGINA = 50;
 
-// ── Caché local de catálogos (comparte llaves cat_v1__<alias> con el resto de la app) ──
-const DIA_MS = 24 * 60 * 60 * 1000;
-const CATS: Record<string, string> = {
+// ✅ V00439 (Fase 3.4): catálogos desde el listener compartido (antes caché
+//   local cat_v1__<alias> con TTL y getDocs de lo vencido).
+const CATS = {
   tarifas:                  'catalogo_tarifas_referencia',
   catalogoMoneda:           'catalogo_moneda',
   conveniosProv:            'convenios_proveedores',
   catalogoConvProvDetalles: 'convenios_proveedores_detalles',
   catalogoConvClientes:     'convenios_clientes',
   catalogoConvDetalles:     'convenios_clientes_detalles',
-};
-const TTL_MS: Record<string, number> = {
-  tarifas: 7 * DIA_MS, catalogoMoneda: 7 * DIA_MS,
-  conveniosProv: DIA_MS, catalogoConvProvDetalles: DIA_MS,
-  catalogoConvClientes: DIA_MS, catalogoConvDetalles: DIA_MS,
-};
-const claveCache = (alias: string) => `cat_v1__${alias}`;
-const leerCache = (alias: string): { ts: number; data: any[] } | null => {
-  try {
-    const raw = localStorage.getItem(claveCache(alias));
-    if (!raw) return null;
-    const obj = JSON.parse(raw);
-    return obj && Array.isArray(obj.data) ? obj : null;
-  } catch { return null; }
-};
-const escribirCache = (alias: string, data: any[]) => {
-  try { localStorage.setItem(claveCache(alias), JSON.stringify({ ts: Date.now(), data })); } catch {}
-};
-const cacheVigente = (alias: string): boolean => {
-  const obj = leerCache(alias);
-  if (!obj) return false;
-  return (Date.now() - (obj.ts || 0)) < (TTL_MS[alias] ?? DIA_MS);
-};
+} as const;
 
 const formatoMoneda = (m: any) => {
   const n = parseFloat(m || 0);
@@ -92,10 +70,9 @@ export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosAc
   const [cargandoMas, setCargandoMas] = useState(false);
   const [busqueda, setBusqueda] = useState('');
 
-  const [catalogos, setCatalogos] = useState<any>({});
-  const enVueloRef = useRef<Set<string>>(new Set());
-
   const [opSeleccionada, setOpSeleccionada] = useState<any | null>(operacionFija || null);
+  // Los catálogos solo se usan con una operación seleccionada (convenios y monedas).
+  const { datos: catalogos } = useCatalogos(CATS, { activo: opSeleccionada !== null });
   const [costos, setCostos] = useState<any[]>([]);
   const [cargandoCostos, setCargandoCostos] = useState(false);
 
@@ -105,31 +82,6 @@ export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosAc
   const [convenioSel, setConvenioSel] = useState('');
   const [observaciones, setObservaciones] = useState('');
   const [monto, setMonto] = useState<number | ''>('');
-
-  // ── Catálogos (caché-first) ──
-  const cargarCatalogos = async () => {
-    // Hidrata de caché al instante
-    const inicial: any = {};
-    Object.keys(CATS).forEach(alias => {
-      const c = leerCache(alias);
-      if (c && Array.isArray(c.data)) inicial[alias] = c.data;
-    });
-    if (Object.keys(inicial).length) setCatalogos((prev: any) => ({ ...prev, ...inicial }));
-    // Descarga solo lo vencido/faltante
-    const pendientes = Object.entries(CATS)
-      .filter(([alias]) => !cacheVigente(alias) && !enVueloRef.current.has(alias))
-      .map(([alias, col]) => ({ alias, col }));
-    pendientes.forEach(p => enVueloRef.current.add(p.alias));
-    await Promise.all(pendientes.map(async ({ alias, col }) => {
-      try {
-        const snap = await getDocs(collection(db, col));
-        const data = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-        escribirCache(alias, data);
-        setCatalogos((prev: any) => ({ ...prev, [alias]: data }));
-      } catch (e) { console.error(`Error catálogo ${col}:`, e); }
-      finally { enVueloRef.current.delete(alias); }
-    }));
-  };
 
   const descargarOperaciones = async () => {
     setCargandoOps(true);
@@ -167,7 +119,6 @@ export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosAc
   };
 
   useEffect(() => {
-    cargarCatalogos();
     if (operacionFija) {
       cargarCostos(operacionFija); // modo modal: no descargamos la lista (0 lecturas extra)
     } else {
@@ -251,12 +202,13 @@ export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosAc
     costos.filter(c => c.tipo === 'proveedor').reduce((s, c) => s + Number(c.monto || 0), 0), [costos]);
 
   // ── Recalcular conversiones de la operación (espejo del formulario) ──
-  const monedaNombre = (id: string) => (catalogos.catalogoMoneda || []).find((m: any) => m.id === id)?.moneda || '';
-  const esUSD = (id: string) => id === ID_USD || monedaNombre(id).toUpperCase().includes('USD');
-  const esMXN = (id: string) => id === ID_MXN || monedaNombre(id).toUpperCase().includes('MXN');
+  const monedaNombre = (id: string) => catalogos.catalogoMoneda.find((m) => m.id === id)?.moneda;
+  // ✅ V00439 (Fase 3.6): regla compartida de moneda (ID, código o nombre del catálogo).
+  const esMonedaUSD = (id: string) => esUSD(id) || esUSD(monedaNombre(id));
+  const esMonedaMXN = (id: string) => esMXN(id) || esMXN(monedaNombre(id));
   const conv = (subtotal: number, monedaId: string, tc: number) => {
-    if (esUSD(monedaId)) return { dol: subtotal, pes: 0, conv: subtotal * tc };
-    if (esMXN(monedaId)) return { dol: 0, pes: subtotal, conv: subtotal };
+    if (esMonedaUSD(monedaId)) return { dol: subtotal, pes: 0, conv: subtotal * tc };
+    if (esMonedaMXN(monedaId)) return { dol: 0, pes: subtotal, conv: subtotal };
     return { dol: 0, pes: 0, conv: subtotal }; // moneda desconocida: sin TC
   };
 

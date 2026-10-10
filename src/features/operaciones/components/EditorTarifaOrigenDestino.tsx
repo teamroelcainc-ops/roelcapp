@@ -11,9 +11,10 @@
 //   (clientes y proveedores), líneas de los tarifarios y nombre guardado en
 //   las operaciones.
 // ---------------------------------------------------------------------------
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, getDoc, getDocs, query, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { idReal, obtenerCatalogo, useCatalogo } from '../../../shared/data/catalogos';
 import { registrarLog } from '../../../utils/logger';
 import './EditorTarifaOrigenDestino.css';
 
@@ -31,22 +32,23 @@ interface Props {
 }
 
 export function EditorTarifaOrigenDestino({ refOperacion, detalleClienteId, detalleProveedorId, onCerrar }: Props) {
-  const [cargando, setCargando] = useState(true);
+  const [cargandoLados, setCargandoLados] = useState(true);
   const [guardando, setGuardando] = useState(false);
-  const [municipios, setMunicipios] = useState<Municipio[]>([]);
   const [cliente, setCliente] = useState<LadoTarifa>(null);
   const [proveedor, setProveedor] = useState<LadoTarifa>(null);
+  // ✅ V00439 (Fase 3.x): municipios del listener compartido (antes getDocs al
+  //   abrir). useMemo: catálogo grande, evita reordenarlo en cada render.
+  const { datos: municipiosCat, listo: municipiosListos } = useCatalogo('catalogo_municipios');
+  const municipios = useMemo<Municipio[]>(() => municipiosCat
+    .map((d) => ({ id: idReal(d), nombre: String(d.municipio || '') }))
+    .filter((m) => m.nombre)
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' })), [municipiosCat]);
+  const cargando = cargandoLados || !municipiosListos;
 
   useEffect(() => {
     let activo = true;
     (async () => {
       try {
-        const snapMun = await getDocs(collection(db, 'catalogo_municipios'));
-        const lista = snapMun.docs
-          .map((d) => ({ id: d.id, nombre: String((d.data() as Record<string, unknown>).municipio || '') }))
-          .filter((m) => m.nombre)
-          .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
-
         const cargarLado = async (detalleId: string | undefined, coleccion: string): Promise<LadoTarifa> => {
           if (!detalleId) return null;
           const det = await getDoc(doc(db, coleccion, detalleId));
@@ -69,13 +71,12 @@ export function EditorTarifaOrigenDestino({ refOperacion, detalleClienteId, deta
           cargarLado(detalleProveedorId, 'convenios_proveedores_detalles'),
         ]);
         if (!activo) return;
-        setMunicipios(lista);
         setCliente(cli);
         setProveedor(prov);
       } catch (e) {
         console.error('No se pudieron cargar las tarifas de la operación:', e);
       } finally {
-        if (activo) setCargando(false);
+        if (activo) setCargandoLados(false);
       }
     })();
     return () => { activo = false; };
@@ -163,10 +164,10 @@ export function EditorTarifaOrigenDestino({ refOperacion, detalleClienteId, deta
         }
 
         // 2) ✅ V00230: líneas dentro de los TARIFARIOS que usan esta tarifa.
-        for (const col of ['tarifario_clientes', 'tarifario_proveedores']) {
-          const snapT = await getDocs(collection(db, col));
-          for (const d of snapT.docs) {
-            const x = d.data() as Record<string, unknown>;
+        //    ✅ V00439 (Fase 3.x): los tarifarios salen del listener compartido.
+        for (const col of ['tarifario_clientes', 'tarifario_proveedores'] as const) {
+          const tarifarios = await obtenerCatalogo(col);
+          for (const x of tarifarios) {
             const lineas = Array.isArray(x.tarifas) ? (x.tarifas as Record<string, unknown>[]) : [];
             let cambio = false;
             const nuevas = lineas.map((l) => {
@@ -175,7 +176,7 @@ export function EditorTarifaOrigenDestino({ refOperacion, detalleClienteId, deta
               cambio = true;
               return { ...l, descripcion: nuevaDesc };
             });
-            if (cambio) { await updateDoc(d.ref, { tarifas: nuevas }); tarifariosTocados += 1; }
+            if (cambio) { await updateDoc(doc(db, col, idReal(x)), { tarifas: nuevas }); tarifariosTocados += 1; }
           }
         }
 

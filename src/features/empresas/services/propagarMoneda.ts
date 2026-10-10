@@ -12,9 +12,9 @@
 // ---------------------------------------------------------------------------
 import { collection, doc, getDoc, getDocs, query, where, writeBatch } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
-
-const ID_USD = '7dca62b3';
-const ID_MXN = 'f95d8894';
+import { idReal, obtenerCatalogo } from '../../../shared/data/catalogos';
+import { ID_MXN, ID_USD } from '../../../shared/dominio/constantes';
+import { monedaCanonica } from '../../../shared/dominio/moneda';
 
 export interface ReporteMoneda {
   monedaNombre: string;
@@ -29,13 +29,14 @@ export interface ReporteMoneda {
 
 export const propagarMonedaEmpresa = async (empresaId: string): Promise<ReporteMoneda> => {
   // 1) Moneda actual de la empresa (fuente de la verdad) + catálogo.
-  const [snapE, snapM] = await Promise.all([
+  // ✅ V00439 (Fase 3.x): el catálogo de monedas sale del listener compartido.
+  const [snapE, catMonedas] = await Promise.all([
     getDoc(doc(db, 'empresas', empresaId)),
-    getDocs(collection(db, 'catalogo_moneda')),
+    obtenerCatalogo('catalogo_moneda'),
   ]);
   if (!snapE.exists()) throw new Error('No se encontró la empresa.');
   const emp: any = snapE.data();
-  const monedas = snapM.docs.map((d) => ({ id: d.id, moneda: String((d.data() as any).moneda || '') }));
+  const monedas = catMonedas.map((d) => ({ id: idReal(d), moneda: String(d.moneda || '') }));
 
   const crudo = String(emp.monedaId || emp.moneda || emp.monedaNombre || '').trim();
   let monId = '';
@@ -46,12 +47,12 @@ export const propagarMonedaEmpresa = async (empresaId: string): Promise<ReporteM
     const up = crudo.toUpperCase();
     const porNombre = monedas.find((m) => m.moneda.toUpperCase() === up || (up && (m.moneda.toUpperCase().includes(up) || up.includes(m.moneda.toUpperCase()))));
     if (porNombre) { monId = porNombre.id; monNom = porNombre.moneda; }
-    else if (up.includes('USD') || up.includes('DOLAR') || up.includes('DÓLAR')) { monId = ID_USD; monNom = 'Dólares'; }
-    else if (up.includes('MXN') || up.includes('PESO')) { monId = ID_MXN; monNom = 'Pesos'; }
+    else if (monedaCanonica(crudo) === 'USD') { monId = ID_USD; monNom = 'Dólares'; }
+    else if (monedaCanonica(crudo) === 'MXN') { monId = ID_MXN; monNom = 'Pesos'; }
   }
   if (!monId) throw new Error('La empresa no tiene moneda registrada en la tabla Empresas (o no coincide con el catálogo de Monedas).');
-  const n = monNom.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  const canon: 'USD' | 'MXN' | '' = n.includes('dolar') || n.includes('usd') ? 'USD' : n.includes('peso') || n.includes('mxn') ? 'MXN' : '';
+  // ✅ V00439 (Fase 3.x): moneda canónica con el helper compartido (antes una copia local).
+  const canon: 'USD' | 'MXN' | '' = monedaCanonica(monNom) ?? '';
 
   const rep: ReporteMoneda = { monedaNombre: monNom, canon, conveniosClientes: 0, conveniosProveedores: 0, opsCliente: 0, opsProveedor: 0, facturasClientes: 0, facturasProveedores: 0 };
 

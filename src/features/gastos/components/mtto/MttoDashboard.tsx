@@ -9,7 +9,9 @@ import * as XLSX from 'xlsx';
 // ✅ Logo de los PDF (mismas exportaciones que ya usa el historial de Invoice).
 import { getLogoPdf, LOGO_DEFAULT } from '../../../../utils/pdfGenerator';
 import './MttoDashboard.css';
-import { almacenSesion } from '../../../../utils/cacheMemoria';
+import { useCatalogos } from '../../../../shared/data/catalogos';
+import type { DocCatalogo } from '../../../../shared/data/catalogos';
+import { queryClient } from '../../../../lib/queryClient';
 
 type VistaMaestra = 'tabla' | 'agrupado' | 'refacciones';
 
@@ -85,13 +87,42 @@ const formatearFolio = (m: any): string => {
   return original;
 };
 
+// ✅ V00439 (Fase 3.4): catálogos del listener compartido (mismos alias que antes).
+const CATALOGOS_MTTO = {
+  empresas: 'empresas', unidades: 'unidades', servicios: 'catalogo_tipo_servicio',
+  monedas: 'catalogo_moneda', formasPago: 'catalogo_formas_pago', empleados: 'empleados',
+} as const;
+
+// Operaciones para el selector "Asignar Operación" (lectura única; antes iban en
+// la caché local 'roelca_catalogos_v1' junto con los catálogos, sin vencimiento).
+const leerOperacionesSelector = (): Promise<DocCatalogo[]> => queryClient.fetchQuery({
+  queryKey: ['mtto', 'operacionesSelector'],
+  queryFn: async () => {
+    const snap = await getDocs(query(collection(db, 'operaciones'), limit(200)));
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  },
+  staleTime: Infinity,
+});
+
 const MttoDashboard = () => {
   const [vistaActiva, setVistaActiva] = useState<VistaMaestra>('tabla');
   const [estadoFormulario, setEstadoFormulario] = useState<'cerrado' | 'abierto' | 'minimizado'>('cerrado');
   const [mttoEditando, setMttoEditando] = useState<any | null>(null);
   const [mttoGlobales, setMttoGlobales] = useState<any[]>([]);
   const [cargando, setCargando] = useState(true);
-  const [catalogosCacheados, setCatalogosCacheados] = useState<any>({});
+  const { datos: catMtto } = useCatalogos(CATALOGOS_MTTO);
+  const [operacionesSelector, setOperacionesSelector] = useState<DocCatalogo[]>([]);
+  const catalogosCacheados: Record<string, DocCatalogo[]> = useMemo(
+    () => ({ ...catMtto, operaciones: operacionesSelector }),
+    [catMtto, operacionesSelector],
+  );
+  useEffect(() => {
+    let activo = true;
+    leerOperacionesSelector()
+      .then((ops) => { if (activo) setOperacionesSelector(ops); })
+      .catch((e) => console.error('Error al cargar operaciones para el selector MTTO:', e));
+    return () => { activo = false; };
+  }, []);
   const [busqueda, setBusqueda] = useState('');
   // ✅ NUEVO: panel lateral derecho de filtros + la tabla arranca VACÍA hasta Buscar.
   const [drawerFiltrosAbierto, setDrawerFiltrosAbierto] = useState(false);
@@ -120,37 +151,6 @@ const MttoDashboard = () => {
   const cargarDatos = async () => {
     setCargando(true);
     try {
-      let catGuardados = null;
-      const cacheCatStr = almacenSesion.getItem('roelca_catalogos_v1');
-
-      if (cacheCatStr) {
-        catGuardados = JSON.parse(cacheCatStr);
-        setCatalogosCacheados(catGuardados);
-      } else {
-        const [empSnap, unidSnap, servSnap, monSnap, fpSnap, opSnap, empColSnap] = await Promise.all([
-          getDocs(collection(db, 'empresas')),
-          getDocs(collection(db, 'unidades')),
-          getDocs(collection(db, 'catalogo_tipo_servicio')),
-          getDocs(collection(db, 'catalogo_moneda')),
-          getDocs(collection(db, 'catalogo_formas_pago')),
-          getDocs(query(collection(db, 'operaciones'), limit(200))),
-          getDocs(collection(db, 'empleados')) 
-        ]);
-
-        catGuardados = {
-          empresas: empSnap.docs.map((d: any) => ({ id: d.id, ...d.data() })),
-          unidades: unidSnap.docs.map((d: any) => ({ id: d.id, ...d.data() })),
-          servicios: servSnap.docs.map((d: any) => ({ id: d.id, ...d.data() })),
-          monedas: monSnap.docs.map((d: any) => ({ id: d.id, ...d.data() })),
-          formasPago: fpSnap.docs.map((d: any) => ({ id: d.id, ...d.data() })),
-          operaciones: opSnap.docs.map((d: any) => ({ id: d.id, ...d.data() })),
-          empleados: empColSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }))
-        };
-        
-        almacenSesion.setItem('roelca_catalogos_v1', JSON.stringify(catGuardados));
-        setCatalogosCacheados(catGuardados);
-      }
-
       // ✅ orderBy('createdAt','desc') garantiza que los 300 registros devueltos
       //    sean los MÁS RECIENTES. Antes, limit(300) sin orden traía los primeros
       //    300 por ID de documento (aleatorio), y los gastos nuevos podían quedar
@@ -237,7 +237,7 @@ const MttoDashboard = () => {
     if (unidadValor === 'Oficina') return 'Oficina';
     if (catalogosCacheados.unidades) {
         const uni = catalogosCacheados.unidades.find((u:any) => u.id === unidadValor);
-        if (uni) return uni.unidad || uni.numeroEconomico || uni.nombre;
+        if (uni) return (uni.unidad || uni.numeroEconomico || uni.nombre) as string;
     }
     return unidadValor;
   };

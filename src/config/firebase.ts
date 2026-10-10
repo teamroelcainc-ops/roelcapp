@@ -8,7 +8,8 @@ import {
   collection, addDoc, updateDoc, doc, getDoc, writeBatch,
 } from "firebase/firestore";
 import type { Firestore } from "firebase/firestore";
-import type { DocumentData, UpdateData } from "firebase/firestore";
+import type { DocumentData, DocumentReference, UpdateData } from "firebase/firestore";
+import type { ColeccionTipada, Esquema } from "../types/firestore";
 import { getAuth } from "firebase/auth";
 import { getStorage } from "firebase/storage";
 
@@ -37,13 +38,35 @@ if (llaveAppCheck) {
     .catch((e) => console.warn('[appcheck] No se pudo iniciar App Check.', e));
 }
 
-// ✅ GUARDIÁN DE ESPACIO: los cachés regenerables de la app (catálogos
-//    cat_v1__/cat_v2__, etc.) pueden llenar los ~5MB de localStorage y eso
-//    tumbaba la inicialización de Firestore (QuotaExceededError → assertion
-//    b815 → app congelada en "Cargando..."). Antes de arrancar, si el
-//    almacenamiento viene saturado, se liberan SOLO las claves de caché
-//    regenerable (nunca las de sesión de Firebase ni preferencias).
-const PREFIJOS_CACHE_REGENERABLE = ['cat_v1__', 'cat_v2__', 'flujo_v1__'];
+// ✅ GUARDIÁN DE ESPACIO (V00109) → ✅ V00439 (Fase 3.4): LIMPIEZA DE CACHÉS LEGADAS.
+//    Las copias de catálogos y de datos en localStorage (cat_v1__/cat_v2__,
+//    roelca_catalogos_v*, flujo_v1__…) llenaban los ~5MB del navegador y tumbaban
+//    la inicialización de Firestore. Desde la V00439 los catálogos viven en
+//    listeners compartidos (src/shared/data/catalogos.ts) sobre la caché
+//    persistente de Firestore: esas claves ya no se usan y se borran al arrancar.
+const PREFIJOS_CACHE_LEGADA = ['cat_v1__', 'cat_v2__', 'flujo_v1__'];
+const CLAVES_CACHE_LEGADA = new Set([
+  'roelca_catalogos_v1', 'roelca_catalogos_v2', 'roelca_empresas_dict_v2', 'roelca_catalogo_tarifas_ref_v1',
+  'catalogos_invalidados_en',
+]);
+const limpiarCachesLegadas = () => {
+  try {
+    const aBorrar: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i) || '';
+      if (CLAVES_CACHE_LEGADA.has(k) || PREFIJOS_CACHE_LEGADA.some((p) => k.startsWith(p))) aBorrar.push(k);
+    }
+    aBorrar.forEach((k) => localStorage.removeItem(k));
+  } catch { /* almacenamiento bloqueado: continuar */ }
+};
+limpiarCachesLegadas();
+
+// ✅ GUARDIÁN DE ESPACIO (V00109, se conserva en V00439): todavía quedan copias
+//    regenerables de operaciones en localStorage (almacenSesion de Servicios
+//    Completados y el conteo de Empresas; se retiran en la Fase 7). Si el
+//    almacenamiento viene saturado (>~3.5MB de ~5MB), se liberan SOLO esas
+//    claves regenerables — nunca la sesión de Firebase ni las preferencias.
+const PREFIJOS_CACHE_REGENERABLE = ['roelca_completadas_', 'empresas_conteo_ops_', 'detalles_convenio__'];
 const liberarEspacioSiEsNecesario = () => {
   try {
     let total = 0;
@@ -51,16 +74,14 @@ const liberarEspacioSiEsNecesario = () => {
       const k = localStorage.key(i) || '';
       total += k.length + (localStorage.getItem(k)?.length || 0);
     }
-    // ~3.5MB de umbral (los navegadores dan ~5MB por origen).
-    if (total > 3_500_000) {
-      const aBorrar: string[] = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i) || '';
-        if (PREFIJOS_CACHE_REGENERABLE.some(p => k.startsWith(p))) aBorrar.push(k);
-      }
-      aBorrar.forEach(k => localStorage.removeItem(k));
-      console.warn(`[storage] Se liberaron ${aBorrar.length} cachés regenerables (almacenamiento saturado).`);
+    if (total <= 3_500_000) return;
+    const aBorrar: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i) || '';
+      if (PREFIJOS_CACHE_REGENERABLE.some((p) => k.startsWith(p))) aBorrar.push(k);
     }
+    aBorrar.forEach((k) => localStorage.removeItem(k));
+    console.warn(`[storage] Se liberaron ${aBorrar.length} cachés regenerables (almacenamiento saturado).`);
   } catch { /* almacenamiento bloqueado: continuar */ }
 };
 liberarEspacioSiEsNecesario();
@@ -76,7 +97,9 @@ liberarEspacioSiEsNecesario();
 //    · persistentSingleTabManager: coordina SIN usar localStorage (el manager
 //      multi-pestaña escribía en localStorage y crasheaba con la cuota llena).
 //      Si hay varias pestañas, la primera usa persistencia y las demás operan
-//      normal contra el servidor.
+//      normal contra el servidor. ✅ V00439: se queda así hasta que la Fase 7
+//      retire las copias de operaciones en localStorage (almacenSesion); entonces
+//      se cambia a persistentMultipleTabManager (todas las pestañas con caché).
 //    · Si el navegador no permite IndexedDB (p. ej. modo privado estricto),
 //      se cae a caché EN MEMORIA y la app sigue funcionando.
 let dbInterno: Firestore;
@@ -100,41 +123,24 @@ export const storage = getStorage(app);
 //    índices con notación de punto (`a.b`) que nuestros tipos de dominio no
 //    declaran, pero el dato en runtime es un objeto plano válido.
 
-// ✅ NUEVO (V00109) — INVALIDACIÓN CENTRAL DE CACHÉS DE CATÁLOGO: los módulos
-//   (Operaciones, Facturación, Estadísticas…) cachean los catálogos en
-//   localStorage (cat_v2__*) hasta 24 h. Antes, solo el módulo de Catálogos
-//   limpiaba esas cachés; al editar en Bases de Datos (empresas, empleados,
-//   unidades…) o Convenios, el resto de la app seguía mostrando valores viejos
-//   hasta que la caché expiraba. Ahora, CUALQUIER escritura hecha con estos
-//   helpers sobre una colección tipo catálogo borra las cachés locales, y los
-//   módulos re-descargan datos frescos en su siguiente carga.
-const COLECCIONES_TIPO_CATALOGO = new Set([
-  'empresas', 'unidades', 'empleados', 'remolques', 'proveedores_unidad',
-  'convenios_clientes', 'convenios_clientes_detalles',
-  'convenios_proveedores', 'convenios_proveedores_detalles',
-  'tipo_cambio', 'direcciones',
-]);
-const invalidarCachesCatalogosLocales = (nombreColeccion: string) => {
-  try {
-    if (!nombreColeccion.startsWith('catalogo_') && !COLECCIONES_TIPO_CATALOGO.has(nombreColeccion)) return;
-    Object.keys(localStorage)
-      .filter((k) => k.startsWith('cat_v2__') || k.startsWith('cat_v1__'))
-      .forEach((k) => localStorage.removeItem(k));
-    localStorage.setItem('catalogos_invalidados_en', String(Date.now()));
-  } catch { /* almacenamiento no disponible: continuar sin caché */ }
-};
+// ✅ V00439 (Fase 3.4): ya no hay cachés de catálogo que invalidar después de
+//   escribir: los catálogos son listeners compartidos en vivo (src/shared/data/catalogos.ts).
 
-export const agregarRegistro = async (nombreColeccion: string, data: object) => {
+// ✅ V00439 (Fase 3.2): con una colección del esquema (src/types/firestore.ts) los
+//   datos se revisan contra su tipo; con cualquier otro nombre se acepta un objeto
+//   como antes (compatibilidad con el código existente).
+export async function agregarRegistro<K extends ColeccionTipada>(nombreColeccion: K, data: Partial<Omit<Esquema[K], 'id'>>): Promise<DocumentReference>;
+export async function agregarRegistro(nombreColeccion: string, data: object): Promise<DocumentReference>;
+export async function agregarRegistro(nombreColeccion: string, data: object): Promise<DocumentReference> {
   const ref = await addDoc(collection(db, nombreColeccion), data as DocumentData);
-  invalidarCachesCatalogosLocales(nombreColeccion);
   return ref;
-};
+}
 
-export const actualizarRegistro = async (nombreColeccion: string, id: string, data: object) => {
-  const res = await updateDoc(doc(db, nombreColeccion, id), data as UpdateData<DocumentData>);
-  invalidarCachesCatalogosLocales(nombreColeccion);
-  return res;
-};
+export async function actualizarRegistro<K extends ColeccionTipada>(nombreColeccion: K, id: string, data: Partial<Omit<Esquema[K], 'id'>>): Promise<void>;
+export async function actualizarRegistro(nombreColeccion: string, id: string, data: object): Promise<void>;
+export async function actualizarRegistro(nombreColeccion: string, id: string, data: object): Promise<void> {
+  await updateDoc(doc(db, nombreColeccion, id), data as UpdateData<DocumentData>);
+}
 
 export const eliminarRegistro = async (nombreColeccion: string, id: string, opciones?: OpcionesEliminacion) => {
   // ✅ NUEVO (V00115) — PAPELERA DE RECICLAJE GLOBAL con NOTA OBLIGATORIA:
@@ -178,7 +184,6 @@ export const eliminarRegistro = async (nombreColeccion: string, id: string, opci
       modulo: opciones?.modulo || nombreColeccion,
       etiqueta: opciones?.etiqueta || '',
     });
-    invalidarCachesCatalogosLocales(nombreColeccion);
     return;
   }
   const ref = doc(db, nombreColeccion, id);
@@ -198,7 +203,6 @@ export const eliminarRegistro = async (nombreColeccion: string, id: string, opci
   }
   lote.delete(ref);
   await lote.commit();
-  invalidarCachesCatalogosLocales(nombreColeccion);
 };
 
 // ✅ NUEVO (V00115) — utilidades de la papelera global (exportadas para los

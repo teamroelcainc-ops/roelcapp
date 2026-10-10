@@ -4,6 +4,7 @@
 //   en las operaciones, y les quita el prefijo — los números se conservan.
 import { collection, doc, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { idReal, obtenerCatalogo } from '../../shared/data/catalogos';
 
 const limpiar = (v: unknown): string => String(v ?? '').replace(/^\s*CONV[-\s]+/i, '').trimStart();
 const tienePrefijo = (v: unknown): boolean => /^\s*CONV[-\s]+/i.test(String(v ?? ''));
@@ -41,17 +42,18 @@ export const quitarPrefijoConv = async (): Promise<string> => {
     if (Object.keys(cambios).length > 0) pendientes.push({ col, id, data: cambios });
   };
 
+  // ✅ V00439 (Fase 3.x): convenios y detalles desde los catálogos compartidos.
   const [detCli, detProv, cli, prov, ops] = await Promise.all([
-    getDocs(collection(db, 'convenios_clientes_detalles')),
-    getDocs(collection(db, 'convenios_proveedores_detalles')),
-    getDocs(collection(db, 'convenios_clientes')),
-    getDocs(collection(db, 'convenios_proveedores')),
+    obtenerCatalogo('convenios_clientes_detalles'),
+    obtenerCatalogo('convenios_proveedores_detalles'),
+    obtenerCatalogo('convenios_clientes'),
+    obtenerCatalogo('convenios_proveedores'),
     getDocs(collection(db, 'operaciones')),
   ]);
-  detCli.docs.forEach((d) => { revisar('convenios_clientes_detalles', d.id, d.data() as Record<string, unknown>, ['consecutivo']); revisarNombres('convenios_clientes_detalles', d.id, d.data() as Record<string, unknown>, ['descripcionConvenio', 'tipoConvenioNombre']); });
-  detProv.docs.forEach((d) => { revisar('convenios_proveedores_detalles', d.id, d.data() as Record<string, unknown>, ['consecutivo']); revisarNombres('convenios_proveedores_detalles', d.id, d.data() as Record<string, unknown>, ['descripcionConvenio', 'tipoConvenioNombre']); });
-  cli.docs.forEach((d) => revisar('convenios_clientes', d.id, d.data() as Record<string, unknown>, ['numeroConvenio']));
-  prov.docs.forEach((d) => revisar('convenios_proveedores', d.id, d.data() as Record<string, unknown>, ['numeroConvenio']));
+  detCli.forEach((d) => { revisar('convenios_clientes_detalles', idReal(d), d, ['consecutivo']); revisarNombres('convenios_clientes_detalles', idReal(d), d, ['descripcionConvenio', 'tipoConvenioNombre']); });
+  detProv.forEach((d) => { revisar('convenios_proveedores_detalles', idReal(d), d, ['consecutivo']); revisarNombres('convenios_proveedores_detalles', idReal(d), d, ['descripcionConvenio', 'tipoConvenioNombre']); });
+  cli.forEach((d) => revisar('convenios_clientes', idReal(d), d, ['numeroConvenio']));
+  prov.forEach((d) => revisar('convenios_proveedores', idReal(d), d, ['numeroConvenio']));
   // ✅ V00347: en operaciones los tres campos son NOMBRES — sin CONV- ni "### -".
   ops.docs.forEach((d) => revisarNombres('operaciones', d.id, d.data() as Record<string, unknown>, ['convenioNombre', 'convenioProveedorNombre', 'tipoConvenioNombre']));
 

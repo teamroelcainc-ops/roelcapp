@@ -101,25 +101,17 @@ import { mismoConsecutivo, claveConsecutivo } from '../../../utils/claveConsecut
 import { ResumenStatusOps, ListaOpsConStatus } from '../../conveniosCompartido/StatusOperaciones'; // ✅ V00429
 import { cargarNombresStatus, nombreStatusOp, type OpConStatus } from '../../conveniosCompartido/logicaStatusOps'; // ✅ V00429
 import { asegurarIntegridad } from '../../conveniosCompartido/integridadConvenios'; // ✅ V00429
+import { idReal, obtenerCatalogo, useCatalogos } from '../../../shared/data/catalogos';
+import { ID_MXN, ID_USD } from '../../../shared/dominio/constantes';
+import { monedaCanonica } from '../../../shared/dominio/moneda';
 import './TarifarioClientesDashboard.css';
-
-const ID_USD = '7dca62b3';
-const ID_MXN = 'f95d8894';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docs sin tipo canónico (mismo criterio de otros módulos).
 type Doc = any;
 
-/** Canoniza cualquier representación de moneda (id de catálogo o nombre) a USD/MXN. */
-const canonMoneda = (v: unknown): 'USD' | 'MXN' | '' => {
-  const t = String(v ?? '').trim();
-  if (!t) return '';
-  if (t === ID_USD) return 'USD';
-  if (t === ID_MXN) return 'MXN';
-  const u = t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
-  if (u.includes('USD') || u.includes('DOLAR') || u === 'US$' || u === 'DLS') return 'USD';
-  if (u.includes('MXN') || u.includes('PESO') || u === 'MN') return 'MXN';
-  return '';
-};
+/** Canoniza cualquier representación de moneda (id de catálogo o nombre) a USD/MXN.
+ *  ✅ V00439 (Fase 3.x): usa el helper compartido (antes una copia local). */
+const canonMoneda = (v: unknown): 'USD' | 'MXN' | '' => monedaCanonica(v) ?? '';
 
 const fmtMoney = (n: number): string =>
   `$${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -184,16 +176,27 @@ const fechaLarga = (iso: string): string => {
 
 export function TarifarioClientesDashboard() {
   // ── Catálogos ──
-  const [empresas, setEmpresas] = useState<Doc[]>([]);
+  // ✅ V00439 (Fase 3.x): empresas, tipos de empresa, tarifas de referencia y
+  //   Convenios (maestros y detalles) desde los listeners compartidos, en vivo.
+  const { datos: cat, listo: catListo } = useCatalogos({
+    empresas: 'empresas', tiposEmpresa: 'catalogo_tipo_empresa', tarifasRef: 'catalogo_tarifas_referencia',
+    detalles: 'convenios_clientes_detalles', maestros: 'convenios_clientes',
+  });
+  const empresas: Doc[] = cat.empresas;
   // ✅ V00283: el NOMBRE del cliente es SIEMPRE la razón social actual de la
   //   empresa (por clienteId); el texto guardado solo es respaldo.
   const razonSocialDe = (r: Doc): string => {
     const emp = empresas.find((e) => String(e.id) === String(r.clienteId || ''));
     return String(emp?.nombre || r.clienteNombre || '');
   };
-  const [tiposEmpresaCat, setTiposEmpresaCat] = useState<Record<string, string>>({});
-  const [tarifasRef, setTarifasRef] = useState<Doc[]>([]);
-  const [cargandoCat, setCargandoCat] = useState(true);
+  const tiposEmpresaCat = useMemo(() => {
+    const tipos: Record<string, string> = {};
+    cat.tiposEmpresa.forEach((d) => { tipos[idReal(d)] = String(d.nombre || ''); });
+    return tipos;
+  }, [cat.tiposEmpresa]);
+  const tarifasRef: Doc[] = useMemo(() => [...cat.tarifasRef]
+    .sort((a: Doc, b: Doc) => String(a.descripcion || '').localeCompare(String(b.descripcion || ''), 'es', { sensitivity: 'base' })), [cat.tarifasRef]);
+  const cargandoCat = !catListo;
 
   // ── Captura (modal) ──
   const [capturaAbierta, setCapturaAbierta] = useState(false);
@@ -301,37 +304,11 @@ export function TarifarioClientesDashboard() {
   }, []);
 
   // ✅ V00201: detalles del convenio en vivo — de aquí sale el consecutivo real.
-  const [detallesConv, setDetallesConv] = useState<Doc[]>([]);
+  const detallesConv: Doc[] = cat.detalles;
   // ✅ V00428: convenios maestros EN VIVO (id → empresa dueña) para saber si un
   //   detalle se verá en Operaciones / Convenio de Clientes.
-  const [clientePorMaestro, setClientePorMaestro] = useState<Map<string, string>>(new Map());
-
-  useEffect(() => {
-    let activo = true;
-    (async () => {
-      try {
-        const [eSnap, tSnap, trSnap] = await Promise.all([
-          getDocs(collection(db, 'empresas')),
-          getDocs(collection(db, 'catalogo_tipo_empresa')),
-          getDocs(collection(db, 'catalogo_tarifas_referencia')),
-        ]);
-        if (!activo) return;
-        setEmpresas(eSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
-        const tipos: Record<string, string> = {};
-        tSnap.docs.forEach((d) => { tipos[d.id] = String((d.data() as Doc).nombre || ''); });
-        setTiposEmpresaCat(tipos);
-        setTarifasRef(
-          trSnap.docs.map((d) => ({ id: d.id, ...d.data() }))
-            .sort((a: Doc, b: Doc) => String(a.descripcion || '').localeCompare(String(b.descripcion || ''), 'es', { sensitivity: 'base' }))
-        );
-      } catch (e) {
-        console.error('No se pudieron cargar los catálogos del tarifario:', e);
-      } finally {
-        if (activo) setCargandoCat(false);
-      }
-    })();
-    return () => { activo = false; };
-  }, []);
+  const clientePorMaestro = useMemo(
+    () => new Map(cat.maestros.map((d) => [idReal(d), clienteDeConvenio(d)])), [cat.maestros]);
 
   // ✅ V00438 (Fase 2.7): los listeners viven solo con el módulo visible (MantenerVivo);
   //   oculto conserva lo cargado y al volver se re-suscribe sin vaciar la tabla. Si la
@@ -339,7 +316,6 @@ export function TarifarioClientesDashboard() {
   //   para no re-disparar el conteo de operaciones del detalle abierto ("…" + lecturas).
   const moduloVisible = useModuloVivoActivo();
   const docsRegistros = useRef<readonly QueryDocumentSnapshot[]>([]);
-  const docsDetalles = useRef<readonly QueryDocumentSnapshot[]>([]);
   useEffect(() => {
     if (!moduloVisible) return;
     const unsub = onSnapshot(
@@ -351,23 +327,8 @@ export function TarifarioClientesDashboard() {
       },
       () => { docsRegistros.current = []; setRegistros([]); }
     );
-    // ✅ V00201: consecutivos reales desde Detalles del Convenio, siempre al día.
-    const unsubDet = onSnapshot(
-      collection(db, 'convenios_clientes_detalles'),
-      (snap) => {
-        if (mismosDocs(docsDetalles.current, snap.docs)) return;
-        docsDetalles.current = snap.docs;
-        setDetallesConv(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      },
-      () => { docsDetalles.current = []; setDetallesConv([]); }
-    );
-    // ✅ V00428: maestros en vivo
-    const unsubMaestros = onSnapshot(
-      collection(db, 'convenios_clientes'),
-      (snap) => setClientePorMaestro(new Map(snap.docs.map((d) => [d.id, clienteDeConvenio(d.data() as Doc)]))),
-      () => setClientePorMaestro(new Map())
-    );
-    return () => { unsub(); unsubDet(); unsubMaestros(); };
+    // (✅ V00439: detalles y maestros del convenio llegan por useCatalogos, arriba.)
+    return () => { unsub(); };
   }, [moduloVisible]);
 
   /** Etiquetas de tipo de la empresa (tiposEmpresa guarda ids del catálogo). */
@@ -729,14 +690,16 @@ export function TarifarioClientesDashboard() {
   /** ✅ V00196: siguiente CONV-### para el convenio maestro.
    *  ✅ V00199: los consecutivos de DETALLE ahora los reserva
    *  reservarConsecutivosDetalle (transacción: únicos y sin brincos). */
+  // ✅ V00439 (Fase 3.x): maestros y detalles desde los catálogos compartidos
+  //   (en vivo: ya incluyen lo recién escrito). Solo lectura: no se mutan.
   const siguientes = async () => {
-    const [snapConv, snapDet] = await Promise.all([
-      getDocs(collection(db, 'convenios_clientes')),
-      getDocs(collection(db, 'convenios_clientes_detalles')),
+    const [maestros, detallesTodos] = await Promise.all([
+      obtenerCatalogo('convenios_clientes'),
+      obtenerCatalogo('convenios_clientes_detalles'),
     ]);
-    const numsConv = snapConv.docs.map((d) => parseInt(String((d.data() as Doc).numeroConvenio || '').replace(/\D/g, ''), 10) || 0);
+    const numsConv = maestros.map((d) => parseInt(String(d.numeroConvenio || '').replace(/\D/g, ''), 10) || 0);
     return {
-      snapConv, snapDet,
+      maestros, detallesTodos,
       sigConvenio: (numsConv.length ? Math.max(...numsConv) : 0) + 1,
     };
   };
@@ -822,18 +785,18 @@ export function TarifarioClientesDashboard() {
       let numeroConvenio = String(r.numeroConvenio || '');
 
       if (!convenioId) {
-        const { snapConv, sigConvenio } = await siguientes();
+        const { maestros, sigConvenio } = await siguientes();
         // ✅ V00199: consecutivos reservados por transacción (únicos, sin brincos)
         const lineas: Doc[] = Array.isArray(r.tarifas) ? r.tarifas : [];
         const consecutivos = await reservarConsecutivosDetalle(lineas.length);
         const batch = writeBatch(db);
 
         // Regla de la app: UN convenio por cliente — si ya existe, se agregan ahí.
-        const existente = snapConv.docs.find((d) => String((d.data() as Doc).clienteId || '') === String(r.clienteId || ''));
+        const existente = maestros.find((d) => String(d.clienteId || '') === String(r.clienteId || ''));
         let convenioRef;
         if (existente) {
-          convenioRef = doc(db, 'convenios_clientes', existente.id);
-          numeroConvenio = String((existente.data() as Doc).numeroConvenio || '');
+          convenioRef = doc(db, 'convenios_clientes', idReal(existente));
+          numeroConvenio = String(existente.numeroConvenio || '');
         } else {
           convenioRef = doc(collection(db, 'convenios_clientes'));
           numeroConvenio = pad3(sigConvenio); // ✅ V00346: sin el prefijo CONV-
@@ -914,9 +877,9 @@ export function TarifarioClientesDashboard() {
     if (!window.confirm('¿Importar TODOS los convenios de "Convenios de Clientes" a Tarifario Clientes en status "Aprobado" con todas sus tarifas?\n\nTambién se asignará el consecutivo (CONV-001…) a los detalles que no lo tengan. Los convenios ya importados se saltan.')) return;
     setMigrando(true);
     try {
-      const { snapConv, snapDet } = await siguientes();
-      const snapTarifarios = await getDocs(collection(db, 'tarifario_clientes'));
-      const yaVinculados = new Set(snapTarifarios.docs.map((d) => String((d.data() as Doc).convenioId || '')).filter(Boolean));
+      const { maestros, detallesTodos } = await siguientes();
+      const tarifariosTodos = await obtenerCatalogo('tarifario_clientes'); // ✅ V00439 (Fase 3.x)
+      const yaVinculados = new Set(tarifariosTodos.map((d) => String(d.convenioId || '')).filter(Boolean));
 
       const catalogo: Record<string, Doc> = {};
       tarifasRef.forEach((t) => { catalogo[String(t.id)] = t; });
@@ -925,46 +888,46 @@ export function TarifarioClientesDashboard() {
 
       // 1) Consecutivos faltantes en detalles (ordenados por número de convenio).
       const numeroDe: Record<string, string> = {};
-      snapConv.docs.forEach((d) => { numeroDe[d.id] = String((d.data() as Doc).numeroConvenio || ''); });
-      const sinConsecutivo = snapDet.docs
-        .filter((d) => !String((d.data() as Doc).consecutivo || '').trim())
+      maestros.forEach((d) => { numeroDe[idReal(d)] = String(d.numeroConvenio || ''); });
+      const sinConsecutivo = detallesTodos
+        .filter((d) => !String(d.consecutivo || '').trim())
         .sort((a, b) => {
-          const na = parseInt((numeroDe[String((a.data() as Doc).convenioId || '')] || '').replace(/\D/g, ''), 10) || 0;
-          const nb = parseInt((numeroDe[String((b.data() as Doc).convenioId || '')] || '').replace(/\D/g, ''), 10) || 0;
-          return na - nb || a.id.localeCompare(b.id);
+          const na = parseInt((numeroDe[String(a.convenioId || '')] || '').replace(/\D/g, ''), 10) || 0;
+          const nb = parseInt((numeroDe[String(b.convenioId || '')] || '').replace(/\D/g, ''), 10) || 0;
+          return na - nb || idReal(a).localeCompare(idReal(b));
         });
       // ✅ V00199: el rango se reserva por transacción — únicos y sin brincos.
       const reservados = await reservarConsecutivosDetalle(sinConsecutivo.length);
       for (let i = 0; i < sinConsecutivo.length; i++) {
-        await updateDoc(doc(db, 'convenios_clientes_detalles', sinConsecutivo[i].id), { consecutivo: reservados[i] });
+        await updateDoc(doc(db, 'convenios_clientes_detalles', idReal(sinConsecutivo[i])), { consecutivo: reservados[i] });
       }
       // ✅ V00202: si un detalle está en Detalles del Convenio, está APROBADO.
       let statusPuestos = 0;
-      for (const d of snapDet.docs) {
-        if (!String((d.data() as Doc).status || '').trim()) {
-          await updateDoc(doc(db, 'convenios_clientes_detalles', d.id), { status: 'Aprobado' });
+      for (const d of detallesTodos) {
+        if (!String(d.status || '').trim()) {
+          await updateDoc(doc(db, 'convenios_clientes_detalles', idReal(d)), { status: 'Aprobado' });
           statusPuestos += 1;
         }
       }
 
       // 2) Convenio → tarifario aprobado (con todas sus tarifas).
       const detallesPorConvenio: Record<string, Doc[]> = {};
-      snapDet.docs.forEach((d) => {
-        const x = { id: d.id, ...(d.data() as Doc) };
+      detallesTodos.forEach((d) => {
+        const x: Doc = { ...d };
         const k = String(x.convenioId || '');
         if (!detallesPorConvenio[k]) detallesPorConvenio[k] = [];
         detallesPorConvenio[k].push(x);
       });
 
       // ✅ V00203: consecutivos TAR-### para los convenios que se van a importar.
-      const porImportar = snapConv.docs.filter((d) => !yaVinculados.has(d.id));
+      const porImportar = maestros.filter((d) => !yaVinculados.has(idReal(d)));
       const consecsTar = await reservarConsecutivosTarifario(porImportar.length);
       let importados = 0;
       for (const d of porImportar) {
-        const c = d.data() as Doc;
+        const c: Doc = d;
         const emp = empresaDe[String(c.clienteId || '')] || {};
         const monedaConv = canonMoneda(c.monedaNombre) || canonMoneda(c.monedaId) || 'USD';
-        const lineas = (detallesPorConvenio[d.id] || []).map((det) => {
+        const lineas = (detallesPorConvenio[idReal(d)] || []).map((det) => {
           const ref = catalogo[String(det.tipoConvenioId || '')] || {};
           return {
             tarifaReferenciaId: String(det.tipoConvenioId || ''),
@@ -994,7 +957,7 @@ export function TarifarioClientesDashboard() {
           limiteCredito: Number(emp.limiteCredito) || 0,
           tarifas: lineas,
           status: 'Aprobado',
-          convenioId: d.id,
+          convenioId: idReal(d),
           numeroConvenio: String(c.numeroConvenio || ''),
           migradoDeConvenio: true,
           createdAt: new Date().toISOString(),
@@ -1007,17 +970,17 @@ export function TarifarioClientesDashboard() {
 
       // ✅ V00203: tarifarios existentes sin TAR-### reciben el suyo (solo el
       //   campo; conservan su clave original).
-      const tarSinConsec = snapTarifarios.docs.filter((td) => !String((td.data() as Doc).consecutivo || '').trim());
+      const tarSinConsec = tarifariosTodos.filter((td) => !String(td.consecutivo || '').trim());
       const tarNuevos = await reservarConsecutivosTarifario(tarSinConsec.length);
       for (let i = 0; i < tarSinConsec.length; i++) {
-        await updateDoc(doc(db, 'tarifario_clientes', tarSinConsec[i].id), { consecutivo: tarNuevos[i] });
+        await updateDoc(doc(db, 'tarifario_clientes', idReal(tarSinConsec[i])), { consecutivo: tarNuevos[i] });
       }
 
       // ✅ V00200: REPARA los tarifarios ya migrados que no traían consecutivo
       //   en sus líneas — se toma del detalle correspondiente del convenio.
       let reparados = 0;
-      for (const td of snapTarifarios.docs) {
-        const t = td.data() as Doc;
+      for (const td of tarifariosTodos) {
+        const t: Doc = td;
         const lineasT: Doc[] = Array.isArray(t.tarifas) ? t.tarifas : [];
         if (!t.convenioId || lineasT.length === 0 || lineasT.every((l: Doc) => String(l.consecutivo || '').trim())) continue;
         const dets = (detallesPorConvenio[String(t.convenioId)] || []);
@@ -1031,7 +994,7 @@ export function TarifarioClientesDashboard() {
           return cons ? { ...l, consecutivo: cons } : l;
         });
         if (JSON.stringify(nuevas) !== JSON.stringify(lineasT)) {
-          await updateDoc(doc(db, 'tarifario_clientes', td.id), { tarifas: nuevas });
+          await updateDoc(doc(db, 'tarifario_clientes', idReal(td)), { tarifas: nuevas });
           reparados += 1;
         }
       }
@@ -1189,13 +1152,15 @@ export function TarifarioClientesDashboard() {
       //   Operaciones ni en Convenio de Clientes) y el tarifario cuyo convenioId
       //   apunta a un maestro que ya no existe.
       const entId = String(r.clienteId || '').trim();
-      const [snapMaestrosTodos, snapDetTodos] = await Promise.all([
-        getDocs(collection(db, 'convenios_clientes')),
-        getDocs(collection(db, 'convenios_clientes_detalles')),
+      // ✅ V00439 (Fase 3.x): desde los catálogos compartidos — antes la sincronización
+      //   GLOBAL releía ambas colecciones completas POR CADA tarifario.
+      const [maestrosTodos, detallesCat] = await Promise.all([
+        obtenerCatalogo('convenios_clientes'),
+        obtenerCatalogo('convenios_clientes_detalles'),
       ]);
       const clienteDeMaestro = new Map<string, string>();
-      snapMaestrosTodos.docs.forEach((d) => clienteDeMaestro.set(d.id, clienteDeConvenio(d.data() as Doc)));
-      const maestrosCli = snapMaestrosTodos.docs.filter((d) => entId && clienteDeMaestro.get(d.id) === entId);
+      maestrosTodos.forEach((d) => clienteDeMaestro.set(idReal(d), clienteDeConvenio(d)));
+      const maestrosCli = maestrosTodos.filter((d) => entId && clienteDeMaestro.get(idReal(d)) === entId);
       let maestroReparado = false;
       // vivo = existe y es de este cliente (o el maestro legacy no dice de quién es)
       const duenioMaestroActual = clienteDeMaestro.get(convId);
@@ -1204,12 +1169,12 @@ export function TarifarioClientesDashboard() {
         // El convenio maestro del tarifario ya no existe (o es de otra empresa):
         // se liga al maestro VIVO del cliente (regla: un convenio por cliente);
         // si el cliente no tiene ninguno, se crea.
-        const elegido = maestrosCli.find((d) => String((d.data() as Doc).creadoDesdeTarifario || '') === String(r.id))
-          || [...maestrosCli].sort((a, b) => numConsec(String((a.data() as Doc).numeroConvenio || '')) - numConsec(String((b.data() as Doc).numeroConvenio || '')))[0];
+        const elegido = maestrosCli.find((d) => String(d.creadoDesdeTarifario || '') === String(r.id))
+          || [...maestrosCli].sort((a, b) => numConsec(String(a.numeroConvenio || '')) - numConsec(String(b.numeroConvenio || '')))[0];
         let numeroConvenio = '';
         if (elegido) {
-          convId = elegido.id;
-          numeroConvenio = String((elegido.data() as Doc).numeroConvenio || '');
+          convId = idReal(elegido);
+          numeroConvenio = String(elegido.numeroConvenio || '');
         } else {
           const { sigConvenio } = await siguientes();
           const nuevoRef = doc(collection(db, 'convenios_clientes'));
@@ -1231,8 +1196,9 @@ export function TarifarioClientesDashboard() {
         await updateDoc(doc(db, 'tarifario_clientes', r.id), { convenioId: convId, numeroConvenio });
         maestroReparado = true;
       }
-      const idsConvenios = new Set<string>([convId, String(r.convenioId || ''), ...maestrosCli.map((d) => d.id)].filter(Boolean));
-      const todosDetalles: (Doc & { id: string })[] = snapDetTodos.docs.map((d) => ({ id: d.id, ...(d.data() as Doc) }));
+      const idsConvenios = new Set<string>([convId, String(r.convenioId || ''), ...maestrosCli.map((d) => idReal(d))].filter(Boolean));
+      // Copias: más abajo se ajustan en memoria (no se toca el catálogo compartido).
+      const todosDetalles: (Doc & { id: string })[] = detallesCat.map((d) => ({ ...d }));
       const detalles: (Doc & { id: string })[] = todosDetalles.filter((d) => idsConvenios.has(String(d.convenioId || '').trim()));
       // ✅ V00428 FASE A: la línea tiene su # pero su detalle vive FUERA de los
       //   convenios del cliente (maestro borrado/unido o sin maestro) → se
@@ -1525,18 +1491,19 @@ export function TarifarioClientesDashboard() {
         if (cc && !tariPorConsec.has(cc)) tariPorConsec.set(cc, r);
       });
     });
-    const snapMaestros = await getDocs(collection(db, 'convenios_clientes'));
+    // ✅ V00439 (Fase 3.x): maestros y detalles desde los catálogos compartidos.
+    const maestrosCat = await obtenerCatalogo('convenios_clientes');
     const entDeConvenio = new Map<string, string>();
-    snapMaestros.docs.forEach((d) => entDeConvenio.set(d.id, String((d.data() as Doc).clienteId || '')));
+    maestrosCat.forEach((d) => entDeConvenio.set(idReal(d), String(d.clienteId || '')));
     const registrosPorEnt = new Map<string, Doc[]>();
     registros.forEach((r) => {
       const e = String(r.clienteId || '').trim();
       if (e) registrosPorEnt.set(e, [...(registrosPorEnt.get(e) || []), r]);
     });
-    const snapDetTodos = await getDocs(collection(db, 'convenios_clientes_detalles'));
+    const detallesCat = await obtenerCatalogo('convenios_clientes_detalles');
     let ligados = 0, pendientes = 0;
-    for (const dSnap of snapDetTodos.docs) {
-      const d = { id: dSnap.id, ...(dSnap.data() as Doc) };
+    for (const dCat of detallesCat) {
+      const d: Doc = { ...dCat };
       const tarActual = String(d.tarifarioId || '').trim();
       if (tarActual && idsTarifarios.has(tarActual)) continue; // ya está bien ligado
       const cc = String(d.consecutivo || d.id).trim();

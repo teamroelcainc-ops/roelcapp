@@ -31,13 +31,9 @@ const esPuenteRoelca = (op: Record<string, unknown>) => {
   return logistica && norm(op.proveedorUnidadNombre || op.proveedorNombre).includes('roelca');
 };
 
-let ctxCache: { ts: number; ctx: CtxCobroPuente } | null = null;
-const ctxCobro = async () => {
-  if (ctxCache && Date.now() - ctxCache.ts < 10 * 60 * 1000) return ctxCache.ctx;
-  const ctx = await cargarCtxCobroPuente();
-  ctxCache = { ts: Date.now(), ctx };
-  return ctx;
-};
+// ✅ V00439 (Fase 3.x): sin caché de 10 min; los catálogos del contexto ya
+//   vienen del listener compartido (siempre en vivo, sin releer por llamada).
+const ctxCobro = (): Promise<CtxCobroPuente> => cargarCtxCobroPuente();
 
 /** Montos de puente de la operación (los ya cobrados o, si aún no, los calculados). */
 const montosPuente = async (op: Record<string, unknown>) => {

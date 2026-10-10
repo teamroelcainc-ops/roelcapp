@@ -22,6 +22,8 @@ import './ReferenciasDieselDashboard.css';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { SelectBuscable } from '../../catalogos/components/SelectBuscable';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
+import { useCatalogos } from '../../../shared/data/catalogos';
+import { TIPO_EMPRESA } from '../../../shared/dominio/constantes';
 
 // Columnas configurables de la tabla "Asignar Operaciones" (tabla + Excel).
 // orden:true -> la cabecera es clicable para ordenar por ese campo.
@@ -178,7 +180,11 @@ export const ReferenciasDieselDashboard = () => {
   const [referenciasGlobales, setReferenciasGlobales] = useState<any[]>([]);
   
   // Catálogos
-  const [unidadesList, setUnidadesList] = useState<any[]>([]);
+  // ✅ V00439 (Fase 3.4): unidades, empleados y empresas del listener compartido
+  //   (antes un onSnapshot propio de cada colección).
+  const { datos: { unidadesList, operadoresList, proveedoresList } } = useCatalogos({
+    unidadesList: 'unidades', operadoresList: 'empleados', proveedoresList: 'empresas',
+  });
 
   // ✅ NUEVO — DASHBOARD DIESEL POR UNIDAD (réplica del reporte de AppSheet):
   //   última recarga, últimas 5 recargas y servicios realizados desde la
@@ -238,8 +244,6 @@ export const ReferenciasDieselDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, dashUnidadId, dashUltimaRecarga?.id]);
 
-  const [operadoresList, setOperadoresList] = useState<any[]>([]);
-  const [proveedoresList, setProveedoresList] = useState<any[]>([]);
   // Catálogo de lugares (orígenes/destinos) para resolver IDs a nombres.
   const [lugaresList, setLugaresList] = useState<any[]>([]);
 
@@ -558,23 +562,11 @@ export const ReferenciasDieselDashboard = () => {
       setReferenciasGlobales(refs);
     });
 
-    const unSubUnidades = onSnapshot(collection(db, 'unidades'), (snap) => {
-      setUnidadesList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-    });
-
-    const unSubEmpleados = onSnapshot(collection(db, 'empleados'), (snap) => {
-      setOperadoresList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-    });
-
-    const unSubEmpresas = onSnapshot(collection(db, 'empresas'), (snap) => {
-      setProveedoresList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-    });
-
     const unSubLugares = onSnapshot(collection(db, COLECCION_LUGARES), (snap) => {
       setLugaresList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
     });
 
-    return () => { unSubReferencias(); unSubUnidades(); unSubEmpleados(); unSubEmpresas(); unSubLugares(); };
+    return () => { unSubReferencias(); unSubLugares(); };
   }, []);
 
   // ✅ 2. CARGA DE OPERACIONES POR UNIDAD (sin límite global)
@@ -733,10 +725,11 @@ export const ReferenciasDieselDashboard = () => {
     }
   };
 
-  const getNombreUnidad = (idOrName: string) => {
+  // Catálogos con esquema heredado: los nombres se guardan como texto.
+  const getNombreUnidad = (idOrName: string): string => {
     if (!idOrName) return '-';
     const found = unidadesList.find(u => u.id === idOrName || u.unidad === idOrName || u.nombre === idOrName);
-    return found ? (found.unidad || found.nombre || found.numeroEconomico || idOrName) : idOrName;
+    return found ? ((found.unidad || found.nombre || found.numeroEconomico || idOrName) as string) : idOrName;
   };
 
   const getNombreOperador = (idOrName: string) => {
@@ -745,10 +738,10 @@ export const ReferenciasDieselDashboard = () => {
     return found ? `${found.firstName || ''} ${found.lastNamePaternal || ''}`.trim() : idOrName;
   };
 
-  const getNombreProveedor = (idOrName: string) => {
+  const getNombreProveedor = (idOrName: string): string => {
     if (!idOrName) return '-';
     const found = proveedoresList.find(p => p.id === idOrName || p.nombre === idOrName);
-    return found ? found.nombre : idOrName;
+    return found ? (found.nombre as string) : idOrName;
   };
 
   const getDireccionProveedor = (idOrName: string): string => {
@@ -814,7 +807,7 @@ export const ReferenciasDieselDashboard = () => {
   //    ordena alfabéticamente para que sea fácil encontrarlos.
   const proveedoresFiltrados = useMemo(() => {
     return proveedoresList
-      .filter(p => incluyeId(p.tiposEmpresa, '11894dfd') && incluyeId(p.tiposServicio, '189a4573'))
+      .filter(p => incluyeId(p.tiposEmpresa, TIPO_EMPRESA.proveedorServicios) && incluyeId(p.tiposServicio, '189a4573'))
       .sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' }));
   }, [proveedoresList]);
 

@@ -10,12 +10,13 @@
 //   <DocumentosLista coleccionOrigen="empresas"  registroId={empresa.id} />
 //   <DocumentosLista coleccionOrigen="empleados" registroId={empleado.id} />
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { collection, query, where, onSnapshot, deleteDoc, doc, updateDoc, writeBatch, getDocs } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import { ref as storageRef, deleteObject } from 'firebase/storage';
 import { db, storage } from '../../config/firebase';
 import './DocumentosLista.css';
+import { useCatalogo } from '../../shared/data/catalogos';
 
 interface DocumentosListaProps {
   coleccionOrigen: string;    // 'empresas' | 'empleados' | ...
@@ -51,14 +52,13 @@ export const DocumentosLista: React.FC<DocumentosListaProps> = ({ coleccionOrige
   const [editDoc, setEditDoc] = useState<any | null>(null);
   const [editVals, setEditVals] = useState<{ vence: boolean; fechaExpedicion: string; fechaVencimiento: string; observaciones: string; tipoDocumento: string }>({ vence: false, fechaExpedicion: '', fechaVencimiento: '', observaciones: '', tipoDocumento: '' });
   // ✅ V00177: catálogo de tipos para REUBICAR un documento (ej. los "Por clasificar")
-  const [tiposCatalogo, setTiposCatalogo] = useState<{ nombre: string; vence: boolean }[]>([]);
-  useEffect(() => {
-    getDocs(collection(db, 'catalogo_tipo_archivo')).then((snap) => {
-      const esSi = (v: any) => v === true || /^(s|y|1|true)/i.test(String(v ?? ''));
-      setTiposCatalogo(snap.docs.map((d) => { const x: any = d.data(); return { nombre: String(x.nombre || '').trim(), vence: esSi(x.vence) }; })
-        .filter((t) => t.nombre).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')));
-    }).catch(() => setTiposCatalogo([]));
-  }, []);
+  //   ✅ V00439 (Fase 3.x): del listener compartido, solo mientras el editor está abierto.
+  const { datos: tiposArchivoCat } = useCatalogo('catalogo_tipo_archivo', { activo: editDoc !== null });
+  const tiposCatalogo = useMemo(() => {
+    const esSi = (v: unknown) => v === true || /^(s|y|1|true)/i.test(String(v ?? ''));
+    return tiposArchivoCat.map((x) => ({ nombre: String(x.nombre || '').trim(), vence: esSi(x.vence) }))
+      .filter((t) => t.nombre).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+  }, [tiposArchivoCat]);
   const [guardandoEdit, setGuardandoEdit] = useState(false);
   const [fechasMasivo, setFechasMasivo] = useState(false);
   const [fechasVals, setFechasVals] = useState<Record<string, { fechaExpedicion: string; fechaVencimiento: string }>>({});

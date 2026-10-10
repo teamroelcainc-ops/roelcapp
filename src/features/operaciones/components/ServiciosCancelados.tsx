@@ -22,12 +22,15 @@ import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 // ✅ logo + nombre de la empresa removidos de esta vista (se quitó EmpresaBrand)
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
 import './ServiciosCancelados.css';
-import { almacenSesion } from '../../../utils/cacheMemoria';
 import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
 import { ModalFechaStatus } from './ModalFechaStatus';
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
 import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
 import { docPorId, nombreEmpresaPdf } from '../../../utils/docPorId';
+import type { DocLibre } from '../../../utils/docPorId';
+import { obtenerCatalogo, useCatalogos } from '../../../shared/data/catalogos';
+import type { ColeccionCatalogo } from '../../../shared/data/catalogos';
+import { ID_MXN, ID_USD, STATUS_CANCELADO, TIPO_EMPRESA } from '../../../shared/dominio/constantes';
 import { datosDireccionEmpresaPdf, direccionesParaPdf } from '../../../utils/direccionPdf';
 import { mostrarCartaPara, useConfigCarta } from '../../../utils/configCartaInstrucciones';
 import { ConfigCartaModal } from './ConfigCartaModal';
@@ -55,8 +58,30 @@ const colorTipoOperacion = (nombre: any): string => {
   return '#c9d1d9';
 };
 
-const ID_USD = '7dca62b3';
-const ID_MXN = 'f95d8894';
+// ✅ V00439 (Fase 3.x): catálogos del módulo (alias → colección) desde el
+//   listener compartido (antes getDocs + copia en sesión roelca_catalogos_v2 y
+//   lectura de cat_v2__). Los de los buscadores y el status, siempre; el resto,
+//   con el formulario o la ficha abiertos (PDF, carta). Mismos alias que antes.
+const CATALOGOS_SIEMPRE = {
+  empresas: 'empresas',
+  remolques: 'remolques',
+  statusServicio: 'catalogo_status_servicio',
+} as const satisfies Record<string, ColeccionCatalogo>;
+const CATALOGOS_BAJO_DEMANDA = {
+  tiposOperacion: 'catalogo_tipo_operacion',
+  embalajes: 'catalogo_embalaje',
+  tarifas: 'catalogo_tarifas_referencia',
+  conveniosProv: 'convenios_proveedores',
+  catalogoConvProvDetalles: 'convenios_proveedores_detalles',
+  catalogoTC: 'tipo_cambio',
+  catalogoConvClientes: 'convenios_clientes',
+  catalogoConvDetalles: 'convenios_clientes_detalles',
+  unidades: 'unidades',
+  empleados: 'empleados',
+  unidades_proveedor: 'unidades_proveedor',
+  proveedores_unidad: 'proveedores_unidad',
+} as const satisfies Record<string, ColeccionCatalogo>;
+type AliasCatalogoCan = keyof typeof CATALOGOS_SIEMPRE | keyof typeof CATALOGOS_BAJO_DEMANDA;
 
 // ID hex del status "Cancelado" en catalogo_status_servicio
 // ✅ NUEVO: utilidad para el Historial de Actividad (historial_actividad).
@@ -96,9 +121,9 @@ const COLUMNAS_TABLA_CANCELADOS = [
 const EXPORT_STORAGE_PREFIX = 'roelca_canceladas_export_v1_';
 const claveExportGuardado = () => EXPORT_STORAGE_PREFIX + (auth.currentUser?.uid || 'anon');
 
-const STATUS_CANCELADO_ID = '7607f692';
+const STATUS_CANCELADO_ID = STATUS_CANCELADO; // ✅ V00439 (Fase 3.x)
 // ID del tipo de empresa "Cliente (Paga)" para el buscador de clientes
-const ID_TIPO_CLIENTE_PAGA = '7eec9cbb';
+const ID_TIPO_CLIENTE_PAGA = TIPO_EMPRESA.clientePaga; // ✅ V00439 (Fase 3.x)
 // Tamaño de cada página al traer las canceladas por cursor
 const TAMANIO_PAGINA = 150;
 
@@ -215,21 +240,14 @@ const ServiciosCancelados = () => {
   const [estadoFormulario, setEstadoFormulario] = useState<'cerrado' | 'abierto' | 'minimizado'>('cerrado');
   const [operacionEditando, setOperacionEditando] = useState<any | null>(null);
 
-  const [catalogosGlobales, setCatalogosGlobales] = useState<any>({});
-  // ✅ V00281: direcciones para los DOCUMENTOS (se cargan solo al generar uno).
-  type DirDoc = Record<string, unknown> & { id: string };
-  const [direccionesDoc, setDireccionesDoc] = useState<DirDoc[]>([]);
-  const direccionesDocRef = useRef<DirDoc[]>([]);
-  const asegurarDireccionesDoc = async (): Promise<DirDoc[]> => {
-    if (direccionesDocRef.current.length > 0) return direccionesDocRef.current;
-    try {
-      const snap = await getDocs(collection(db, 'direcciones'));
-      const lista: DirDoc[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }));
-      direccionesDocRef.current = lista;
-      setDireccionesDoc(lista);
-      return lista;
-    } catch (e) { console.error('No se pudieron cargar las direcciones para el documento:', e); return direccionesDoc; }
-  };
+  // ✅ V00439 (Fase 3.x): catálogos del listener compartido (ver CATALOGOS_SIEMPRE).
+  const { datos: catSiempre } = useCatalogos(CATALOGOS_SIEMPRE);
+  const { datos: catDemanda } = useCatalogos(CATALOGOS_BAJO_DEMANDA, { activo: estadoFormulario !== 'cerrado' || !!operacionViendo });
+  // Filas sin esquema fijo: mismo trato que docPorId (DocLibre).
+  const catalogosGlobales = useMemo((): Record<AliasCatalogoCan, DocLibre[]> => ({ ...catSiempre, ...catDemanda }), [catSiempre, catDemanda]);
+  // ✅ V00281: direcciones para los DOCUMENTOS (se piden solo al generar uno).
+  // ✅ V00439 (Fase 3.x): del listener compartido (antes getDocs + copia en memoria).
+  const asegurarDireccionesDoc = (): Promise<DocLibre[]> => obtenerCatalogo('direcciones');
   const [busqueda, setBusqueda] = useState('');
   // ✅ V00263: el buscador global filtra EN VIVO — actualiza el campo y el
   //   snapshot aplicado (aquí los filtros normales aplican con BUSCAR).
@@ -365,117 +383,6 @@ const ServiciosCancelados = () => {
     setCargandoOperaciones(false);
   };
 
-  // ✅ CARGA LIGERA: solo lo que necesitan los buscadores de la barra (Cliente y
-  //    Remolque) y los botones de status. NO baja los catálogos pesados de PDF
-  //    (tarifas, convenios, unidades, empleados, etc.). Reduce mucho las lecturas
-  //    al abrir la vista. La tabla se pinta con los nombres ya guardados.
-  const cargarCatalogosFiltros = async () => {
-    if (Object.keys(catalogosGlobales).length > 0) return;
-    // Si existe la caché COMPLETA en sesión, úsala (gratis) y listo.
-    const cacheCatStr = almacenSesion.getItem('roelca_catalogos_v2');
-    if (cacheCatStr) { setCatalogosGlobales(JSON.parse(cacheCatStr)); return; }
-    try {
-      const [empSnap, remSnap, statusSnap] = await Promise.all([
-        getDocs(collection(db, 'empresas')),
-        getDocs(collection(db, 'remolques')),
-        getDocs(collection(db, 'catalogo_status_servicio')),
-      ]);
-      setCatalogosGlobales((prev: any) => ({
-        ...prev,
-        empresas: empSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-        remolques: remSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-        statusServicio: statusSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      }));
-    } catch (e) {
-      console.error('Error cargando catálogos de filtros:', e);
-    }
-  };
-
-  // ✅ 2. CARGA COMPLETA DE CATÁLOGOS (solo cuando se generan PDFs).
-  //    El marcador de "set completo" es `tarifas`: si ya está, no repetimos.
-  const cargarCatalogosSiEsNecesario = async () => {
-    if (catalogosGlobales.tarifas) return;
-
-    const cacheCatStr = almacenSesion.getItem('roelca_catalogos_v2');
-    if (cacheCatStr) {
-      setCatalogosGlobales(JSON.parse(cacheCatStr));
-      return;
-    }
-
-    console.warn(`[FIREBASE READ] Descargando catálogos pesados por primera vez...`);
-    const [empSnap, opSnap, embSnap, remSnap, tarSnap, convProvSnap, convProvDetSnap, tcSnap, convCliSnap, convDetSnap, uniSnap, operSnap, statusSnap, uniProvSnap, opeProvSnap] = await Promise.all([
-      getDocs(collection(db, 'empresas')),
-      getDocs(collection(db, 'catalogo_tipo_operacion')),
-      getDocs(collection(db, 'catalogo_embalaje')),
-      getDocs(collection(db, 'remolques')),
-      getDocs(collection(db, 'catalogo_tarifas_referencia')),
-      getDocs(collection(db, 'convenios_proveedores')),
-      getDocs(collection(db, 'convenios_proveedores_detalles')),
-      getDocs(collection(db, 'tipo_cambio')),
-      getDocs(collection(db, 'convenios_clientes')),
-      getDocs(collection(db, 'convenios_clientes_detalles')),
-      getDocs(collection(db, 'unidades')),
-      getDocs(collection(db, 'empleados')),
-      getDocs(collection(db, 'catalogo_status_servicio')),
-      getDocs(collection(db, 'unidades_proveedor')),
-      getDocs(collection(db, 'proveedores_unidad'))
-    ]);
-
-    const catGuardados = {
-      empresas: empSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      tiposOperacion: opSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      embalajes: embSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      remolques: remSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      tarifas: tarSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      conveniosProv: convProvSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      catalogoConvProvDetalles: convProvDetSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      catalogoTC: tcSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      catalogoConvClientes: convCliSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      catalogoConvDetalles: convDetSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      unidades: uniSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      empleados: operSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      statusServicio: statusSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      unidades_proveedor: uniProvSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      proveedores_unidad: opeProvSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) }))
-    };
-
-    almacenSesion.setItem('roelca_catalogos_v2', JSON.stringify(catGuardados));
-    setCatalogosGlobales(catGuardados);
-  };
-
-  // ✅ NUEVO: re-sincroniza los catálogos EN MEMORIA con lo más fresco disponible.
-  //   FormularioOperacion actualiza la caché de sesión (roelca_catalogos_v2) y las
-  //   cachés locales cat_v2__ al crear clientes/proveedores/bodegas; sin este paso
-  //   los registros nuevos no aparecían en la tabla ni en los documentos PDF hasta
-  //   recargar la página.
-  const resincronizarCatalogosDesdeCache = () => {
-    try {
-      const cacheCatStr = almacenSesion.getItem('roelca_catalogos_v2');
-      if (cacheCatStr) {
-        const cache = JSON.parse(cacheCatStr);
-        setCatalogosGlobales((prev: any) => ({ ...prev, ...cache }));
-      }
-      // Las colecciones con alta rápida desde el formulario siempre quedan más
-      // frescas en cat_v2__ (el formulario las re-descarga al abrir y al crear).
-      ['empresas', 'remolques', 'unidades', 'empleados'].forEach((alias) => {
-        const raw = localStorage.getItem(`cat_v2__${alias}`);
-        if (!raw) return;
-        const obj = JSON.parse(raw);
-        if (obj && Array.isArray(obj.data) && obj.data.length > 0) {
-          setCatalogosGlobales((prev: any) => ({ ...prev, [alias]: obj.data }));
-        }
-      });
-    } catch { /* caché corrupta: ignorar */ }
-  };
-
-  // ✅ Al montar solo cargamos los catálogos LIGEROS (para poblar los buscadores
-  //    de Cliente y Remolque y el status). Los pesados se cargan bajo demanda al
-  //    generar un PDF. Los registros NO se cargan hasta definir el rango de fechas.
-  useEffect(() => {
-    cargarCatalogosFiltros();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   // ✅ MODIFICADO: ya NO se descarga automáticamente al cambiar las fechas.
   //   La descarga y la aplicación de filtros ocurren SOLO al presionar BUSCAR.
   //   El rango de fechas (inicio + fin) es el requisito mínimo del botón.
@@ -594,12 +501,11 @@ const ServiciosCancelados = () => {
   }, [filtrosAplicados]);
 
   // ✅ NUEVO: cargar los botones de "Siguiente Paso" para la operación abierta.
-  // Como en este módulo los catálogos son perezosos, primero garantizamos que
-  // catalogo_status_servicio esté cargado (para resolver nombres ↔ IDs).
+  // ✅ V00439 (Fase 3.x): catalogo_status_servicio llega siempre por el listener
+  //   compartido; al cambiar, este efecto se repite (resuelve nombres ↔ IDs).
   useEffect(() => {
     const cargarBotones = async () => {
       if (operacionViendo) {
-        await cargarCatalogosFiltros();
         let op = operacionViendo;
         if (!op.statusNombre && op.status) {
           const resuelto = resolverStatus(op.status);
@@ -633,7 +539,7 @@ const ServiciosCancelados = () => {
   //    si no hay nombre guardado, devuelve '-'. Para monedas cae a la conversión
   //    local ID→USD/MXN (sin catálogo).
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const mostrarDatoMapeado = (id: string | null | undefined, catalogo: keyof typeof catalogosGlobales, _campoRetorno: string = 'nombre', valorDesnormalizado?: string) => {
+  const mostrarDatoMapeado = (id: string | null | undefined, catalogo: string, _campoRetorno: string = 'nombre', valorDesnormalizado?: string) => {
     const v = valorDesnormalizado != null ? String(valorDesnormalizado).trim() : '';
     if (v && v !== '-' && v !== String(id ?? '').trim()) return String(valorDesnormalizado);
     if ((catalogo === 'catalogoMoneda' || catalogo === 'catalogo_moneda') && id) {
@@ -835,9 +741,8 @@ const ServiciosCancelados = () => {
     }
   };
 
-  // ✅ PDFs: Descargan catálogos solo si se solicita generar documento
+  // ✅ PDFs: los catálogos pesados se activan al abrir la ficha (V00439, Fase 3.x).
   const handleDescargarSolicitudRetiro = async () => {
-    await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
     const dirsDoc = await asegurarDireccionesDoc(); // ✅ V00281
     const origen = mostrarDatoMapeado(operacionViendo.origen, 'empresas', 'nombre', operacionViendo.origenNombre);
@@ -864,7 +769,6 @@ const ServiciosCancelados = () => {
   };
 
   const handleDescargarInstruccionesServicio = async () => {
-    await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
     const dirsDoc = await asegurarDireccionesDoc(); // ✅ V00281
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
@@ -894,7 +798,6 @@ const ServiciosCancelados = () => {
   };
 
   const handleDescargarCheckList = async () => {
-    await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
     const dirsDoc = await asegurarDireccionesDoc(); // ✅ V00281
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
@@ -932,7 +835,6 @@ const ServiciosCancelados = () => {
   };
 
   const handleDescargarPruebaEntrega = async () => {
-    await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
     const dirsDoc = await asegurarDireccionesDoc(); // ✅ V00281
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
@@ -966,7 +868,6 @@ const ServiciosCancelados = () => {
   };
 
   const handleDescargarCartaInstrucciones = async () => {
-    await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
@@ -1221,7 +1122,6 @@ const ServiciosCancelados = () => {
     const columnasVisibles = columnasExport.filter(c => c.visible);
     if (columnasVisibles.length === 0) return alert('Selecciona al menos una columna para exportar.');
 
-    await cargarCatalogosSiEsNecesario();
 
     const datosExcel = operacionesOrdenadas.map((op: any) => {
       const fila: any = {};
@@ -1288,8 +1188,7 @@ const ServiciosCancelados = () => {
 
   // ✅ NUEVO: tras guardar, cerrar el formulario y refrescar la lista (si hay rango activo)
   const handleOperacionGuardada = () => {
-    // ✅ NUEVO: refleja al instante los catálogos recién creados desde el formulario.
-    resincronizarCatalogosDesdeCache();
+    // ✅ V00439 (Fase 3.x): los catálogos recién creados llegan solos por el listener compartido.
     setEstadoFormulario('cerrado');
     setOperacionEditando(null);
     setOperacionViendo(null);
@@ -1298,7 +1197,7 @@ const ServiciosCancelados = () => {
 
   // ✅ V00438 (Fase 2.3b): props ESTABLES para memo(FormularioOperacion).
   const onGuardarFormulario = useHandlerEstable(handleOperacionGuardada);
-  const onCerrarFormulario = useHandlerEstable(() => { resincronizarCatalogosDesdeCache(); setEstadoFormulario('cerrado'); setOperacionEditando(null); });
+  const onCerrarFormulario = useHandlerEstable(() => { setEstadoFormulario('cerrado'); setOperacionEditando(null); });
   const onMinimizarFormulario = useCallback(() => setEstadoFormulario('minimizado'), []);
   const onRestaurarFormulario = useCallback(() => setEstadoFormulario('abierto'), []);
 

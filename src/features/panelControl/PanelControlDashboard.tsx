@@ -11,6 +11,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { collection, doc, getDoc, getDocs, query, setDoc, where } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { idReal, obtenerCatalogo } from '../../shared/data/catalogos';
 import { EditorEncabezados } from '../../components/EditorEncabezados';
 import { useEtiquetas } from '../../contexts/EtiquetasContext';
 import './PanelControlDashboard.css';
@@ -46,12 +47,13 @@ export const PanelControlDashboard = () => {
     (async () => {
       setCargando(true);
       try {
-        const [mSnap, oSnap, dSnap, sSnap, eSnap] = await Promise.all([
+        // ✅ V00439 (Fase 3.x): empresas del listener compartido de catálogos (antes getDocs).
+        const [mSnap, oSnap, dSnap, sSnap, empresas] = await Promise.all([
           getDoc(doc(db, 'configuracion', 'metas_globales')),
           getDocs(query(collection(db, 'operaciones'), where('fechaServicio', '>=', `${anio}-01-01`), where('fechaServicio', '<=', `${anio}-12-31`))),
           getDocs(collection(db, 'documentos')),
           getDocs(query(collection(db, 'solicitudes_autorizacion'), where('estado', '==', 'pendiente'))),
-          getDocs(collection(db, 'empresas')),
+          obtenerCatalogo('empresas'),
         ]);
         const m: any = mSnap.exists() ? mSnap.data() : {};
         const cargadas: Metas = { opsMes: num(m.opsMes), opsAnio: num(m.opsAnio), factMes: num(m.factMes), factAnio: num(m.factAnio), utilMes: num(m.utilMes), utilAnio: num(m.utilAnio) };
@@ -60,7 +62,7 @@ export const PanelControlDashboard = () => {
         const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
         // ✅ V00189: documentos de EMPRESAS de baja/inactivas no cuentan como vencidos
         const empresasBaja = new Set<string>();
-        eSnap.docs.forEach((d) => { const x: any = d.data(); if (/^(baja|inactiv)/i.test(String(x.status || ''))) empresasBaja.add(d.id); });
+        empresas.forEach((x) => { if (/^(baja|inactiv)/i.test(String(x.status || ''))) empresasBaja.add(idReal(x)); });
         let vencidos = 0;
         dSnap.docs.forEach((d) => {
           const x: any = d.data();
@@ -71,7 +73,7 @@ export const PanelControlDashboard = () => {
           if (x.vence && x.fechaVencimiento) { const v = new Date(String(x.fechaVencimiento) + 'T00:00:00'); if (!isNaN(v.getTime()) && v.getTime() < hoy.getTime()) vencidos++; }
         });
         let sinMoneda = 0;
-        eSnap.docs.forEach((d) => { const x: any = d.data(); if (!String(x.monedaId || x.moneda || x.monedaNombre || '').trim()) sinMoneda++; });
+        empresas.forEach((x) => { if (!String(x.monedaId || x.moneda || x.monedaNombre || '').trim()) sinMoneda++; });
         setAlertas({ docsVencidos: vencidos, solicitudesPend: sSnap.size, empresasSinMoneda: sinMoneda });
       } catch (e) { console.error('[Panel de Control]', e); }
       finally { setCargando(false); }

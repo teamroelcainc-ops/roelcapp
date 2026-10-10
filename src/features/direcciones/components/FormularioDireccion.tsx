@@ -8,6 +8,7 @@ import { db } from '../../../config/firebase';
 import type { DireccionRecord } from '../../../types/direccion';
 import './FormularioDireccion.css';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
+import { useCatalogos } from '../../../shared/data/catalogos';
 
 interface FormProps {
   estado: 'abierto' | 'minimizado';
@@ -86,9 +87,11 @@ export const FormularioDireccion: React.FC<FormProps> = ({
   const [guardandoConfig, setGuardandoConfig] = useState(false);
   const esObligatorio = (key: string) => camposObligatorios.includes(key);
 
-  const [paises, setPaises] = useState<any[]>([]);
-  const [estadosDB, setEstadosDB] = useState<any[]>([]);
-  const [municipios, setMunicipios] = useState<any[]>([]);
+  // ✅ V00439 (Fase 3.x): países, estados y municipios desde los listeners compartidos
+  //   de catálogos. Colonias, C.P. y calles no son catálogos compartidos: siguen con getDocs.
+  const { datos: catDir } = useCatalogos({
+    paises: 'catalogo_paises', estados: 'catalogo_estados', municipios: 'catalogo_municipios',
+  });
   const [colonias, setColonias] = useState<any[]>([]);
   const [cps, setCps] = useState<any[]>([]);
   const [calles, setCalles] = useState<any[]>([]);
@@ -127,18 +130,12 @@ export const FormularioDireccion: React.FC<FormProps> = ({
   useEffect(() => {
     const cargarCatalogos = async () => {
       try {
-        const [resPaises, resEstados, resMunicipios, resColonias, resCps, resCalles] = await Promise.all([
-          getDocs(collection(db, 'catalogo_paises')),
-          getDocs(collection(db, 'catalogo_estados')),
-          getDocs(collection(db, 'catalogo_municipios')),
+        const [resColonias, resCps, resCalles] = await Promise.all([
           getDocs(collection(db, 'catalogo_colonias')),
           getDocs(collection(db, 'catalogo_codigo_postal')),
           getDocs(collection(db, 'catalogo_calles'))
         ]);
 
-        setPaises(resPaises.docs.map(d => ({ id: d.id, ...d.data() })));
-        setEstadosDB(resEstados.docs.map(d => ({ id: d.id, ...d.data() })));
-        setMunicipios(resMunicipios.docs.map(d => ({ id: d.id, ...d.data() })));
         setColonias(resColonias.docs.map(d => ({ id: d.id, ...d.data() })));
         setCps(resCps.docs.map(d => ({ id: d.id, ...d.data() })));
         setCalles(resCalles.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -169,11 +166,11 @@ export const FormularioDireccion: React.FC<FormProps> = ({
 
   // ── Listas crudas y setters por nivel ────────────────────────────────────
   const listasPorNivel: Record<NivelKey, any[]> = {
-    pais: paises, estado: estadosDB, municipio: municipios,
+    pais: catDir.paises, estado: catDir.estados, municipio: catDir.municipios,
     colonia: colonias, cp: cps, calle: calles,
   };
-  const settersPorNivel: Record<NivelKey, React.Dispatch<React.SetStateAction<any[]>>> = {
-    pais: setPaises, estado: setEstadosDB, municipio: setMunicipios,
+  // País/estado/municipio no llevan setter: el alta llega sola por el listener compartido.
+  const settersPorNivel: Partial<Record<NivelKey, React.Dispatch<React.SetStateAction<any[]>>>> = {
     colonia: setColonias, cp: setCps, calle: setCalles,
   };
 
@@ -324,7 +321,7 @@ export const FormularioDireccion: React.FC<FormProps> = ({
       if (cfg.padre && padre) docNuevo[cfg.campoPadre] = padre.id;
       const ref = await addDoc(collection(db, cfg.coleccion), docNuevo);
       // Actualiza la lista local y selecciona el nuevo registro.
-      settersPorNivel[nivel](prev => [...prev, { id: ref.id, ...docNuevo }]);
+      settersPorNivel[nivel]?.(prev => [...prev, { id: ref.id, ...docNuevo }]);
       seleccionarNivel(nivel, { id: ref.id, nombre: valor });
       setModalNuevo(null);
     } catch (error) {

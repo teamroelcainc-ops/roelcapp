@@ -6,7 +6,7 @@ import { db } from '../../../../config/firebase';
 //    dinámico registrado con setLogoPdf() y respaldo al logo por defecto.
 import { getLogoPdf, LOGO_DEFAULT } from '../../../../utils/pdfGenerator';
 import './MttoAgrupadosInvoice.css';
-import { almacenSesion } from '../../../../utils/cacheMemoria';
+import { useCatalogo } from '../../../../shared/data/catalogos';
 
 interface GastoMtto {
   id: string;
@@ -50,37 +50,17 @@ const MttoAgrupadosInvoice = () => {
   const [fechaDesde, setFechaDesde] = useState('');
   const [fechaHasta, setFechaHasta] = useState('');
   // ✅ Catálogo de unidades para mostrar el NOMBRE de la unidad (no el ID) en
-  //    la búsqueda y en el documento PDF. Se toma del caché compartido de la
-  //    app (sessionStorage 'roelca_catalogos_v1') con respaldo a Firestore.
-  const [unidadesCat, setUnidadesCat] = useState<any[]>([]);
+  //    la búsqueda y en el documento PDF.
+  // ✅ V00439 (Fase 3.4): del listener compartido (antes caché local con respaldo a getDocs).
+  const { datos: unidadesCat } = useCatalogo('unidades');
 
   const [acordeonesAbiertos, setAcordeonesAbiertos] = useState<Record<string, boolean>>({});
-
-  useEffect(() => {
-    const cargarUnidades = async () => {
-      try {
-        const cacheStr = almacenSesion.getItem('roelca_catalogos_v1');
-        if (cacheStr) {
-          const cache = JSON.parse(cacheStr);
-          if (Array.isArray(cache?.unidades) && cache.unidades.length > 0) {
-            setUnidadesCat(cache.unidades);
-            return;
-          }
-        }
-        const snap = await getDocs(collection(db, 'unidades'));
-        setUnidadesCat(snap.docs.map((d: any) => ({ id: d.id, ...d.data() })));
-      } catch (error) {
-        console.error('Error al cargar catálogo de unidades:', error);
-      }
-    };
-    cargarUnidades();
-  }, []);
 
   const mostrarNombreUnidad = (unidadValor: any): string => {
     if (!unidadValor) return '-';
     if (unidadValor === 'Oficina') return 'Oficina';
-    const uni = unidadesCat.find((u: any) => u.id === unidadValor);
-    if (uni) return uni.unidad || uni.numeroEconomico || uni.nombre || String(unidadValor);
+    const uni = unidadesCat.find((u) => u.id === unidadValor);
+    if (uni) return String(uni.unidad || uni.numeroEconomico || uni.nombre || unidadValor);
     return String(unidadValor);
   };
 

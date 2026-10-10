@@ -30,9 +30,10 @@
 // RUTA: src/features/catalogos/components/MigracionStatusOperaciones.tsx
 // ═══════════════════════════════════════════════════════════════════════
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { collection, getDocs, doc, writeBatch } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { idReal, obtenerCatalogo, useCatalogo } from '../../../shared/data/catalogos';
 import './MigracionStatusOperaciones.css';
 
 type LogTipo = 'info' | 'ok' | 'warn' | 'err';
@@ -114,29 +115,21 @@ export const MigracionStatusOperaciones = () => {
   const [corriendoA, setCorriendoA] = useState(false);
   const [corriendoB, setCorriendoB] = useState(false);
 
-  const [statusOpciones, setStatusOpciones] = useState<{ id: string; nombre: string }[]>([]);
-  const [defaultStatusId, setDefaultStatusId] = useState('');
+  // ✅ V00439 (Fase 3.x): catálogo de status desde el listener compartido.
+  const { datos: catStatus, listo: statusListo } = useCatalogo('catalogo_status_servicio');
+  const statusOpciones = useMemo(() => catStatus
+    .map(d => ({ id: idReal(d), nombre: String(d.nombre || '') }))
+    .filter(s => s.nombre)
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { numeric: true })), [catStatus]);
+  // Por defecto "Pre-Documentado" hasta que el usuario elija otro (null = sin elegir).
+  const [statusElegido, setDefaultStatusId] = useState<string | null>(null);
+  const statusPredeterminado = (statusOpciones.find(s => laxo(s.nombre) === 'predocumentado') || statusOpciones.find(s => laxo(s.nombre).startsWith('predocumentado')))?.id || '';
+  const defaultStatusId = statusElegido ?? statusPredeterminado;
   const [respetarCampos, setRespetarCampos] = useState(true);
-  const [cargandoCatalogo, setCargandoCatalogo] = useState(true);
+  const cargandoCatalogo = !statusListo;
 
   const pushA = (tipo: LogTipo, texto: string) => setLogsA(prev => [...prev, { tipo, texto }]);
   const pushB = (tipo: LogTipo, texto: string) => setLogsB(prev => [...prev, { tipo, texto }]);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const snap = await getDocs(collection(db, 'catalogo_status_servicio'));
-        const lista = snap.docs
-          .map(d => ({ id: d.id, nombre: String((d.data() as any).nombre || '') }))
-          .filter(s => s.nombre)
-          .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { numeric: true }));
-        setStatusOpciones(lista);
-        const pre = lista.find(s => laxo(s.nombre) === 'predocumentado') || lista.find(s => laxo(s.nombre).startsWith('predocumentado'));
-        if (pre) setDefaultStatusId(pre.id);
-      } catch (e) { console.error(e); }
-      finally { setCargandoCatalogo(false); }
-    })();
-  }, []);
 
   // ====================================================================
   // MIGRACIÓN A — Flujos → statusID
@@ -145,18 +138,19 @@ export const MigracionStatusOperaciones = () => {
     setCorriendoA(true); setLogsA([]);
     pushA('info', aplicar ? '▶ APLICANDO Migración A…' : 'Previsualización Migración A (no escribe)…');
     try {
-      const [statusSnap, flujosSnap] = await Promise.all([
-        getDocs(collection(db, 'catalogo_status_servicio')),
-        getDocs(collection(db, 'config_flujos_operacion')),
+      // ✅ V00439 (Fase 3.x): status y flujos desde los catálogos compartidos.
+      const [statusLista, flujosLista] = await Promise.all([
+        obtenerCatalogo('catalogo_status_servicio'),
+        obtenerCatalogo('config_flujos_operacion'),
       ]);
-      const mapa = construirMapaStatus(statusSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-      pushA('info', `Catálogo: ${statusSnap.docs.length} · Flujos: ${flujosSnap.docs.length}.`);
+      const mapa = construirMapaStatus(statusLista);
+      pushA('info', `Catálogo: ${statusLista.length} · Flujos: ${flujosLista.length}.`);
 
       const noEnc = new Set<string>();
       let docsCambios = 0, nodosUpd = 0, nodosOk = 0;
       const updates: { id: string; flujo: any[] }[] = [];
-      flujosSnap.docs.forEach(d => {
-        const flujo: any[] = Array.isArray((d.data() as any).flujo) ? (d.data() as any).flujo : [];
+      flujosLista.forEach(d => {
+        const flujo: any[] = Array.isArray(d.flujo) ? d.flujo : [];
         let cambio = false;
         const nuevo = flujo.map(nodo => {
           const yaTiene = nodo.statusID && String(nodo.statusID).trim() !== '';
@@ -166,7 +160,7 @@ export const MigracionStatusOperaciones = () => {
           cambio = true; nodosUpd++;
           return { ...nodo, statusID: m.id };
         });
-        if (cambio) { docsCambios++; updates.push({ id: d.id, flujo: nuevo }); }
+        if (cambio) { docsCambios++; updates.push({ id: idReal(d), flujo: nuevo }); }
       });
       pushA('ok', `Nodos a actualizar: ${nodosUpd} · ya correctos: ${nodosOk} · documentos: ${docsCambios}.`);
       if (noEnc.size > 0) { pushA('warn', `${noEnc.size} nodo(s) sin match:`); Array.from(noEnc).sort().forEach(n => pushA('warn', `   • "${n}"`)); }
@@ -192,20 +186,22 @@ export const MigracionStatusOperaciones = () => {
     pushB('info', aplicar ? '▶ APLICANDO Migración B…' : 'Previsualización Migración B (no escribe)…');
     try {
       pushB('info', 'Descargando catálogo, horarios, flujos, tipos de operación y operaciones…');
-      const [statusSnap, horariosSnap, flujosSnap, tiposOpSnap, opsSnap] = await Promise.all([
-        getDocs(collection(db, 'catalogo_status_servicio')),
+      // ✅ V00439 (Fase 3.x): status, flujos y tipos de operación (solo lectura)
+      //   desde los catálogos compartidos.
+      const [statusLista, horariosSnap, flujosLista, tiposOpLista, opsSnap] = await Promise.all([
+        obtenerCatalogo('catalogo_status_servicio'),
         getDocs(collection(db, 'horarios')),
-        getDocs(collection(db, 'config_flujos_operacion')),
-        getDocs(collection(db, 'catalogo_tipo_operacion')),
+        obtenerCatalogo('config_flujos_operacion'),
+        obtenerCatalogo('catalogo_tipo_operacion'),
         getDocs(collection(db, 'operaciones')),
       ]);
 
-      const mapa = construirMapaStatus(statusSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+      const mapa = construirMapaStatus(statusLista);
       const defaultStatus = mapa.porId[defaultStatusId] || null;
       if (defaultStatus) pushB('info', `Default sin horario: "${defaultStatus.nombre}".`);
 
       const tiposOpPorId: Record<string, string> = {};
-      tiposOpSnap.docs.forEach(d => { tiposOpPorId[d.id] = String((d.data() as any).tipo_operacion || ''); });
+      tiposOpLista.forEach(d => { tiposOpPorId[idReal(d)] = String(d.tipo_operacion || ''); });
 
       // statusID de un nodo (statusID directo o resuelto por nombre)
       const statusIdDeNodo = (nodo: any): string => {
@@ -216,8 +212,7 @@ export const MigracionStatusOperaciones = () => {
       };
 
       // Construir info por flujo
-      const flujoInfos: FlujoInfo[] = flujosSnap.docs.map(d => {
-        const data = d.data() as any;
+      const flujoInfos: FlujoInfo[] = flujosLista.map(data => {
         const nodos: any[] = Array.isArray(data.flujo) ? data.flujo : [];
         const nodosPorId: Record<string, any> = {};
         const nodoPorStatusId: Record<string, any> = {};
@@ -227,7 +222,7 @@ export const MigracionStatusOperaciones = () => {
           const sid = statusIdDeNodo(nd);
           if (sid) { statusIdSet.add(sid); if (!nodoPorStatusId[sid]) nodoPorStatusId[sid] = nd; }
         });
-        return { configId: String(data.configId || d.id), nodos, nodosPorId, nodoPorStatusId, statusIdSet };
+        return { configId: String(data.configId || idReal(data)), nodos, nodosPorId, nodoPorStatusId, statusIdSet };
       });
 
       // Nodo inicial (orden 1) por configId — para el default opcional por flujo (no se usa salvo extensión futura)

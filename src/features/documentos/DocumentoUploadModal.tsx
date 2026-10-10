@@ -24,10 +24,11 @@
 //   <DocumentoUploadModal coleccionOrigen="empresas"  registroId={cli.id} registroNombre="ACME SA de CV" ... />
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { addDoc, collection, doc, getDocs, setDoc } from 'firebase/firestore';
+import { addDoc, collection, doc, setDoc } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage, auth } from '../../config/firebase';
 import { SelectBuscable } from '../catalogos/components/SelectBuscable';
+import { idReal, useCatalogo } from '../../shared/data/catalogos';
 import './DocumentoUploadModal.css';
 
 // Catálogo por defecto (genérico). Cada módulo puede pasar su propia lista por props.
@@ -123,9 +124,17 @@ export const DocumentoUploadModal: React.FC<DocumentoUploadModalProps> = ({
   const [observaciones, setObservaciones] = useState('');
   const [subiendo, setSubiendo] = useState(false);
 
-  // ✅ NUEVO: catálogo de Tipo de Archivo cargado de Firestore.
-  const [catalogoTipos, setCatalogoTipos] = useState<TipoArchivoCatalogo[]>([]);
-  const [cargandoCatalogo, setCargandoCatalogo] = useState(false);
+  // ✅ V00439 (Fase 3.x): catálogo de Tipo de Archivo del listener compartido,
+  //   solo mientras el modal está abierto (antes getDocs en cada apertura).
+  const { datos: tiposArchivoCat, listo: tiposArchivoListos } = useCatalogo('catalogo_tipo_archivo', { activo: isOpen });
+  const catalogoTipos = useMemo<TipoArchivoCatalogo[]>(() => tiposArchivoCat.map(data => ({
+    id: idReal(data),
+    nombre: String(data.nombre || '').trim(),
+    modulos: modulosDeRegistro(data.modulo),
+    vence: esVenceSi(data.vence),
+    obligatorio: data.obligatorio as string | undefined,
+  })).filter(t => t.nombre), [tiposArchivoCat]);
+  const cargandoCatalogo = isOpen && !tiposArchivoListos;
 
   // ✅ NUEVO: mini-formulario para dar de alta un tipo de archivo desde aquí.
   const modulosSugeridos = MODULOS_POR_COLECCION[normTexto(coleccionOrigen)] || ['Otro'];
@@ -135,33 +144,6 @@ export const DocumentoUploadModal: React.FC<DocumentoUploadModalProps> = ({
   const [nuevoTipoObligatorio, setNuevoTipoObligatorio] = useState<'Sí' | 'No'>('No');
   const [nuevoTipoVence, setNuevoTipoVence] = useState<'Sí' | 'No'>('No');
   const [guardandoTipo, setGuardandoTipo] = useState(false);
-
-  // Carga (o recarga) el catálogo `catalogo_tipo_archivo`.
-  const cargarCatalogoTipos = async () => {
-    setCargandoCatalogo(true);
-    try {
-      const snap = await getDocs(collection(db, 'catalogo_tipo_archivo'));
-      const tipos: TipoArchivoCatalogo[] = snap.docs.map(d => {
-        const data = d.data() as any;
-        return {
-          id: d.id,
-          nombre: String(data.nombre || '').trim(),
-          modulos: modulosDeRegistro(data.modulo),
-          vence: esVenceSi(data.vence),
-          obligatorio: data.obligatorio,
-        };
-      }).filter(t => t.nombre);
-      setCatalogoTipos(tipos);
-    } catch (e) {
-      console.warn('No se pudo cargar catalogo_tipo_archivo (se usa la lista fija):', e);
-    }
-    setCargandoCatalogo(false);
-  };
-
-  useEffect(() => {
-    if (isOpen) cargarCatalogoTipos();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
 
   // Tipos del catálogo que aplican al módulo actual.
   const tiposCatalogoModulo = useMemo(() => {
@@ -251,7 +233,7 @@ export const DocumentoUploadModal: React.FC<DocumentoUploadModalProps> = ({
         createdAt: new Date().toISOString(),
         creadoDesde: `formulario_documentos_${coleccionOrigen}`,
       });
-      await cargarCatalogoTipos();
+      // El alta llega sola por el listener compartido del catálogo.
       setTipoDoc(nombre);
       setMostrarNuevoTipo(false);
       setNuevoTipoNombre('');

@@ -32,6 +32,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db, auth } from '../../../config/firebase';
+import { idReal, obtenerCatalogo } from '../../../shared/data/catalogos';
 // Mismo logo base64 que usan los demás PDF del proyecto.
 import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
 import './ResumenDiarioOperaciones.css';
@@ -148,54 +149,52 @@ export const ResumenDiarioOperaciones = () => {
   const cargarTodo = async () => {
     setCargando(true); setError(null);
     try {
-      const [opSnap, eSnap, tSnap, sSnap, cdSnap, tarSnap, uniSnap, empSnap, dzSnap] = await Promise.all([
+      // ✅ V00439 (Fase 3.x): los catálogos salen del listener compartido
+      //   (obtenerCatalogo); solo operaciones y diésel se leen con getDocs.
+      const [opSnap, empresas, tiposOp, statusCat, convDetalles, tarifasRef, unidades, empleados, dzSnap] = await Promise.all([
         getDocs(collection(db, 'operaciones')),
-        getDocs(collection(db, 'empresas')),
-        getDocs(collection(db, 'catalogo_tipo_operacion')),
-        getDocs(collection(db, 'catalogo_status_servicio')),
-        getDocs(collection(db, 'convenios_clientes_detalles')),
-        getDocs(collection(db, 'catalogo_tarifas_referencia')),
-        getDocs(collection(db, 'unidades')),
-        getDocs(collection(db, 'empleados')),
+        obtenerCatalogo('empresas'),
+        obtenerCatalogo('catalogo_tipo_operacion'),
+        obtenerCatalogo('catalogo_status_servicio'),
+        obtenerCatalogo('convenios_clientes_detalles'),
+        obtenerCatalogo('catalogo_tarifas_referencia'),
+        obtenerCatalogo('unidades'),
+        obtenerCatalogo('empleados'),
         // ✅ V00191: referencias del diésel — para contar las VECES que cada
         //   unidad fue a cargar en el día (columna DIESEL del resumen Transfer).
         getDocs(collection(db, 'referencias_diesel')),
       ]);
 
       const emp: Record<string, string> = {};
-      eSnap.docs.forEach(d => { emp[d.id] = String((d.data() as any).nombre || ''); });
+      empresas.forEach(d => { emp[idReal(d)] = String(d.nombre || ''); });
 
       const tipo: Record<string, string> = {};
-      tSnap.docs.forEach(d => { tipo[d.id] = String((d.data() as any).tipo_operacion || ''); });
+      tiposOp.forEach(d => { tipo[idReal(d)] = String(d.tipo_operacion || ''); });
 
       const status: Record<string, string> = {};
-      sSnap.docs.forEach(d => { status[d.id] = String((d.data() as any).nombre || ''); });
+      statusCat.forEach(d => { status[idReal(d)] = String(d.nombre || ''); });
 
       const uni: Record<string, string> = {};
-      uniSnap.docs.forEach(d => {
-        const u = d.data() as any;
+      unidades.forEach(u => {
         const txt = String(u.unidad || u.nombre || '').trim();
-        if (txt) uni[d.id] = txt;
+        if (txt) uni[idReal(u)] = txt;
       });
 
       const ope: Record<string, string> = {};
-      empSnap.docs.forEach(d => {
-        const o = d.data() as any;
-        const txt = `${o.firstName || ''} ${o.lastNamePaternal || ''}`.trim() || String(o.nombre || o.nombreCompleto || '').trim();
-        if (txt) ope[d.id] = txt;
+      empleados.forEach(o => {
+        const txt = `${String(o.firstName || '')} ${String(o.lastNamePaternal || '')}`.trim() || String(o.nombre || o.nombreCompleto || '').trim();
+        if (txt) ope[idReal(o)] = txt;
       });
 
       const tarifas: Record<string, string> = {};
-      tarSnap.docs.forEach(d => {
-        const data = d.data() as any;
-        tarifas[d.id] = String(data.descripcion || data.nombre || data.tarifa || data.concepto || '');
+      tarifasRef.forEach(data => {
+        tarifas[idReal(data)] = String(data.descripcion || data.nombre || data.tarifa || data.concepto || '');
       });
       const conv: Record<string, string> = {};
-      cdSnap.docs.forEach(d => {
-        const data = d.data() as any;
+      convDetalles.forEach(data => {
         const tarifaId = data.tipoConvenioId || data.tipo_convenio_id || data.tipoConvenio || data.tipo_convenio || data['TIPO DE CONVENIO'];
-        const nombre = data.tipoConvenioNombre || tarifas[String(tarifaId)] || '';
-        if (nombre) conv[d.id] = nombre;
+        const nombre = String(data.tipoConvenioNombre || tarifas[String(tarifaId)] || '');
+        if (nombre) conv[idReal(data)] = nombre;
       });
 
       const ops = docsSinPruebas(opSnap.docs).map(d => { // ✅ V00380

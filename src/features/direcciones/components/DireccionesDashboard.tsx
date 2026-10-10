@@ -1,8 +1,9 @@
 // src/features/direcciones/components/DireccionesDashboard.tsx
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, doc, deleteDoc, getDocs } from 'firebase/firestore'; // ✅ V00270
+import { collection, doc, deleteDoc, getDocs } from 'firebase/firestore'; // ✅ V00270
 import { obtenerCacheMemoria, guardarCacheMemoria } from '../../../utils/cacheMemoria'; // ✅ V00270
 import { db } from '../../../config/firebase'; 
+import { idReal, useCatalogo } from '../../../shared/data/catalogos';
 import type { DireccionRecord } from '../../../types/direccion';
 import { FormularioDireccion } from './FormularioDireccion';
 import * as XLSX from 'xlsx';
@@ -23,68 +24,77 @@ const COLUMNAS_BASE = [
 ];
 
 export const DireccionesDashboard = () => {
-  const [registrosGlobales, setRegistrosGlobales] = useState<DireccionRecord[]>([]);
+  // ✅ V00439 (Fase 3.x): direcciones y empresas desde los listeners compartidos de catálogos.
+  const { datos: direccionesCat } = useCatalogo('direcciones');
+  const { datos: empresasCat, listo: empresasListas } = useCatalogo('empresas');
+  // CARGA DE DATOS PRINCIPAL; ordenada alfabéticamente por País de forma predeterminada.
+  const registrosGlobales = useMemo(
+    () => [...(direccionesCat as unknown as DireccionRecord[])].sort((a, b) => (a.paisNombre || '').localeCompare(b.paisNombre || '')),
+    [direccionesCat],
+  );
   // ✅ V00270: USO POR DIRECCIÓN — la relación Direcciones ↔ Empresas ↔
   //   Colaboradores (contactos): cuántas empresas usan cada dirección (la de
   //   facturación `direccionId` o cualquiera de sus `direccionesPorTipo`) y
   //   cuántos colaboradores pertenecen a esas empresas.
-  const [usoDirecciones, setUsoDirecciones] = useState<Record<string, { empresas: number; colaboradores: number; nombres: string[] }> | null>(null);
+  // ✅ V00439 (Fase 3.x): solo `contactos` (no es catálogo) se lee aquí, con caché en memoria;
+  //   las empresas llegan del catálogo compartido y el uso se calcula en el render.
+  const [colabPorEmpresa, setColabPorEmpresa] = useState<Record<string, number> | null>(null);
   useEffect(() => {
-    const CLAVE = 'direcciones_uso_v1';
-    const enMemoria = obtenerCacheMemoria<Record<string, { empresas: number; colaboradores: number; nombres: string[] }>>(CLAVE, 5 * 60 * 1000);
+    const CLAVE = 'direcciones_colab_v1';
+    const enMemoria = obtenerCacheMemoria<Record<string, number>>(CLAVE, 5 * 60 * 1000);
     if (enMemoria) {
       // El caché se aplica en microtarea para no encadenar renders en el montaje.
-      const t = setTimeout(() => setUsoDirecciones(enMemoria), 0);
+      const t = setTimeout(() => setColabPorEmpresa(enMemoria), 0);
       return () => clearTimeout(t);
     }
     let activo = true;
     (async () => {
       try {
-        const [empSnap, conSnap] = await Promise.all([
-          getDocs(collection(db, 'empresas')),
-          getDocs(collection(db, 'contactos')),
-        ]);
+        const conSnap = await getDocs(collection(db, 'contactos'));
         // Colaboradores por empresa.
-        const colabPorEmpresa: Record<string, number> = {};
+        const colab: Record<string, number> = {};
         conSnap.docs.forEach((d) => {
           const idCli = String((d.data() as Record<string, unknown>).id_cliente || '').trim();
-          if (idCli) colabPorEmpresa[idCli] = (colabPorEmpresa[idCli] || 0) + 1;
-        });
-        // Empresas que usan cada dirección (facturación + por tipo).
-        const porDireccion: Record<string, { ids: Set<string>; nombres: string[] }> = {};
-        const anotar = (dirId: unknown, empId: string, empNombre: string) => {
-          const k = String(dirId || '').trim();
-          if (!k) return;
-          if (!porDireccion[k]) porDireccion[k] = { ids: new Set(), nombres: [] };
-          if (!porDireccion[k].ids.has(empId)) {
-            porDireccion[k].ids.add(empId);
-            if (porDireccion[k].nombres.length < 6) porDireccion[k].nombres.push(empNombre);
-          }
-        };
-        empSnap.docs.forEach((d) => {
-          const x = d.data() as Record<string, unknown>;
-          const nombre = String(x.nombre || x.nombreCorto || d.id);
-          anotar(x.direccionId, d.id, nombre);
-          (Array.isArray(x.direccionesPorTipo) ? x.direccionesPorTipo : []).forEach((dt) => {
-            anotar((dt as Record<string, unknown>)?.direccionId, d.id, nombre);
-          });
-        });
-        const mapa: Record<string, { empresas: number; colaboradores: number; nombres: string[] }> = {};
-        Object.entries(porDireccion).forEach(([dirId, info]) => {
-          let colab = 0;
-          info.ids.forEach((empId) => { colab += colabPorEmpresa[empId] || 0; });
-          mapa[dirId] = { empresas: info.ids.size, colaboradores: colab, nombres: info.nombres };
+          if (idCli) colab[idCli] = (colab[idCli] || 0) + 1;
         });
         if (!activo) return;
-        guardarCacheMemoria(CLAVE, mapa);
-        setUsoDirecciones(mapa);
+        guardarCacheMemoria(CLAVE, colab);
+        setColabPorEmpresa(colab);
       } catch (e) {
         console.error('No se pudo calcular el uso de las direcciones:', e);
-        if (activo) setUsoDirecciones({});
+        if (activo) setColabPorEmpresa({});
       }
     })();
     return () => { activo = false; };
   }, []);
+  const usoDirecciones = useMemo<Record<string, { empresas: number; colaboradores: number; nombres: string[] }> | null>(() => {
+    if (!colabPorEmpresa || !empresasListas) return null;
+    // Empresas que usan cada dirección (facturación + por tipo).
+    const porDireccion: Record<string, { ids: Set<string>; nombres: string[] }> = {};
+    const anotar = (dirId: unknown, empId: string, empNombre: string) => {
+      const k = String(dirId || '').trim();
+      if (!k) return;
+      if (!porDireccion[k]) porDireccion[k] = { ids: new Set(), nombres: [] };
+      if (!porDireccion[k].ids.has(empId)) {
+        porDireccion[k].ids.add(empId);
+        if (porDireccion[k].nombres.length < 6) porDireccion[k].nombres.push(empNombre);
+      }
+    };
+    empresasCat.forEach((x) => {
+      const nombre = String(x.nombre || x.nombreCorto || idReal(x));
+      anotar(x.direccionId, idReal(x), nombre);
+      (Array.isArray(x.direccionesPorTipo) ? x.direccionesPorTipo : []).forEach((dt) => {
+        anotar((dt as Record<string, unknown>)?.direccionId, idReal(x), nombre);
+      });
+    });
+    const mapa: Record<string, { empresas: number; colaboradores: number; nombres: string[] }> = {};
+    Object.entries(porDireccion).forEach(([dirId, info]) => {
+      let colab = 0;
+      info.ids.forEach((empId) => { colab += colabPorEmpresa[empId] || 0; });
+      mapa[dirId] = { empresas: info.ids.size, colaboradores: colab, nombres: info.nombres };
+    });
+    return mapa;
+  }, [colabPorEmpresa, empresasListas, empresasCat]);
   
   const [modalEstado, setModalEstado] = useState<'cerrado' | 'abierto' | 'minimizado' | 'detalle'>('cerrado');
   const [registroActual, setRegistroActual] = useState<DireccionRecord | null>(null);
@@ -103,17 +113,6 @@ export const DireccionesDashboard = () => {
   const [modalColumnas, setModalColumnas] = useState(false);
   const [columnasTabla, setColumnasTabla] = useState(COLUMNAS_BASE.map(c => ({ ...c })));
   const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
-
-  // CARGA DE DATOS PRINCIPAL (1 Lectura por documento, 0 adicionales gracias a la desnormalización de los Nombres)
-  useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'direcciones'), (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as DireccionRecord));
-      // Ordenamos alfabéticamente por País de forma predeterminada
-      data.sort((a, b) => (a.paisNombre || '').localeCompare(b.paisNombre || ''));
-      setRegistrosGlobales(data);
-    });
-    return () => unsubscribe();
-  }, []);
 
   useEffect(() => {
     setPaginaActual(1);
