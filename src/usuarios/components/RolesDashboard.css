@@ -83,3 +83,6 @@
 .rd-vistas-item.rd-vistas-rol { opacity: 0.65; cursor: default; }
 .rd-vistas-tag { color: #3fb950; font-size: 0.66rem; font-style: normal; border: 1px solid #3fb950; border-radius: 999px; padding: 0 6px; margin-left: 4px; }
 .rd-vistas-acciones { display: flex; justify-content: flex-end; margin-top: 14px; }
+
+/* ✅ V00437: marca de "Requiere red de la oficina" en la tabla de roles */
+.rd-ip-badge { margin-left: 8px; color: #58a6ff; border: 1px solid #3b82f6; border-radius: 999px; padding: 1px 8px; font-size: 0.7rem; font-weight: 600; white-space: nowrap; }

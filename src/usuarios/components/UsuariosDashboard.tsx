@@ -8,6 +8,10 @@ import { nombreDeEmpleado } from '../../utils/nombreEmpleado';
 import { DIAS_SEMANA, HORARIO_VACIO, horarioDeHoy, type HorarioTrabajo } from '../../utils/horarioTrabajo';
 import './UsuariosDashboard.css'; 
 import { FormularioConfigurable } from '../../features/formularios/FormularioConfigurable';
+import { useFlags } from '../../shared/data/flags';
+import { gestionarUsuarioServidor, sincronizarClaimsServidor } from '../../features/auth/services/usuariosServidor';
+import { esAdminPorRoles } from '../../features/auth/services/acceso';
+import { useUsuarioStore } from '../../stores/useUsuarioStore';
 
 // Comprime y redimensiona la imagen a un cuadrado pequeño (máx 256px) en base64,
 // para que la foto pese pocos KB y quepa sin problema en el documento de Firestore.
@@ -44,6 +48,11 @@ export const UsuariosDashboard = () => {
   const [modalAbierto, setModalAbierto] = useState(false);
   const [usuarioActual, setUsuarioActual] = useState<any | null>(null);
   const [cargando, setCargando] = useState(false);
+  // ✅ V00437 (Fase 1.2 / 1.3): alta/baja por el servidor (bandera) y backfill de claims (solo admin).
+  const flags = useFlags();
+  const usuarioSesion = useUsuarioStore((s) => s.usuario);
+  const esAdmin = esAdminPorRoles(usuarioSesion?.roles);
+  const [sincronizando, setSincronizando] = useState(false);
 
   const [nombre, setNombre] = useState('');
   const [email, setEmail] = useState('');
@@ -290,6 +299,47 @@ export const UsuariosDashboard = () => {
         
         await registrarLog('Usuarios', 'Edición', `Actualizó los roles/datos del usuario: ${email}`);
         
+      } else if (flags.usuariosPorServidor) {
+        // ✅ V00437 (Fase 1.3): la cuenta de Auth y el documento usuarios/{uid} los
+        //   crea el servidor (callable gestionarUsuario, solo admin) en vez de la
+        //   "app secundaria" del navegador. El perfil es EL MISMO que escribe el
+        //   camino viejo (rama `else`): si agregas un campo, agrégalo en ambos.
+        if (password.length < 6) {
+          alert('La contraseña debe tener al menos 6 caracteres.');
+          return;
+        }
+
+        await gestionarUsuarioServidor({
+          accion: 'crear',
+          email: email.toLowerCase(),
+          password,
+          perfil: {
+            email: email.toLowerCase(),
+            nombre: nombre.toUpperCase(),
+            roles: rolesAsignados,
+            ...camposCliente,
+            fotoPerfil: fotoPerfil || '',
+            exentoIpChecador,
+            colaboradorId: colaboradorId || '',
+            horarioTrabajo,
+            requiereChecador,
+            puedeEditarApp,
+            fechaCreacion: new Date().toISOString(),
+            activo: true,
+            isOnline: false,
+            ultimoAcceso: null,
+          },
+        });
+
+        await registrarLog('Usuarios', 'Creación', `Creó el acceso para el usuario: ${email}`);
+
+        try {
+          await sendPasswordResetEmail(secondaryAuth, email);
+          alert(`Usuario creado con éxito.\n\nSe ha enviado un correo a ${email} para que el usuario establezca su contraseña definitiva.`);
+        } catch (emailError) {
+          console.error("Error al enviar el correo:", emailError);
+          alert("El usuario fue creado, pero hubo un problema al enviar el correo automático.");
+        }
       } else {
         if (password.length < 6) {
           alert('La contraseña debe tener al menos 6 caracteres.');
@@ -340,9 +390,47 @@ export const UsuariosDashboard = () => {
   };
 
   const handleEliminar = async (user: any) => {
+    // ✅ V00437 (Fase 1.3): con la bandera, el servidor deshabilita la cuenta de
+    //   Auth, cierra sus sesiones abiertas y borra el perfil (antes la cuenta
+    //   seguía activa en Auth).
+    if (flags.usuariosPorServidor) {
+      if (!window.confirm(`¿Eliminar el acceso del usuario ${user.email}?\n\nSu cuenta quedará DESHABILITADA (no podrá volver a iniciar sesión), se cerrarán sus sesiones abiertas y se borrará su perfil.`)) return;
+      try {
+        await gestionarUsuarioServidor({ accion: 'eliminar', uid: user.id });
+      } catch (e) {
+        console.error('No se pudo eliminar el usuario:', e);
+        alert(e instanceof Error ? e.message : 'No se pudo eliminar el usuario.');
+        return;
+      }
+      await registrarLog('Usuarios', 'Eliminación', `Deshabilitó la cuenta y eliminó al usuario: ${user.email}`);
+      return;
+    }
     if (window.confirm(`¿Eliminar el acceso del usuario ${user.email}?\n\nNota: Por seguridad, esto elimina sus permisos, pero su cuenta seguirá existiendo en la base de datos de Auth.`)) {
       await deleteDoc(doc(db, 'usuarios', user.id));
       await registrarLog('Usuarios', 'Eliminación', `Revocó el acceso y eliminó al usuario: ${user.email}`);
+    }
+  };
+
+  // ✅ V00437 (Fase 1.2): copia los roles de cada usuario a sus custom claims
+  //   (callable sincronizarClaims, solo admin). Se corre una vez antes de
+  //   publicar las reglas nuevas de Firestore.
+  const sincronizarPermisos = async () => {
+    setSincronizando(true);
+    try {
+      const r = await sincronizarClaimsServidor();
+      const errores = r.errores.length
+        ? `\n\nErrores (${r.errores.length}):\n${r.errores.slice(0, 5).join('\n')}${r.errores.length > 5 ? '\n…' : ''}`
+        : '';
+      const sinPerfil = r.cuentasSinPerfil?.length
+        ? `\n\nCuentas SIN perfil en Usuarios (${r.cuentasSinPerfil.length}) — ya no pueden entrar; dales perfil o elimínalas en Authentication:\n${r.cuentasSinPerfil.slice(0, 10).join('\n')}${r.cuentasSinPerfil.length > 10 ? '\n…' : ''}`
+        : '';
+      await registrarLog('Usuarios', 'Edición', `Sincronizó los permisos de sesión: revisados ${r.revisados}, actualizados ${r.actualizados}.`);
+      alert(`Revisados ${r.revisados}, actualizados ${r.actualizados}.${errores}${sinPerfil}`);
+    } catch (e) {
+      console.error('No se pudieron sincronizar los permisos:', e);
+      alert(e instanceof Error ? e.message : 'No se pudieron sincronizar los permisos.');
+    } finally {
+      setSincronizando(false);
     }
   };
 
@@ -363,7 +451,20 @@ export const UsuariosDashboard = () => {
         <h2 className="ud-x3">
           Configuración {'>'} <span className="ud-x4">Gestión de Usuarios ({usuarios.length})</span>
         </h2>
-        <button className="btn-primary" onClick={() => handleAbrirModal()}>+ Nuevo Usuario</button>
+        <div className="action-buttons ud-encabezado-acciones">
+          {esAdmin && (
+            <button
+              type="button"
+              className="btn-outline ud-sincronizar"
+              onClick={sincronizarPermisos}
+              disabled={sincronizando}
+              title="Copia los roles de cada usuario a su sesión (necesario una vez antes de publicar las reglas nuevas)"
+            >
+              {sincronizando ? '🔐 Sincronizando…' : '🔐 Sincronizar permisos'}
+            </button>
+          )}
+          <button className="btn-primary" onClick={() => handleAbrirModal()}>+ Nuevo Usuario</button>
+        </div>
       </div>
 
       <div className="table-container ud-x5">

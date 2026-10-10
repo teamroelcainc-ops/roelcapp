@@ -18,3 +18,13 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 ## Limitaciones del entorno donde se hizo
 - El emulador de Firestore no se puede descargar en el entorno de Claude (red bloqueada a storage.googleapis.com): las pruebas de reglas (`npm run test:rules`) están escritas pero **no se corrieron**; se corren en la máquina de Omaf con `firebase-tools`.
 - No hubo navegador con datos reales: tsc, ESLint, vitest y build verifican que compila y la lógica pura; los listeners, la caché y los flujos de pantalla no se probaron en vivo (cada CAMBIOS-Vxxxxx.md dice qué revisar).
+
+## Fase 1 (V00437)
+- **Claims solo para LEER en reglas**; callables y escrituras revisan el documento del perfil (revocación inmediata para escribir). Compromiso: hasta 1 h de lectura tras una baja (vida del token). `exigirAdmin` y el `esAdmin()` de las reglas usan SIEMPRE el documento.
+- **"Sin perfil = sin acceso" NO va detrás de bandera**: es el hueco principal. Riesgo: cuentas de Auth sin documento (p. ej. creadas en la consola) quedan fuera al publicar la web → `sincronizarClaims` las lista.
+- **Delete en reglas sigue permitido al personal** (122 llamadas de borrado en el código). `eliminarConPapelera` existe y la bandera `eliminarPorServidor` la activa para `eliminarRegistro`; los borrados por lotes de los módulos se migran cuando se toquen. PENDIENTE: negar `delete` en colecciones de negocio cuando no quede ninguno directo.
+- **Login ya no abre la sesión**: la abre `onAuthStateChanged` en App.tsx tras validar perfil y red (`abrirSesion`). El listener del perfil propio termina de abrirla si el arranque fue sin red.
+- **Red de oficina**: no había interfaz para `requiereIPOficina` (el candado nunca se aplicaba): se agregó la casilla en Roles. La versión robusta (función bloqueante `bloqueoRed.ts`) requiere Identity Platform.
+- **Tres copias de "total nativo de factura"** (pagos/services/aplicarPagos.ts, facturacion/services/totalesFactura.ts, relacional.ts): idénticas a propósito por ahora; se unifican en `src/shared/dominio/dinero.ts` en la Fase 5.
+- **Nóminas**: listener ordenado por `fechaPago` + listener legado `limit(400)` solo para las que no tienen `fechaPago` (PENDIENTE Fase 4: quitarlo cuando la migración rellene el campo). Folio: contador por día `contadores/referencias_nomina_DDMMAAAA`. `saldoPrestamo` sigue como valor absoluto recalculado del historial completo (no `increment`: arrastraría desfases viejos).
+- **Facturación**: el recálculo del total al cambiar operaciones usa delta cuando las filas no reproducen el total guardado (facturas importadas con filas en 0 o total capturado a mano).

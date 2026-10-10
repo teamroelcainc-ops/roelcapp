@@ -5,7 +5,7 @@ import {
   persistentLocalCache,
   persistentSingleTabManager,
   memoryLocalCache,
-  collection, addDoc, updateDoc, deleteDoc, doc, getDoc,
+  collection, addDoc, updateDoc, doc, getDoc, writeBatch,
 } from "firebase/firestore";
 import type { Firestore } from "firebase/firestore";
 import type { DocumentData, UpdateData } from "firebase/firestore";
@@ -23,6 +23,19 @@ const firebaseConfig = {
 
 // Inicializar Firebase (Solo una vez)
 const app = initializeApp(firebaseConfig);
+
+// ✅ V00437 (Fase 1.5): App Check (reCAPTCHA Enterprise) — solo si hay llave en
+//   VITE_APPCHECK_SITE_KEY. Se activa primero en la consola en modo MONITOREO;
+//   cuando el tráfico legítimo ya trae token, se exige en las funciones
+//   (ENFORCE_APP_CHECK=true) y en Firestore. Carga diferida: sin llave no pesa nada.
+const llaveAppCheck = import.meta.env.VITE_APPCHECK_SITE_KEY as string | undefined;
+if (llaveAppCheck) {
+  import('firebase/app-check')
+    .then(({ initializeAppCheck, ReCaptchaEnterpriseProvider }) => {
+      initializeAppCheck(app, { provider: new ReCaptchaEnterpriseProvider(llaveAppCheck), isTokenAutoRefreshEnabled: true });
+    })
+    .catch((e) => console.warn('[appcheck] No se pudo iniciar App Check.', e));
+}
 
 // ✅ GUARDIÁN DE ESPACIO: los cachés regenerables de la app (catálogos
 //    cat_v1__/cat_v2__, etc.) pueden llenar los ~5MB de localStorage y eso
@@ -151,9 +164,28 @@ export const eliminarRegistro = async (nombreColeccion: string, id: string, opci
   if (!motivo) {
     motivo = pedirNotaEliminacion();
   }
-  const snap = await getDoc(doc(db, nombreColeccion, id));
+  // ✅ V00437 (Fase 1.6): copia a la papelera + borrado en UN solo paso.
+  //   · Con la bandera eliminarPorServidor: la callable eliminarConPapelera lo
+  //     hace en una transacción y valida en el servidor (colecciones protegidas,
+  //     facturas con pagos).
+  //   · Sin ella: un writeBatch (antes eran addDoc y deleteDoc sueltos: si el
+  //     segundo fallaba quedaba la copia sin borrar).
+  const { obtenerFlags } = await import('../shared/data/flags');
+  if ((await obtenerFlags()).eliminarPorServidor) {
+    const { llamarCallable } = await import('../shared/data/callables');
+    await llamarCallable('eliminarConPapelera', {
+      coleccion: nombreColeccion, id, motivo,
+      modulo: opciones?.modulo || nombreColeccion,
+      etiqueta: opciones?.etiqueta || '',
+    });
+    invalidarCachesCatalogosLocales(nombreColeccion);
+    return;
+  }
+  const ref = doc(db, nombreColeccion, id);
+  const snap = await getDoc(ref);
+  const lote = writeBatch(db);
   if (snap.exists()) {
-    await addDoc(collection(db, COL_PAPELERA_GLOBAL), {
+    lote.set(doc(collection(db, COL_PAPELERA_GLOBAL)), {
       coleccion: nombreColeccion,
       registroId: id,
       datos: snap.data(),
@@ -164,9 +196,9 @@ export const eliminarRegistro = async (nombreColeccion: string, id: string, opci
       eliminadoEn: new Date().toISOString(),
     });
   }
-  const res = await deleteDoc(doc(db, nombreColeccion, id));
+  lote.delete(ref);
+  await lote.commit();
   invalidarCachesCatalogosLocales(nombreColeccion);
-  return res;
 };
 
 // ✅ NUEVO (V00115) — utilidades de la papelera global (exportadas para los
@@ -218,6 +250,9 @@ export const payloadPapeleraGlobal = (
 };
 
 // --- TRUCO PARA CREAR USUARIOS SIN CERRAR SESIÓN DEL ADMIN ---
-// Inicializamos una app secundaria con la misma configuración
+// Inicializamos una app secundaria con la misma configuración.
+// ✅ V00437 (Fase 1.3): LEGADO. Con la bandera usuariosPorServidor las altas van
+//   por la callable gestionarUsuario (Admin SDK). Se elimina cuando la bandera
+//   lleve tiempo encendida (ver PLAN-REFACTOR.md, punto P4).
 const secondaryApp = initializeApp(firebaseConfig, 'SecondaryApp');
 export const secondaryAuth = getAuth(secondaryApp);

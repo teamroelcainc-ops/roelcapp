@@ -1,9 +1,10 @@
 // src/features/auth/components/Login.tsx
 import React, { useState, useEffect } from 'react';
 import { signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
-import { doc, updateDoc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger';
+import { evaluarPerfil, MENSAJE_ACCESO } from '../services/acceso'; // ✅ V00437
 // ✅ NUEVO: logo de la empresa (mismo base64 que usan los PDF) para mostrarlo en el login.
 import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
 import './Login.css';
@@ -13,13 +14,17 @@ const LS_ULTIMO_CORREO = 'roelca_ultimo_correo';
 
 interface LoginProps {
   onLoginSuccess: () => void;
+  /** ✅ V00437: motivo por el que la app cerró la sesión (perfil, red…), para mostrarlo. */
+  aviso?: string;
 }
 
-export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
+export const Login: React.FC<LoginProps> = ({ onLoginSuccess, aviso = '' }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [mostrarPassword, setMostrarPassword] = useState(false); // ✅ NUEVO: ver/ocultar contraseña
-  const [error, setError] = useState('');
+  const [errorPropio, setError] = useState('');
+  // El aviso de la app se muestra mientras no haya un error propio del login.
+  const error = errorPropio || aviso;
   const [mensaje, setMensaje] = useState(''); // ✅ NUEVO: mensajes de éxito (ej. reset enviado)
   const [loading, setLoading] = useState(false);
   const [enviandoReset, setEnviandoReset] = useState(false); // ✅ NUEVO
@@ -45,60 +50,23 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      // 2. Traer el perfil del usuario para ver qué roles tiene asignados
+      // 2. Traer el perfil del usuario para ver qué roles tiene asignados.
+      // ✅ V00437 (Fase 1.1): sin perfil, desactivado o de CLIENTE → se cierra la
+      //   sesión con el motivo real (antes "Perfil no encontrado" se mostraba como
+      //   "Correo o contraseña incorrectos" y la sesión quedaba ABIERTA como admin).
       const userDoc = await getDoc(doc(db, 'usuarios', user.uid));
-      if (!userDoc.exists()) throw new Error("Perfil de usuario no encontrado.");
-      const userData = userDoc.data();
-
-      // ✅ V00435: los usuarios de CLIENTE solo entran por la app móvil
-      //   (las reglas de Firestore no les dan acceso a este sistema).
-      if (String(userData.tipoUsuario || '') === 'cliente') {
+      const userData = userDoc.exists() ? userDoc.data() : null;
+      const veredicto = evaluarPerfil(userData);
+      if (veredicto !== 'ok' || !userData) {
         await signOut(auth);
-        setError('Este usuario es de CLIENTE: entra desde la app móvil de Roelca.');
+        setError(MENSAJE_ACCESO[veredicto === 'ok' ? 'sin-perfil' : veredicto]);
         setLoading(false);
         return;
       }
 
-      // 3. Traer la configuración de seguridad global (La IP de la Oficina)
-      const configDoc = await getDoc(doc(db, 'configuracion', 'seguridad'));
-      const ipOficina = configDoc.exists() ? configDoc.data().ipOficina : '';
-
-      // 4. Verificar si alguno de sus roles requiere estar en la oficina
-      let requiereEstarEnOficina = false;
-      if (userData.roles && userData.roles.length > 0) {
-        const rolesQuery = query(collection(db, 'catalogo_roles'), where('nombre', 'in', userData.roles));
-        const rolesSnap = await getDocs(rolesQuery);
-        
-        rolesSnap.forEach((rolDoc) => {
-          if (rolDoc.data().requiereIPOficina) {
-            requiereEstarEnOficina = true;
-          }
-        });
-      }
-
-      // 5. EL CENTINELA: Si su rol exige oficina, comprobamos su IP actual
-      if (requiereEstarEnOficina) {
-        try {
-          const ipRes = await fetch('https://api.ipify.org?format=json');
-          const ipData = await ipRes.json();
-          const userIPActual = ipData.ip;
-
-          if (userIPActual !== ipOficina) {
-            // ¡INTRUSO BLOQUEADO!
-            await signOut(auth); // Cerramos la sesión que Firebase acababa de abrir
-            await registrarLog('Seguridad', 'Bloqueo de Red', `Intento de acceso denegado para ${email}. IP detectada: ${userIPActual}`);
-            setError('ACCESO DENEGADO. Por medidas de seguridad, tu rol solo permite iniciar sesión desde la red WiFi de la oficina de Roelca Inc.');
-            setLoading(false);
-            return; // Cortamos la ejecución aquí
-          }
-        } catch (fetchError) {
-          // Si por alguna razón el bloqueador de anuncios del usuario bloquea la comprobación de IP
-          await signOut(auth);
-          setError('No pudimos verificar la seguridad de tu red. Desactiva tu bloqueador de anuncios (AdBlock) e intenta de nuevo.');
-          setLoading(false);
-          return;
-        }
-      }
+      // 3-5. La red de la oficina la revisa App.tsx al abrir la sesión (una sola
+      //   vez, también en sesiones restauradas); si la niega, cierra la sesión y
+      //   este login muestra el motivo (prop `aviso`). ✅ V00437
 
       // 6. SI PASÓ TODAS LAS PRUEBAS: Lo dejamos entrar al sistema
       await updateDoc(doc(db, 'usuarios', user.uid), {

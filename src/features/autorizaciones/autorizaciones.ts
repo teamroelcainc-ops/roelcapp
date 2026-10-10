@@ -294,8 +294,10 @@ export const ACCIONES: { key: AccionAut; label: string }[] = [
 // ── Helpers ─────────────────────────────────────────────────────────────────
 const normAut = (s: any) => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase();
 
+// ✅ V00437 (Fase 1.6): comparación EXACTA. Con `.includes('ADMIN')` un rol
+//   llamado "ADMINISTRATIVO" quedaba exento de todas las reglas de autorización.
 export const esRolAdmin = (roles: string[]): boolean =>
-  (roles || []).some(r => normAut(r).includes('ADMIN'));
+  (roles || []).some(r => normAut(r) === 'ADMIN');
 
 /** Usuario actual con sus roles (misma lógica que el resto de la app). */
 // ✅ V00142: "Ver como" (vista previa de rol/usuario) también aplica en
@@ -313,22 +315,31 @@ const vistaComoRoles = (): string[] | null => {
   } catch { return null; }
 };
 
+// ✅ V00437 (Fase 1.1 / 1.6): sin sesión o sin documento en `usuarios` NO hay
+//   roles (antes se trataba como ADMIN: "bypass"). La vista previa ("Ver como")
+//   solo se aplica si el usuario REAL es administrador; antes bastaba con escribir
+//   roelca_vista_como en el almacenamiento del navegador para saltarse las reglas.
 export const obtenerUsuarioAut = async (): Promise<{ uid: string; nombre: string; roles: string[]; esAdmin: boolean; puedeEditarApp?: boolean }> => {
   const simulados = vistaComoRoles();
   const u = auth.currentUser;
-  // Sin sesión con doc (bypass) = acceso total, se trata como Admin (salvo simulación).
-  if (!u) {
-    if (simulados) return { uid: '', nombre: 'Sistema (vista previa)', roles: simulados, esAdmin: esRolAdmin(simulados) };
-    return { uid: '', nombre: 'Sistema', roles: ['ADMIN'], esAdmin: true };
-  }
+  if (!u) return { uid: '', nombre: 'Sin sesión', roles: [], esAdmin: false };
   try {
     const snap = await getDoc(doc(db, 'usuarios', u.uid));
-    const data: any = snap.exists() ? snap.data() : null;
-    const rolesReales: string[] = data ? (Array.isArray(data.roles) ? data.roles : (data.rol ? [String(data.rol)] : [])) : ['ADMIN'];
-    const roles = simulados ?? rolesReales;
-    return { uid: u.uid, nombre: (data?.nombre || u.email || 'Usuario') + (simulados ? ' (vista previa)' : ''), puedeEditarApp: data?.puedeEditarApp === true, roles, esAdmin: esRolAdmin(roles) };
+    const data: Record<string, unknown> | null = snap.exists() ? snap.data() : null;
+    const rolesReales: string[] = data
+      ? (Array.isArray(data.roles) ? data.roles.map((r) => String(r)) : (data.rol ? [String(data.rol)] : []))
+      : [];
+    const usarSimulados = !!simulados && esRolAdmin(rolesReales);
+    const roles = usarSimulados && simulados ? simulados : rolesReales;
+    return {
+      uid: u.uid,
+      nombre: String(data?.nombre || u.email || 'Usuario') + (usarSimulados ? ' (vista previa)' : ''),
+      puedeEditarApp: data?.puedeEditarApp === true,
+      roles,
+      esAdmin: esRolAdmin(roles),
+    };
   } catch {
-    return { uid: u.uid, nombre: u.email || 'Usuario', roles: simulados ?? [], esAdmin: simulados ? esRolAdmin(simulados) : false };
+    return { uid: u.uid, nombre: u.email || 'Usuario', roles: [], esAdmin: false };
   }
 };
 
@@ -516,7 +527,23 @@ export const guardarConfigModulo = async (modulo: string, config: ConfigModuloAu
 };
 
 /** Aplica una solicitud aprobada de forma genérica (editar/borrar/crear directa). */
+// ✅ V00437 (Fase 1.6): la colección y los datos vienen de quien PIDIÓ la
+//   autorización. Solo se aplican sobre colecciones de módulos autorizables (nunca
+//   usuarios, roles ni configuración) y sin tocar campos de permisos.
+const COLECCIONES_SOLICITUD_PERMITIDAS = new Set(
+  [...MODULOS_AUTORIZABLES.map((m) => m.coleccion), 'gastos_mtto'].filter((c) => c && c !== 'usuarios' && !c.endsWith('*')),
+);
+const CAMPOS_SOLICITUD_PROHIBIDOS = ['roles', 'rol', 'modulosExtra', 'tipoUsuario', 'activo', 'puedeEditarApp'];
+export const coleccionSolicitudPermitida = (coleccion: string): boolean =>
+  COLECCIONES_SOLICITUD_PERMITIDAS.has(coleccion) || /^catalogo_[a-z0-9_]+$/.test(coleccion);
+
 export const aplicarSolicitudGenerica = async (s: SolicitudAut): Promise<void> => {
+  if (!coleccionSolicitudPermitida(String(s.coleccion || ''))) {
+    throw new Error(`La solicitud apunta a "${s.coleccion}", que no se puede modificar por autorizaciones.`);
+  }
+  const propuestos = (s.datosPropuestos || {}) as Record<string, unknown>;
+  const prohibidos = Object.keys(propuestos).filter((k) => CAMPOS_SOLICITUD_PROHIBIDOS.includes(k));
+  if (prohibidos.length) throw new Error(`La solicitud intenta cambiar campos de permisos (${prohibidos.join(', ')}).`);
   if (s.accion === 'editar') {
     if (!s.docId) throw new Error('La solicitud de edición no tiene documento destino.');
     await updateDoc(doc(db, s.coleccion, s.docId), s.datosPropuestos || {});

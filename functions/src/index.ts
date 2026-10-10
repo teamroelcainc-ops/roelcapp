@@ -67,7 +67,8 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import type { DocumentReference } from 'firebase-admin/firestore';
-import { exigirPersonal } from './acceso'; // ✅ V00435
+import { z } from 'zod';
+import { exigirPersonal, EXIGIR_APP_CHECK } from './acceso'; // ✅ V00435 · V00437: claims + App Check
 
 if (getApps().length === 0) initializeApp();
 const db = getFirestore();
@@ -92,25 +93,51 @@ const sinUndefined = (obj: Record<string, any>): Record<string, any> => {
   return out;
 };
 
-export const crearOperacion = onCall({ region: 'us-central1' }, async (request) => {
+// ✅ V00437 (Fase 1.5): validación del payload con zod. La operación tiene cientos
+//   de campos opcionales: se validan los de control y los tipos de los campos
+//   relacionales y de dinero; el resto pasa tal cual (passthrough).
+const texto = z.string().max(2000);
+const montoLibre = z.union([z.number().finite(), z.string().max(40)]).nullable().optional();
+const relacion = texto.nullable().optional();
+const esquemaOperacion = z.object({
+  status: relacion,
+  statusNombre: relacion,
+  clientePaga: relacion,
+  clienteMercancia: relacion,
+  proveedorUnidad: relacion,
+  convenio: relacion,
+  operador: relacion,
+  fechaServicio: z.union([z.string().max(40), z.null()]).optional(),
+  montoConvenioCliente: montoLibre,
+  totalAPagarProv: montoLibre,
+  cargosAdicionales: montoLibre,
+  cargosAdicionalesProv: montoLibre,
+  sueldoOperador: montoLibre,
+}).passthrough();
+const esquemaCrear = z.object({
+  operacion: esquemaOperacion,
+  prefijo: z.string().trim().toUpperCase().regex(/^[A-ZÑ0-9.]{1,6}$/, 'Prefijo inválido').default('OP'),
+  ddmmyy: z.string().regex(/^\d{6}$/, 'Falta o es inválida la clave de fecha (ddmmyy).'),
+  clienteOpId: z.string().max(120).optional().nullable(),
+});
+
+export const crearOperacion = onCall({ region: 'us-central1', enforceAppCheck: EXIGIR_APP_CHECK }, async (request) => {
   const uid = request.auth?.uid;
   if (!uid) {
     throw new HttpsError('unauthenticated', 'Debes iniciar sesión para crear una operación.');
   }
   await exigirPersonal(uid); // ✅ V00435: los usuarios de CLIENTE no crean operaciones
 
-  const data = request.data || {};
-  const operacion = data.operacion;
-  if (!operacion || typeof operacion !== 'object') {
-    throw new HttpsError('invalid-argument', 'Falta el objeto "operacion".');
+  const valido = esquemaCrear.safeParse(request.data || {});
+  if (!valido.success) {
+    throw new HttpsError('invalid-argument', valido.error.issues.map((i) => `${i.path.join('.') || 'datos'}: ${i.message}`).join('; '));
   }
+  const data = valido.data;
+  const operacion = data.operacion;
 
   // Prefijo y clave de fecha: los calcula el cliente con las utilidades actuales.
-  const prefijo = String(data.prefijo || 'OP').toUpperCase();
-  const ddmmyy = String(data.ddmmyy || '');
-  if (!/^\d{6}$/.test(ddmmyy)) {
-    throw new HttpsError('invalid-argument', 'Falta o es inválida la clave de fecha (ddmmyy).');
-  }
+  const prefijo = data.prefijo;
+  const ddmmyy = data.ddmmyy;
 
   const refPrefijo = `${prefijo}-${ddmmyy}`; // ej. TR-010726
   const counterRef = db.collection('counters').doc(`operaciones_${prefijo}_${ddmmyy}`);
@@ -246,7 +273,7 @@ export const crearOperacion = onCall({ region: 'us-central1' }, async (request) 
  * no salta). Sustituye la regeneración que el cliente hacía con una consulta
  * lexicográfica sin transacción (fuente de brincos como 006 → 024).
  */
-export const renumerarOperacion = onCall({ region: 'us-central1' }, async (request) => {
+export const renumerarOperacion = onCall({ region: 'us-central1', enforceAppCheck: EXIGIR_APP_CHECK }, async (request) => {
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Debes iniciar sesión.');
   await exigirPersonal(uid); // ✅ V00435
@@ -307,3 +334,7 @@ export * from './relacional';
 
 // ✅ V00435: PORTAL DE CLIENTES (app móvil) — única puerta de datos del cliente.
 export * from './portalClientes';
+
+// ✅ V00437 (Fase 1): claims de acceso, alta/baja de usuarios y borrado con papelera.
+export * from './usuarios';
+export * from './papelera';

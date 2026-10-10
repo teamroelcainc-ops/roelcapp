@@ -11,10 +11,15 @@ import {
   doc, 
   getDocs,
   where,
-  documentId,
-  limit
+  documentId
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+// ✅ Fase 1.8b: historial ordenado/paginado, historial completo por operador y
+//   guardado transaccional (folio, vínculo de operaciones y saldos).
+import { ErrorNomina, huellaSaldos, numeroDeFolio, prefijoFolioNomina, formatearFolioNomina } from '../services/reglasNomina';
+import type { DocNomina } from '../services/reglasNomina';
+import { guardarNomina, nuevoIdNomina, obtenerHistorialOperador } from '../services/nominasService';
+import { useHistorialNominasOperador, useNominasPaginadas } from '../services/useNominas';
 import * as XLSX from 'xlsx';
 import html2pdf from 'html2pdf.js';
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
@@ -83,7 +88,13 @@ export const ReferenciasNominaDashboard = () => {
   const [activeTab, setActiveTab] = useState<'operaciones' | 'historial' | 'prestamos' | 'ahorro'>('historial');
 
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
-  const [nominasGlobales, setNominasGlobales] = useState<any[]>([]);
+  // ✅ Fase 1.8b: las nóminas llegan ORDENADAS por fecha de pago (ventana en
+  //   vivo + "Cargar más"). Solo alimentan el HISTORIAL en pantalla y señales
+  //   de apoyo: el folio, la asignación de operaciones y los saldos ya no
+  //   dependen de esta lista parcial (ver handleGuardarNomina).
+  const nominasPaginadas = useNominasPaginadas();
+  // Esquema heredado sin tipo canónico: el resto del módulo lo lee campo por campo.
+  const nominasGlobales: any[] = nominasPaginadas.nominas;
 
   const [operadoresList, setOperadoresList] = useState<any[]>([]);
   const [formasPagoList, setFormasPagoList] = useState<any[]>([]);
@@ -470,16 +481,8 @@ export const ReferenciasNominaDashboard = () => {
   //   Historial (antes solo se cargaban en la pestaña "Asignar Operaciones", por
   //   eso el "Método" se veía como " ()") y también pre-llenar el formulario al editar.
   useEffect(() => {
-    const qNominas = query(collection(db, 'referencias_nomina'), limit(400));
-    const unSubNominas = onSnapshot(qNominas, (snap) => {
-      const docs = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-      docs.sort((a: any, b: any) => {
-        const ta = parsearFechaSegura(a.createdAt || a.fechaPago)?.getTime() || 0;
-        const tb = parsearFechaSegura(b.createdAt || b.fechaPago)?.getTime() || 0;
-        return tb - ta;
-      });
-      setNominasGlobales(docs);
-    });
+    // ✅ Fase 1.8b: el listener de `referencias_nomina` (antes limit(400) SIN
+    //   orderBy = 400 nóminas arbitrarias) vive en useNominasPaginadas.
     const unSubEmpleados = onSnapshot(collection(db, 'empleados'), (snap) => {
       setOperadoresList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
     });
@@ -522,7 +525,7 @@ export const ReferenciasNominaDashboard = () => {
       }, () => { /* colección inexistente o sin permiso: se ignora */ })
     );
 
-    return () => { unSubNominas(); unSubEmpleados(); unSubEmpresas(); unSubConvenios(); unSubDeducciones(); unSubFormasPago(); unSubBancos(); unsubsLugares.forEach(u => u()); };
+    return () => { unSubEmpleados(); unSubEmpresas(); unSubConvenios(); unSubDeducciones(); unSubFormasPago(); unSubBancos(); unsubsLugares.forEach(u => u()); };
   }, []);
 
   // Operaciones: solo se necesitan en la pestaña "Asignar Operaciones".
@@ -553,19 +556,14 @@ export const ReferenciasNominaDashboard = () => {
   //   status completado Y no estar en `operacionesIds` de `referencias_nomina`,
   //   así que una operación facturada al cliente SÍ puede pagarse en nómina.
 
+  // ✅ Fase 1.8b: esto es solo la VISTA PREVIA del folio en el formulario. El
+  //   folio definitivo (mismo formato NOMINA-DDMMAAAA-###) lo asigna la
+  //   transacción de guardado con el contador contadores/referencias_nomina_DDMMAAAA.
   const generarConsecutivo = (fechaStr: string) => {
-    const [year, month, day] = fechaStr.split('-');
-    const prefix = `NOMINA-${day}${month}${year}-`;
-    const nominasDeEseDia = nominasGlobales.filter(n => n.consecutivo?.startsWith(prefix));
-    let maxSeq = 0;
-    nominasDeEseDia.forEach(n => {
-      const parts = n.consecutivo.split('-');
-      if (parts.length === 3) {
-        const seq = parseInt(parts[2], 10);
-        if (seq > maxSeq) maxSeq = seq;
-      }
-    });
-    return `${prefix}${String(maxSeq + 1).padStart(3, '0')}`;
+    const prefix = prefijoFolioNomina(fechaStr);
+    if (!prefix) return '';
+    const maxSeq = nominasPaginadas.nominas.reduce((max, n) => Math.max(max, numeroDeFolio(n.consecutivo, prefix)), 0);
+    return formatearFolioNomina(prefix, maxSeq + 1);
   };
 
   const getNombreOperador = (idOrName: string) => {
@@ -756,6 +754,9 @@ export const ReferenciasNominaDashboard = () => {
   // ✅ Operaciones que YA aparecen en algún registro del HISTORIAL de nóminas.
   //   Se arma desde nominasGlobales para cubrir también las nóminas migradas,
   //   cuyas operaciones no traen referenciaNominaId estampado.
+  //   ✅ Fase 1.8b: es solo una señal EXTRA (la lista es una ventana, no todo
+  //   el historial); al guardar, la transacción relee cada operación y
+  //   consulta operacionesIds en el servidor.
   const opsEnNominaIds = useMemo(() => {
     const s = new Set<string>();
     (nominasGlobales || []).forEach((n: any) => parsearIdsNomina(n.operacionesIds).forEach((id: string) => s.add(String(id))));
@@ -765,7 +766,11 @@ export const ReferenciasNominaDashboard = () => {
   // ✅ NUEVO: una operación cuenta como "asignada/no disponible" si ya está en una
   //   nómina (referenciaNominaId O aparece en el historial) O si ya está dentro de
   //   una factura de cliente.
-  const esAsignada = (op: any) => !!op.referenciaNominaId || opsEnNominaIds.has(String(op.id));
+  // ✅ Fase 1.8b: la FUENTE DE VERDAD es el vínculo guardado en la propia
+  //   operación (referenciaNominaId / referenciaNominaConsecutivo, el mismo
+  //   criterio que Servicios Completados); opsEnNominaIds queda como respaldo
+  //   para nóminas migradas que solo listan la operación en operacionesIds.
+  const esAsignada = (op: any) => !!op.referenciaNominaId || !!op.referenciaNominaConsecutivo || opsEnNominaIds.has(String(op.id));
   // ✅ "Pendiente" para nómina = NO está en ninguna nómina del historial.
   //   (Estar facturada al cliente NO la excluye de nómina.)
   const esPendienteNomina = (op: any) => !esAsignada(op);
@@ -1141,15 +1146,16 @@ export const ReferenciasNominaDashboard = () => {
   // ✅ Movimientos del operador seleccionado (declaración temprana para que
   //   las bases del formulario puedan derivarse del historial; el memo
   //   `historialPrestamos` de las pestañas usa este mismo criterio).
+  // ✅ Fase 1.8b: los movimientos salen del historial COMPLETO del operador
+  //   (consulta por operadorId / operadorNombre, sin limit), no de la ventana
+  //   del historial: con 400 nóminas cargadas faltaban movimientos y el saldo
+  //   de préstamo/ahorro salía mal. Mismo criterio de operador que antes.
+  const historialOperador = useHistorialNominasOperador(operadorIdSeleccionado, filtroOperador);
   const historialPrestamosRef = useMemo(() => {
-    if (!filtroOperador) return [] as any[];
-    const movs = nominasGlobales.filter(n =>
-      (operadorIdSeleccionado && n.operadorId === operadorIdSeleccionado) ||
-      (n.operadorNombre || '') === filtroOperador
-    );
-    return [...movs].sort((a, b) => (fechaOrdenNomina(a) - fechaOrdenNomina(b)));
+    if (!filtroOperador) return [] as DocNomina[];
+    return [...historialOperador.historial].sort((a, b) => (fechaOrdenNomina(a) - fechaOrdenNomina(b)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nominasGlobales, filtroOperador, operadorIdSeleccionado]);
+  }, [historialOperador.historial, filtroOperador]);
 
   // ═══════════════════════════════════════════════════════════════════════
   // ✅ FIX SALDOS (préstamo y ahorro): la pestaña Préstamos/Ahorro calcula el
@@ -1306,12 +1312,17 @@ export const ReferenciasNominaDashboard = () => {
       setPestanaModalNomina('totales');
       return alert('Selecciona la Forma de Pago y el Banco en la pestaña Totales.');
     }
+    // ✅ Fase 1.8b: la base de préstamo/ahorro sale del historial COMPLETO del
+    //   operador; no se guarda hasta que llegue confirmado por el servidor.
+    if (filtroOperador && !historialOperador.listo) {
+      return alert(historialOperador.error
+        ? 'No se pudo leer el historial de préstamos y ahorro del operador. Revisa tu conexión y vuelve a intentar.'
+        : 'Aún se está cargando el historial de préstamos y ahorro del operador. Espera un momento y vuelve a guardar.');
+    }
     setGuardando(true);
     try {
       const esEdicion = modoEdicion && !!nominaEditando?.id;
-      const batch = writeBatch(db);
-      const nuevoId = esEdicion ? nominaEditando.id : doc(collection(db, 'referencias_nomina')).id;
-      const consecutivoFinal = esEdicion ? getConsecutivoNomina(nominaEditando) : generarConsecutivo(fechaPago);
+      const nuevoId: string = esEdicion ? nominaEditando.id : nuevoIdNomina();
 
       const operacionesResumenEstable = seleccionadas.map(id => {
         const op = operacionesGlobales.find(o => o.id === id);
@@ -1331,8 +1342,8 @@ export const ReferenciasNominaDashboard = () => {
         };
       });
 
+      // `consecutivo` lo pone la transacción (folio definitivo).
       const data: any = {
-        consecutivo: consecutivoFinal,
         fechaPago, fechaInicio, fechaFin,
         operadorId: operadorIdSeleccionado || nominaEditando?.operadorId || null,
         operadorNombre: filtroOperador,
@@ -1381,54 +1392,74 @@ export const ReferenciasNominaDashboard = () => {
         updatedAt: new Date().toISOString(),
       };
 
-      // En edición, set con merge para no perder campos legacy del documento.
-      batch.set(doc(db, 'referencias_nomina', nuevoId), data, { merge: esEdicion });
-
-      const deduccionIdActualizar = nominaEditando?.deduccionId || deduccionOperador?.id || null;
-      if (deduccionIdActualizar) {
-        // ✅ Actualiza la colección `deducciones` con el ESQUEMA NUEVO:
-        //   `saldoPrestamo` y `ahorroAcumulado` (se mantiene `prestamo` legado
-        //   sincronizado para lo que aún lo lea).
-        batch.update(doc(db, 'deducciones', deduccionIdActualizar), {
+      // ✅ Fase 1.8b — Saldos en `deducciones`: se siguen escribiendo como valor
+      //   ABSOLUTO, con el mismo significado de antes (espejo del saldo que
+      //   sale del historial, el que muestra el formulario, re-sincronizado en
+      //   cada guardado). Cambia que la base viene del historial COMPLETO del
+      //   operador y que la transacción relee el registro y solo escribe si
+      //   sus saldos siguen siendo los que vio el usuario (huellaSaldos); si
+      //   otro usuario guardó en medio, se detiene y pide revisar. No se usa
+      //   increment(): sumaría sobre un saldo que puede venir desfasado y se
+      //   perdería esa re-sincronización.
+      // PENDIENTE Fase 5: el saldo es un dato derivado guardado en dos lugares
+      //   (deducciones y cada nómina). Eliminar una nómina no lo recalcula (se
+      //   corrige en el siguiente guardado de ese operador) y, si al registro
+      //   le falta `prestamoInicial`, el inicial se toma de `prestamo`, que este
+      //   mismo guardado reescribe. Llevarlo a una callable o a movimientos con
+      //   increment() requiere cambiar el modelo de datos.
+      const deduccionIdActualizar: string | null = nominaEditando?.deduccionId || deduccionOperador?.id || null;
+      const deduccionVista = deduccionIdActualizar ? deduccionesList.find(d => d.id === deduccionIdActualizar) : null;
+      const deduccion = deduccionIdActualizar ? {
+        id: deduccionIdActualizar,
+        huellaEsperada: deduccionVista ? huellaSaldos(deduccionVista) : null,
+        cambios: {
           saldoPrestamo: saldoPrestamoCalc,
           prestamo: saldoPrestamoCalc,
           ahorroAcumulado: saldoAhorroCalc,
           updatedAt: new Date().toISOString(),
+        },
+      } : null;
+
+      // Señal extra para la validación: nóminas de la lista en pantalla que ya
+      // listan alguna de estas operaciones (cubre operacionesIds guardado como texto).
+      const seleccion = new Set(seleccionadas);
+      const conflictosConocidos = new Map<string, string>();
+      nominasGlobales.forEach(n => {
+        if (n.id === nuevoId) return;
+        parsearIdsNomina(n.operacionesIds).forEach(id => {
+          if (seleccion.has(id) && !conflictosConocidos.has(id)) conflictosConocidos.set(id, getConsecutivoNomina(n));
         });
-      }
+      });
+      const removidas = esEdicion ? parsearIdsNomina(nominaEditando.operacionesIds).filter(id => !seleccion.has(id)) : [];
 
-      // En CREACIÓN, vinculamos las operaciones dentro del batch (existen con seguridad).
-      if (!esEdicion) {
-        seleccionadas.forEach(id => {
-          batch.update(doc(db, 'operaciones', id), { referenciaNominaId: nuevoId, referenciaNominaConsecutivo: consecutivoFinal });
-        });
-      }
+      // ✅ Fase 1.8b: UNA transacción relee cada operación (aborta si ya está
+      //   en otra nómina), asigna el folio con el contador del día y escribe
+      //   nómina + vínculos + saldos juntos. Reemplaza al writeBatch "a ciegas"
+      //   y a los updateDoc best-effort de la edición.
+      const res = await guardarNomina({
+        esEdicion,
+        nominaId: nuevoId,
+        fechaPago,
+        folioEdicion: esEdicion ? getConsecutivoNomina(nominaEditando) : '',
+        datos: data,
+        ops: operacionesResumenEstable.map(o => ({ id: o.id, ref: String(o.ref) })),
+        opsRemovidas: removidas,
+        deduccion,
+        conflictosConocidos,
+      });
+      const dataFinal = { ...data, consecutivo: res.folio };
 
-      await batch.commit();
-
-      // En EDICIÓN, reconciliamos los vínculos de operaciones fuera del batch
-      // (best-effort, para que un id legacy inexistente no rompa el guardado).
-      if (esEdicion) {
-        const previas = parsearIdsNomina(nominaEditando.operacionesIds);
-        const removidas = previas.filter(id => !seleccionadas.includes(id));
-        await Promise.all(removidas.map(id =>
-          updateDoc(doc(db, 'operaciones', id), { referenciaNominaId: null, referenciaNominaConsecutivo: null }).catch(() => {})
-        ));
-        await Promise.all(seleccionadas.map(id =>
-          updateDoc(doc(db, 'operaciones', id), { referenciaNominaId: nuevoId, referenciaNominaConsecutivo: consecutivoFinal }).catch(() => {})
-        ));
-      }
-
-      const idsAsignadas = [...seleccionadas];
-      setOperacionesGlobales(prev => prev.map(op =>
-        idsAsignadas.includes(op.id) ? { ...op, referenciaNominaId: nuevoId, referenciaNominaConsecutivo: consecutivoFinal } : op
-      ));
+      setOperacionesGlobales(prev => prev.map(op => {
+        if (seleccion.has(op.id)) return { ...op, referenciaNominaId: nuevoId, referenciaNominaConsecutivo: res.folio };
+        if (res.desvinculadas.includes(op.id)) return { ...op, referenciaNominaId: null, referenciaNominaConsecutivo: null };
+        return op;
+      }));
 
       if (esEdicion) {
-        // Refrescamos la fila del historial al instante.
-        setNominasGlobales(prev => prev.map(n => n.id === nuevoId ? { ...n, ...data, id: nuevoId } : n));
+        // La fila llega por el listener; las páginas de "Cargar más" se parchan aquí.
+        nominasPaginadas.parchearNomina(nuevoId, dataFinal);
       } else {
-        generarReciboNomina({ ...data, id: nuevoId });
+        generarReciboNomina({ ...dataFinal, id: nuevoId });
       }
 
       setModalAbierto(false);
@@ -1438,8 +1469,8 @@ export const ReferenciasNominaDashboard = () => {
       resetFormulario();
       setActiveTab('historial');
     } catch (error) {
-      console.error(error);
-      alert("Error al guardar la nómina.");
+      console.error('[Nómina] Error al guardar la nómina:', error);
+      alert(error instanceof ErrorNomina ? error.message : 'Error al guardar la nómina.');
     } finally {
       setGuardando(false);
     }
@@ -1457,6 +1488,7 @@ export const ReferenciasNominaDashboard = () => {
           });
         }
         await batch.commit();
+        nominasPaginadas.quitarNomina(nomData.id); // ✅ Fase 1.8b: páginas de "Cargar más" (sin listener)
         const idsLiberadas: string[] = Array.isArray(nomData.operacionesIds) ? nomData.operacionesIds : [];
         setOperacionesGlobales(prev => prev.map(op =>
           idsLiberadas.includes(op.id) ? { ...op, referenciaNominaId: null, referenciaNominaConsecutivo: null } : op
@@ -1495,9 +1527,12 @@ export const ReferenciasNominaDashboard = () => {
     return null;
   };
 
-  const saldosRealesDeNomina = (nom: any): { saldoPrestamo: number; ahorroAcumulado: number } | null => {
+  // ✅ Fase 1.8b: `lista` = historial COMPLETO del operador cuando se pudo leer
+  //   (recibo y ficha lo consultan por operador); la ventana del historial
+  //   queda solo como respaldo.
+  const saldosRealesDeNomina = (nom: any, lista: readonly DocNomina[] = nominasPaginadas.nominas): { saldoPrestamo: number; ahorroAcumulado: number } | null => {
     if (!nom) return null;
-    const movs = nominasGlobales.filter(n =>
+    const movs = lista.filter(n =>
       (nom.operadorId && n.operadorId === nom.operadorId) ||
       (nom.operadorNombre && (n.operadorNombre || '') === nom.operadorNombre)
     ).sort((a, b) => (fechaOrdenNomina(a) - fechaOrdenNomina(b)));
@@ -1541,7 +1576,14 @@ export const ReferenciasNominaDashboard = () => {
     const tot = reconstruirTotales(nom, trips);
     // ✅ FIX SALDOS: los "Saldos Informativos" del recibo se reconstruyen del
     //   historial (no del campo guardado, que puede estar desfasado).
-    const saldosReales = saldosRealesDeNomina(nom);
+    // ✅ Fase 1.8b: con el historial COMPLETO del operador (lectura única).
+    let historialRecibo: DocNomina[] | null = null;
+    try {
+      historialRecibo = await obtenerHistorialOperador(nom.operadorId, nom.operadorNombre);
+    } catch (e) {
+      console.warn('[Recibo] No se pudo leer el historial del operador; se usa el historial cargado:', e);
+    }
+    const saldosReales = saldosRealesDeNomina(nom, historialRecibo ?? undefined);
     const ahorroAcumRecibo = saldosReales ? saldosReales.ahorroAcumulado : Number(nom.ahorroAcumulado || 0);
     const saldoPrestamoRecibo = saldosReales ? saldosReales.saldoPrestamo : Number(nom.saldoPrestamo || 0);
     const operadorNombreRec = getNombreOperador(nom.operadorNombre || nom.operadorId);
@@ -1752,8 +1794,21 @@ export const ReferenciasNominaDashboard = () => {
   const registrosVisibles = historialFiltrado.slice(indexFirst, indexLast);
   const irPaginaSiguiente = () => setPaginaActual(p => Math.min(p + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(p => Math.max(p - 1, 1));
+  // ✅ Fase 1.8b: "Cargar más" trae la siguiente página de nóminas más antiguas
+  //   (cursor startAfter); búsqueda y filtros del historial aplican a lo cargado.
+  const cargarMasNominas = () => {
+    nominasPaginadas.cargarMas().catch((e: unknown) => {
+      console.error('[Nómina] Error al cargar más nóminas:', e);
+      alert('No se pudieron cargar más nóminas. Revisa tu conexión y vuelve a intentar.');
+    });
+  };
 
   useEffect(() => { setPaginaActual(1); }, [busquedaHistorial, filtroEstadoHist, histFechaInicio, histFechaFin]);
+
+  // ✅ Fase 1.8b: historial COMPLETO del operador de la ficha abierta (para
+  //   sus saldos informativos); se usa solo si corresponde a esa nómina.
+  const [historialFicha, setHistorialFicha] = useState<{ nominaId: string; docs: DocNomina[] } | null>(null);
+  const historialFichaVigente = (nominaViendo && historialFicha && historialFicha.nominaId === nominaViendo.id) ? historialFicha.docs : undefined;
 
   useEffect(() => {
     if (!nominaViendo) { setOpsFicha([]); return; }
@@ -1771,6 +1826,9 @@ export const ReferenciasNominaDashboard = () => {
         if (!cancelado) setCargandoOpsFicha(false);
       }
     })();
+    obtenerHistorialOperador(nominaViendo.operadorId, nominaViendo.operadorNombre)
+      .then(docs => { if (!cancelado) setHistorialFicha({ nominaId: nominaViendo.id, docs }); })
+      .catch((e: unknown) => console.warn('[Nómina] No se pudo leer el historial del operador para la ficha:', e));
     return () => { cancelado = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nominaViendo]);
@@ -1800,7 +1858,7 @@ export const ReferenciasNominaDashboard = () => {
       const batch = writeBatch(db);
       batch.update(doc(db, 'referencias_nomina', nom.id), { statusPagado: nuevoPagado });
       await batch.commit();
-      setNominasGlobales(prev => prev.map(n => n.id === nom.id ? { ...n, statusPagado: nuevoPagado } : n));
+      nominasPaginadas.parchearNomina(nom.id, { statusPagado: nuevoPagado }); // ✅ Fase 1.8b
     } catch (error) {
       console.error('Error al actualizar estatus de nómina:', error);
       alert('No se pudo actualizar el estatus de la nómina.');
@@ -2274,6 +2332,14 @@ export const ReferenciasNominaDashboard = () => {
               <button onClick={irPaginaAnterior} disabled={paginaActual === 1} style={{ padding: '8px 16px', cursor: paginaActual === 1 ? 'not-allowed' : 'pointer', background: 'none', border: 'none', color: '#c9d1d9' }}>Anterior</button>
               <span className="rnd-x78">{paginaActual} / {totalPaginas}</span>
               <button onClick={irPaginaSiguiente} disabled={paginaActual === totalPaginas} style={{ padding: '8px 16px', cursor: (paginaActual === totalPaginas) ? 'not-allowed' : 'pointer', background: 'none', border: 'none', color: '#c9d1d9' }}>Siguiente</button>
+            </div>
+          )}
+          {busquedaHistHecha && nominasPaginadas.hayMas && (
+            <div className="rnd-x77">
+              <span className="rnd-x29">Se muestran las {nominasGlobales.length} nóminas con fecha de pago más reciente.</span>
+              <button type="button" className="btn btn-outline" onClick={cargarMasNominas} disabled={nominasPaginadas.cargandoMas}>
+                {nominasPaginadas.cargandoMas ? 'Cargando…' : 'Cargar más nóminas'}
+              </button>
             </div>
           )}
         </div>
@@ -2805,10 +2871,10 @@ export const ReferenciasNominaDashboard = () => {
                     {lbl: 'TOTAL DEDUCCIONES', val: fichaTotales.totalDed},
                     {lbl: 'PRÉSTAMO OTORGADO', val: nominaViendo.prestamoOtorgado},
                     {lbl: 'PAGO PRÉSTAMO', val: nominaViendo.pagoPrestamo},
-                    {lbl: 'SALDO PRÉSTAMO', val: (saldosRealesDeNomina(nominaViendo)?.saldoPrestamo ?? nominaViendo.saldoPrestamo)},
+                    {lbl: 'SALDO PRÉSTAMO', val: (saldosRealesDeNomina(nominaViendo, historialFichaVigente)?.saldoPrestamo ?? nominaViendo.saldoPrestamo)},
                     {lbl: 'AHORRO', val: nominaViendo.ahorro},
                     {lbl: 'PAGO AHORRO', val: nominaViendo.pagoAhorro},
-                    {lbl: 'AHORRO ACUM.', val: (saldosRealesDeNomina(nominaViendo)?.ahorroAcumulado ?? nominaViendo.ahorroAcumulado)},
+                    {lbl: 'AHORRO ACUM.', val: (saldosRealesDeNomina(nominaViendo, historialFichaVigente)?.ahorroAcumulado ?? nominaViendo.ahorroAcumulado)},
                     {lbl: 'TOTAL', val: fichaTotales.neto},
                     {lbl: 'DEP. GASTOS', val: nominaViendo.depositoGastos},
                     {lbl: 'OTROS DEPÓSITOS', val: nominaViendo.otrosDepositos},

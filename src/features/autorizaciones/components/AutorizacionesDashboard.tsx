@@ -206,6 +206,13 @@ export const AutorizacionesDashboard = () => {
     regla.roles.length === 0 ? 'Todos los roles' : (regla.roles.length === 1 ? regla.roles[0] : `${regla.roles.length} roles`);
 
   const guardarModulo = async (modulo: string) => {
+    // ✅ V00437 (Fase 1.4): las reglas de autorización solo las cambia un admin
+    //   (firestore.rules: config_autorizaciones). Antes cualquier rol con el
+    //   módulo podía relajar las reglas que lo controlan.
+    if (!usuario?.esAdmin) {
+      alert('Solo un administrador puede cambiar la configuración de autorizaciones.');
+      return;
+    }
     setGuardandoModulo(modulo);
     try {
       await guardarConfigModulo(modulo, configs[modulo] || { acciones: {}, campos: {} });

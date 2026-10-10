@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, Suspense, useRef } from 'react';
+import { useState, useEffect, useMemo, Suspense, useRef, useCallback } from 'react';
 import { TarjetaCasetas } from './features/operaciones/components/TarjetaCasetas'; // ✅ V00349
 import { TarjetaSaldoDiesel } from './features/operaciones/components/TarjetaSaldoDiesel'; // ✅ V00411
 import { DocumentosLista } from './features/documentos/DocumentosLista';
@@ -17,6 +17,8 @@ import { AvisoChecador } from './components/AvisoChecador';
 import { BarraNavMovil } from './components/BarraNavMovil';
 import { EditorNavMovil } from './components/EditorNavMovil';
 import { useUsuarioStore } from './stores/useUsuarioStore';
+import { evaluarPerfil, MENSAJE_ACCESO, esAdminPorRoles, verificarRedOficina } from './features/auth/services/acceso'; // ✅ V00437
+import { iniciarFlags, detenerFlags } from './shared/data/flags'; // ✅ V00437
 import { EtiquetasProvider, useEtiquetas } from './contexts/EtiquetasContext'; 
 import { lazyWithRetry } from './utils/lazyWithRetry';
 
@@ -1116,41 +1118,110 @@ function AppContenido() {
     setter(prev => !prev);
   };
 
+  // ✅ V00437 (Fase 1.1): aviso que ve el login cuando la app cierra la sesión
+  //   (perfil inexistente, desactivado, de cliente o fuera de la red de la oficina).
+  const [avisoAcceso, setAvisoAcceso] = useState('');
+  // Red de la oficina ya verificada para esta sesión (uid) y verificación en curso.
+  const redVerificadaRef = useRef<string | null>(null);
+  const verificacionRedRef = useRef<{ uid: string; promesa: ReturnType<typeof verificarRedOficina> } | null>(null);
+  const negarAcceso = useCallback(async (mensaje: string, bitacora?: string) => {
+    redVerificadaRef.current = null;
+    verificacionRedRef.current = null;
+    setAvisoAcceso(mensaje);
+    setUsuarioActualDB(null);
+    setEstaAutenticado(false);
+    if (bitacora) await registrarLog('Seguridad', 'Bloqueo de Red', bitacora).catch(() => {});
+    await signOut(auth).catch(() => {});
+  }, []);
+
+  // ✅ V00437 (Fase 1.1): abre (o actualiza) la sesión SOLO con un perfil válido.
+  //   · Sin documento, desactivado o de cliente → se cierra la sesión con el motivo
+  //     (antes, sin documento se entraba como ADMIN: "bypass").
+  //   · La red de la oficina se revisa una vez por sesión, también en sesiones
+  //     restauradas (antes solo en el login interactivo).
+  //   · Cada paso revisa que la sesión siga siendo la misma: un cierre de sesión a
+  //     mitad del arranque no debe reabrirla.
+  const abrirSesion = useCallback(async (uid: string, email: string, datos: Record<string, unknown> | null): Promise<void> => {
+    const vigente = () => auth.currentUser?.uid === uid;
+    const veredicto = evaluarPerfil(datos);
+    if (veredicto !== 'ok' || !datos) {
+      await negarAcceso(MENSAJE_ACCESO[veredicto === 'ok' ? 'sin-perfil' : veredicto]);
+      return;
+    }
+    if (redVerificadaRef.current !== uid) {
+      if (verificacionRedRef.current?.uid !== uid) verificacionRedRef.current = { uid, promesa: verificarRedOficina(datos) };
+      const red = await verificacionRedRef.current.promesa;
+      if (!vigente()) return;
+      if (!red.permitido) {
+        await negarAcceso(red.motivo, `Sesión cerrada para ${email || uid}: fuera de la red de la oficina${red.ipDetectada ? ` (IP ${red.ipDetectada})` : ''}.`);
+        return;
+      }
+      redVerificadaRef.current = uid;
+      iniciarFlags();
+    }
+    if (!vigente()) return;
+    setUsuarioActualDB((prev: Record<string, unknown> | null) => {
+      const nuevo = { id: uid, ...datos };
+      return prev && JSON.stringify(prev) === JSON.stringify(nuevo) ? prev : nuevo;
+    });
+    setAvisoAcceso('');
+    setEstaAutenticado(true);
+  }, [negarAcceso]);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      // ✅ V00303: BLINDAJE DEL ARRANQUE — antes, si la lectura de
-      //   usuarios/{uid} fallaba (red, permisos, caché del navegador dañado),
-      //   la excepción saltaba ANTES de setCargandoAuth(false) y la app se
-      //   quedaba en "Cargando Roelca Inc..." para siempre. Ahora el splash
-      //   SIEMPRE se libera (finally) y la lectura del usuario reintenta en
-      //   segundo plano sin bloquear.
+      // ✅ V00303: BLINDAJE DEL ARRANQUE — el splash SIEMPRE se libera (finally).
+      // ✅ V00437: si el perfil no se puede leer (sin red), la app abre SIN módulos
+      //   (nunca con acceso total) y el listener del perfil propio (abajo) termina
+      //   de abrir la sesión cuando llegue el documento.
       try {
         if (user) {
-          setEstaAutenticado(true);
           try {
             const userDoc = await getDoc(doc(db, 'usuarios', user.uid));
-            if (userDoc.exists()) {
-              setUsuarioActualDB({ id: userDoc.id, ...userDoc.data() });
-            }
+            if (auth.currentUser?.uid !== user.uid) return;
+            await abrirSesion(user.uid, user.email ?? '', userDoc.exists() ? userDoc.data() : null);
           } catch (e) {
-            console.error('[arranque] No se pudo leer usuarios/{uid}; la app continúa y reintenta en segundo plano.', e);
-            setTimeout(async () => {
-              try {
-                const userDoc = await getDoc(doc(db, 'usuarios', user.uid));
-                if (userDoc.exists()) setUsuarioActualDB({ id: userDoc.id, ...userDoc.data() });
-              } catch (e2) { console.error('[arranque] Reintento de usuarios/{uid} también falló.', e2); }
-            }, 4000);
+            if (auth.currentUser?.uid !== user.uid) return;
+            console.error('[arranque] No se pudo leer usuarios/{uid}; la app abre sin módulos y espera el perfil.', e);
+            setEstaAutenticado(true);
           }
         } else {
+          redVerificadaRef.current = null;
+          verificacionRedRef.current = null;
           setEstaAutenticado(false);
           setUsuarioActualDB(null);
+          detenerFlags();
         }
       } finally {
         setCargandoAuth(false);
       }
     });
     return () => unsubscribe();
-  }, []);
+  }, [abrirSesion]);
+
+  // ✅ V00437 (Fase 1.2): perfil propio EN VIVO. Si un administrador cambia los
+  //   roles, la app los aplica sin recargar; si desactiva o borra el usuario, la
+  //   sesión se cierra. Cuando el servidor actualiza los claims de acceso
+  //   (claimsActualizadosEn), se pide un token nuevo para que las reglas los vean.
+  //   Un snapshot de la caché local SIN documento (sin red) no cierra la sesión.
+  const uidSesion = estaAutenticado ? auth.currentUser?.uid ?? '' : '';
+  const claimsVistosRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!uidSesion) return;
+    claimsVistosRef.current = null;
+    const unsub = onSnapshot(doc(db, 'usuarios', uidSesion), (snap) => {
+      if (snap.metadata.hasPendingWrites) return;
+      if (!snap.exists() && snap.metadata.fromCache) return;
+      void abrirSesion(uidSesion, auth.currentUser?.email ?? '', snap.exists() ? snap.data() : null);
+      const marca = snap.get('claimsActualizadosEn') as { toMillis?: () => number } | undefined;
+      const ms = typeof marca?.toMillis === 'function' ? marca.toMillis() : 0;
+      if (claimsVistosRef.current !== null && ms > claimsVistosRef.current) {
+        void auth.currentUser?.getIdToken(true).catch((e) => console.warn('[sesión] No se pudo refrescar el token.', e));
+      }
+      claimsVistosRef.current = ms;
+    }, (err) => console.warn('[sesión] No se pudo escuchar el perfil propio.', err));
+    return () => unsub();
+  }, [uidSesion, abrirSesion]);
 
   // Catálogo de roles (para saber qué módulos puede ver el usuario)
   useEffect(() => {
@@ -1259,8 +1330,9 @@ function AppContenido() {
   const debeChecar = usuarioActualDB && !rolesExentosChequeo.includes(usuarioActualDB.rol);
 
   // ── PERMISOS: claves de módulos que el usuario puede ver ──
-  // Acceso total REAL si: entró por Bypass (sin doc) o tiene un rol llamado ADMIN.
-  const accesoTotalReal = !usuarioActualDB || (usuarioActualDB.roles || []).some((r: string) => String(r).toUpperCase() === 'ADMIN');
+  // Acceso total REAL solo si tiene un rol llamado ADMIN.
+  // ✅ V00437 (Fase 1.1): se quitó el "bypass" — sin perfil no hay acceso total.
+  const accesoTotalReal = !!usuarioActualDB && esAdminPorRoles(usuarioActualDB.roles);
 
   // ✅ La vista previa solo se aplica si el usuario REAL es administrador
   //    (evita que una entrada manual en sessionStorage eleve permisos de UI).
@@ -1369,7 +1441,9 @@ function AppContenido() {
   }
 
   if (!estaAutenticado) {
-    return <Login onLoginSuccess={() => setEstaAutenticado(true)} />;
+    // ✅ V00437: la sesión la abre onAuthStateChanged después de validar el perfil;
+    //   el login ya no la abre por su cuenta (antes se saltaba esa validación).
+    return <Login aviso={avisoAcceso} onLoginSuccess={() => setAvisoAcceso('')} />;
   }
 
   const esBaseDeDatosActiva = moduloActivo === 'empresas' || moduloActivo === 'contactos' || moduloActivo === 'tipoCambio' || moduloActivo === 'saldosPuentes' || moduloActivo === 'combustible' || moduloActivo === 'proveedoresUnidad' || moduloActivo === 'unidadesProveedor' || moduloActivo === 'unidades' || moduloActivo === 'remolques' || moduloActivo === 'direcciones';

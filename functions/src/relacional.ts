@@ -36,7 +36,7 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions/v2';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
-import { exigirPersonal } from './acceso'; // ✅ V00435
+import { exigirAdmin, EXIGIR_APP_CHECK } from './acceso'; // ✅ V00435 · V00437: solo admin
 
 if (getApps().length === 0) initializeApp();
 const dbRel = getFirestore();
@@ -236,9 +236,31 @@ const anotar = (h: Hallazgo, etiqueta: string): void => {
   if (h.muestras.length < 20) h.muestras.push(etiqueta);
 };
 
-export const verificarIntegridad = onCall({ region: 'us-central1', timeoutSeconds: 300, memory: '512MiB' }, async (request) => {
+// ✅ V00437 (Fase 1.5): verificarIntegridad lee TODA la base (operaciones, facturas,
+//   tarifarios): solo administradores y como máximo una vez cada 10 minutos. Si se
+//   pide antes, se devuelve el último reporte guardado en meta/verificarIntegridad.
+const INTERVALO_INTEGRIDAD_MS = 10 * 60 * 1000;
+
+export const verificarIntegridad = onCall({ region: 'us-central1', timeoutSeconds: 300, memory: '512MiB', enforceAppCheck: EXIGIR_APP_CHECK }, async (request) => {
   if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Debes iniciar sesión.');
-  await exigirPersonal(request.auth.uid); // ✅ V00435: reporta datos de TODAS las empresas
+  await exigirAdmin(request.auth.uid);
+  // Candado: `enCursoDesde` evita corridas simultáneas (caduca a los 6 min por si
+  // una corrida muere); `reporteEn` es la hora REAL del último reporte guardado.
+  const refMeta = dbRel.collection('meta').doc('verificarIntegridad');
+  const previo = await dbRel.runTransaction(async (tx) => {
+    const snap = await tx.get(refMeta);
+    const m = (snap.data() ?? {}) as { enCursoDesde?: number; reporteEn?: number; reporte?: unknown };
+    const ahora = Date.now();
+    if (m.reporte && m.reporteEn && ahora - m.reporteEn < INTERVALO_INTEGRIDAD_MS) return m;
+    if (m.enCursoDesde && ahora - m.enCursoDesde < 6 * 60 * 1000) {
+      throw new HttpsError('resource-exhausted', 'Ya se está verificando la integridad. Intenta en unos minutos.');
+    }
+    tx.set(refMeta, { enCursoDesde: ahora, ejecutadoPor: request.auth?.uid ?? '' }, { merge: true });
+    return null;
+  });
+  if (previo) {
+    return { ...(previo.reporte as Record<string, unknown>), cacheado: true, reporteEn: new Date(previo.reporteEn ?? 0).toISOString() };
+  }
 
   // Conjuntos de referencia (ids válidos y nombres canónicos).
   const [empresasSnap, catCV, catAdu] = await Promise.all([
@@ -311,6 +333,7 @@ export const verificarIntegridad = onCall({ region: 'us-central1', timeoutSecond
   });
 
   logger.info(`[${REL_VERSION}] verificarIntegridad ejecutado por ${request.auth.uid}`, reporte.revisadas);
+  await refMeta.set({ reporte, reporteEn: Date.now(), enCursoDesde: 0 }, { merge: true });
   return reporte;
 });
 

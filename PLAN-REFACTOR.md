@@ -18,4 +18,15 @@ gcloud firestore export gs://roelcaapp.appspot.com/respaldos/$(date +%Y%m%d-%H%M
 ```
 
 ## Banderas (`configuracion/flags`)
-_Se completa en cada fase._
+Se crean a mano en Firestore (documento `configuracion/flags`, campos booleanos). Si el documento no existe, todas están apagadas.
+
+| Bandera | Fase | Encender cuando… | Qué hace |
+|---|---|---|---|
+| `usuariosPorServidor` | 1.3 | funciones V00437 desplegadas | Altas/bajas de usuarios por `gestionarUsuario` (sin "app secundaria") |
+| `eliminarPorServidor` | 1.6 | funciones V00437 desplegadas | `eliminarRegistro` usa `eliminarConPapelera` (transacción en servidor) |
+
+## Orden de despliegue
+| Versión | Pasos |
+|---|---|
+| V00436 | Nada en producción (herramientas). |
+| V00437 | Ver "Antes de publicar" en CAMBIOS-V00437.md: perfil del admin → funciones → "Sincronizar permisos" → desactivar registro público → web → (P1) reglas. |

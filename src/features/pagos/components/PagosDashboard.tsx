@@ -17,10 +17,15 @@ import { EditorOperacionEmbebido } from '../../operaciones/components/EditorOper
 import { cargarCatalogo, TTL } from '../../../hooks/useCatalogoCache';
 import {
   collection, query, where, getDocs, onSnapshot, writeBatch, doc, arrayUnion, arrayRemove, limit,
-  orderBy, startAfter, documentId,
+  orderBy, startAfter, documentId, runTransaction,
 } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../../../config/firebase';
+import { r2, sumarMontos } from '../../../shared/dominio/numeros';
+import {
+  ErrorPago, aplicadoPorFactura, calcularAbono, calcularReversion, totalNativoFactura, validarLimiteFacturas,
+} from '../services/aplicarPagos';
+import type { CambiosPagoFactura } from '../services/aplicarPagos';
 import * as XLSX from 'xlsx';
 import html2pdf from 'html2pdf.js';
 import { useUsuarioStore } from '../../../stores/useUsuarioStore';
@@ -584,13 +589,14 @@ export function PagosDashboard() {
     if (!pagoEditando) return;
     if (!editFecha) { alert('Captura la fecha del pago.'); return; }
     if (!editNumero.trim()) { alert('Captura el número del pago.'); return; }
+    const pago = pagoEditando;
     setGuardandoEdicion(true);
     try {
       // Comprobante nuevo (opcional): reemplaza al anterior en el registro.
-      let pdfUrl = pagoEditando.pdfUrl || '';
-      let pdfNombre = pagoEditando.pdfNombre || '';
+      let pdfUrl = pago.pdfUrl || '';
+      let pdfNombre = pago.pdfNombre || '';
       if (editArchivoPdf) {
-        const destino = storageRef(storage, `pagos/${pagoEditando.id}/${editArchivoPdf.name}`);
+        const destino = storageRef(storage, `pagos/${pago.id}/${editArchivoPdf.name}`);
         await uploadBytes(destino, editArchivoPdf);
         pdfUrl = await getDownloadURL(destino);
         pdfNombre = editArchivoPdf.name;
@@ -605,8 +611,9 @@ export function PagosDashboard() {
         setGuardandoEdicion(false);
         return;
       }
+      validarLimiteFacturas(agregadas.length); // ✅ Fase 1.8a: tope de escrituras de una transacción
 
-      const cambios: any = {
+      const cambios = {
         fecha: editFecha,
         numeroPago: editNumero.trim(),
         referencia: editReferencia.trim(),
@@ -618,42 +625,78 @@ export function PagosDashboard() {
         editadoPor: usuario?.nombre || usuario?.email || usuario?.id || '',
       };
 
-      const batch = writeBatch(db);
-      const coleccionFact = pagoEditando.tipo === 'cliente' ? 'facturas_clientes' : 'facturas_proveedores';
-      if (agregadas.length > 0) {
-        const nuevasAplicaciones: FacturaAplicada[] = [];
-        agregadas.forEach(({ fac, monto }) => {
-          const pagadoNuevo = fac.montoPagado + monto;
-          const saldoNuevo = Math.max(0, fac.total - pagadoNuevo);
-          if (pagoEditando.tipo !== 'mtto') // ✅ MTTO: saldo derivado, sin doc de factura
-          batch.set(doc(db, coleccionFact, fac.id), {
-            montoPagado: pagadoNuevo,
-            saldoPendiente: saldoNuevo,
-            statusPago: saldoNuevo <= 0.009 ? 'PAGADA' : 'PARCIAL',
-          }, { merge: true });
-          nuevasAplicaciones.push({ facturaId: fac.id, invoice: fac.invoice, fecha: fac.fecha, total: fac.total, saldoAnterior: fac.saldo, aplicado: monto, saldoNuevo });
+      const coleccionFact = pago.tipo === 'cliente' ? 'facturas_clientes' : 'facturas_proveedores';
+      const tocaFacturas = pago.tipo !== 'mtto'; // ✅ MTTO: saldo derivado, sin doc de factura
+      const pagoRef = doc(db, 'pagos', pago.id);
+
+      // ✅ Fase 1.8a: TRANSACCIÓN. Relee el PAGO (sus facturas[] y monto vigentes)
+      //   y cada factura agregada, y calcula montoPagado / saldoPendiente /
+      //   statusPago con esos datos frescos. Antes se sumaba sobre la lista
+      //   cargada al abrir la edición y dos usuarios a la vez se pisaban.
+      //   Sin efectos fuera de `tx`: Firestore puede reintentar esta función.
+      const guardado = await runTransaction(db, async (tx) => {
+        const [snapPago, ...snapsFact] = await Promise.all([
+          tx.get(pagoRef),
+          ...(tocaFacturas ? agregadas.map(({ fac }) => tx.get(doc(db, coleccionFact, fac.id))) : []),
+        ]);
+        if (!snapPago.exists()) {
+          throw new ErrorPago(`El pago ${pago.numeroPago} ya no existe (otro usuario lo eliminó). No se guardó nada.`);
+        }
+        const actual = snapPago.data();
+        const previas: FacturaAplicada[] = Array.isArray(actual.facturas) ? actual.facturas : [];
+        const yaEnPago = new Set(previas.map((fa) => String(fa.facturaId)));
+        const nuevas: FacturaAplicada[] = [];
+        const escrituras: { id: string; cambios: CambiosPagoFactura }[] = [];
+        agregadas.forEach(({ fac, monto }, i) => {
+          if (yaEnPago.has(String(fac.id))) {
+            throw new ErrorPago(`La factura ${fac.invoice} ya está aplicada en este pago (otro usuario la agregó). Cierra la edición y vuelve a abrirla. No se guardó nada.`);
+          }
+          if (!tocaFacturas) {
+            // MTTO: como antes, con los datos de la lista (el saldo se deriva de los pagos).
+            const aplicado = r2(monto);
+            const saldoNuevo = r2(Math.max(0, fac.total - (fac.montoPagado + aplicado)));
+            nuevas.push({ facturaId: fac.id, invoice: fac.invoice, fecha: fac.fecha, total: fac.total, saldoAnterior: fac.saldo, aplicado, saldoNuevo });
+            return;
+          }
+          const snap = snapsFact[i];
+          if (!snap.exists()) {
+            throw new ErrorPago(`La factura ${fac.invoice} ya no existe (pudo haber sido eliminada). No se guardó nada.`);
+          }
+          const abono = calcularAbono(snap.data(), monto, fac.invoice);
+          nuevas.push({ facturaId: fac.id, invoice: fac.invoice, fecha: fac.fecha, total: abono.total, saldoAnterior: abono.saldoAnterior, aplicado: abono.aplicado, saldoNuevo: abono.saldoNuevo });
+          escrituras.push({ id: fac.id, cambios: abono.cambios });
         });
-        cambios.facturas = [...(pagoEditando.facturas || []), ...nuevasAplicaciones];
-        cambios.monto = (Number(pagoEditando.monto) || 0) + agregadas.reduce((s, x) => s + x.monto, 0);
-      }
-      batch.set(doc(db, 'pagos', pagoEditando.id), cambios, { merge: true });
-      await batch.commit();
+        const datos = nuevas.length > 0
+          ? { ...cambios, facturas: [...previas, ...nuevas], monto: sumarMontos([actual.monto, ...nuevas.map((n) => n.aplicado)]) }
+          : cambios;
+        escrituras.forEach((w) => tx.set(doc(db, coleccionFact, w.id), w.cambios, { merge: true }));
+        tx.set(pagoRef, datos, { merge: true });
+        return { datos, nuevas, escrituras };
+      });
+
       // Refleja los saldos en la lista del modal de registro sin recargar.
-      if (agregadas.length > 0) {
+      if (guardado.nuevas.length > 0) {
+        const frescos = new Map(guardado.escrituras.map((w) => [w.id, w.cambios]));
         setFacturasPendientes((prev) => prev.map((fx) => {
-          const ag = agregadas.find((x) => x.fac.id === fx.id);
+          const ag = guardado.nuevas.find((x) => x.facturaId === fx.id);
           if (!ag) return fx;
-          const pagadoNuevo = fx.montoPagado + ag.monto;
+          const fresco = frescos.get(fx.id);
+          if (fresco) return { ...fx, total: ag.total, montoPagado: fresco.montoPagado, saldo: fresco.saldoPendiente };
+          const pagadoNuevo = fx.montoPagado + ag.aplicado;
           return { ...fx, montoPagado: pagadoNuevo, saldo: Math.max(0, fx.total - pagadoNuevo) };
         }));
       }
-      registrarLog('Pagos', 'Edición', `Editó el pago ${cambios.numeroPago} de ${pagoEditando.entidadNombre}.`).catch(() => {});
+      registrarLog('Pagos', 'Edición', `Editó el pago ${cambios.numeroPago} de ${pago.entidadNombre}.`).catch(() => {});
       // El onSnapshot refresca la lista; si el detalle está abierto se actualiza al vuelo.
-      setPagoViendo((prev) => prev && prev.id === pagoEditando.id ? { ...prev, ...cambios } : prev);
+      setPagoViendo((prev) => prev && prev.id === pago.id ? { ...prev, ...guardado.datos } : prev);
       setPagoEditando(null);
     } catch (e) {
-      console.error('No se pudo guardar la edición del pago:', e);
-      alert('No se pudo guardar la edición del pago. Intenta de nuevo.');
+      if (e instanceof ErrorPago) {
+        alert(e.message);
+      } else {
+        console.error('No se pudo guardar la edición del pago:', e);
+        alert('No se pudo guardar la edición del pago. Intenta de nuevo.');
+      }
     } finally {
       setGuardandoEdicion(false);
     }
@@ -1079,45 +1122,9 @@ export function PagosDashboard() {
   };
 
 
-  // ✅ FIX MONEDA — TOTAL NATIVO DE LA FACTURA: el total a cobrar/pagar en la
-  //   MONEDA de la factura (USD -> dólares, MXN -> pesos), NO la conversión.
-  //   1) subtotalMonedaFactura (facturas nuevas lo guardan directo);
-  //   2) suma de subtotalBase de operacionesGuardadas (monto en la moneda de
-  //      facturación de cada operación — cubre las facturas existentes);
-  //   3) respaldo: subtotalFactura (conversión) para facturas sin detalle.
-  const totalNativoFactura = (fac: any): number => {
-    const norm = (v: any): string => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
-    const monTxt = norm(fac?.monedaFacturacion || fac?.monedaProveedor || fac?.moneda || fac?.monedaId);
-    const esUSD = monTxt === '7dca62b3' || monTxt === 'usd' || monTxt === 'us$' || monTxt === 'dls' || monTxt.startsWith('dolar');
-    const esMXN = monTxt === 'f95d8894' || monTxt === 'mxn' || monTxt === 'mn' || monTxt.startsWith('peso');
-    const directo = Number(fac?.subtotalMonedaFactura);
-    if (!isNaN(directo) && directo > 0) return directo;
-    const ops = Array.isArray(fac?.operacionesGuardadas) ? fac.operacionesGuardadas : [];
-    const suma = (campo: string) => ops.reduce((s: number, o: any) => s + (Number(o?.[campo]) || 0), 0);
-    if (ops.length > 0) {
-      if (esUSD) {
-        // Factura en DÓLARES: el monto por operación en dólares; si la factura
-        // es vieja y no lo trae, subtotalBase (subtotal en la escala USD).
-        const dol = suma('dol');
-        if (dol > 0) return dol;
-        const base = suma('subtotalBase');
-        if (base > 0) return base;
-      } else if (esMXN) {
-        // Factura en PESOS: la CONVERSIÓN es el total en pesos (cubre convenios
-        // en dólares: dólares × TC, y convenios en pesos: pesos directos).
-        const conv = suma('monto');
-        if (conv > 0) return conv;
-        const pes = suma('pes');
-        if (pes > 0) return pes;
-        const base = suma('subtotalBase');
-        if (base > 0) return base;
-      } else {
-        const base = suma('subtotalBase');
-        if (base > 0) return base;
-      }
-    }
-    return Number(fac?.subtotalFactura) || Number(fac?.total) || Number(fac?.montoFactura) || 0;
-  };
+  // ✅ FIX MONEDA — TOTAL NATIVO DE LA FACTURA (en SU moneda, no la conversión):
+  //   `totalNativoFactura` vive en ../services/aplicarPagos.ts (Fase 1.8a) para
+  //   que la tabla y la transacción que aplica/revierte pagos usen la MISMA regla.
 
   // ✅ NUEVO: mapeo de un doc de factura a FacturaPagable (reutilizado por la
   //   carga masiva y por la apertura individual desde los chips de pagos).
@@ -1402,9 +1409,15 @@ export function PagosDashboard() {
 
     setGuardando(true);
     try {
+      const tipo = tab;
+      // ✅ Fase 1.8a: lo aplicado por factura (MTTO no tiene doc de factura: su
+      //   saldo se deriva de los pagos) y tope de escrituras de una transacción.
+      const aplicables = tipo === 'mtto' ? new Map<string, number>() : aplicadoPorFactura(aplicacion);
+      validarLimiteFacturas(aplicables.size);
+
       const pagoRef = doc(collection(db, 'pagos'));
 
-      // Comprobante PDF (opcional): se sube ANTES del batch.
+      // Comprobante PDF (opcional): se sube ANTES de la transacción.
       let pdfUrl = '';
       let pdfNombre = '';
       if (archivoPdf) {
@@ -1416,48 +1429,73 @@ export function PagosDashboard() {
 
       const d = new Date();
       const numeroPago = referencia.trim() || `PAGO-${String(d.getDate()).padStart(2, '0')}${String(d.getMonth() + 1).padStart(2, '0')}${d.getFullYear()}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}${String(d.getSeconds()).padStart(2, '0')}`;
+      const coleccion = tipo === 'cliente' ? 'facturas_clientes' : 'facturas_proveedores';
+      // Valores fijos del pago, calculados FUERA de la transacción (un reintento usa los mismos).
+      const referenciaPago = referencia.trim();
+      const entidadId = seleccionadasOrdenadas[0]?.entidadId || '';
+      const montoRecibido = r2(monto);
+      const monedaPago = monedasSel[0] || '';
+      const observacionesPago = observaciones.trim();
+      const creadoEn = new Date().toISOString();
+      const creadoPor = usuario.nombre || usuario.email || usuario.id;
 
-      const batch = writeBatch(db);
-      batch.set(pagoRef, {
-        tipo: tab,
-        numeroPago,
-        fecha: fechaPago,
-        metodoPago,
-        referencia: referencia.trim(),
-        entidadId: seleccionadasOrdenadas[0]?.entidadId || '',
-        entidadNombre: entidadSel,
-        monto,
-        montoAplicado: totalAplicado,
-        saldoAFavor: Math.max(0, diferencia),
-        moneda: monedasSel[0] || '',
-        observaciones: observaciones.trim(),
-        pdfUrl,
-        pdfNombre,
-        facturas: aplicacion,
-        creadoEn: new Date().toISOString(),
-        creadoPor: usuario.nombre || usuario.email || usuario.id,
+      // ✅ Fase 1.8a: TRANSACCIÓN. Relee cada factura y calcula montoPagado /
+      //   saldoPendiente / statusPago con sus datos ACTUALES; si lo capturado
+      //   supera el saldo fresco se aborta con aviso (no se acota en silencio).
+      //   Antes se sumaba sobre la lista cargada al abrir el modal y, con dos
+      //   usuarios a la vez, el último en guardar pisaba al otro.
+      //   Sin efectos fuera de `tx`: Firestore puede reintentar esta función.
+      const facturasPago = await runTransaction(db, async (tx) => {
+        const ids = Array.from(aplicables.keys());
+        const snaps = await Promise.all(ids.map((id) => tx.get(doc(db, coleccion, id))));
+        const abonos = new Map<string, ReturnType<typeof calcularAbono>>();
+        snaps.forEach((snap, i) => {
+          const etiqueta = aplicacion.find((a) => a.facturaId === ids[i])?.invoice || ids[i];
+          if (!snap.exists()) {
+            throw new ErrorPago(`La factura ${etiqueta} ya no existe (pudo haber sido eliminada). Recarga las facturas y vuelve a intentarlo. No se guardó nada.`);
+          }
+          abonos.set(ids[i], calcularAbono(snap.data(), aplicables.get(ids[i]) ?? 0, etiqueta));
+        });
+        // facturas[] del pago con los saldos FRESCOS (MTTO y montos en 0 quedan como en la lista).
+        const facturas: FacturaAplicada[] = aplicacion.map((a) => {
+          const ab = abonos.get(a.facturaId);
+          return ab ? { ...a, total: ab.total, saldoAnterior: ab.saldoAnterior, aplicado: ab.aplicado, saldoNuevo: ab.saldoNuevo } : a;
+        });
+        const montoAplicado = sumarMontos(facturas.map((f) => f.aplicado));
+        tx.set(pagoRef, {
+          tipo,
+          numeroPago,
+          fecha: fechaPago,
+          metodoPago,
+          referencia: referenciaPago,
+          entidadId,
+          entidadNombre: entidadSel,
+          monto: montoRecibido,
+          montoAplicado,
+          saldoAFavor: r2(Math.max(0, montoRecibido - montoAplicado)),
+          moneda: monedaPago,
+          observaciones: observacionesPago,
+          pdfUrl,
+          pdfNombre,
+          facturas,
+          creadoEn,
+          creadoPor,
+        });
+        abonos.forEach((ab, id) => {
+          tx.set(doc(db, coleccion, id), { ...ab.cambios, pagosIds: arrayUnion(pagoRef.id) }, { merge: true });
+        });
+        return facturas;
       });
 
-      const coleccion = tab === 'cliente' ? 'facturas_clientes' : 'facturas_proveedores';
-      aplicacion.forEach((a) => {
-        if (a.aplicado <= 0) return;
-        if (tab === 'mtto') return; // ✅ MTTO: el saldo es derivado; no hay doc de factura
-        const fact = seleccionadasOrdenadas.find((f) => f.id === a.facturaId);
-        const pagadoNuevo = (fact?.montoPagado || 0) + a.aplicado;
-        batch.set(doc(db, coleccion, a.facturaId), {
-          montoPagado: pagadoNuevo,
-          saldoPendiente: a.saldoNuevo,
-          statusPago: a.saldoNuevo <= 0.009 ? 'PAGADA' : 'PARCIAL',
-          pagosIds: arrayUnion(pagoRef.id),
-        }, { merge: true });
-      });
-
-      await batch.commit();
-      registrarLog('Pagos', 'Creación', `Registró el pago ${numeroPago} (${money(monto, monedasSel[0])}) de ${entidadSel} cubriendo ${aplicacion.filter(a => a.aplicado > 0).length} factura(s).`).catch(() => {});
+      registrarLog('Pagos', 'Creación', `Registró el pago ${numeroPago} (${money(monto, monedasSel[0])}) de ${entidadSel} cubriendo ${facturasPago.filter(a => a.aplicado > 0).length} factura(s).`).catch(() => {});
       setModalAbierto(false);
     } catch (e) {
-      console.error('No se pudo guardar el pago:', e);
-      alert('No se pudo guardar el pago. Intenta de nuevo.');
+      if (e instanceof ErrorPago) {
+        alert(e.message);
+      } else {
+        console.error('No se pudo guardar el pago:', e);
+        alert('No se pudo guardar el pago. Intenta de nuevo.');
+      }
     } finally {
       setGuardando(false);
     }
@@ -1467,32 +1505,38 @@ export function PagosDashboard() {
   const eliminarPago = async (p: PagoDoc) => {
     if (!window.confirm(`¿Eliminar el pago ${p.numeroPago} de ${p.entidadNombre} por ${money(p.monto, p.moneda)}?\n\nSe REVERTIRÁ lo aplicado en sus ${p.facturas?.length || 0} factura(s).`)) return;
     try {
-      // Leer el estado ACTUAL de cada factura para revertir sobre lo vigente.
       const coleccion = p.tipo === 'cliente' ? 'facturas_clientes' : 'facturas_proveedores';
-      const batch = writeBatch(db);
-      for (const a of (p.facturas || [])) {
-        if (a.aplicado <= 0) continue;
-        const snap = await getDocs(query(collection(db, coleccion), where('__name__', '==', a.facturaId), limit(1)));
-        if (snap.empty) continue;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc de factura sin tipo canónico.
-        const raw = snap.docs[0].data() as any;
-        const total = Number(raw.subtotalFactura) || Number(raw.total) || Number(raw.montoFactura) || 0;
-        const pagadoNuevo = Math.max(0, (Number(raw.montoPagado) || 0) - a.aplicado);
-        const saldoNuevo = Math.max(0, total - pagadoNuevo);
-        batch.set(doc(db, coleccion, a.facturaId), {
-          montoPagado: pagadoNuevo,
-          saldoPendiente: saldoNuevo,
-          statusPago: pagadoNuevo <= 0.009 ? '' : (saldoNuevo <= 0.009 ? 'PAGADA' : 'PARCIAL'),
-          pagosIds: arrayRemove(p.id),
-        }, { merge: true });
-      }
-      batch.delete(doc(db, 'pagos', p.id));
-      await batch.commit();
+      const pagoRef = doc(db, 'pagos', p.id);
+      // ✅ Fase 1.8a: TRANSACCIÓN. Relee el PAGO para revertir exactamente lo que
+      //   aplicó (su facturas[] vigente) y cada factura para restar sobre su
+      //   montoPagado ACTUAL. El saldo se recalcula con el total NATIVO de la
+      //   factura (antes usaba subtotalFactura, la conversión a MXN, y el saldo
+      //   de las facturas en USD salía mal). Sin efectos fuera de `tx`.
+      await runTransaction(db, async (tx) => {
+        const snapPago = await tx.get(pagoRef);
+        if (!snapPago.exists()) {
+          throw new ErrorPago(`El pago ${p.numeroPago} ya no existe (otro usuario lo eliminó).`);
+        }
+        // MTTO: el saldo se deriva de los pagos; no hay doc de factura que revertir.
+        const aplicado = p.tipo === 'mtto' ? new Map<string, number>() : aplicadoPorFactura(snapPago.data().facturas);
+        validarLimiteFacturas(aplicado.size);
+        const ids = Array.from(aplicado.keys());
+        const snaps = await Promise.all(ids.map((id) => tx.get(doc(db, coleccion, id))));
+        snaps.forEach((snap, i) => {
+          if (!snap.exists()) return; // factura eliminada: no hay saldo que revertir
+          tx.set(snap.ref, { ...calcularReversion(snap.data(), aplicado.get(ids[i]) ?? 0), pagosIds: arrayRemove(p.id) }, { merge: true });
+        });
+        tx.delete(pagoRef);
+      });
       registrarLog('Pagos', 'Eliminación', `Eliminó el pago ${p.numeroPago} de ${p.entidadNombre} (${money(p.monto, p.moneda)}) y revirtió su aplicación.`).catch(() => {});
       setPagoViendo(null);
     } catch (e) {
-      console.error('No se pudo eliminar el pago:', e);
-      alert('No se pudo eliminar el pago. Intenta de nuevo.');
+      if (e instanceof ErrorPago) {
+        alert(e.message);
+      } else {
+        console.error('No se pudo eliminar el pago:', e);
+        alert('No se pudo eliminar el pago. Intenta de nuevo.');
+      }
     }
   };
 

@@ -381,3 +381,8 @@
 /* ✅ V00180: candado por checador */
 .udx-checador-label { display: flex; align-items: center; gap: 8px; color: #c9d1d9; font-size: 0.82rem; cursor: pointer; }
 .udx-chk-checador { margin: 6px 0 10px; }
+
+/* ✅ V00437: acciones del encabezado (🔐 Sincronizar permisos + Nuevo Usuario).
+   Usa las globales .action-buttons / .btn-outline; aquí solo el ajuste local. */
+.ud-encabezado-acciones { flex-wrap: wrap; }
+.ud-sincronizar:disabled { opacity: 0.6; cursor: progress; }

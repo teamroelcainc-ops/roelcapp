@@ -54,6 +54,19 @@ import { TarjetaDocumentoFactura } from './TarjetaDocumentoFactura';
 import { almacenSesion } from '../../../utils/cacheMemoria';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
+import { esUSD as esMonedaUSD } from '../../../shared/dominio/moneda';
+import { r2 } from '../../../shared/dominio/numeros';
+import {
+  MAX_ESCRITURAS_LOTE,
+  avisoFacturaConPagos,
+  avisoLoteGrande,
+  avisoTotalBajoPagado,
+  montoPagadoDe,
+  tienePagosAplicados,
+  totalNativoDeOperaciones,
+  totalNativoFactura,
+  totalesTrasCambioDeOps,
+} from '../services/totalesFactura'; // ✅ Fase 1.8
 
 // ──────────────────────────────────────────────────────────────────────
 // Constantes
@@ -398,45 +411,9 @@ const calcularConversionProveedor = (op: any) => {
 };
 
 
-// ✅ FIX MONEDA — TOTAL NATIVO DE LA FACTURA: el total a cobrar/pagar en la
-//   MONEDA de la factura (USD -> dólares, MXN -> pesos), NO la conversión.
-//   1) subtotalMonedaFactura (facturas nuevas lo guardan directo);
-//   2) suma de subtotalBase de operacionesGuardadas (monto en la moneda de
-//      facturación de cada operación — cubre las facturas existentes);
-//   3) respaldo: subtotalFactura (conversión) para facturas sin detalle.
-const totalNativoFactura = (fac: any): number => {
-  const norm = (v: any): string => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
-  const monTxt = norm(fac?.monedaFacturacion || fac?.monedaProveedor || fac?.moneda || fac?.monedaId);
-  const esUSD = monTxt === '7dca62b3' || monTxt === 'usd' || monTxt === 'us$' || monTxt === 'dls' || monTxt.startsWith('dolar');
-  const esMXN = monTxt === 'f95d8894' || monTxt === 'mxn' || monTxt === 'mn' || monTxt.startsWith('peso');
-  const directo = Number(fac?.subtotalMonedaFactura);
-  if (!isNaN(directo) && directo > 0) return directo;
-  const ops = Array.isArray(fac?.operacionesGuardadas) ? fac.operacionesGuardadas : [];
-  const suma = (campo: string) => ops.reduce((s: number, o: any) => s + (Number(o?.[campo]) || 0), 0);
-  if (ops.length > 0) {
-    if (esUSD) {
-      // Factura en DÓLARES: el monto por operación en dólares; si la factura
-      // es vieja y no lo trae, subtotalBase (subtotal en la escala USD).
-      const dol = suma('dol');
-      if (dol > 0) return dol;
-      const base = suma('subtotalBase');
-      if (base > 0) return base;
-    } else if (esMXN) {
-      // Factura en PESOS: la CONVERSIÓN es el total en pesos (cubre convenios
-      // en dólares: dólares × TC, y convenios en pesos: pesos directos).
-      const conv = suma('monto');
-      if (conv > 0) return conv;
-      const pes = suma('pes');
-      if (pes > 0) return pes;
-      const base = suma('subtotalBase');
-      if (base > 0) return base;
-    } else {
-      const base = suma('subtotalBase');
-      if (base > 0) return base;
-    }
-  }
-  return Number(fac?.subtotalFactura) || Number(fac?.total) || Number(fac?.montoFactura) || 0;
-};
+// ✅ FIX MONEDA — TOTAL NATIVO DE LA FACTURA (USD -> dólares, MXN -> pesos):
+//   ✅ Fase 1.8: vive en ../services/totalesFactura (una sola regla para
+//   Clientes y Proveedores, y la misma que recalcula subtotalMonedaFactura).
 
 const obtenerMontoOperacion = (op: any) => {
   // ✅ V00126: se recalcula SIEMPRE desde los campos crudos de la operación para
@@ -1598,8 +1575,10 @@ export const FacturacionProveedoresDashboard = () => {
     if (!f) return;
     setCargandoRemision(true);
     try {
-      const monRaw = monedaFacturaMostrar(f).toUpperCase();
-      const esUSD = monRaw === 'USD';
+      // ✅ Fase 1.8 (e): resolverMoneda puede devolver el NOMBRE del catálogo
+      //   ('Dólares'/'Dolares'); con === 'USD' una factura en dólares salía con el
+      //   emisor de pesos. El helper compartido acepta ID, código o nombre.
+      const esUSD = esMonedaUSD(monedaFacturaMostrar(f));
       const emisor = esUSD ? emisorUSD : emisorMXN;
 
       const ids = (Array.from(new Set((f.operacionesIds || []).map((x: any) => String(x)))) as string[]).filter(Boolean).slice(0, 60);
@@ -2075,7 +2054,8 @@ export const FacturacionProveedoresDashboard = () => {
         const tcOp0 = Number(o.tipoCambioAprobado) || 0;
         if (!tcSugerido && tcOp0 > 0) tcSugerido = tcOp0;
       });
-      const monedaFacturaEsUsd = monedaFacturaMostrar(f).toUpperCase() === 'USD';
+      // ✅ Fase 1.8 (e): helper compartido; con === 'USD' el nombre del catálogo ('Dólares') contaba como pesos.
+      const monedaFacturaEsUsd = esMonedaUSD(monedaFacturaMostrar(f));
 
       const filas = guardadas.map((g: any) => {
         const o = byId.get(String(g.id)) || {};
@@ -2153,8 +2133,6 @@ export const FacturacionProveedoresDashboard = () => {
 
       const emp: any = empresasList.find(e => e.id === f.proveedorId) || {};
       const dias = String(emp.diasCredito ?? emp.credito ?? emp.diasDeCredito ?? '');
-      const monRaw = monedaFacturaMostrar(f).toUpperCase();
-
       // ✅ NUEVO: si la factura ya tiene un Rate GUARDADO, ese manda (mismo
       //   patrón que la Confirmación de Tarifa y la Remisión).
       const rateGuardado = (f.rateProveedor && typeof f.rateProveedor === 'object') ? f.rateProveedor : null;
@@ -2167,7 +2145,7 @@ export const FacturacionProveedoresDashboard = () => {
         direccion: String(emp.direccion ?? emp.domicilio ?? emp.calle ?? ''),
         colonia: String(emp.colonia ?? ''),
         ciudad: String(emp.ciudad ?? emp.municipio ?? ''),
-        moneda: monRaw === 'USD' ? 'DÓLARES' : 'PESOS',
+        moneda: monedaFacturaEsUsd ? 'DÓLARES' : 'PESOS', // ✅ Fase 1.8 (e)
         tipoCambio: tcSugerido > 0 ? String(tcSugerido) : '',
         observaciones: '',
         filas,
@@ -2366,12 +2344,21 @@ export const FacturacionProveedoresDashboard = () => {
     return { subtotal, refs };
   }, [seleccionadas, operacionesGlobales]);
 
+  // ✅ Fase 1.8: la factura FRESCA del servidor (facturasGlobales puede tener
+  //   hasta 30 min), con la misma forma que la lista. null si ya no existe.
+  const leerFacturaFresca = async (id: string) => {
+    const snap = await getDoc(doc(db, 'facturas_proveedores', String(id)));
+    return snap.exists() ? normalizarFactura({ id: snap.id, ...snap.data() }) : null;
+  };
+
   const handleGuardarFactura = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!invoiceForm.trim()) return alert('El # de Invoice es obligatorio.');
     if (seleccionMultiProveedor || !proveedorFacturaId) {
       return alert('Las operaciones seleccionadas deben ser de un mismo proveedor. Selecciona un proveedor en el filtro o elige operaciones de un solo proveedor.');
     }
+    // ✅ Fase 1.8: 1 escritura por operación + la factura; avisar antes de que falle el commit.
+    if (seleccionadas.length + 1 > MAX_ESCRITURAS_LOTE) return alert(avisoLoteGrande(seleccionadas.length + 1));
     // ✅ V00279: el documento NO es obligatorio para facturar — sin adjunto se
     //   factura directo y la fila queda con ⚠ como recordatorio visual.
     setGuardando(true);
@@ -2418,15 +2405,19 @@ export const FacturacionProveedoresDashboard = () => {
         operaciones: operacionesRefs,              // ← campo de la colección (refs)
         operacionesGuardadas: operacionesResumenEstable,
         remolques: remolquesFactura,
-        subtotalFactura: resumenSeleccion.subtotal,
+        subtotalFactura: r2(resumenSeleccion.subtotal),
         subtotalMonedaFactura, // ✅ FIX MONEDA
         createdAt: new Date().toISOString(),
       };
       const invKey = invoiceForm.trim().toLowerCase();
-      const existente = facturasGlobales.find(f =>
+      const coincideInvoice = (f: { invoice?: unknown; proveedorId?: unknown }) =>
         String(f.invoice || '').trim().toLowerCase() === invKey &&
-        String(f.proveedorId || '') === String(proveedorFacturaId)
-      );
+        String(f.proveedorId || '') === String(proveedorFacturaId);
+      const existenteCache = facturasGlobales.find(coincideInvoice);
+      // ✅ Fase 1.8: se fusiona contra la factura FRESCA (sus operacionesIds /
+      //   operacionesGuardadas actuales), no contra la copia en memoria.
+      const fresca = existenteCache ? await leerFacturaFresca(existenteCache.id) : null;
+      const existente = fresca && coincideInvoice(fresca) ? fresca : null;
       let docId = nuevoId;
       let facturaResultante: any = data;
       if (existente) {
@@ -2441,20 +2432,24 @@ export const FacturacionProveedoresDashboard = () => {
           ...(Array.isArray(existente.remolques) ? existente.remolques : []),
           ...remolquesFactura,
         ].map((r: any) => String(r || '')).filter(r => r && r !== '-')));
-        const subtotalUnion = Number(existente.subtotalFactura || 0) + Number(resumenSeleccion.subtotal || 0);
+        const monedaMerge = existente.monedaProveedor || monedaProveedor;
+        // ✅ Fase 1.8: subtotalMonedaFactura se recalcula con TODAS las operaciones
+        //   de la factura (antes se quedaba con el total anterior al merge).
+        const totales = totalesTrasCambioDeOps({ ...existente, monedaProveedor: monedaMerge }, guardadasUnion);
+        if (!totales.ok) return alert(avisoTotalBajoPagado(formatoMoneda(totales.total), formatoMoneda(totales.pagado)));
         const merge = {
           invoice: existente.invoice || invoiceForm.trim(),
           facturaCcp: facturaCcpForm.trim() || existente.facturaCcp || '',
           statusFactura: statusFacturaForm || existente.statusFactura || 'Facturado',
           proveedorId: proveedorFacturaId,
           proveedorNombre: existente.proveedorNombre || data.proveedorNombre,
-          monedaProveedor: existente.monedaProveedor || monedaProveedor,
+          monedaProveedor: monedaMerge,
           monedaId: existente.monedaId || monedaIdFactura,
           operacionesIds: idsUnion,
           operaciones: guardadasUnion.map((o: any) => o.ref).filter(Boolean),
           operacionesGuardadas: guardadasUnion,
           remolques: remolquesUnion,
-          subtotalFactura: subtotalUnion,
+          ...totales.campos, // subtotalFactura + subtotalMonedaFactura (+ saldo si ya tiene pagos)
           updatedAt: new Date().toISOString(),
         };
         batch.set(doc(db, 'facturas_proveedores', docId), merge, { merge: true });
@@ -2496,7 +2491,10 @@ export const FacturacionProveedoresDashboard = () => {
         if (existente) {
           return prev.map(f => f.id === docId ? normalizarFactura({ ...facturaResultante, ...docSubido, id: docId }) : f);
         }
-        return [normalizarFactura({ ...data, ...docSubido, id: docId }), ...prev];
+        // La copia en memoria que ya no existe (o cambió de invoice) se refresca.
+        const resto = existenteCache && !fresca ? prev.filter(f => f.id !== existenteCache.id)
+          : existenteCache && fresca ? prev.map(f => f.id === fresca.id ? fresca : f) : prev;
+        return [normalizarFactura({ ...data, ...docSubido, id: docId }), ...resto];
       });
       setActiveTab('historial');
     } catch (error) {
@@ -2614,6 +2612,8 @@ export const FacturacionProveedoresDashboard = () => {
       ref: op.numReferencia || op.referencia || op.ref || String(op.id).substring(0, 6),
       monto: m.conv,
       subtotalBase: m.subtotal,
+      dol: m.dol, // ✅ Fase 1.8: igual que al facturar, para que el total en dólares la cuente
+      pes: m.pes,
       remolque: txt(op.remolqueNombre, op.remolquePlaca, op.numeroRemolque),
     };
   };
@@ -2636,26 +2636,37 @@ export const FacturacionProveedoresDashboard = () => {
     setGestionInvoice(invoiceDeOp(op) || '');
   };
 
+  // ✅ Fase 1.8: las facturas que HOY contienen la operación, leídas frescas
+  //   (candidatas: las de la lista en memoria + la que marca la operación).
+  const facturasFrescasConOp = async (opId: string, idFacturaOp?: unknown) => {
+    const candidatas = new Set<string>(facturasGlobales.filter(f => (f.operacionesIds || []).map(String).includes(opId)).map(f => String(f.id)));
+    if (idFacturaOp) candidatas.add(String(idFacturaOp));
+    const frescas = await Promise.all(Array.from(candidatas).map(leerFacturaFresca));
+    return frescas.filter(f => f && (f.operacionesIds || []).map(String).includes(opId));
+  };
+
   const quitarOpDeFactura = async (op: any) => {
     const opId = String(op.id);
     const refTxt = op.numReferencia || op.referencia || op.ref || opId.substring(0, 6);
     if (!window.confirm(`¿Quitar la operación ${refTxt} de su factura? Volverá a "Pendientes" y se restará su monto de la factura.`)) return;
-    const facturasConOp = facturasGlobales.filter(f => (f.operacionesIds || []).map(String).includes(opId));
     setGuardandoGestionOp(true);
     try {
+      const facturasConOp = await facturasFrescasConOp(opId, op.facturaProveedorId); // ✅ Fase 1.8
       const batch = writeBatch(db);
       const cambios: any[] = [];
       for (const f of facturasConOp) {
-        const g = (f.operacionesGuardadas || []).find((o: any) => String(o.id) === opId);
-        const monto = g ? (Number(g.monto) || 0) : obtenerMontoOperacion(op).conv;
         const ids = (f.operacionesIds || []).map(String).filter((id: string) => id !== opId);
         const guardadas = (f.operacionesGuardadas || []).filter((o: any) => String(o.id) !== opId);
-        const subtotal = Math.max(0, Number(f.subtotalFactura || 0) - monto);
         if (ids.length === 0) {
+          // ✅ Fase 1.8 (c): quitar la última operación BORRA la factura.
+          if (tienePagosAplicados(f)) return alert(`La operación ${refTxt} es la única de la factura ${f.invoice}, que se eliminaría.\n\n${avisoFacturaConPagos(formatoMoneda(montoPagadoDe(f)))}`);
           batch.delete(doc(db, 'facturas_proveedores', f.id));
           cambios.push({ tipo: 'delete', id: f.id });
         } else {
-          const data = { operacionesIds: ids, operacionesGuardadas: guardadas, remolques: remolquesDeGuardadas(guardadas), subtotalFactura: subtotal, updatedAt: new Date().toISOString() };
+          // ✅ Fase 1.8 (d): subtotalMonedaFactura recalculado con las operaciones restantes.
+          const totales = totalesTrasCambioDeOps(f, guardadas);
+          if (!totales.ok) return alert(avisoTotalBajoPagado(formatoMoneda(totales.total), formatoMoneda(totales.pagado)));
+          const data = { operacionesIds: ids, operacionesGuardadas: guardadas, remolques: remolquesDeGuardadas(guardadas), ...totales.campos, updatedAt: new Date().toISOString() };
           batch.set(doc(db, 'facturas_proveedores', f.id), data, { merge: true });
           cambios.push({ tipo: 'update', id: f.id, data });
         }
@@ -2678,9 +2689,9 @@ export const FacturacionProveedoresDashboard = () => {
     if (!nuevoInvoice) return alert('Captura un número de factura.');
     const opId = String(op.id);
     const provId = String(provDeOp(op) || '');
-    const facturasConOp = facturasGlobales.filter(f => (f.operacionesIds || []).map(String).includes(opId));
     setGuardandoGestionOp(true);
     try {
+      const facturasConOp = await facturasFrescasConOp(opId, op.facturaProveedorId); // ✅ Fase 1.8
       const batch = writeBatch(db);
       const cambios: any[] = [];
 
@@ -2697,31 +2708,38 @@ export const FacturacionProveedoresDashboard = () => {
       for (const f of facturasConOp) {
         const ids = (f.operacionesIds || []).map(String).filter((id: string) => id !== opId);
         const guardadas = (f.operacionesGuardadas || []).filter((o: any) => String(o.id) !== opId);
-        const subtotal = Math.max(0, Number(f.subtotalFactura || 0) - montoOp);
         if (ids.length === 0) {
+          // ✅ Fase 1.8 (c): mover la última operación BORRA la factura de origen.
+          if (tienePagosAplicados(f)) return alert(`La operación es la única de la factura ${f.invoice}, que se eliminaría.\n\n${avisoFacturaConPagos(formatoMoneda(montoPagadoDe(f)))}`);
           batch.delete(doc(db, 'facturas_proveedores', f.id));
           cambios.push({ tipo: 'delete', id: f.id });
         } else {
-          const data = { operacionesIds: ids, operacionesGuardadas: guardadas, remolques: remolquesDeGuardadas(guardadas), subtotalFactura: subtotal, updatedAt: new Date().toISOString() };
+          const totales = totalesTrasCambioDeOps(f, guardadas); // ✅ Fase 1.8 (d)
+          if (!totales.ok) return alert(avisoTotalBajoPagado(formatoMoneda(totales.total), formatoMoneda(totales.pagado)));
+          const data = { operacionesIds: ids, operacionesGuardadas: guardadas, remolques: remolquesDeGuardadas(guardadas), ...totales.campos, updatedAt: new Date().toISOString() };
           batch.set(doc(db, 'facturas_proveedores', f.id), data, { merge: true });
           cambios.push({ tipo: 'update', id: f.id, data });
         }
       }
 
-      const target = facturasGlobales.find(f =>
+      const esDestino = (f: { id?: unknown; invoice?: unknown; proveedorId?: unknown }) =>
         String(f.invoice || '').trim().toLowerCase() === nuevoInvoice.toLowerCase() &&
         String(f.proveedorId || '') === provId &&
-        !facturasConOp.some(fc => fc.id === f.id)
-      );
+        !facturasConOp.some(fc => fc.id === f.id);
+      // ✅ Fase 1.8: la factura destino se fusiona FRESCA, no desde la lista en memoria.
+      const targetCache = facturasGlobales.find(esDestino);
+      const targetFresca = targetCache ? await leerFacturaFresca(targetCache.id) : null;
+      const target = targetFresca && esDestino(targetFresca) ? targetFresca : null;
       let targetId: string;
       if (target) {
         const ids = Array.from(new Set([...(target.operacionesIds || []).map(String), opId]));
         const mapG = new Map<string, any>();
         [...(target.operacionesGuardadas || []), resumenOrigen].forEach((o: any) => { if (o?.id) mapG.set(String(o.id), o); });
         const guardadas = Array.from(mapG.values());
-        const subtotal = Number(target.subtotalFactura || 0) + montoOp;
         targetId = target.id;
-        const data = { invoice: target.invoice || nuevoInvoice, operacionesIds: ids, operacionesGuardadas: guardadas, remolques: remolquesDeGuardadas(guardadas), subtotalFactura: subtotal, updatedAt: new Date().toISOString() };
+        const totales = totalesTrasCambioDeOps(target, guardadas); // ✅ Fase 1.8 (d)
+        if (!totales.ok) return alert(avisoTotalBajoPagado(formatoMoneda(totales.total), formatoMoneda(totales.pagado)));
+        const data = { invoice: target.invoice || nuevoInvoice, operacionesIds: ids, operacionesGuardadas: guardadas, remolques: remolquesDeGuardadas(guardadas), ...totales.campos, updatedAt: new Date().toISOString() };
         batch.set(doc(db, 'facturas_proveedores', targetId), data, { merge: true });
         cambios.push({ tipo: 'update', id: targetId, data });
       } else {
@@ -2737,7 +2755,8 @@ export const FacturacionProveedoresDashboard = () => {
           operacionesIds: [opId],
           operacionesGuardadas: [resumenOrigen],
           remolques: remolquesDeGuardadas([resumenOrigen]),
-          subtotalFactura: montoOp,
+          subtotalFactura: r2(montoOp),
+          subtotalMonedaFactura: totalNativoDeOperaciones(metaCarry?.monedaProveedor, [resumenOrigen]), // ✅ Fase 1.8 (d)
           createdAt: new Date().toISOString(),
         };
         batch.set(doc(db, 'facturas_proveedores', targetId), data);
@@ -2760,20 +2779,25 @@ export const FacturacionProveedoresDashboard = () => {
   const agregarOpAFactura = async (facturaGrupo: any, op: any) => {
     const opId = String(op.id);
     const rawId = (Array.isArray(facturaGrupo.__groupIds) && facturaGrupo.__groupIds.length) ? facturaGrupo.__groupIds[0] : facturaGrupo.id;
-    const rawDoc = facturasGlobales.find(f => f.id === rawId) || facturaGrupo;
     const resumen = buildResumenOp(op);
     const monto = Number(resumen.monto) || 0;
     setAgregandoRef(true);
     try {
+      // ✅ Fase 1.8: se fusiona contra la factura FRESCA, no contra la lista en memoria.
+      const rawDoc = await leerFacturaFresca(rawId);
+      if (!rawDoc) return alert('Esta factura ya no existe (alguien más la eliminó). Recarga el historial.');
       const ids = Array.from(new Set([...(rawDoc.operacionesIds || []).map(String), opId]));
       const mapG = new Map<string, any>();
       [...(rawDoc.operacionesGuardadas || []), resumen].forEach((o: any) => { if (o?.id) mapG.set(String(o.id), o); });
       const guardadas = Array.from(mapG.values());
+      // ✅ Fase 1.8 (d): subtotalMonedaFactura recalculado con la operación nueva.
+      const totales = totalesTrasCambioDeOps(rawDoc, guardadas);
+      if (!totales.ok) return alert(avisoTotalBajoPagado(formatoMoneda(totales.total), formatoMoneda(totales.pagado)));
       const data = {
         operacionesIds: ids,
         operacionesGuardadas: guardadas,
         remolques: remolquesDeGuardadas(guardadas),
-        subtotalFactura: Number(rawDoc.subtotalFactura || 0) + monto,
+        ...totales.campos,
         updatedAt: new Date().toISOString(),
       };
       const batch = writeBatch(db);
@@ -2789,7 +2813,8 @@ export const FacturacionProveedoresDashboard = () => {
         const mapG2 = new Map<string, any>();
         [...(g.operacionesGuardadas || []), resumen].forEach((o: any) => { if (o?.id) mapG2.set(String(o.id), o); });
         const guardadas2 = Array.from(mapG2.values());
-        return { ...g, operacionesIds: Array.from(new Set([...(g.operacionesIds || []).map(String), opId])), operacionesGuardadas: guardadas2, remolques: remolquesDeGuardadas(guardadas2), subtotalFactura: Number(g.subtotalFactura || 0) + monto };
+        // ✅ Fase 1.8: total/saldo nuevos del documento (el grupo toma los del primero); el subtotal del grupo se suma.
+        return { ...g, ...totales.campos, operacionesIds: Array.from(new Set([...(g.operacionesIds || []).map(String), opId])), operacionesGuardadas: guardadas2, remolques: remolquesDeGuardadas(guardadas2), subtotalFactura: r2(Number(g.subtotalFactura || 0) + monto) };
       };
       setAgregarRefFactura((prev: any) => aplicarEnGrupo(prev));
       setFacturaViendo((prev: any) => aplicarEnGrupo(prev));
@@ -2824,21 +2849,26 @@ export const FacturacionProveedoresDashboard = () => {
       : `¿Estás seguro de eliminar la factura ${facData.invoice}? Las operaciones asociadas quedarán liberadas nuevamente.`;
     if (window.confirm(aviso)) {
       try {
+        // ✅ Fase 1.8 (c): se releen FRESCAS. Una factura con pagos aplicados no se
+        //   borra: dejaba entradas huérfanas en pagos.facturas[].
+        const frescas = await Promise.all(ids.map(leerFacturaFresca));
+        const conPagos = frescas.find(f => f && tienePagosAplicados(f));
+        if (conPagos) {
+          const quien = ids.length > 1 ? `La factura ${conPagos.invoice} (del grupo) no se puede eliminar.\n\n` : '';
+          return alert(quien + avisoFacturaConPagos(formatoMoneda(montoPagadoDe(conPagos))));
+        }
+        // Las operaciones a liberar salen de la versión fresca de cada factura.
+        const idsLiberadas: string[] = Array.from(new Set(frescas.flatMap(f => (f ? (f.operacionesIds || []).map(String) : []))));
+        const escrituras = ids.length + idsLiberadas.length;
+        if (escrituras > MAX_ESCRITURAS_LOTE) return alert(avisoLoteGrande(escrituras, 'Quita primero algunas operaciones de la factura y vuelve a intentar.'));
         const batch = writeBatch(db);
-        const idsLiberadas: string[] = [];
         ids.forEach(fid => batch.delete(doc(db, 'facturas_proveedores', fid)));
-        const docs: any[] = Array.isArray(facData.__groupDocs) && facData.__groupDocs.length ? facData.__groupDocs : [facData];
-        docs.forEach((d: any) => {
-          if (Array.isArray(d.operacionesIds)) {
-            d.operacionesIds.forEach((opId: string) => {
-              idsLiberadas.push(opId);
-              batch.update(doc(db, 'operaciones', opId), {
-                facturaProveedorId: null,
-                facturaProveedorFolio: null,
-                facturadoProveedor: false,
-              });
-            });
-          }
+        idsLiberadas.forEach(opId => {
+          batch.update(doc(db, 'operaciones', opId), {
+            facturaProveedorId: null,
+            facturaProveedorFolio: null,
+            facturadoProveedor: false,
+          });
         });
         await batch.commit();
         setFacturasGlobales(prev => prev.filter(f => !ids.includes(f.id)));

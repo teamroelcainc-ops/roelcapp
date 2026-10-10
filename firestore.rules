@@ -1,31 +1,31 @@
 rules_version = '2';
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  REGLAS DE FIRESTORE — PROPUESTA V00435 (app móvil: operadores y clientes)
+//  REGLAS DE FIRESTORE — V00437 (Fase 1.4)
 // ═══════════════════════════════════════════════════════════════════════════
-//  ⚠ ANTES DE PUBLICAR: compara con las reglas que hoy tienes en la consola
-//    (Firestore › Reglas). Esta propuesta asume que hoy el personal puede leer y
-//    escribir todo estando autenticado (`request.auth != null`). Si tus reglas
-//    actuales tienen restricciones por colección, CONSÉRVALAS y solo agrega la
-//    condición `esPersonal()` en lugar de `request.auth != null`.
+//  ⚠ PUNTO DE PARADA P1 (PLAN-REFACTOR.md): NO publicar hasta que
+//    1) estén desplegadas las funciones de la V00437 (usuarioEscrito, sincronizarClaims),
+//    2) un admin haya presionado "🔐 Sincronizar permisos" en Usuarios, y
+//    3) `npm run test:rules` pase en verde.
+//    Publicar: firebase deploy --only firestore:rules
 //
-//  Qué cambia:
-//   1) Un usuario con usuarios/{uid}.tipoUsuario == 'cliente' NO puede leer ni
-//      escribir ninguna colección. Sus datos le llegan por la Cloud Function
-//      `portalCliente`, que filtra los campos (nunca ve costos ni sueldos).
-//   2) "Personal" = autenticado + CON documento en `usuarios` + no cliente.
-//      Esto además cierra un hueco: hoy un usuario al que se le borró su
-//      documento en Usuarios ("eliminar acceso") conserva su cuenta de Auth y,
-//      con `auth != null`, podría seguir leyendo la base con el SDK.
-//   3) Cada usuario puede leer SU propio perfil, y el cliente solo puede
-//      actualizar sus campos de último acceso desde la app.
+//  Quién es quién (custom claims que pone el servidor desde usuarios/{uid}):
+//    · personal → sistema web y operadores de la app móvil.
+//    · admin    → personal con rol ADMIN (las reglas lo revisan SIEMPRE en el documento).
+//    · cliente  → solo app móvil; no lee colecciones (todo por la callable portalCliente).
+//  Transición: un usuario cuyo token aún no trae claims se valida leyendo su
+//  documento (1 lectura extra por petición, como en la V00435). Con claims no
+//  se lee nada extra.
 //
-//  Costo: cada petición del personal hace 1 lectura extra (su perfil), que
-//  Firestore cachea durante la evaluación de esa petición.
-//
-//  OJO también con las Cloud Functions: escriben como ADMIN y no pasan por
-//  estas reglas. Por eso la V00435 agrega exigirPersonal() a crearOperacion,
-//  renumerarOperacion y verificarIntegridad (functions/src/acceso.ts).
+//  Qué cambia respecto a "todo el personal puede todo":
+//    · Sin documento en `usuarios`, desactivado o de cliente → nada.
+//    · Nadie puede cambiarse sus propios roles: en su perfil solo puede tocar
+//      campos de sesión (isOnline, ultimoAcceso, foto, datos de la app móvil).
+//    · Usuarios, roles, autorizaciones y configuración de seguridad → solo admin.
+//    · Bitácora (historial_actividad): solo se agregan registros; nadie los edita
+//      ni borra desde el navegador.
+//    · meta/* lo escriben solo las Cloud Functions.
+//  Las Cloud Functions usan el Admin SDK y no pasan por estas reglas.
 // ═══════════════════════════════════════════════════════════════════════════
 
 service cloud.firestore {
@@ -35,48 +35,98 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function rutaPerfil() {
-      return /databases/$(database)/documents/usuarios/$(request.auth.uid);
+    function token() {
+      return request.auth.token;
     }
 
-    function tienePerfil() {
-      return exists(rutaPerfil());
+    // El token todavía no trae los claims de Roelca (usuario sin sincronizar).
+    function sinClaims() {
+      return !('personal' in token());
+    }
+
+    function rutaPerfil() {
+      return /databases/$(database)/documents/usuarios/$(request.auth.uid);
     }
 
     function perfil() {
       return get(rutaPerfil()).data;
     }
 
-    // Tolerante a mayúsculas/espacios ('Cliente ', 'CLIENTE'…), igual que la app y la función.
-    function esCliente() {
-      return tienePerfil()
-        && perfil().get('tipoUsuario', '') is string
-        && perfil().get('tipoUsuario', '').trim().lower() == 'cliente';
+    // Tolerante a mayúsculas/espacios ('Cliente ', 'CLIENTE'…), igual que la app.
+    function perfilEsPersonal() {
+      return exists(rutaPerfil())
+        && !(perfil().get('tipoUsuario', '') is string && perfil().get('tipoUsuario', '').trim().lower() == 'cliente')
+        && perfil().get('activo', true) != false;
     }
 
-    // Un perfil con activo == false queda sin acceso (hoy todos se crean con activo: true).
-    function estaActivo() {
-      return perfil().get('activo', true) != false;
-    }
-
-    // Personal de Roelca: sistema web y operadores de la app móvil.
     function esPersonal() {
-      return autenticado() && tienePerfil() && !esCliente() && estaActivo();
+      return autenticado() && (
+        token().get('personal', false) == true
+        || (sinClaims() && perfilEsPersonal())
+      );
     }
 
-    // ── Todo el sistema: solo personal (mismo alcance que hoy) ──
-    match /{document=**} {
-      allow read, write: if esPersonal();
+    // El perfil sigue existiendo. Se exige en TODAS las escrituras: si un admin
+    // borra al usuario, deja de escribir al instante aunque su token (≤1 h) siga
+    // diciendo `personal`. Cuesta 1 lectura por escritura; las lecturas confían en
+    // el claim (un usuario dado de baja puede LEER hasta 1 h: compromiso documentado).
+    function perfilVigente() {
+      return exists(rutaPerfil());
     }
 
-    // ── Perfil propio (la app lo lee al iniciar sesión para saber qué mostrar) ──
+    // Admin SIEMPRE con el documento (no con el claim): quitarle el rol a alguien
+    // surte efecto al instante. Las escrituras de admin son pocas.
+    function esAdmin() {
+      return autenticado() && perfilEsPersonal()
+        && perfil().get('roles', []).hasAny(['ADMIN', 'Admin', 'admin']);
+    }
+
+    // Colecciones que el personal NO escribe por la regla general (tienen la suya abajo).
+    function protegida(coleccion) {
+      return coleccion in ['usuarios', 'roles', 'config_autorizaciones', 'configuracion', 'meta', 'historial_actividad'];
+    }
+
+    // Campos de SU perfil que un usuario puede cambiar (sesión y app móvil).
+    function camposPropiosPermitidos() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['isOnline', 'ultimoAcceso', 'fotoPerfil', 'ultimoAccesoMovil', 'plataformaMovil', 'versionAppMovil']);
+    }
+
+    // ── Regla general: todo el sistema para el personal ──
+    match /{coleccion}/{resto=**} {
+      allow read: if esPersonal();
+      allow write: if esPersonal() && perfilVigente() && !protegida(coleccion);
+    }
+
+    // ── Usuarios ──
     match /usuarios/{uid} {
+      // Cada quien lee su perfil (también los clientes de la app móvil).
       allow read: if autenticado() && request.auth.uid == uid;
-      allow update: if autenticado()
-        && request.auth.uid == uid
-        && esCliente()
-        && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['ultimoAccesoMovil', 'plataformaMovil', 'versionAppMovil']);
+      allow create, delete: if esAdmin();
+      allow update: if esAdmin()
+        || (autenticado() && request.auth.uid == uid && camposPropiosPermitidos());
     }
+
+    // ── Roles y reglas de autorización: solo admin ──
+    match /roles/{id} {
+      allow write: if esAdmin();
+    }
+    match /config_autorizaciones/{id} {
+      allow write: if esAdmin();
+    }
+
+    // ── Configuración: seguridad y banderas solo admin; metas y obligatorios, personal ──
+    match /configuracion/{id} {
+      allow write: if esAdmin()
+        || (esPersonal() && perfilVigente() && id in ['metas_operaciones', 'metas_globales', 'obligatorios_formulario_tarifa', 'empresa']);
+    }
+
+    // ── Bitácora: solo agregar, con el usuario de la sesión ──
+    match /historial_actividad/{id} {
+      allow create: if esPersonal() && perfilVigente();
+    }
+
+    // ── meta/*: lo escriben las Cloud Functions (versiones de catálogos, reportes) ──
+    // (lectura por la regla general; escritura: nadie desde el navegador)
   }
 }

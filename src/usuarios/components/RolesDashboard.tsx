@@ -60,6 +60,8 @@ export const RolesDashboard: React.FC = () => {
   
   const [nombreRol, setNombreRol] = useState('');
   const [modulos, setModulos] = useState<string[]>([]);
+  // ✅ V00437 (Fase 1.7): el login exige la red de la oficina a los usuarios con este rol.
+  const [requiereIPOficina, setRequiereIPOficina] = useState(false);
   const [cargandoRol, setCargandoRol] = useState(false);
 
   useEffect(() => {
@@ -77,7 +79,8 @@ export const RolesDashboard: React.FC = () => {
       const configRef = doc(db, 'configuracion', 'seguridad');
       const snap = await getDoc(configRef);
       if (snap.exists()) {
-        setIpOficial(snap.data().ipOficial || '');
+        // ✅ V00437: un solo valor para el login (`ipOficina`) y el reloj checador (`ipOficial`).
+        setIpOficial(snap.data().ipOficina || snap.data().ipOficial || '');
       }
     };
     fetchConfig();
@@ -96,12 +99,15 @@ export const RolesDashboard: React.FC = () => {
   };
 
   const guardarIp = async () => {
-    if (!ipOficial) return;
+    const valor = ipOficial.trim();
+    if (!valor) return;
     setGuardandoIp(true);
     try {
-      await setDoc(doc(db, 'configuracion', 'seguridad'), { ipOficial }, { merge: true });
-      await registrarLog('Seguridad', 'Actualización', `Actualizó la IP Oficial del Reloj Checador a: ${ipOficial}`);
-      alert("IP Oficial guardada. El Reloj Checador ahora usará esta red.");
+      // ✅ V00437: se guarda con los DOS nombres para que el login (`ipOficina`)
+      //   y el Reloj Checador (`ipOficial`) usen el mismo valor.
+      await setDoc(doc(db, 'configuracion', 'seguridad'), { ipOficial: valor, ipOficina: valor }, { merge: true });
+      await registrarLog('Seguridad', 'Actualización', `Actualizó la IP Oficial (Reloj Checador e inicio de sesión) a: ${valor}`);
+      alert("IP Oficial guardada. El Reloj Checador y el inicio de sesión (roles que requieren la red de la oficina) ahora usarán esta red.");
     } catch (e) {
       alert("Error al guardar IP.");
     } finally {
@@ -113,6 +119,7 @@ export const RolesDashboard: React.FC = () => {
     setRolEditando(null);
     setNombreRol('');
     setModulos([]);
+    setRequiereIPOficina(false);
     setModalAbierto(true);
   };
 
@@ -120,6 +127,7 @@ export const RolesDashboard: React.FC = () => {
     setRolEditando(rol);
     setNombreRol(rol.nombre);
     setModulos(rol.modulosPermitidos || []);
+    setRequiereIPOficina(rol.requiereIPOficina === true);
     setModalAbierto(true);
   };
 
@@ -151,6 +159,7 @@ export const RolesDashboard: React.FC = () => {
       const datosRol = {
         nombre: nombreRol.toUpperCase().trim(),
         modulosPermitidos: modulos,
+        requiereIPOficina,
         timestamp: Date.now()
       };
 
@@ -246,7 +255,12 @@ export const RolesDashboard: React.FC = () => {
                     </button>
                   </div>
                 </td>
-                <td className="rd-x22">{rol.nombre}</td>
+                <td className="rd-x22">
+                  {rol.nombre}
+                  {rol.requiereIPOficina === true && (
+                    <span className="rd-ip-badge" title="Solo puede iniciar sesión desde la red de la oficina">Red de oficina</span>
+                  )}
+                </td>
                 <td className="rd-x23">
                   <div className="rd-x24">
                     {rol.modulosPermitidos?.map((mod: string) => (
@@ -344,6 +358,18 @@ export const RolesDashboard: React.FC = () => {
                   onChange={(e) => setNombreRol(e.target.value)} 
                   required
                 />
+              </div>
+
+              {/* ✅ V00437 (Fase 1.7): restricción de red por rol (la revisa el login). */}
+              <div className="form-group rd-x32">
+                <label className="rd-x45" title="Los usuarios con este rol solo podrán iniciar sesión desde la red de la oficina (la IP configurada arriba).">
+                  <input className="rd-x39"
+                    type="checkbox"
+                    checked={requiereIPOficina}
+                    onChange={(e) => setRequiereIPOficina(e.target.checked)}
+                  />
+                  Requiere red de la oficina (IP)
+                </label>
               </div>
 
               <div className="form-group rd-x35">
