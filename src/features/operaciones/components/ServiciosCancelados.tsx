@@ -1,5 +1,5 @@
 // src/features/operaciones/components/ServiciosCancelados.tsx
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, useEffectEvent } from 'react';
 import { useHandlerEstable } from '../hooks/useHandlerEstable';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
@@ -36,29 +36,10 @@ import { mostrarCartaPara, useConfigCarta } from '../../../utils/configCartaInst
 import { ConfigCartaModal } from './ConfigCartaModal';
 import { usePermisoFormularios } from '../../formularios/configFormularios';
 import { obtenerFlags, useFlags } from '../../../shared/data/flags';
+import { colorTipoOperacion, fmtFechaAuditoria } from '../services/formatosOperacion';
 import { paginaOperaciones, todasLasPaginas } from '../../../shared/data/consultas';
 
-// ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
-const fmtFechaAuditoria = (iso: any): string => {
-  try {
-    const d = new Date(String(iso));
-    if (isNaN(d.getTime())) return String(iso || '');
-    return d.toLocaleString('es-MX', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  } catch { return String(iso || ''); }
-};
-
-
-// ✅ Color por TIPO DE OPERACIÓN: Transfer → naranja, Logística → azul,
-//   Fletes → verde. Cualquier otro tipo conserva el color neutro.
-const colorTipoOperacion = (nombre: any): string => {
-  const n = String(nombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  if (n.includes('transfer')) return '#fb923c';
-  // ✅ V00177: 'flete' se evalúa ANTES que 'logist' — "Logistica Fletes"
-  //   contiene ambas palabras y debe pintarse VERDE (línea de fletes).
-  if (n.includes('flete')) return '#3fb950';
-  if (n.includes('logist')) return '#58a6ff';
-  return '#c9d1d9';
-};
+// ✅ V00444 (Fase 8.3): fmtFechaAuditoria y colorTipoOperacion en services/formatosOperacion (eran copias).
 
 // ✅ V00439 (Fase 3.x): catálogos del módulo (alias → colección) desde el
 //   listener compartido (antes getDocs + copia en sesión roelca_catalogos_v2 y
@@ -477,7 +458,7 @@ const ServiciosCancelados = () => {
   // ✅ NUEVO: al entrar al módulo se restaura el último filtro buscado por este
   //   usuario y se ejecuta la búsqueda automáticamente (sin registrar log, ya
   //   que no es una búsqueda nueva sino la restauración de la anterior).
-  useEffect(() => {
+  const restaurarFiltroGuardado = useEffectEvent(() => {
     try {
       // ✅ V00312: si la URL trae ?filtros= (botón "↗ Ver en nueva pestaña"),
       //   ESA búsqueda manda sobre el filtro recordado del usuario.
@@ -503,8 +484,8 @@ const ServiciosCancelados = () => {
       });
       void buscarRango(f.fechaInicio, f.fechaFin);
     } catch { /* filtro guardado corrupto: ignorar */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  });
+  useEffect(() => restaurarFiltroGuardado(), []);
 
   // ✅ V00312: URL con la búsqueda completa aplicada, para abrirla en otra pestaña.
   const urlBusquedaActual = (): string => filtrosAplicados
@@ -540,7 +521,7 @@ const ServiciosCancelados = () => {
   // ✅ NUEVO: cargar los botones de "Siguiente Paso" para la operación abierta.
   // ✅ V00439 (Fase 3.x): catalogo_status_servicio llega siempre por el listener
   //   compartido; al cambiar, este efecto se repite (resuelve nombres ↔ IDs).
-  useEffect(() => {
+  const cargarBotonesDelFlujo = useEffectEvent(() => {
     const cargarBotones = async () => {
       if (operacionViendo) {
         let op = operacionViendo;
@@ -555,8 +536,8 @@ const ServiciosCancelados = () => {
       }
     };
     cargarBotones();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [operacionViendo, catalogosGlobales.statusServicio]);
+  });
+  useEffect(() => cargarBotonesDelFlujo(), [operacionViendo, catalogosGlobales.statusServicio]);
 
   const mostrarDato = (dato: any) => (dato && dato !== '' ? dato : '-');
 

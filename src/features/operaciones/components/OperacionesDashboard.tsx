@@ -1,5 +1,5 @@
 // src/features/operaciones/components/OperacionesDashboard.tsx
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useEffectEvent } from 'react';
 import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
 import { useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
 import { useHandlerEstable } from '../hooks/useHandlerEstable';
@@ -26,30 +26,19 @@ import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
 import { aduanaDeConvenio, camposPisoColombia, casetaRespaldoColombia, esAduanaColombia, esGastoPisoColombia, normPuente } from '../../../utils/puenteColombia';
 import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
 import { obtenerFlags, useFlags } from '../../../shared/data/flags';
-import { paginaOperaciones } from '../../../shared/data/consultas';
-import type { Cursor } from '../../../shared/data/consultas';
+import { useOperacionesActivas } from '../hooks/useOperacionesActivas'; // ✅ V00444 (Fase 8.1)
 import { docPorId, nombreEmpresaPdf } from '../../../utils/docPorId';
 import type { DocLibre } from '../../../utils/docPorId';
 import { idReal, obtenerCatalogo, useCatalogo, useCatalogos } from '../../../shared/data/catalogos';
 import type { ColeccionCatalogo } from '../../../shared/data/catalogos';
 import { usePermisoRol } from '../../../shared/data/sesion';
-import { ID_MXN, ID_USD, STATUS_CANCELADO, STATUS_COMPLETADOS, STATUS_FINALES } from '../../../shared/dominio/constantes';
+import { ID_MXN, ID_USD, STATUS_CANCELADO, STATUS_COMPLETADOS } from '../../../shared/dominio/constantes';
 import { monedaCanonica, nombreMoneda } from '../../../shared/dominio/moneda';
 import { mostrarCartaPara, useConfigCarta } from '../../../utils/configCartaInstrucciones';
 import { ConfigCartaModal } from './ConfigCartaModal';
 import { usePermisoFormularios } from '../../formularios/configFormularios';
 import { estadoGrupoDe } from '../../../shared/dominio/operacionCanonica';
-
-// ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
-const fmtFechaAuditoria = (iso: any): string => {
-  try {
-    const d = new Date(String(iso));
-    if (isNaN(d.getTime())) return String(iso || '');
-    return d.toLocaleString('es-MX', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  } catch { return String(iso || ''); }
-};
-
-const TAMANO_PAGINA = 50;
+import { colorTipoOperacion, compararStatusPorNumero, fmtFechaAuditoria, limpiarUndefined } from '../services/formatosOperacion'; // ✅ V00444 (Fase 8.3)
 
 // ✅ V00439 (Fase 3.x): catálogos del módulo (alias → colección) desde el
 //   listener compartido (useCatalogos): sin getDocs propios ni copia en
@@ -77,54 +66,6 @@ const COLECCIONES_CATALOGOS = {
   direcciones:               'direcciones',
 } as const satisfies Record<string, ColeccionCatalogo>;
 type AliasCatalogoOD = keyof typeof COLECCIONES_CATALOGOS;
-
-// ✅ NUEVO: ordena nombres de status por su número inicial (1, 3, 4.1, 5, 6,
-//    8.1, 8.2, 9, 10.1, 10.3, 10.5, 11, 11.2, 12.1, 13.1, 16, 18, 19) y, dentro
-//    del mismo número, alfabéticamente. Los que no inician con número van al
-//    final, ordenados alfabéticamente. Todo en orden ascendente.
-const compararStatusPorNumero = (a: string, b: string): number => {
-  const parse = (s: string): number[] | null => {
-    const m = String(s ?? '').trim().match(/^(\d+(?:\.\d+)*)/);
-    return m ? m[1].split('.').map((n) => parseInt(n, 10)) : null;
-  };
-  const na = parse(a);
-  const nb = parse(b);
-  if (na && nb) {
-    const len = Math.max(na.length, nb.length);
-    for (let i = 0; i < len; i++) {
-      const da = na[i] ?? 0;
-      const db = nb[i] ?? 0;
-      if (da !== db) return da - db;
-    }
-    return String(a).localeCompare(String(b), 'es', { numeric: true, sensitivity: 'base' });
-  }
-  if (na && !nb) return -1;
-  if (!na && nb) return 1;
-  return String(a).localeCompare(String(b), 'es', { numeric: true, sensitivity: 'base' });
-};
-
-// ✅ NUEVO: quita las claves cuyo valor sea `undefined` de un objeto antes de
-//    escribirlo en Firestore. Firestore RECHAZA cualquier campo `undefined`
-//    (lanza "Unsupported field value: undefined") y eso aborta el batch.commit
-//    completo → es una de las causas típicas de "Se revirtió el cambio".
-const limpiarUndefined = (obj: Record<string, any>): Record<string, any> => {
-  const out: Record<string, any> = {};
-  Object.keys(obj).forEach((k) => { if (obj[k] !== undefined) out[k] = obj[k]; });
-  return out;
-};
-
-
-// ✅ Color por TIPO DE OPERACIÓN: Transfer → naranja, Logística → azul,
-//   Fletes → verde. Cualquier otro tipo conserva el color neutro.
-const colorTipoOperacion = (nombre: any): string => {
-  const n = String(nombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  if (n.includes('transfer')) return '#fb923c';
-  // ✅ V00177: 'flete' se evalúa ANTES que 'logist' — "Logistica Fletes"
-  //   contiene ambas palabras y debe pintarse VERDE (línea de fletes).
-  if (n.includes('flete')) return '#3fb950';
-  if (n.includes('logist')) return '#58a6ff';
-  return '#c9d1d9';
-};
 
 const COLUMNAS_BASE = [
   { id: 'ref', label: '# Referencia', visible: true },
@@ -224,8 +165,13 @@ const OperacionesDashboard = () => {
     })();
   }, []);
   
-  const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
-  const [cargandoOperaciones, setCargandoOperaciones] = useState(true);
+  // ✅ V00444 (Fase 8.1): la lista, su carga y su paginación viven en useOperacionesActivas.
+  //   `esOperacionActiva` se declara más abajo; el hook solo la llama al cargar (después del render).
+  const {
+    operaciones: operacionesGlobales, setOperaciones: setOperacionesGlobales,
+    cargando: cargandoOperaciones, cargandoMas, hayMas: hayMasOperaciones,
+    descargar: descargarOperaciones, actualizar: actualizarLista, cargarMas: cargarMasOperaciones,
+  } = useOperacionesActivas<any>((op) => esOperacionActiva(op)); // eslint-disable-line @typescript-eslint/no-explicit-any -- operaciones sin tipo canónico en el tablero (antes useState<any[]>).
   const [operacionViendo, setOperacionViendo] = useState<any | null>(null);
   // ✅ V00421: cuándo se muestra la Carta de Instrucciones (configurable)
   const cfgCarta = useConfigCarta();
@@ -290,8 +236,6 @@ const OperacionesDashboard = () => {
     return nombresUsuarios[t] || t;
   };
   
-  const [hayMasOperaciones, setHayMasOperaciones] = useState(true);
-  const [cargandoMas, setCargandoMas] = useState(false);
 
   const [modalHorarios, setModalHorarios] = useState<'cerrado' | 'registrar' | 'historial'>('cerrado');
   const [historialList, setHistorialList] = useState<any[]>([]);
@@ -395,15 +339,7 @@ const OperacionesDashboard = () => {
     return { empresas, remolques, unidades, unidadesProveedor, proveedoresUnidad };
   };
 
-  // ✅ Cursor robusto de paginación: guardamos el ÚLTIMO documento (snapshot),
-  //    no solo su fecha, para no depender de que exista el campo `fechaServicio`.
-  const ultimoDocRef = useRef<any>(null);
-  const cursorCanonicoRef = useRef<Cursor>(null); // ✅ V00443 (Fase 7.1)
-  // ✅ V00443: con qué camino se cargó la lista ("Cargar más" sigue el MISMO, aunque la bandera
-  //   llegue o cambie después: no se mezclan páginas de los dos caminos).
-  const modoCanonicoRef = useRef(false);
 
-  const IDS_STATUS_EXCLUIDOS = STATUS_FINALES; // ✅ V00439 (Fase 3.x): constantes compartidas
   // ✅ V00432: además de los ids, se excluye por NOMBRE del status (catálogo o
   //   guardado): Cancelado, Falso y Servicio Completado nunca son "activas",
   //   aunque el id venga de otro registro del catálogo o de un dato viejo.
@@ -417,85 +353,12 @@ const OperacionesDashboard = () => {
   //   lista está abierta (botones de status, Registrar Movimiento, Cancelar
   //   referencia, formulario…), sale de Operaciones Activas al instante.
   const hayFinalizadas = operacionesGlobales.some((op) => !esOperacionActiva(op));
+  const sacarFinalizadas = useEffectEvent(() => setOperacionesGlobales((prev) => prev.filter(esOperacionActiva)));
   useEffect(() => {
     if (!hayFinalizadas) return;
-    const t = setTimeout(() => setOperacionesGlobales((prev) => prev.filter(esOperacionActiva)), 0);
+    const t = setTimeout(sacarFinalizadas, 0);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hayFinalizadas, operacionesGlobales]);
-
-  const descargarOperaciones = async () => {
-    setCargandoOperaciones(true);
-    // ✅ V00443 (Fase 7.1): con `consultasCanonicas`, estadoGrupo == 'activa' ordenadas por
-    //   fechaServicioISO (más recientes primero), de 50 en 50. Sin `not-in` ni el respaldo de
-    //   2,000 sin filtro: si falta el índice, se avisa (regla 7 del plan).
-    //   La bandera se ESPERA (al montar puede no haber llegado todavía).
-    modoCanonicoRef.current = (await obtenerFlags()).consultasCanonicas;
-    if (modoCanonicoRef.current) {
-      try {
-        const p = await paginaOperaciones({ estados: ['activa'] }, TAMANO_PAGINA);
-        cursorCanonicoRef.current = p.cursor;
-        setOperacionesGlobales(p.docs.map((d): Record<string, unknown> & { id: string; _docId: string; status?: unknown; statusNombre?: unknown } => ({ ...d, _docId: idReal(d) })).filter((o) => esOperacionActiva(o)));
-        setHayMasOperaciones(p.hayMas);
-      } catch (e: unknown) {
-        console.error('Error al cargar operaciones activas:', e);
-        alert(`No se pudieron cargar las operaciones activas.\n\nDetalle: ${String((e as { message?: string })?.message || e)}`);
-      }
-      setCargandoOperaciones(false);
-      return;
-    }
-    try {
-      let docs: any[] = [];
-      let metodo = 'directa (not-in)';
-      let exito = false;
-
-      try {
-        const q1 = query(
-          collection(db, 'operaciones'),
-          where('status', 'not-in', IDS_STATUS_EXCLUIDOS),
-          limit(TAMANO_PAGINA)
-        );
-        const snap1 = await getDocs(q1);
-        docs = snap1.docs;
-        exito = true;
-      } catch (errNotIn) {
-        console.warn('[Operaciones] La consulta not-in falló; uso respaldo sin filtro:', errNotIn);
-      }
-
-      if (!exito) {
-        metodo = 'respaldo (sin filtro, filtra en memoria)';
-        const q2 = query(collection(db, 'operaciones'), limit(2000));
-        const snap2 = await getDocs(q2);
-        docs = snap2.docs;
-      }
-
-      ultimoDocRef.current = docs.length ? docs[docs.length - 1] : null;
-
-      // ✅ _docId = ID REAL del documento en Firestore. Se conserva aparte porque
-      //    algunos registros (legacy/migrados) traen un campo `id` interno que
-      //    sobrescribe a d.id en el spread; ese campo NO sirve para update/delete.
-      const opDataRaw = docs.map((d: any) => ({ id: d.id, ...d.data(), _docId: d.id }));
-      const operacionesActivas = opDataRaw.filter(esOperacionActiva);
-
-      console.log(
-        `[Operaciones v3] método: ${metodo} | crudas: ${opDataRaw.length} | activas: ${operacionesActivas.length}`
-      );
-
-      setOperacionesGlobales(operacionesActivas);
-      setHayMasOperaciones(exito && docs.length === TAMANO_PAGINA);
-    } catch (e: any) {
-      console.error("Error al cargar operaciones:", e);
-      const msg = String(e?.message || e?.code || e || '').toLowerCase();
-      if (msg.includes('resource-exhausted') || msg.includes('quota') || msg.includes('429')) {
-        alert("Cuota de lecturas de Firestore agotada.\n\nEl plan gratuito permite 50,000 lecturas/día y entre varias personas se agota. Se reinicia a las 2 AM (hora México).\n\nRecomendación: activa el plan Blaze en Firebase Console.");
-      } else if (msg.includes('index')) {
-        alert("Falta un índice en Firestore para esta consulta. Abre la consola del navegador (F12); el error de Firebase trae un enlace para crear el índice con un clic.");
-      } else {
-        alert("Hubo un problema al cargar las operaciones. Verifica tu conexión.");
-      }
-    }
-    setCargandoOperaciones(false);
-  };
 
   // ✅ MODIFICADO (V00114) — SINCRONIZAR NOMBRES: ahora usa la utilidad
   //   compartida `sincronizarNombresOperaciones` (misma que Servicios
@@ -698,64 +561,9 @@ const OperacionesDashboard = () => {
 
   const actualizarOperaciones = async () => {
     if (cargandoOperaciones || cargandoMas) return;
-    ultimoDocRef.current = null;
-    setHayMasOperaciones(true);
     setPaginaActual(1);
-    await descargarOperaciones();
+    await actualizarLista();
   };
-
-  const cargarMasOperaciones = async () => {
-    if (!hayMasOperaciones || cargandoMas || operacionesGlobales.length === 0) return;
-    setCargandoMas(true);
-    if (modoCanonicoRef.current) {
-      try {
-        const p = await paginaOperaciones({ estados: ['activa'] }, TAMANO_PAGINA, cursorCanonicoRef.current);
-        cursorCanonicoRef.current = p.cursor;
-        const nuevas = p.docs.map((d): Record<string, unknown> & { id: string; _docId: string; status?: unknown; statusNombre?: unknown } => ({ ...d, _docId: idReal(d) })).filter((o) => esOperacionActiva(o));
-        setOperacionesGlobales((prev) => {
-          const idsPrev = new Set(prev.map((o: { id?: unknown }) => String(o.id)));
-          return [...prev, ...nuevas.filter((o) => !idsPrev.has(String(o.id)))];
-        });
-        setHayMasOperaciones(p.hayMas);
-      } catch (e: unknown) {
-        console.error('Error al cargar más operaciones:', e);
-        alert('No se pudieron cargar más operaciones.');
-      }
-      setCargandoMas(false);
-      return;
-    }
-    try {
-      const cursor = ultimoDocRef.current;
-
-      const constraints: any[] = [where('status', 'not-in', IDS_STATUS_EXCLUIDOS)];
-      if (cursor) constraints.push(startAfter(cursor));
-      constraints.push(limit(TAMANO_PAGINA));
-
-      const snap = await getDocs(query(collection(db, 'operaciones'), ...constraints));
-      const docs = snap.docs;
-
-      if (docs.length) ultimoDocRef.current = docs[docs.length - 1];
-
-      const nuevasRaw = docs.map((d: any) => ({ id: d.id, ...d.data(), _docId: d.id }));
-      const nuevasFiltradas = nuevasRaw.filter(esOperacionActiva);
-
-      setOperacionesGlobales(prev => {
-        const idsPrev = new Set(prev.map((o: any) => String(o.id)));
-        const sinDuplicar = nuevasFiltradas.filter((o: any) => !idsPrev.has(String(o.id)));
-        return [...prev, ...sinDuplicar];
-      });
-      setHayMasOperaciones(docs.length === TAMANO_PAGINA);
-    } catch (e) {
-      console.error("Error al cargar más operaciones:", e);
-      alert("No se pudieron cargar más operaciones.");
-    }
-    setCargandoMas(false);
-  };
-
-  useEffect(() => {
-    descargarOperaciones();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   useEffect(() => {
     const b64 = empresaConfig?.logoBase64;
@@ -764,7 +572,7 @@ const OperacionesDashboard = () => {
 
   useEffect(() => { setPaginaActual(1); }, [busqueda, filtroTipoOperacion, filtroStatus, filtroUnidad, filtroRemolque]);
 
-  useEffect(() => {
+  const cargarBotonesDelFlujo = useEffectEvent(() => {
     const cargarBotones = async () => {
       if (operacionViendo) {
         let op = operacionViendo;
@@ -785,8 +593,8 @@ const OperacionesDashboard = () => {
       }
     };
     cargarBotones();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [operacionViendo, mapaStatus]);
+  });
+  useEffect(() => cargarBotonesDelFlujo(), [operacionViendo, mapaStatus]);
 
   const handleNuevo = async () => { 
     setOperacionEditando(null); 

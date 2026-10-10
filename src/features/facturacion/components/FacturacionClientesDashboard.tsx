@@ -16,7 +16,6 @@ import { useModuloVivoActivo } from '../../../utils/moduloVivoContexto'; // ✅ 
 import { EditorOperacionEmbebido } from '../../operaciones/components/EditorOperacionEmbebido';
 import { HiloModal } from '../../hilo/HiloModal';
 import { suscribirOperacionGuardada } from '../../../utils/operacionesBus';
-import { sinPruebas } from '../../../utils/operacionPrueba';
 import {
   collection,
   query,
@@ -63,7 +62,11 @@ import {
 } from '../services/totalesFactura'; // ✅ Fase 1.8
 import { aplicarFacturas, aplicarOperaciones, llamarDinero, mensajeDinero } from '../services/dineroServidor'; // ✅ V00441
 import { useFlags, useFlagsCargadas } from '../../../shared/data/flags';
-import { paginaOperaciones, paginaPorFacturar, todasLasPaginas } from '../../../shared/data/consultas'; // ✅ V00443 (Fase 7.3)
+import {
+  aplicarConfigColumnasGuardada, colorStatusFactura, DOC_REMISION_EMISORES, fechaOrdenKey, LIMITE_FACTURAS_TODAS, LIMITE_OPS_TODAS,
+  moverIdAlInicio, PAG_FACTURAS, pareceReferencia, parseFechaFactura, refNaturalKey, STATUS_FACTURA_OPCIONES, valorGenericoOp,
+} from '../selectores'; // ✅ V00444 (Fase 8.1): una sola copia (antes idéntica en Clientes y Proveedores)
+import { useOperacionesFacturables } from '../hooks/useOperacionesFacturables'; // ✅ V00444 (Fase 8.1)
 import { conversionOperacion, montoOperacion } from '../../../shared/dominio/dinero';
 
 // ──────────────────────────────────────────────────────────────────────
@@ -71,9 +74,6 @@ import { conversionOperacion, montoOperacion } from '../../../shared/dominio/din
 // ──────────────────────────────────────────────────────────────────────
 // ✅ V00439 (Fase 3.x): IDs de moneda, status y tipo de empresa desde shared/dominio/constantes.
 
-// ✅ (D) Cargar TODAS las operaciones completadas (sin filtro de fecha).
-const LIMITE_OPS_TODAS = 20000;
-const PAG_OPS = 1000;
 
 // ✅ (A) Documento(s) de configuración de columnas COMPARTIDA en Firestore.
 // ⚠️ v2: se cambió la versión para RESETEAR la configuración guardada y que
@@ -84,9 +84,6 @@ const DOC_COLUMNAS_OPS = 'facturacion_clientes_ops_v3';
 // ⚠️ V00126: reset para incluir la columna # Pago
 const DOC_COLUMNAS_HISTORIAL = 'facturacion_clientes_historial_v3';
 
-// ✅ (REMISIÓN) Documento de encabezado de remisiones (emisores) en Firestore.
-//    Se guarda en la MISMA colección config_columnas para reusar sus reglas.
-const DOC_REMISION_EMISORES = 'facturacion_remision_emisores';
 const LS_REMISION_EMISORES = 'cfg_remision_emisores_v1';
 
 // Emisor por defecto para remisiones en PESOS (MXN) → Rolando.
@@ -113,42 +110,7 @@ const LS_COLS_HIST = 'cfgcols_facturacion_hist_v2';
 //   catálogos en localStorage (cat_v1__/cat_v2__/roelca_catalogos_v2): sale de
 //   los catálogos en vivo (ver services/mapaCatalogos.ts).
 
-// ✅ (A) Reconstruye las columnas a partir de la BASE aplicando orden + visibilidad.
-const aplicarConfigColumnasGuardada = (base: any[], guardadas: any): any[] => {
-  if (!Array.isArray(guardadas) || guardadas.length === 0) return base.map((c: any) => ({ ...c }));
-  const baseById = new Map<string, any>(base.map((c: any) => [c.id, c]));
-  const resultado: any[] = [];
-  const usados = new Set<string>();
-  guardadas.forEach((g: any) => {
-    const def = baseById.get(g?.id);
-    if (def && !usados.has(g.id)) {
-      resultado.push({ ...def, visible: !!g.visible });
-      usados.add(g.id);
-    }
-  });
-  base.forEach((c: any) => { if (!usados.has(c.id)) resultado.push({ ...c }); });
-  return resultado;
-};
-
-const moverIdAlInicio = (cols: any[], id: string): any[] => {
-  const idx = cols.findIndex((c: any) => c.id === id);
-  if (idx <= 0) return cols;
-  const copia = [...cols];
-  const [el] = copia.splice(idx, 1);
-  copia.unshift(el);
-  return copia;
-};
 const moverStatusAlInicio = (cols: any[]): any[] => moverIdAlInicio(cols, 'statusFactura');
-
-// ✅ (C) Opciones y colores del status de la factura.
-const STATUS_FACTURA_OPCIONES = ['Facturado', 'Cancelado', 'No Facturado'];
-const colorStatusFactura = (s: any): string => {
-  const t = String(s || '').toLowerCase();
-  if (t.includes('cancel')) return '#f85149';
-  if (t.includes('no')) return '#f59e0b';
-  if (t.includes('factur')) return '#10b981';
-  return '#8b949e';
-};
 
 const COLUMNAS_FACTURA_BASE = [
   { id: 'statusFactura', label: 'Status',       visible: true },
@@ -166,51 +128,9 @@ const COLUMNAS_FACTURA_BASE = [
   { id: 'createdAt',   label: 'Registrada',   visible: false },
 ];
 
-const LIMITE_FACTURAS_TODAS = 12000;
-const PAG_FACTURAS = 1000;
 // ✅ V00438 (Fase 2.8): claves de la copia vieja de operaciones/facturas en
 //   localStorage (almacenSesion). Ya no se escriben; se borran una vez al montar.
 const CLAVES_CACHE_LEGADO = ['roelca_ops_completadas_v2', 'roelca_facturas_clientes_v1'];
-
-const parseFechaFactura = (val: any): string => {
-  if (!val) return '';
-  const s = String(val).trim();
-  if (!s) return '';
-  // ISO (YYYY-MM-DD) → tal cual
-  if (/^\d{4}-\d{1,2}-\d{1,2}/.test(s)) {
-    const [y, m, d] = s.slice(0, 10).split('-');
-    return `${y}-${(m || '01').padStart(2, '0')}-${(d || '01').padStart(2, '0')}`;
-  }
-  // YYYY/M/D
-  const mISO = s.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
-  if (mISO) return `${mISO[1]}-${mISO[2].padStart(2, '0')}-${mISO[3].padStart(2, '0')}`;
-
-  // A/B/YYYY (ambiguo: D/M/YYYY vs M/D/YYYY). Se resuelve evitando fechas
-  // imposibles y, si ambas son válidas, evitando fechas FUTURAS (una factura
-  // no puede tener fecha posterior a hoy). Las no ambiguas (día > 12) no cambian.
-  const m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/);
-  if (m) {
-    const a = parseInt(m[1], 10);
-    const b = parseInt(m[2], 10);
-    const y = m[3];
-    const hoy = new Date(); hoy.setHours(23, 59, 59, 999);
-    const arma = (dia: number, mes: number) => `${y}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
-    const valido = (dia: number, mes: number) => mes >= 1 && mes <= 12 && dia >= 1 && dia <= 31;
-    const esPasada = (iso: string) => { const d = new Date(iso + 'T00:00:00'); return !isNaN(d.getTime()) && d <= hoy; };
-
-    const dm = valido(a, b) ? arma(a, b) : ''; // A = día, B = mes  (D/M/YYYY)
-    const md = valido(b, a) ? arma(b, a) : ''; // A = mes, B = día  (M/D/YYYY)
-
-    if (dm && !md) return dm;
-    if (md && !dm) return md;
-    if (dm && md) {
-      // Ambas válidas: preferimos D/M/YYYY, salvo que dé futuro y M/D/YYYY sí sea pasada.
-      if (!esPasada(dm) && esPasada(md)) return md;
-      return dm;
-    }
-  }
-  return s;
-};
 
 const normalizarFactura = (raw: any): any => {
   const fechaNorm = parseFechaFactura(raw.fecha || raw.fechaFactura);
@@ -343,48 +263,6 @@ const calcularConversionCliente = (op: any) => conversionOperacion(op, 'cliente'
 
 const obtenerMontoOperacion = (op: any) => montoOperacion(op, 'cliente'); // ✅ V00441: dinero.ts
 
-// ✅ V00438 (Fase 2.4): helpers puros movidos fuera del componente para que las
-//   claves de orden se puedan memoizar con dependencias reales.
-const valorGenericoOp = (op: any, col: any): any => {
-  if (!col?.sourceField) return '';
-  const fields: string[] = Array.isArray(col.sourceField) ? col.sourceField : [col.sourceField];
-  for (const f of fields) {
-    const v = (op as any)?.[f];
-    if (v !== undefined && v !== null && v !== '') return v;
-  }
-  return '';
-};
-
-const fechaOrdenKey = (val: any): string => {
-  const s = String(val || '').trim();
-  if (!s) return '00000000';
-  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (m) return m[1] + m[2].padStart(2, '0') + m[3].padStart(2, '0');
-  m = s.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
-  if (m) return m[1] + m[2].padStart(2, '0') + m[3].padStart(2, '0');
-  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
-  if (m) return m[3] + m[2].padStart(2, '0') + m[1].padStart(2, '0');
-  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})(?!\d)/);
-  if (m) return '20' + m[3] + m[2].padStart(2, '0') + m[1].padStart(2, '0');
-  const d = new Date(s);
-  if (!isNaN(d.getTime())) return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-  return s;
-};
-
-const refNaturalKey = (op: any): string => {
-  const r = String(op.numReferencia || op.referencia || op.ref || op.id || '');
-  return r.toLowerCase().replace(/\d+/g, (n) => n.padStart(12, '0'));
-};
-
-// ✅ V00126: un id de Firestore como "d449e0e7…" empieza con letra+dígitos y el
-//   patrón anterior lo tomaba por referencia válida, por lo que la ficha
-//   mostraba el ID en lugar de la referencia real. Ahora los tokens que son
-//   puro hexadecimal (ids) se descartan explícitamente.
-const pareceReferencia = (s: unknown): boolean => {
-  const t = String(s || '').trim();
-  if (!t || /^[0-9a-f]{8,}$/i.test(t)) return false; // id de Firestore (hex), no referencia
-  return /^[A-Za-z]{1,6}[-\s]?\d{3,}/.test(t);
-};
 
 export const FacturacionClientesDashboard = () => {
   const flags = useFlags(); // ✅ V00441 (Fase 5): dinero por servidor
@@ -423,9 +301,7 @@ export const FacturacionClientesDashboard = () => {
     return docs.every((d: any) => String(d?.statusPago || '').toUpperCase() === 'PAGADA' || ((Number(d?.montoPagado) || 0) > 0.009 && (Number(d?.saldoPendiente) || 0) <= 0.009));
   };
 
-  const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
   const [facturasGlobales, setFacturasGlobales] = useState<any[]>([]);
-  const [cargandoOperaciones, setCargandoOperaciones] = useState(false);
   const [cargandoFacturas, setCargandoFacturas] = useState(false);
 
   // ✅ V00439 (Fase 3.x): empresas y catálogos de nombres desde los listeners
@@ -447,7 +323,6 @@ export const FacturacionClientesDashboard = () => {
   const [hiloFacturaId, setHiloFacturaId] = useState<string | null>(null);
   // ✅ V00126: pestañas por moneda de facturación
   const [monedaVistaOps, setMonedaVistaOps] = useState<'todas' | 'USD' | 'MXN'>('todas');
-  const [topeOpsAlcanzado, setTopeOpsAlcanzado] = useState(false);
   const [filtroCliente, setFiltroCliente] = useState('');
   const [seleccionadas, setSeleccionadas] = useState<string[]>([]);
 
@@ -868,7 +743,7 @@ export const FacturacionClientesDashboard = () => {
     descargarFacturas();
   };
 
-  useEffect(() => {
+  const cargarFacturasAlEntrar = useEffectEvent(() => {
     if (facturasGlobales.length > 0) return;
 
     const descargar = async () => {
@@ -902,130 +777,26 @@ export const FacturacionClientesDashboard = () => {
       setCargandoFacturas(false);
     };
     descargar();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  });
+  useEffect(() => cargarFacturasAlEntrar(), []);
 
-  // ✅ V00443 (Fase 7.3): con `consultasCanonicas` se bajan primero SOLO las pendientes de
-  //   facturar (porFacturar*, sin respaldo de "leer todo"); las ya facturadas se piden al
-  //   abrir la vista "Facturadas" o "Todas" (efecto de abajo).
-  const [facturadasCargadas, setFacturadasCargadas] = useState(false);
-  // La ÚLTIMA petición manda: una anterior que llega tarde se descarta, y ninguna se cancela al
-  // cambiar de vista (así "Cargando…" siempre se apaga y no se repiten descargas).
-  const peticionCanonRef = useRef({ id: 0, conFacturadas: false, enVuelo: false });
-  const cargarCanonico = async (conFacturadas: boolean) => {
-    const id = peticionCanonRef.current.id + 1;
-    peticionCanonRef.current = { id, conFacturadas, enVuelo: true };
-    setCargandoOperaciones(true);
-    try {
-      const [pend, fact] = await Promise.all([
-        todasLasPaginas((c) => paginaPorFacturar('cliente', null, PAG_OPS, c), LIMITE_OPS_TODAS),
-        conFacturadas
-          ? todasLasPaginas((c) => paginaOperaciones({ estados: ['completada', 'falso'] }, PAG_OPS, c), LIMITE_OPS_TODAS)
-          : Promise.resolve(null),
-      ]);
-      if (peticionCanonRef.current.id !== id) return;
-      const vistos = new Set<string>();
-      const todas = sinPruebas([...pend.docs, ...(fact?.docs ?? [])]).filter((o) => {
-        const k = String(o._docId);
-        if (vistos.has(k)) return false;
-        vistos.add(k);
-        return true;
-      }) as Record<string, unknown>[];
-      todas.sort((a, b) => String(b.fechaServicio || b.createdAt || '').localeCompare(String(a.fechaServicio || a.createdAt || '')));
-      setOperacionesGlobales(todas);
-      setFacturadasCargadas(conFacturadas);
-      setTopeOpsAlcanzado(pend.truncado || !!fact?.truncado);
-    } catch (e: unknown) {
-      if (peticionCanonRef.current.id !== id) return;
-      console.error('[Facturación] Error al cargar operaciones:', e);
-      alert(`No se pudieron cargar las operaciones.\n\nDetalle: ${String((e as { message?: string })?.message || e)}`);
-    } finally {
-      if (peticionCanonRef.current.id === id) {
-        peticionCanonRef.current = { ...peticionCanonRef.current, enVuelo: false };
-        setCargandoOperaciones(false);
-      }
-    }
-  };
-  const descargarOpsCompletadas = async (forzar = false) => {
-    if (!forzar && operacionesGlobales.length > 0) return;
-    if (flags.consultasCanonicas) {
-      if (!forzar && peticionCanonRef.current.enVuelo) return; // ya viene una en camino
-      await cargarCanonico(facturadasCargadas || vistaOps !== 'pendientes');
-      return;
-    }
-    setCargandoOperaciones(true);
-    try {
-      let todas: any[] = [];
-      let usarFallback = false;
-      try {
-        let cursor: any = null;
-        for (let i = 0; i < Math.ceil(LIMITE_OPS_TODAS / PAG_OPS); i++) {
-          const cons: any[] = [where('status', 'in', STATUS_FACTURABLES), orderBy(documentId()), limit(PAG_OPS)];
-          if (cursor) cons.splice(2, 0, startAfter(cursor));
-          const snap = await getDocs(query(collection(db, 'operaciones'), ...cons));
-          if (snap.empty) break;
-          snap.docs.forEach(d => todas.push({ id: d.id, ...(d.data() as any) }));
-          cursor = snap.docs[snap.docs.length - 1];
-          if (snap.docs.length < PAG_OPS) break;
-        }
-      } catch (e1: any) {
-        const msg1 = String(e1?.message || e1?.code || e1 || '');
-        if (msg1.toLowerCase().includes('index') || msg1.toLowerCase().includes('failed-precondition')) {
-          console.warn('[Facturación] Falta índice (status+__name__). Fallback: traer todo y filtrar en memoria. Detalle:', msg1);
-          usarFallback = true;
-        } else {
-          throw e1;
-        }
-      }
-      if (usarFallback) {
-        todas = [];
-        let cursor: any = null;
-        for (let i = 0; i < Math.ceil(LIMITE_OPS_TODAS / PAG_OPS); i++) {
-          const cons: any[] = [orderBy(documentId()), limit(PAG_OPS)];
-          if (cursor) cons.splice(1, 0, startAfter(cursor));
-          const snap = await getDocs(query(collection(db, 'operaciones'), ...cons));
-          if (snap.empty) break;
-          snap.docs.forEach(d => {
-            const o: any = { id: d.id, ...(d.data() as any) };
-            if (STATUS_FACTURABLES.includes(String(o.status || '').trim())) todas.push(o);
-          });
-          cursor = snap.docs[snap.docs.length - 1];
-          if (snap.docs.length < PAG_OPS) break;
-        }
-      }
-      todas = sinPruebas(todas); // ✅ V00380: las operaciones de prueba no se facturan
-      todas.sort((a: any, b: any) => String(b.fechaServicio || b.createdAt || '').localeCompare(String(a.fechaServicio || a.createdAt || '')));
-      setOperacionesGlobales(todas);
-      setTopeOpsAlcanzado(todas.length >= LIMITE_OPS_TODAS);
-    } catch (e: any) {
-      const msg = String(e?.message || e?.code || e || '');
-      console.error('[Facturación] Error al cargar operaciones completadas:', e);
-      alert(`No se pudieron cargar las operaciones.\n\nDetalle: ${msg}`);
-    }
-    setCargandoOperaciones(false);
-  };
+  // ✅ V00444 (Fase 8.1): carga de las operaciones en useOperacionesFacturables (antes copiada aquí
+  //   y en el otro lado). Con `consultasCanonicas` (Fase 7.3): pendientes primero, facturadas al
+  //   abrir "Facturadas"/"Todas".
+  const {
+    operaciones: operacionesGlobales, setOperaciones: setOperacionesGlobales, cargando: cargandoOperaciones,
+    topeAlcanzado: topeOpsAlcanzado, facturadasCargadas, descargar: descargarOpsCompletadas,
+  } = useOperacionesFacturables<any>('cliente', STATUS_FACTURABLES, vistaOps); // eslint-disable-line @typescript-eslint/no-explicit-any -- operaciones sin tipo canónico en el tablero (antes useState<any[]>).
 
-  useEffect(() => {
+  const cargarOperacionesAlEntrar = useEffectEvent(() => {
     if (activeTab !== 'operaciones') return;
     if (operacionesGlobales.length > 0) return;
     // ✅ V00439 (Fase 3.x): espera el catálogo de status (los "Falso" entran en el filtro).
     if (!statusListos) return;
     if (!flagsCargadas) return; // ✅ V00443: sin esto empezaría por la descarga vieja (hasta 20,000)
     descargarOpsCompletadas();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, operacionesGlobales.length, statusListos, flagsCargadas]);
-
-  // ✅ V00443 (Fase 7.3): con `consultasCanonicas`, las ya facturadas (completadas y falsos)
-  //   se piden solo al ver "Facturadas" o "Todas", y se suman a las pendientes.
-  const pedirFacturadas = useEffectEvent(() => {
-    const p = peticionCanonRef.current;
-    if (p.enVuelo && p.conFacturadas) return; // ya viene en camino
-    void cargarCanonico(true);
   });
-  useEffect(() => {
-    if (!flags.consultasCanonicas || vistaOps === 'pendientes' || facturadasCargadas) return;
-    pedirFacturadas();
-  }, [flags.consultasCanonicas, vistaOps, facturadasCargadas]);
+  useEffect(() => cargarOperacionesAlEntrar(), [activeTab, operacionesGlobales.length, statusListos, flagsCargadas]);
 
   // ✅ V00126: cualquier guardado en la colección `operaciones` (formulario,
   //   cambio de status, etc.) se refleja aquí al instante sin recargar.

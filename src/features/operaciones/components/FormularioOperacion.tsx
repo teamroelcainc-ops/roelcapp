@@ -1,9 +1,9 @@
 import { useState, useEffect, useEffectEvent, useMemo, useCallback, useRef, cloneElement, Fragment, memo } from 'react';
 import { createPortal } from 'react-dom'; // ✅ V00264: el formulario vive en document.body
-import { doc, getDoc, updateDoc, collection, getDocs, setDoc, addDoc, query, where, limit, orderBy } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, getDocs, addDoc, query, where, limit, orderBy } from 'firebase/firestore';
 import type { DocumentData } from 'firebase/firestore';
 import { prefijoTipoOperacion } from '../../../utils/generarReferencia';
-import { db, storage, auth } from '../../../config/firebase';
+import { db, auth } from '../../../config/firebase';
 // ✅ V00439 (Fase 3.6): catálogos, permisos y constantes desde la capa compartida.
 import { idReal, obtenerCatalogo, useCatalogos } from '../../../shared/data/catalogos';
 import type { DocCatalogo } from '../../../shared/data/catalogos';
@@ -28,7 +28,6 @@ import { statusDescuentaPuente, calcularStatusDinamico, idDocFlujo, leerFlujoFre
 import { obtenerFlags } from '../../../shared/data/flags';
 import { usosEnCache } from '../../../shared/data/consultas';
 import { obtenerFilaTipoCambioDeFecha } from '../services/tipoCambioPorFecha'; // ✅ V00438 (Fase 2.9)
-import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 
 import { FormularioEmpresa } from '../../empresas/components/FormularioEmpresa';
@@ -48,53 +47,17 @@ import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
 import { aduanaDeConvenio, camposPisoColombia, casetaRespaldoColombia, esAduanaColombia, esGastoPisoColombia, nombresAduana, normPuente } from '../../../utils/puenteColombia';
 import { abrirEdicion, useEdicionAbierta } from '../../../shared/utils/edicionesAbiertas'; // ✅ V00438
 import { CAMPOS_CANONICOS, normalizarNumerosOperacion } from '../../../shared/dominio/operacionCanonica';
-
-// ✅ NUEVO: utilidades para el Historial de Actividad (historial_actividad).
-//   Nunca deben romper el guardado: los llamados a registrarLog van con .catch.
-const truncarValorLog = (v: any): string => {
-  if (v === null || v === undefined || String(v).trim() === '') return '(vacío)';
-  const t = typeof v === 'object' ? JSON.stringify(v) : String(v);
-  return t.length > 60 ? t.slice(0, 57) + '...' : t;
-};
-
-const describirCambiosLog = (nuevo: any, anterior: any, etiquetas: Record<string, string> = {}): string => {
-  const cmp = (x: any) => (typeof x === 'object' && x !== null ? JSON.stringify(x) : String(x ?? ''));
-  const cambios: string[] = [];
-  Object.keys(nuevo || {}).forEach((k) => {
-    const a = anterior ? anterior[k] : undefined;
-    if (cmp(a) === cmp(nuevo[k])) return;
-    cambios.push(`${etiquetas[k] || k}: "${truncarValorLog(a)}" → "${truncarValorLog(nuevo[k])}"`);
-  });
-  if (cambios.length === 0) return 'sin cambios de valor detectados';
-  const visibles = cambios.slice(0, 15);
-  const resto = cambios.length - visibles.length;
-  return visibles.join(' | ') + (resto > 0 ? ` | ...y ${resto} campos más` : '');
-};
-
-// ✅ NUEVO (auditoría NO editable): lista completa de cambios "campo: viejo → nuevo"
-//   que se guarda DENTRO de la operación (historialEdiciones) para saber cuántas
-//   veces se editó una referencia, quién lo hizo y qué cambió exactamente.
-const listaCambiosAuditoria = (nuevo: any, anterior: any, etiquetas: Record<string, string> = {}): string[] => {
-  const cmp = (x: any) => (typeof x === 'object' && x !== null ? JSON.stringify(x) : String(x ?? ''));
-  const cambios: string[] = [];
-  Object.keys(nuevo || {}).forEach((k) => {
-    if (k === 'historialEdiciones' || k === 'creadoPor' || k === 'creadoEn') return;
-    const a = anterior ? anterior[k] : undefined;
-    if (cmp(a) === cmp(nuevo[k])) return;
-    cambios.push(`${etiquetas[k] || k}: "${truncarValorLog(a)}" → "${truncarValorLog(nuevo[k])}"`);
-  });
-  return cambios.slice(0, 40);
-};
-
-const describirCamposCapturadosLog = (datos: any, etiquetas: Record<string, string> = {}): string => {
-  const claves = Object.keys(datos || {}).filter((k) => {
-    const v = datos[k];
-    return v !== '' && v !== null && v !== undefined && v !== false;
-  });
-  const visibles = claves.slice(0, 20);
-  const resto = claves.length - visibles.length;
-  return visibles.map((k) => `${etiquetas[k] || k}: "${truncarValorLog(datos[k])}"`).join(' | ') + (resto > 0 ? ` | ...y ${resto} campos más` : '');
-};
+// ✅ V00444 (Fase 8.3): piezas sin estado del formulario, en archivos propios.
+import { describirCambiosLog, describirCamposCapturadosLog, listaCambiosAuditoria } from '../services/auditoriaLog';
+import { colorTipoOperacion, formatearDireccionPorPais, normalizarTxtDir, paisDeDireccion } from './formulario/direcciones';
+import { buscarTCDeFecha, normalizarFechaISO } from './formulario/tipoCambioFila';
+import { referenciaDeOperacion, subirDocumentoOperacion, TIPOS_DOCUMENTO_OPERACION } from './formulario/documentosOperacion';
+import { BotonAgregar, CampoArchivo } from './formulario/CampoArchivo';
+import {
+  IconAlert, IconArrowRight, IconBriefcase, IconCalendar, IconCheck, IconClipboard, IconDollar, IconEdit, IconFileText,
+  IconMapPin, IconMinimize, IconPackage, IconReceipt, IconRoute, IconSave, IconTrendingUp, IconTruck, IconUsers, IconX,
+} from './formulario/iconos';
+export { TIPOS_DOCUMENTO_OPERACION } from './formulario/documentosOperacion';
 
 interface FormProps {
   estado: 'abierto' | 'minimizado';
@@ -148,72 +111,6 @@ const TIPOS_OP_FILTRO_PAIS = ['8ec24dfe', '24da3608'];
 const TIPO_OP_SIN_FILTRO_PAIS = '3e5b0035';
 const esTrueAppSheet = (v: any): boolean => v === true || String(v ?? '').trim().toLowerCase() === 'true';
 
-// ═══════════════════════════════════════════════════════════════════════
-// ✅ (Origen/Destino por tráfico) Detección de PAÍS y FORMATO de dirección.
-//   Importación: Origen = Estados Unidos, Destino = México.
-//   Exportación: Origen = México, Destino = Estados Unidos.
-//   Movimiento: se muestra todo.
-//   (La regla por tipo de operación está en TIPOS_OP_FILTRO_PAIS / TIPO_OP_SIN_FILTRO_PAIS.)
-//   Formato MX:  Calle #Num Int., Col. Colonia, C.P. 12345, Ciudad, Estado, México
-//   Formato USA: 123 Street, Suite X, City, ST 78041, Estados Unidos
-// ═══════════════════════════════════════════════════════════════════════
-const normalizarTxtDir = (s: any): string =>
-  String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-
-const paisDeDireccion = (dir: any, textoRespaldo?: any): 'USA' | 'MX' | '' => {
-  const p = normalizarTxtDir(dir?.pais || dir?.country || '');
-  if (p) {
-    if (p.includes('unido') || p.includes('united') || p === 'us' || p === 'usa' || p.includes('eua')) return 'USA';
-    if (p.includes('mex')) return 'MX';
-  }
-  const t = normalizarTxtDir(textoRespaldo || dir?.direccionCompleta || '');
-  if (!t) return '';
-  if (/(estados unidos|united states|\busa\b|\beua\b|\bu\.s\.a\b)/.test(t)) return 'USA';
-  if (/(mexico|\bmx\b|tamaulipas|nuevo leon|coahuila|c\.p\.)/.test(t)) return 'MX';
-  if (/\b(texas|tx|laredo, tx)\b/.test(t)) return 'USA';
-  return '';
-};
-
-const formatearDireccionPorPais = (dir: any, textoRespaldo?: any): string => {
-  const respaldo = String(textoRespaldo || '').trim();
-  if (!dir) return respaldo;
-  const v = (x: any) => String(x ?? '').trim();
-  const pais = paisDeDireccion(dir, textoRespaldo);
-  const calle = v(dir.calle || dir.direccion || dir.street);
-  const num = v(dir.numExterior ?? dir.numeroExterior ?? dir.numero ?? dir.numExt);
-  const interior = v(dir.numInterior ?? dir.numeroInterior ?? dir.interior);
-  const colonia = v(dir.colonia);
-  const cp = v(dir.cp ?? dir.codigoPostal ?? dir.zip ?? dir.zipCode);
-  const ciudad = v(dir.ciudad || dir.municipio || dir.city);
-  const estadoDir = v(dir.estado || dir.state);
-  if (!calle && !ciudad) return v(dir.direccionCompleta) || respaldo;
-
-  if (pais === 'USA') {
-    const linea1 = [[num, calle].filter(Boolean).join(' '), interior ? `Suite ${interior}` : ''].filter(Boolean).join(', ');
-    const linea2 = [ciudad, [estadoDir, cp].filter(Boolean).join(' ')].filter(Boolean).join(', ');
-    return [linea1, linea2, 'Estados Unidos'].filter(Boolean).join(', ') || v(dir.direccionCompleta) || respaldo;
-  }
-  const partes = [
-    [calle, num ? `#${num}` : ''].filter(Boolean).join(' ') + (interior ? ` Int. ${interior}` : ''),
-    colonia ? `Col. ${colonia}` : '',
-    cp ? `C.P. ${cp}` : '',
-    ciudad,
-    estadoDir,
-    pais === 'MX' ? 'México' : '',
-  ].map(x => String(x).trim()).filter(Boolean);
-  return partes.join(', ') || v(dir.direccionCompleta) || respaldo;
-};
-
-// ✅ Color por TIPO DE OPERACIÓN: Transfer → naranja, Logística → azul,
-//   Fletes → verde. Cualquier otro tipo conserva el color neutro.
-const colorTipoOperacion = (nombre: any): string => {
-  const n = String(nombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  if (n.includes('transfer')) return '#fb923c';
-  if (n.includes('logist')) return '#58a6ff';
-  if (n.includes('flete')) return '#3fb950';
-  return '#c9d1d9';
-};
-
 // ✅ Envuelve un input de dinero y le antepone el símbolo "$" dentro del campo.
 const ConSimboloMoneda = ({ children, style, className }: { children: any; style?: any; className?: string }) => (
   <div className={className} style={{ position: 'relative', ...(style || {}) }}>
@@ -244,163 +141,8 @@ const TIPO_EMP_CLIENTE_MERCANCIA = 'Cliente (Mercancía)';
 const TIPO_EMP_ORIGEN_DESTINO    = 'Origen / Destino';
 const TIPO_EMP_PROV_SERVICIOS    = 'Proveedor (Servicios)';
 
-export const TIPOS_DOCUMENTO_OPERACION = [
-  'Otros documentos',
-  'Factura',
-  'Comprobante de Pago',
-  'Evidencia de Entrega (POD)',
-  'Carta Porte',
-  'DODA',
-  'Manifiesto',
-  "Entry's",
-  'Otro',
-];
-
-const sanitizarRutaOp = (s: string) =>
-  String(s || '').trim().replace(/[\/\\:*?"<>|#]+/g, '').replace(/\s+/g, ' ').trim();
-
-const referenciaDeOperacion = (idOp: string, ref?: string): string =>
-  (ref && String(ref).trim()) || (idOp ? String(idOp).substring(0, 6) : 'Operacion');
-
 const normClave = (s: any): string =>
   String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase().replace(/\s+/g, ' ');
-
-const normalizarFechaISO = (valor: any): string => {
-  if (valor === null || valor === undefined || valor === '') return '';
-
-  if (typeof valor === 'object') {
-    try {
-      if (typeof valor.toDate === 'function') return valor.toDate().toISOString().split('T')[0];
-      if (typeof valor.seconds === 'number') return new Date(valor.seconds * 1000).toISOString().split('T')[0];
-      if (valor instanceof Date && !isNaN(valor.getTime())) return valor.toISOString().split('T')[0];
-    } catch { /* sigue abajo */ }
-  }
-
-  const s = String(valor).trim();
-  if (!s) return '';
-
-  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
-
-  const dmy = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/);
-  if (dmy) {
-    const a = parseInt(dmy[1], 10);
-    const b = parseInt(dmy[2], 10);
-    const y = dmy[3];
-    let dd = a, mm = b;
-    if (a <= 12 && b > 12) { mm = a; dd = b; }
-    if (mm < 1 || mm > 12) return '';
-    return `${y}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
-  }
-
-  if (/^\d+$/.test(s)) {
-    const n = parseInt(s, 10);
-    const d = new Date(n > 1e12 ? n : n * 1000);
-    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
-  }
-
-  const d = new Date(s);
-  if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
-
-  return '';
-};
-
-// ✅ V00438 (Fase 2.9): el respaldo del T.C. cuando no viene en catalogosCacheados ya no
-//   descarga colecciones completas: ver obtenerFilaTipoCambioDeFecha (services/tipoCambioPorFecha).
-const extraerRateDeFilaTC = (row: any): number | null => {
-  if (!row || typeof row !== 'object') return null;
-  const keys = Object.keys(row);
-  const valKey = keys.find((k) => {
-    const kk = String(k).toLowerCase();
-    return kk.includes('dof') || kk.includes('valor') || kk === 'tc' ||
-           kk.includes('cambio') || kk.includes('monto') || kk.includes('t.c');
-  });
-  if (valKey) {
-    const n = Number(String(row[valKey]).replace(/[^0-9.-]+/g, ''));
-    if (!isNaN(n) && n > 0) return n;
-  }
-  const posibles = Object.values(row)
-    .map((v: any) => parseFloat(String(v).replace(/[^0-9.-]+/g, '')))
-    .filter((n: any) => !isNaN(n) && n > 5 && n < 60);
-  return posibles.length > 0 ? posibles[0] : null;
-};
-
-const filaTCEsDeLaFecha = (row: any, objetivoISO: string): boolean => {
-  if (!objetivoISO || !row || typeof row !== 'object') return false;
-  return Object.values(row).some((v: any) => normalizarFechaISO(v) === objetivoISO);
-};
-
-// ✅ V00439 (Fase 3.6): T.C. de una fecha en una lista de renglones de tipo_cambio
-//   (antes vivía dentro del efecto del formulario).
-const buscarTCDeFecha = (fuente: unknown, objetivoISO: string): number | null => {
-  for (const row of (Array.isArray(fuente) ? fuente : [])) {
-    if (filaTCEsDeLaFecha(row, objetivoISO)) {
-      const r = extraerRateDeFilaTC(row);
-      if (r !== null) return r;
-    }
-  }
-  return null;
-};
-
-const subirDocumentoOperacion = async (
-  file: File,
-  idOp: string,
-  refOp: string,
-  campoLabel: string,
-  sufijoUnico?: string,
-) => {
-  const carpeta = sanitizarRutaOp(refOp) || sanitizarRutaOp(idOp) || 'sin_referencia';
-  const subcarpeta = sanitizarRutaOp(campoLabel) || 'otros documentos';
-  const nombreBase = sufijoUnico ? `${subcarpeta} ${sufijoUnico}` : subcarpeta;
-  const punto = file.name.lastIndexOf('.');
-  const extension = punto >= 0 ? file.name.slice(punto) : '';
-  const nombreFinal = `${nombreBase}${extension}`;
-  const ruta = `operaciones/${carpeta}/${subcarpeta}/${nombreFinal}`;
-
-  const r = storageRef(storage, ruta);
-  await uploadBytes(r, file, file.type ? { contentType: file.type } : undefined);
-  const url = await getDownloadURL(r);
-
-  const docId = sanitizarRutaOp(`operaciones__${idOp}__${nombreBase}`).replace(/\s+/g, '_');
-  await setDoc(doc(db, 'documentos', docId), {
-    coleccionOrigen: 'operaciones',
-    registroId: idOp,
-    registroNombre: refOp,
-    tipoDocumento: sufijoUnico ? `${campoLabel} ${sufijoUnico}` : campoLabel,
-    carpeta,
-    subcarpeta,
-    nombreArchivo: nombreFinal,
-    path: ruta,
-    url,
-    vence: false,
-    fechaExpedicion: '',
-    fechaVencimiento: '',
-    observaciones: '',
-    createdAt: new Date().toISOString(),
-  }, { merge: true });
-};
-
-
-const IconBriefcase     = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>;
-const IconFileText      = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>;
-const IconTruck         = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>;
-const IconClipboard     = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9z"/><line x1="9" y1="11" x2="15" y2="11"/><line x1="9" y1="15" x2="13" y2="15"/></svg>;
-const IconDollar        = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="2" x2="12" y2="22"/><path d="M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>;
-const IconUsers         = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
-const IconMapPin        = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>;
-const IconCalendar      = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>;
-const IconPackage       = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>;
-const IconReceipt       = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M4 2h16v20l-3-2-2 2-3-2-3 2-2-2-3 2z"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="13" y2="16"/></svg>;
-const IconTrendingUp    = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>;
-const IconRoute         = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg>;
-const IconEdit          = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
-const IconSave          = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>;
-const IconX             = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
-const IconMinimize      = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="19" x2="19" y2="19"/></svg>;
-const IconAlert         = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>;
-const IconCheck         = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>;
-const IconArrowRight    = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>;
-const IconPlus          = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 16} height={p.size || 16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
 
 const tipoTarifarioCache = new Map<string, any>();
 
@@ -427,139 +169,6 @@ const resolverNombreCarga = async (valor: unknown): Promise<string> => {
   return mapa.get(v) || mapa.get(v.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase()) || v;
 };
 const traficoCache = new Map<string, string>();
-
-const BotonAgregar = ({ onClick, title }: { onClick: () => void; title: string }) => (
-  <button className="fo-x3"
-    type="button"
-    onClick={onClick}
-    title={title}
-    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(251, 146, 60, 0.20)'; }}
-    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(251, 146, 60, 0.10)'; }}
-  >
-    <IconPlus size={17} />
-  </button>
-);
-
-// ✅ FIX ARRASTRE DE DOCUMENTOS:
-//   - Contenedor <div> con onClick explícito (el <label> re-disparaba un "click"
-//     al soltar y, si se cancelaba, borraba el archivo recién arrastrado).
-//   - input con ref + DataTransfer para asignar un FileList real.
-//   - onChange del input SOLO se propaga cuando de verdad hay archivos (cancelar
-//     el diálogo ya NO borra el archivo cargado).
-//   - dragDepth evita el parpadeo al pasar sobre elementos hijos.
-const CampoArchivo = ({
-  label,
-  file,
-  onChange,
-  accept = '.pdf',
-  resaltar = false,
-}: {
-  label: string;
-  file: File | null | undefined;
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  accept?: string;
-  resaltar?: boolean;
-}) => {
-  const cargado = !!file;
-  const [arrastrando, setArrastrando] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const dragDepth = useRef(0);
-
-  const emitirArchivos = (lista: FileList | File[] | null) => {
-    const arr = lista ? Array.from(lista as any).filter(Boolean) : [];
-    if (arr.length === 0) {
-      if (inputRef.current) inputRef.current.value = '';
-      onChange({ target: { value: '', files: null } } as unknown as React.ChangeEvent<HTMLInputElement>);
-      return;
-    }
-    try {
-      const dt = new DataTransfer();
-      arr.forEach((f: any) => dt.items.add(f));
-      if (inputRef.current) inputRef.current.files = dt.files;
-      onChange({ target: { files: dt.files } } as unknown as React.ChangeEvent<HTMLInputElement>);
-    } catch {
-      onChange({ target: { files: lista as any } } as unknown as React.ChangeEvent<HTMLInputElement>);
-    }
-  };
-
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
-  };
-  const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragDepth.current += 1;
-    setArrastrando(true);
-  };
-  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragDepth.current -= 1;
-    if (dragDepth.current <= 0) { dragDepth.current = 0; setArrastrando(false); }
-  };
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragDepth.current = 0;
-    setArrastrando(false);
-    const archivos = e.dataTransfer?.files;
-    if (archivos && archivos.length > 0) emitirArchivos(archivos);
-  };
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) onChange(e);
-  };
-
-  const abrirDialogo = () => { inputRef.current?.click(); };
-
-  const quitarArchivo = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (inputRef.current) inputRef.current.value = '';
-    onChange({ target: { value: '', files: null } } as unknown as React.ChangeEvent<HTMLInputElement>);
-  };
-
-  const fondo = arrastrando
-    ? 'rgba(251, 146, 60, 0.14)'
-    : cargado ? 'rgba(63, 185, 80, 0.10)' : (resaltar ? 'rgba(248, 81, 73, 0.06)' : '#010409');
-  const borde = arrastrando
-    ? '1px dashed #fb923c'
-    : cargado ? '1px solid rgba(63, 185, 80, 0.45)' : (resaltar ? '1px dashed #f85149' : '1px dashed #30363d');
-
-  return (
-    <div className="form-group">
-      <label className="form-label">{label}</label>
-      <div
-        role="button"
-        onClick={abrirDialogo}
-        onDragOver={handleDragOver}
-        onDragEnter={handleDragEnter}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.15s ease', backgroundColor: fondo, border: borde }}
-      >
-        <span style={{ flexShrink: 0, width: '26px', height: '26px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', backgroundColor: cargado ? '#238636' : '#21262d', color: cargado ? '#fff' : '#8b949e' }}>
-          {cargado ? <IconCheck size={15} /> : <IconPlus size={15} />}
-        </span>
-        <span style={{ flex: 1, minWidth: 0, fontSize: '0.85rem', fontWeight: cargado ? 600 : 400, color: arrastrando ? '#fb923c' : (cargado ? '#3fb950' : '#8b949e'), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {arrastrando ? 'Suelta el archivo aquí…' : (cargado ? `✓ ${file!.name}` : 'Haz clic o arrastra un archivo aquí')}
-        </span>
-        {cargado && !arrastrando && (
-          <button className="fo-x4"
-            type="button"
-            title="Quitar archivo"
-            onClick={quitarArchivo}
-          >
-            <IconX size={12} /> Quitar
-          </button>
-        )}
-        <input className="fo-x5" ref={inputRef} type="file" accept={accept} onChange={handleInputChange} />
-      </div>
-    </div>
-  );
-};
 
 // ✅ V00439 (Fase 3.6): fila de catálogo tal como la lee este archivo (campos legacy uno
 //   por uno, sin tipo canónico todavía). Antes cada lista era un useState<any[]>.
@@ -887,7 +496,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
   const [infoUnidad, setInfoUnidad] = useState<{ ultimaOpRef?: string; ultimaOpFecha?: string; dieselConsecutivo?: string; dieselFecha?: string; dieselGalones?: number } | null>(null);
   const [cargandoInfoUnidad, setCargandoInfoUnidad] = useState(false);
 
-  useEffect(() => {
+  const cargarInfoUnidad = useEffectEvent(() => {
     const uid = String(formData.unidad || '').trim();
     if (!uid) { setInfoUnidad(null); return; }
     let cancelado = false;
@@ -935,8 +544,8 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
       if (!cancelado) setCargandoInfoUnidad(false);
     })();
     return () => { cancelado = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formData.unidad]);
+  });
+  useEffect(() => cargarInfoUnidad(), [formData.unidad]);
 
 
   const abrirCreacion = useCallback((
@@ -1781,27 +1390,27 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     return lista;
   }, [proveedorIdResuelto, conveniosProv, catalogoConvProvDetalles, tarifas, initialData, tarifariosProvLocal]); // ✅ V00272 · V00439
 
-  useEffect(() => {
+  const mostrarConvenioClienteGuardado = useEffectEvent(() => {
     if (!initialData) return;
     if (!formData.convenio) return;
     if (searchConvenio && searchConvenio.trim()) return;
     const conv = listaConveniosCliente.find((c: any) => String(c.id) === String(formData.convenio));
     const nombre = conv ? etiquetaConvenioCliente(conv) : (initialData.convenioNombre || '');
     if (nombre) setSearchConvenio(nombre);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialData, formData.convenio, searchConvenio, listaConveniosCliente]);
+  });
+  useEffect(() => mostrarConvenioClienteGuardado(), [initialData, formData.convenio, searchConvenio, listaConveniosCliente]);
 
-  useEffect(() => {
+  const mostrarConvenioProveedorGuardado = useEffectEvent(() => {
     if (!initialData) return;
     if (!formData.convenioProveedor) return;
     if (searchConvenioProveedor && searchConvenioProveedor.trim()) return;
     const conv = listaConveniosProveedor.find((c: any) => String(c.id) === String(formData.convenioProveedor));
     const nombre = conv ? etiquetaConvenioProveedor(conv) : (initialData.convenioProveedorNombre || '');
     if (nombre) setSearchConvenioProveedor(nombre);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialData, formData.convenioProveedor, searchConvenioProveedor, listaConveniosProveedor]);
+  });
+  useEffect(() => mostrarConvenioProveedorGuardado(), [initialData, formData.convenioProveedor, searchConvenioProveedor, listaConveniosProveedor]);
 
-  useEffect(() => {
+  const mostrarRemolqueGuardado = useEffectEvent(() => {
     if (!initialData) return;
     if (searchRemolque && searchRemolque.trim()) return;
     const remId = String(
@@ -1816,8 +1425,8 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
       setSearchRemolque(initialData.remolquePlaca || remId);
     }
     if (!formData.numeroRemolque) setFormData(prev => ({ ...prev, numeroRemolque: remId }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialData, remolques, searchRemolque, formData.numeroRemolque]);
+  });
+  useEffect(() => mostrarRemolqueGuardado(), [initialData, remolques, searchRemolque, formData.numeroRemolque]);
 
   const convenioClienteMaestroId = useMemo(() => {
     if (!clientePagaIdResuelto || !catalogoConvClientes) return '';
@@ -1835,7 +1444,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     return maestro ? String(maestro.id) : '';
   }, [proveedorIdResuelto, conveniosProv]);
 
-  useEffect(() => {
+  const sugerirConvenioProveedor = useEffectEvent(() => {
     if (!pestanasVisibles.includes('unidad')) return;
     if (!formData.convenio) return;
 
@@ -1868,8 +1477,8 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
       }));
       setSearchConvenioProveedor(convProvMatch.tipoConvenioNombre);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pestanasVisibles, formData.convenio, formData.convenioProveedor, formData.proveedorUnidad, searchProvTransporte, listaConveniosCliente, listaConveniosProveedor]);
+  });
+  useEffect(() => sugerirConvenioProveedor(), [pestanasVisibles, formData.convenio, formData.convenioProveedor, formData.proveedorUnidad, searchProvTransporte, listaConveniosCliente, listaConveniosProveedor]);
 
   const resolverNombreTrafico = useCallback(async (movRaw: any): Promise<string> => {
     const valor = String(movRaw || '').trim();
@@ -2012,7 +1621,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     resolverFlujo();
   }, [formData.convenio, listaConveniosCliente, tarifas, initialData, resolverNombreTrafico, refrescoConvenio]);
 
-  useEffect(() => {
+  const derivarDatosDelConvenio = useEffectEvent(() => {
     if (!initialData) return;
     if (!formData.convenio) return;
 
@@ -2065,8 +1674,8 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     })();
 
     return () => { cancelado = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialData, formData.convenio, formData.trafico, formData.carga, listaConveniosCliente, tarifas, resolverNombreTrafico]);
+  });
+  useEffect(() => derivarDatosDelConvenio(), [initialData, formData.convenio, formData.trafico, formData.carga, listaConveniosCliente, tarifas, resolverNombreTrafico]);
 
   useEffect(() => {
     if (!formData.convenio) return;
@@ -2148,7 +1757,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     return { monto: m, convertido: false, sinTC: false };
   };
 
-  useEffect(() => {
+  const recalcularConversionProveedor = useEffectEvent(() => {
     const tc = Number(formData.tipoCambioAprobado || tipoCambioDia) || 0; 
     const subtotal = Number(formData.totalAPagarProv || 0) + Number(formData.cargosAdicionalesProv || 0);
     // ✅ CORREGIDO: si la moneda del convenio del PROVEEDOR quedó VACÍA, se toma
@@ -2170,10 +1779,10 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     const { dol, pes, conv } = desglosarPorMonedas(subtotalFact, tc, monFactProv, monFactProv);
     void subtotal;
     setFormData(prev => ({ ...prev, subtotalProv: subtotalFact, dolaresProv: r2(dol), pesosProv: r2(pes), conversionProv: r2(conv) })); // ✅ V00244
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formData.facturadoEnUnidad, formData.monedaConvenioProv, formData.totalAPagarProv, formData.cargosAdicionalesProv, tipoCambioDia, formData.tipoCambioAprobado, formData.convenioProveedor, listaConveniosProveedor, listaMonedasLocal]);
+  });
+  useEffect(() => recalcularConversionProveedor(), [formData.facturadoEnUnidad, formData.monedaConvenioProv, formData.totalAPagarProv, formData.cargosAdicionalesProv, tipoCambioDia, formData.tipoCambioAprobado, formData.convenioProveedor, listaConveniosProveedor, listaMonedasLocal]);
 
-  useEffect(() => {
+  const recalcularConversionCliente = useEffectEvent(() => {
     const tc = Number(formData.tipoCambioAprobado || tipoCambioDia) || 0; 
     const subtotal = Number(formData.montoConvenioCliente || 0) + Number(formData.cargosAdicionales || 0);
     // ✅ CORREGIDO: si la moneda del convenio quedó VACÍA (el detalle no se pudo
@@ -2200,8 +1809,8 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     void subtotal;
     const utilidad = r2(r2(conv) - Number(formData.conversionProv || 0)); // ✅ V00244
     setFormData(prev => ({ ...prev, subtotalCliente: subtotalFact, dolaresCliente: r2(dol), pesosCliente: r2(pes), conversionCliente: r2(conv), utilidadEstimada: utilidad })); // ✅ V00244
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formData.facturadoEnCobrar, formData.monedaConvenioCliente, formData.montoConvenioCliente, formData.cargosAdicionales, tipoCambioDia, formData.conversionProv, formData.tipoCambioAprobado, formData.convenio, listaConveniosCliente, listaMonedasLocal]);
+  });
+  useEffect(() => recalcularConversionCliente(), [formData.facturadoEnCobrar, formData.monedaConvenioCliente, formData.montoConvenioCliente, formData.cargosAdicionales, tipoCambioDia, formData.conversionProv, formData.tipoCambioAprobado, formData.convenio, listaConveniosCliente, listaMonedasLocal]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -2552,7 +2161,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
   //   el usuario puede cambiarlo a mano: la auto-asignación solo aplica cuando
   //   el puente está vacío o tiene la caseta automática del otro tráfico, y no
   //   pisa el puente ya guardado al editar una operación existente.
-  useEffect(() => {
+  const asignarPuenteAutomatico = useEffectEvent(() => {
     if (!mostrarPuente) return;
     if (initialData && formData.puenteId) return;
     const traficoTxt = String(formData.trafico || '').toLowerCase();
@@ -2565,8 +2174,8 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     if (!row) return;
     const importe = Number(row.Importe ?? row.importe ?? 0) || 0;
     setFormData(prev => ({ ...prev, puenteId: idAuto, puenteNombre: String(row.nombre_gasto || ''), puenteMonto: importe }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formData.trafico, formData.puenteId, mostrarPuente, opcionesPuente.length, initialData]);
+  });
+  useEffect(() => asignarPuenteAutomatico(), [formData.trafico, formData.puenteId, mostrarPuente, opcionesPuente.length, initialData]);
 
   const usuarioActualCancel = useUsuarioStore((s) => s.usuario);
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, useEffectEvent } from 'react';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { useHandlerEstable } from '../hooks/useHandlerEstable';
 import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
@@ -38,15 +38,11 @@ import { idReal, useCatalogos } from '../../../shared/data/catalogos';
 import type { ColeccionCatalogo } from '../../../shared/data/catalogos';
 import { ID_MXN, ID_USD, STATUS_COMPLETADOS, TIPO_EMPRESA } from '../../../shared/dominio/constantes';
 import { estadoGrupoDe } from '../../../shared/dominio/operacionCanonica';
-
-// ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
-const fmtFechaAuditoria = (iso: any): string => {
-  try {
-    const d = new Date(String(iso));
-    if (isNaN(d.getTime())) return String(iso || '');
-    return d.toLocaleString('es-MX', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  } catch { return String(iso || ''); }
-};
+// ✅ V00444 (Fase 8.3): piezas sin estado del módulo, en archivos propios.
+import { describirCambiosLog, truncarValorLog } from '../services/auditoriaLog';
+import { COLUMNAS_STORAGE_KEY, cargarColumnasGuardadas } from './completados/columnas';
+import { describirFiltrosLog, fmtSaldoPuente, normalizarFechaServicioISO, normalizarMoneda } from './completados/formatos';
+import { colorTipoOperacion, fmtFechaAuditoria } from '../services/formatosOperacion';
 
 // ✅ V00439 (Fase 3.x): catálogos del módulo (alias → colección) desde el
 //   listener compartido (antes 16 onSnapshot propios + caché de useCatalogoCache).
@@ -78,130 +74,8 @@ const CATALOGOS_BAJO_DEMANDA = {
 type AliasCatalogoSC = keyof typeof CATALOGOS_SIEMPRE | keyof typeof CATALOGOS_BAJO_DEMANDA;
 
 
-// ✅ Color por TIPO DE OPERACIÓN: Transfer → naranja, Logística → azul,
-//   Fletes → verde. Cualquier otro tipo conserva el color neutro.
-const colorTipoOperacion = (nombre: any): string => {
-  const n = String(nombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  if (n.includes('transfer')) return '#fb923c';
-  // ✅ V00177: 'flete' se evalúa ANTES que 'logist' — "Logistica Fletes"
-  //   contiene ambas palabras y debe pintarse VERDE (línea de fletes).
-  if (n.includes('flete')) return '#3fb950';
-  if (n.includes('logist')) return '#58a6ff';
-  return '#c9d1d9';
-};
-
-// ✅ NUEVO: utilidades para el Historial de Actividad (historial_actividad).
-//   Nunca deben romper el flujo principal: los llamados a registrarLog van con .catch.
-const truncarValorLog = (v: any): string => {
-  if (v === null || v === undefined || String(v).trim() === '') return '(vacío)';
-  const t = typeof v === 'object' ? JSON.stringify(v) : String(v);
-  return t.length > 60 ? t.slice(0, 57) + '...' : t;
-};
-
-const describirCambiosLog = (nuevo: any, anterior: any, etiquetas: Record<string, string> = {}): string => {
-  const cmp = (x: any) => (typeof x === 'object' && x !== null ? JSON.stringify(x) : String(x ?? ''));
-  const cambios: string[] = [];
-  Object.keys(nuevo || {}).forEach((k) => {
-    const a = anterior ? anterior[k] : undefined;
-    if (cmp(a) === cmp(nuevo[k])) return;
-    cambios.push(`${etiquetas[k] || k}: "${truncarValorLog(a)}" → "${truncarValorLog(nuevo[k])}"`);
-  });
-  if (cambios.length === 0) return 'sin cambios de valor detectados';
-  const visibles = cambios.slice(0, 15);
-  const resto = cambios.length - visibles.length;
-  return visibles.join(' | ') + (resto > 0 ? ` | ...y ${resto} campos más` : '');
-};
-
-const describirFiltrosLog = (f: { fechaInicio: string; fechaFin: string; cliente?: string; clienteNombre?: string; tipoOperacion?: string; movimiento?: string; cargaVacia?: string; aduana?: string; remolque?: string; remolqueNombre?: string; operador?: string; operadorNombre?: string; referencia?: string; busqueda?: string }): string => { // ✅ V00256
-  const partes: string[] = [`Fechas: ${f.fechaInicio} a ${f.fechaFin}`];
-  if (f.cliente) partes.push(`Cliente: ${f.clienteNombre || f.cliente}`);
-  if (f.tipoOperacion) partes.push(`Tipo de operación: ${f.tipoOperacion}`);
-  if (f.movimiento) partes.push(`Movimiento: ${f.movimiento === 'expo' ? 'Exportación' : f.movimiento === 'impo' ? 'Importación' : 'Movimiento'}`); // ✅ V00256
-  if (f.cargaVacia) partes.push(`C/V: ${f.cargaVacia}`); // ✅ V00256
-  if (f.aduana) partes.push(`Aduana: ${f.aduana}`); // ✅ V00256
-  if (f.remolque) partes.push(`Remolque: ${f.remolqueNombre || f.remolque}`);
-  if (f.operador) partes.push(`Operador: ${f.operadorNombre || f.operador}`);
-  if (f.referencia && f.referencia.trim()) partes.push(`# Referencia: "${f.referencia.trim()}"`);
-  if (f.busqueda && f.busqueda.trim()) partes.push(`Filtro general: "${f.busqueda.trim()}"`);
-  return partes.join(' | ');
-};
-
-const COLUMNAS_BASE = [
-  { id: 'ref', label: '# Referencia', visible: true },
-  { id: 'fechaServicio', label: 'Fecha Servicio', visible: true },
-  { id: 'fechaCita', label: 'Fecha Cita', visible: false },
-  { id: 'tipoOperacion', label: 'Tipo de Operación', visible: true },
-  { id: 'status', label: 'Status', visible: true },
-  // ✅ NUEVO: conexiones con los demás módulos (vienen desnormalizadas en la operación)
-  { id: 'refDiesel', label: 'Ref. Diesel', visible: true },
-  { id: 'refNomina', label: 'Ref. Nómina', visible: true },
-  { id: 'invoiceCliente', label: 'Invoice Cliente', visible: true },
-  { id: 'invoiceProveedor', label: 'Invoice Proveedor', visible: true },
-  { id: 'trafico', label: 'Tráfico', visible: false },
-  { id: 'cliente', label: 'Cliente (Paga)', visible: true },
-  { id: 'saldoPuente', label: 'Saldo Puente', visible: false }, // ✅ V00355
-  { id: 'convenioTarifa', label: 'Convenio Cliente (Tarifa)', visible: true },
-  { id: 'refCliente', label: 'Ref. Cliente', visible: false },
-  { id: 'facturadoEnCobrar', label: 'Moneda Cobro', visible: false },
-  { id: 'montoConvenioCliente', label: 'Monto Convenio (Cliente)', visible: false },
-  { id: 'cargosAdicionales', label: 'Cargos Adic. (Cliente)', visible: true },
-  { id: 'subtotal', label: 'Subtotal Cliente', visible: true },
-  { id: 'tipoCambioAprobado', label: 'Tipo Cambio', visible: false },
-  { id: 'dolaresCliente', label: 'Dólares (Cliente)', visible: false },
-  { id: 'pesosCliente', label: 'Pesos (Cliente)', visible: false },
-  { id: 'conversionCliente', label: 'Conversión Ingreso', visible: false },
-  { id: 'origen', label: 'Origen', visible: false },
-  { id: 'destino', label: 'Destino', visible: false },
-  { id: 'remolque', label: '# Remolque', visible: true },
-  { id: 'proveedor', label: 'Proveedor de Unidad', visible: true },
-  { id: 'unidadProveedor', label: 'Unidad Externa', visible: false },
-  { id: 'operadorProveedor', label: 'Operador Externo', visible: false },
-  { id: 'convenioProv', label: 'Convenio Prov.', visible: true },
-  { id: 'facturadoEnUnidad', label: 'Moneda Prov.', visible: false },
-  { id: 'monedaConvenioProv', label: 'Moneda Conv. Prov.', visible: false },
-  { id: 'totalAPagarProv', label: 'Monto Base Prov.', visible: false },
-  { id: 'cargosAdicionalesProv', label: 'Cargos Adic. Prov.', visible: false },
-  { id: 'subtotalProv', label: 'Subtotal Prov.', visible: false },
-  { id: 'dolaresProv', label: 'Dólares Prov.', visible: false },
-  { id: 'pesosProv', label: 'Pesos Prov.', visible: false },
-  { id: 'conversionProv', label: 'Conversión Gasto', visible: false },
-  { id: 'unidad', label: 'Unidad Roelca', visible: true },
-  { id: 'operador', label: 'Operador Roelca', visible: false },
-  { id: 'sueldoOperador', label: 'Sueldo Operador', visible: false },
-  { id: 'sueldoExtra', label: 'Sueldo Extra', visible: false },
-  { id: 'sueldoTotal', label: 'Sueldo Total', visible: false },
-  { id: 'combustible', label: 'Combustible', visible: false },
-  { id: 'combustibleExtra', label: 'Combustible Extra', visible: false },
-  { id: 'combustibleTotal', label: 'Combustible Total', visible: false },
-  { id: 'clienteMercancia', label: 'Cliente Mercancía', visible: false },
-  { id: 'descripcionMercancia', label: 'Desc. Mercancía', visible: false },
-  { id: 'cantidad', label: 'Cantidad', visible: false },
-  { id: 'embalaje', label: 'Embalaje', visible: false },
-  { id: 'pesoKg', label: 'Peso (Kg)', visible: false },
-  { id: 'numDoda', label: '# DODA', visible: false },
-  { id: 'fechaEmisionDoda', label: 'Fecha DODA', visible: false },
-  { id: 'numeroEntrys', label: '# Entrys', visible: false },
-  { id: 'cantEntrys', label: 'Cant. Entrys', visible: false },
-  { id: 'numManifiesto', label: '# Manifiesto', visible: false },
-  { id: 'provServicios', label: 'Prov. Servicios', visible: false },
-  { id: 'montoManifiesto', label: 'Costo Manifiesto', visible: false },
-  { id: 'totalGastos', label: 'Total Gastos', visible: false },
-  { id: 'utilidadEstimada', label: 'Utilidad Estimada', visible: false },
-  { id: 'observacionesEjecutivo', label: 'Obs. Ejecutivo', visible: false },
-  { id: 'observacionesUnidad', label: 'Obs. Unidad', visible: false },
-  { id: 'observacionesCobrar', label: 'Obs. Cobro', visible: false }
-];
-
 // ✅ Status que se muestran en esta vista — SOLO estos 2 IDs hex.
 const STATUS_COMPLETADOS_VALORES = STATUS_COMPLETADOS; // ✅ V00439 (Fase 3.x)
-// ✅ V00355: saldo del puente colocado al completar (AVI import / Puente III export)
-const fmtSaldoPuente = (op: { saldoPuente?: unknown; saldoPuenteMoneda?: unknown; saldoPuentePiso?: unknown; saldoPuentePisoMoneda?: unknown }): string => {
-  const n = Number(op?.saldoPuente); if (!Number.isFinite(n)) return '-';
-  const f = (v: number) => v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const piso = Number(op?.saldoPuentePiso); // ✅ V00388: aduana Colombia = caseta + piso del puente
-  return `$${f(n)} ${String(op?.saldoPuenteMoneda || '')}${piso > 0 ? ` + $${f(piso)} ${String(op?.saldoPuentePisoMoneda || '')}` : ''}`.trim();
-};
-
 // ID del tipo de empresa "Cliente (Paga)" para el buscador
 const ID_TIPO_CLIENTE_PAGA = TIPO_EMPRESA.clientePaga; // ✅ V00439 (Fase 3.x)
 // ✅ NUEVO: tamaño de página para descarga incremental
@@ -219,10 +93,6 @@ const CACHE_KEY_TODOS = CACHE_PREFIX + 'all_v3';
 //   en la base), Buscar consulta SOLO el rango pedido en vez de todo el histórico.
 const CLAVE_FECHAS_INDEXADAS = CACHE_PREFIX + 'fechas_indexadas_v1';
 
-// ✅ NUEVO: clave para PERSISTIR la configuración de columnas (orden + visibles)
-//   en localStorage, para que NO se pierda al recargar la página.
-const COLUMNAS_STORAGE_KEY = 'roelca_completadas_columnas_v1';
-
 // ✅ NUEVO: el último filtro buscado se guarda POR USUARIO en localStorage y se
 //   restaura (con búsqueda automática) al volver a entrar al módulo.
 const FILTROS_STORAGE_PREFIX = 'roelca_completadas_filtros_v1_';
@@ -231,107 +101,6 @@ const claveFiltrosGuardados = () => FILTROS_STORAGE_PREFIX + (auth.currentUser?.
 // ✅ NUEVO: la selección y el ORDEN de columnas del Excel se recuerdan POR USUARIO.
 const EXPORT_STORAGE_PREFIX = 'roelca_completadas_export_v1_';
 const claveExportGuardado = () => EXPORT_STORAGE_PREFIX + (auth.currentUser?.uid || 'anon');
-
-// ✅ NUEVO: normaliza nombres de moneda inconsistentes en la base
-//   ("Dolares" / "Dólares" / "DOLARES" → "Dólares"; "pesos" → "Pesos").
-const normalizarMoneda = (txt: any): string => {
-  const t = String(txt ?? '').trim();
-  if (!t || t === '-') return t;
-  const plano = t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  if (plano.includes('dolar')) return 'Dólares';
-  if (plano.includes('peso')) return 'Pesos';
-  return t;
-};
-
-// ✅ NUEVO: carga la configuración guardada y la reconcilia con COLUMNAS_BASE:
-//   · respeta el ORDEN y la VISIBILIDAD guardados,
-//   · si en el código se agregaron columnas nuevas (que no estaban guardadas),
-//     se añaden al final con su valor por defecto,
-//   · si una columna guardada ya no existe en el código, se descarta.
-//   Así nunca se rompe aunque el catálogo de columnas cambie en una actualización.
-const cargarColumnasGuardadas = (): typeof COLUMNAS_BASE => {
-  const base = COLUMNAS_BASE.map(c => ({ ...c }));
-  try {
-    const raw = localStorage.getItem(COLUMNAS_STORAGE_KEY);
-    if (!raw) return base;
-    const guardadas = JSON.parse(raw);
-    if (!Array.isArray(guardadas)) return base;
-
-    const basePorId = new Map(base.map(c => [c.id, c]));
-    const resultado: typeof COLUMNAS_BASE = [];
-    const yaAgregados = new Set<string>();
-
-    // 1) Primero, en el ORDEN guardado (solo las que siguen existiendo).
-    guardadas.forEach((g: any) => {
-      const def = basePorId.get(g?.id);
-      if (def && !yaAgregados.has(def.id)) {
-        resultado.push({ ...def, visible: typeof g.visible === 'boolean' ? g.visible : def.visible });
-        yaAgregados.add(def.id);
-      }
-    });
-
-    // 2) Columnas nuevas del código que no estaban guardadas: al final.
-    base.forEach(c => {
-      if (!yaAgregados.has(c.id)) {
-        resultado.push({ ...c });
-        yaAgregados.add(c.id);
-      }
-    });
-
-    return resultado;
-  } catch {
-    return base;
-  }
-};
-
-// ✅ NUEVO: normaliza CUALQUIER formato de fecha de servicio a "YYYY-MM-DD".
-//   Los registros migrados/viejos pueden guardar la fecha como Timestamp de
-//   Firestore, objeto Date, número epoch o texto "DD/MM/YYYY" / "MM/DD/YYYY".
-//   Sin esta normalización, el filtro por rango fallaba y no mostraba nada.
-const normalizarFechaServicioISO = (valor: any): string => {
-  if (valor === null || valor === undefined || valor === '') return '';
-
-  // Timestamp de Firestore u objeto con toDate()/seconds.
-  if (typeof valor === 'object') {
-    try {
-      if (typeof valor.toDate === 'function') return valor.toDate().toISOString().split('T')[0];
-      if (typeof valor.seconds === 'number') return new Date(valor.seconds * 1000).toISOString().split('T')[0];
-      if (valor instanceof Date && !isNaN(valor.getTime())) return valor.toISOString().split('T')[0];
-    } catch { /* sigue abajo */ }
-  }
-
-  const s = String(valor).trim();
-  if (!s) return '';
-
-  // Ya viene en ISO ("2026-06-25" o "2026-06-25T10:30:00").
-  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
-
-  // Formatos con barras o guiones: DD/MM/YYYY (latino) o MM/DD/YYYY.
-  const dmy = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/);
-  if (dmy) {
-    let a = parseInt(dmy[1], 10);
-    let b = parseInt(dmy[2], 10);
-    const y = dmy[3];
-    let dd = a, mm = b;            // Por defecto se asume DD/MM (formato latino).
-    if (a <= 12 && b > 12) { mm = a; dd = b; }   // Si el 2º > 12 era MM/DD.
-    if (mm < 1 || mm > 12) return s;             // Formato no reconocible.
-    return `${y}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
-  }
-
-  // Número epoch (ms o s).
-  if (/^\d+$/.test(s)) {
-    const n = parseInt(s, 10);
-    const d = new Date(n > 1e12 ? n : n * 1000);
-    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
-  }
-
-  // Último intento: que lo resuelva el motor de fechas del navegador.
-  const d = new Date(s);
-  if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
-
-  return s;
-};
 
 // ✅ NUEVO: prop opcional para conectar la edición con el formulario existente del padre.
 interface ServiciosCompletadosProps {
@@ -954,7 +723,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   // ✅ NUEVO: al entrar al módulo se restaura el último filtro buscado por este
   //   usuario y se ejecuta la búsqueda automáticamente (sin registrar log, ya
   //   que no es una búsqueda nueva sino la restauración de la anterior).
-  useEffect(() => {
+  const restaurarFiltroGuardado = useEffectEvent(() => {
     // ✅ V00294: aplica un objeto de filtros a los INPUTS y, si se pide, ejecuta
     //   la búsqueda (aplicados + descarga). Lo usan el deep-link y la restauración.
     const precargarInputs = (f: Record<string, string>) => {
@@ -1011,8 +780,8 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       if (f?.fechaInicio && f?.fechaFin) precargarInputs(f);
       setDrawerFiltrosAbierto(true);
     } catch { /* filtro guardado o URL corruptos: ignorar */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  });
+  useEffect(() => restaurarFiltroGuardado(), []);
 
   // ✅ NUEVO: cuántos filtros están definidos en el panel (para el contador del botón).
   const contadorFiltrosActivos = [filterFechaInicio || filterFechaFin, filterCliente, filterRemolque, filterOperador, filterReferencia.trim(), filterTipoOperacion, filterMovimiento, filterCargaVacia, filterAduana, busqueda.trim()].filter(Boolean).length; // ✅ V00256
@@ -1097,7 +866,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     } catch { /* almacenamiento lleno o no disponible: ignorar */ }
   }, [columnasTabla]);
 
-  useEffect(() => {
+  const cargarBotonesDelFlujo = useEffectEvent(() => {
     const cargarBotones = async () => {
       if (operacionViendo) {
         let op = operacionViendo;
@@ -1112,8 +881,8 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       }
     };
     cargarBotones();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [operacionViendo, mapaStatus]);
+  });
+  useEffect(() => cargarBotonesDelFlujo(), [operacionViendo, mapaStatus]);
 
   const mostrarDato = (text: any) => (text && text !== '' ? text : '-');
   

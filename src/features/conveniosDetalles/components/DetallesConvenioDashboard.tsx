@@ -34,7 +34,7 @@
 //   consecutivo, status, uso en operaciones [op.convenioProveedor], selección
 //   múltiple, edición en modal, Sin cotización) aplican también a proveedores.
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useEffectEvent } from 'react';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { createPortal } from 'react-dom'; // ✅ V00237
 import { collection, getDocs, getDoc, doc, updateDoc, writeBatch, setDoc, query, where } from 'firebase/firestore';
@@ -318,15 +318,15 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   const [visibleN, setVisibleN] = useState(30);
   useEffect(() => { setVisibleN(30); }, [pestana, busqueda, filtroEntidad, ordenCol]);
   // ✅ V00312: deep-link del botón ↗ — la URL trae pestaña, búsqueda, entidad y orden.
-  useEffect(() => {
+  const aplicarFiltrosDeUrl = useEffectEvent(() => {
     const f = filtrosDeUrl<{ pestana?: string; busqueda?: string; filtroEntidad?: string; ordenCol?: { col: ColOrden; asc: boolean } | null }>(CLAVE_MODULO);
     if (!f) return;
     if (f.pestana && (PESTANAS as readonly string[]).includes(f.pestana)) setPestana(f.pestana as (typeof PESTANAS)[number]);
     if (typeof f.busqueda === 'string') setBusqueda(f.busqueda);
     if (typeof f.filtroEntidad === 'string') setFiltroEntidad(f.filtroEntidad);
     if (f.ordenCol && f.ordenCol.col) setOrdenCol({ col: f.ordenCol.col, asc: !!f.ordenCol.asc });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tipo]);
+  });
+  useEffect(() => aplicarFiltrosDeUrl(), [tipo]);
   // ✅ NUEVO (V00122): edición en línea (varios de golpe) + eliminar con papelera
   const [cambios, setCambios] = useState<Record<string, { tarifa?: number; moneda?: string; status?: string }>>({}); // ✅ V00199: + status
   const [guardando, setGuardando] = useState(false);
@@ -960,11 +960,11 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     setCargando(false);
   };
 
-  useEffect(() => {
+  const cargarUsosAlEntrar = useEffectEvent(() => {
     if (!flagsCargadas) return; // ✅ V00443: sin esto empezaría por la descarga vieja (todas las operaciones)
     cargar(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tipo, canon, flagsCargadas]);
+  });
+  useEffect(() => cargarUsosAlEntrar(), [tipo, canon, flagsCargadas]);
 
   // ✅ V00302: ESCUCHAS EN VIVO (base relacional de verdad) — cualquier alta,
   //   edición o eliminación en convenios_*_detalles o en los convenios
@@ -975,7 +975,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
 
   // ✅ V00302: las FILAS se reconstruyen solas con cada snapshot (misma
   //   lógica que antes vivía dentro de cargar()).
-  useEffect(() => {
+  const armarFilasDetalle = useEffectEvent(() => {
     if (detallesDocs === null || conveniosMap === null) return;
     const tarifas: Record<string, string> = {};
     tarifasLista.forEach((t) => { tarifas[t.id] = t.nombre; });
@@ -1008,8 +1008,8 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     });
     guardarCacheMemoria(CLAVE_CACHE, resultado);
     setFilas(resultado);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detallesDocs, conveniosMap, tarifasLista]);
+  });
+  useEffect(() => armarFilasDetalle(), [detallesDocs, conveniosMap, tarifasLista]);
 
   const filasVisibles = useMemo(() => {
     let lista = filas || [];

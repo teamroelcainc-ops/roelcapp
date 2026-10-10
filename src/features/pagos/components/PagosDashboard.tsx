@@ -10,7 +10,7 @@
 //     statusPago (PAGADA / PARCIAL), sin tocar su statusFactura.
 //   · Eliminar un pago REVIERTE la aplicación en sus facturas.
 // ---------------------------------------------------------------------------
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useEffectEvent, useMemo, useRef } from 'react';
 import { suscribirOperacionGuardada } from '../../../utils/operacionesBus';
 import { HiloModal } from '../../hilo/HiloModal';
 import { EditorOperacionEmbebido } from '../../operaciones/components/EditorOperacionEmbebido';
@@ -185,15 +185,13 @@ export function PagosDashboard() {
 
   // ✅ V00126: si se guarda una operación que pertenece a la factura abierta,
   //   se vuelven a leer sus operaciones para reflejar el cambio al instante.
-  useEffect(() => {
-    return suscribirOperacionGuardada(({ id }) => {
-      const abierta = facturaViendoRef.current;
-      if (!abierta) return;
-      const ids: string[] = Array.isArray(abierta.raw?.operacionesIds) ? abierta.raw.operacionesIds.map(String) : [];
-      if (ids.includes(String(id))) abrirDetalleFactura(abierta);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const alGuardarOperacion = useEffectEvent((id: unknown) => {
+    const abierta = facturaViendoRef.current;
+    if (!abierta) return;
+    const ids: string[] = Array.isArray(abierta.raw?.operacionesIds) ? abierta.raw.operacionesIds.map(String) : [];
+    if (ids.includes(String(id))) abrirDetalleFactura(abierta);
+  });
+  useEffect(() => suscribirOperacionGuardada(({ id }) => alGuardarOperacion(id)), []);
   const facturaViendoRef = useRef<FacturaPagable | null>(null);
   useEffect(() => { facturaViendoRef.current = facturaViendo; }, [facturaViendo]);
 
@@ -876,20 +874,20 @@ export function PagosDashboard() {
   // Recarga automática al volver el foco a la pestaña (máx. 1 vez cada 10 s).
   // ✅ V00443 (Fase 7.4): con `consultasCanonicas` ya no se recarga sola al volver el foco (el botón ↻
   //   sigue; con `dineroPorServidor` el servidor rechaza aplicar más que el saldo actual).
+  const alVolver = useEffectEvent(() => {
+    if (document.visibilityState !== 'visible') return;
+    if (Date.now() - ultimaRecargaModal.current < 10000) return;
+    recargarFacturasModal(true);
+  });
   useEffect(() => {
     if (!modalAbierto || !entidadSel || flags.consultasCanonicas) return;
-    const alVolver = () => {
-      if (document.visibilityState !== 'visible') return;
-      if (Date.now() - ultimaRecargaModal.current < 10000) return;
-      recargarFacturasModal(true);
-    };
-    window.addEventListener('focus', alVolver);
-    document.addEventListener('visibilitychange', alVolver);
+    const escuchar = () => alVolver();
+    window.addEventListener('focus', escuchar);
+    document.addEventListener('visibilitychange', escuchar);
     return () => {
-      window.removeEventListener('focus', alVolver);
-      document.removeEventListener('visibilitychange', alVolver);
+      window.removeEventListener('focus', escuchar);
+      document.removeEventListener('visibilitychange', escuchar);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modalAbierto, entidadSel, tab, flags.consultasCanonicas]);
 
 
@@ -946,7 +944,6 @@ export function PagosDashboard() {
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
       return String(va).localeCompare(String(vb), 'es') * dir;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pagos, busqueda, ordenPagos]);
 
   // ── Reportes (Excel / PDF) ──

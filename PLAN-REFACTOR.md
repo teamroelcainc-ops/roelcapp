@@ -42,6 +42,7 @@ Se crean a mano en Firestore (documento `configuracion/flags`, campos booleanos)
 | V00441 | Web → functions → **P1** reglas (`npm run test:rules`) → **P2** `npm run saldos:diesel` (simulación → `--aplicar`) → `saldosCorrientes` → **P3** `npm run reconciliar` (simulación, el negocio revisa `diferencias.csv`) → `dineroPorServidor` (esperar 1 min) → `reconciliar -- --aplicar --confirmo-respaldo` → `cobroPuenteEnServidor`. Detalle en CAMBIOS-V00441.md. |
 | V00442 | Web → functions (**borrar `operacionMontoCambiado` cuando lo pregunte**) → `firebase deploy --only firestore:indexes` → P1 reglas → alerta de `[reintentos]` → **P2** `npm run usos` y `npm run nombres` (simulación → `--aplicar`) → `propagacionEnServidor`. Detalle en CAMBIOS-V00442.md. |
 | V00443 | Web → `firebase deploy --only firestore:indexes` (esperar "Habilitado") → con los requisitos de la tabla de banderas, `consultasCanonicas` → medir con `npm run dev:medir`. Detalle en CAMBIOS-V00443.md. |
+| V00444 | Solo web (orden interno, sin banderas). Revisar en el navegador lo de "No probado aquí" de CAMBIOS-V00444.md. |
 
 ## Reconciliación de facturas (Fase 5, P3)
 - Script: `functions/scripts/reconciliarFacturas.ts` → `npm --prefix functions run reconciliar` (simulación por defecto).
@@ -78,3 +79,31 @@ Se crean a mano en Firestore (documento `configuracion/flags`, campos booleanos)
 - Pendiente (decisión): lista de Pagos por empresa/periodo (necesita un selector de periodo), historial de facturas
   paginado, "Facturadas/Todas" de Facturación por rango, resúmenes diarios precalculados por una función programada
   (`resumenes_diarios/{fecha}`) y `getAggregateFromServer` en Estadísticas. Ver code-notes.md.
+
+## Fase 8 — lo que queda
+### 8.2 Unir Facturación Clientes y Proveedores — DECISIÓN DE PRODUCTO (no hecho)
+Ya comparten la carga de operaciones (`useOperacionesFacturables`) y los selectores. Lo demás difiere y hay que elegir
+qué se queda en cada punto (lista en code-notes.md, Fase 8). Con esa lista aprobada: un `FacturacionDashboard` con
+`lado` y las diferencias como configuración (columnas, campos de la operación, documentos PDF propios de cada lado).
+
+### 8.3 Archivos de más de 800 líneas — siguientes pasos (uno por versión, cada uno revisado en el navegador)
+1. Facturación (ambos): modales a archivos propios — Emisores de remisión, Vista previa de remisión, Configurar
+   columnas, Costo adicional, Diagnóstico, Agregar referencia, Detalle/Edición de factura — pasando sus estilos en
+   línea a CSS al moverlos. Luego la tabla de operaciones (`TablaOperacionesFacturables`, virtualizada).
+2. OperacionesDashboard y ServiciosCompletados/Cancelados: `FilaOperacion` (memo), `TablaOperaciones` (virtualizada),
+   filtros y modales (horarios, ficha, carta) en archivos propios; un hook `useCompletados(rango)`.
+3. FormularioOperacion: una pestaña por archivo (General, Pedimento, Manifiesto, Unidad, Cobrar) con un contexto del
+   formulario (`formData`/`setFormData`, catálogos) en lugar de pasar 40 props.
+4. ReferenciasNomina, ReferenciasDiesel, Catálogos, Tarifarios: igual, cuando se toquen.
+
+### 8.4 Costos y sueldos aparte (`operaciones_finanzas/{opId}`) — DISEÑO, requiere P1 + P2 + app móvil
+Firestore no oculta campos: quien lee una operación lee sus montos. Pasos propuestos:
+1. Bandera `finanzasAparte`: `operacionEscrita` copia los campos de dinero (montoConvenioCliente, cargosAdicionales*,
+   totalAPagarProv, sueldoOperador, sueldoExtra, combustible*, conversiones, `*Centavos`, utilidad) a
+   `operaciones_finanzas/{opId}`; script de puesta al día (P2).
+2. Pantallas de finanzas (Facturación, Pagos, Nómina, Estadísticas, Reportes) leen de `operaciones_finanzas`.
+3. Roelca Móvil: `sueldo.ts` y `ajusteSueldoPorStatus` dejan de leer/escribir `sueldoOperador` en `operaciones` (el
+   servidor aplica el ajuste por status). Se publica la app ANTES del paso 4.
+4. Reglas (P1): `operaciones_finanzas` solo roles de finanzas; escrituras de dinero en `operaciones` bloqueadas.
+5. P4: borrar los campos de dinero de `operaciones`.
+
