@@ -22,6 +22,9 @@ export interface Flags {
   usuariosPorServidor: boolean;
   /** Fase 1.6 — eliminarRegistro usa la callable eliminarConPapelera. */
   eliminarPorServidor: boolean;
+  /** Fase 4.4 — el servidor escribe y mantiene los campos canónicos de las operaciones
+   *  (crearOperacion + trigger operacionEscrita). Solo la leen las Cloud Functions. */
+  canonicosEnServidor: boolean;
   /** Fase 5 — pagos y facturación por callables con transacción. */
   dineroPorServidor: boolean;
   /** Fase 5.7 — el peaje del puente lo cobra el servidor (trigger), no el navegador. */
@@ -35,6 +38,7 @@ export interface Flags {
 export const FLAGS_APAGADAS: Flags = {
   usuariosPorServidor: false,
   eliminarPorServidor: false,
+  canonicosEnServidor: false,
   dineroPorServidor: false,
   cobroPuenteEnServidor: false,
   propagacionEnServidor: false,

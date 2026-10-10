@@ -35,6 +35,7 @@ import { monedaCanonica, nombreMoneda } from '../../../shared/dominio/moneda';
 import { mostrarCartaPara, useConfigCarta } from '../../../utils/configCartaInstrucciones';
 import { ConfigCartaModal } from './ConfigCartaModal';
 import { usePermisoFormularios } from '../../formularios/configFormularios';
+import { estadoGrupoDe } from '../../../shared/dominio/operacionCanonica';
 
 // ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
 const fmtFechaAuditoria = (iso: any): string => {
@@ -398,14 +399,10 @@ const OperacionesDashboard = () => {
   // ✅ V00432: además de los ids, se excluye por NOMBRE del status (catálogo o
   //   guardado): Cancelado, Falso y Servicio Completado nunca son "activas",
   //   aunque el id venga de otro registro del catálogo o de un dato viejo.
-  const sinAcentosOD = (t: unknown) => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  const esNombreFinal = (n: unknown): boolean => { const t = sinAcentosOD(n); return t.includes('cancel') || t.includes('falso') || t.includes('complet'); };
+  // ✅ V00440 (Fase 4.5): regla compartida con el servidor (campo canónico estadoGrupo).
   const esOperacionActiva = (op: { status?: unknown; statusNombre?: unknown }): boolean => {
     const statusId = String(op.status || '').trim();
-    if (IDS_STATUS_EXCLUIDOS.includes(statusId)) return false;
-    if (esNombreFinal(op.statusNombre)) return false;
-    if (statusId && esNombreFinal(resolverStatus(statusId).nombre)) return false;
-    return true;
+    return estadoGrupoDe(op, statusId ? resolverStatus(statusId).nombre : undefined) === 'activa';
   };
 
   // ✅ V00432: si una operación pasa a Cancelado/Falso/Completado mientras la

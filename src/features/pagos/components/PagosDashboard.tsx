@@ -1463,6 +1463,7 @@ export function PagosDashboard() {
           metodoPago,
           referencia: referenciaPago,
           entidadId,
+          empresaId: entidadId || null, // ✅ V00440 (Fase 4.2): llave canónica del pago
           entidadNombre: entidadSel,
           monto: montoRecibido,
           montoAplicado,

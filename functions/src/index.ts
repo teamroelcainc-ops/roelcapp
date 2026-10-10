@@ -69,6 +69,9 @@ import { getFirestore } from 'firebase-admin/firestore';
 import type { DocumentReference } from 'firebase-admin/firestore';
 import { z } from 'zod';
 import { exigirPersonal, EXIGIR_APP_CHECK } from './acceso'; // ✅ V00435 · V00437: claims + App Check
+import { CATALOGO_ADUANAS, CATALOGO_CV, catalogoServidor, contextoServidor } from './canonico';
+import { banderaServidor } from './flags';
+import { CAMPOS_CANONICOS, camposCanonicos, derivarDesdeConvenio } from './dominio/operacionCanonica.js';
 
 if (getApps().length === 0) initializeApp();
 const db = getFirestore();
@@ -76,7 +79,7 @@ const db = getFirestore();
 // ✅ Marcador para confirmar QUÉ versión está desplegada:
 //   · aparece en los logs de cada invocación: [crearOperacion v2.1]
 //   · viaja en la respuesta: { version: 'v2.1' }
-const FN_VERSION = 'v2.1';
+const FN_VERSION = 'v2.2'; // ✅ V00440: + campos canónicos (bandera canonicosEnServidor)
 
 /** Extrae el número final de un ref "PR-DDMMYY-NNN" (tolera sin padding). */
 const consecutivoDesdeRef = (ref: unknown): number => {
@@ -144,6 +147,21 @@ export const crearOperacion = onCall({ region: 'us-central1', enforceAppCheck: E
   const clienteOpId = data.clienteOpId ? String(data.clienteOpId) : null;
 
   console.log(`[crearOperacion ${FN_VERSION}] prefijo=${refPrefijo} clienteOpId=${clienteOpId || '(sin id)'}`);
+  // ✅ V00440 (Fase 4.4): con la bandera, la operación nace con sus campos
+  //   canónicos y su C/V/Aduana derivados (el trigger ya no tiene nada que escribir).
+  //   Los catálogos se leen ANTES de la transacción (caché de 5 min).
+  //   Si algo de eso falla, la operación se crea igual (el trigger lo completa).
+  let ctxCanonico: Awaited<ReturnType<typeof contextoServidor>> | null = null;
+  let catCV: Awaited<ReturnType<typeof catalogoServidor>> | null = null;
+  let catAdu: Awaited<ReturnType<typeof catalogoServidor>> | null = null;
+  try {
+    if (await banderaServidor('canonicosEnServidor')) {
+      [ctxCanonico, catCV, catAdu] = await Promise.all([contextoServidor(), catalogoServidor(...CATALOGO_CV), catalogoServidor(...CATALOGO_ADUANAS)]);
+    }
+  } catch (e) {
+    console.error('[crearOperacion] No se pudieron preparar los campos canónicos; los completará el trigger.', e);
+    ctxCanonico = null; catCV = null; catAdu = null;
+  }
   try {
     const resultado = await db.runTransaction(
       async (tx) => {
@@ -230,15 +248,22 @@ export const crearOperacion = onCall({ region: 'us-central1', enforceAppCheck: E
         delete limpio.refConsecutivo;
         delete limpio.creadoPor;
         delete limpio.createdAt;
+        // ✅ V00440: los campos canónicos los calcula SOLO el servidor (una copia de
+        //   otra operación no debe arrastrar su estadoGrupo, empresasIds, etc.).
+        //   `esPrueba` NO se quita: lo marca el formulario y es su propio origen.
+        for (const campo of CAMPOS_CANONICOS) if (campo !== 'esPrueba') delete limpio[campo];
 
-        tx.set(nuevoRef, {
+        const base = {
           ...limpio,
           ref,
           refPrefijo,
           refConsecutivo: asignado,
           creadoPor: uid,
           createdAt: ahoraISO,
-        });
+        };
+        const derivados = catCV && catAdu ? derivarDesdeConvenio(base, catCV, catAdu) : {};
+        const canon = ctxCanonico ? camposCanonicos({ ...base, ...derivados }, ctxCanonico).campos : {};
+        tx.set(nuevoRef, { ...base, ...derivados, ...canon });
 
         if (idempRef) {
           tx.set(idempRef, { operacionId: nuevoRef.id, ref, creadoPor: uid, createdAt: ahoraISO });

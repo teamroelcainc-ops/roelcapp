@@ -37,49 +37,23 @@ import { logger } from 'firebase-functions/v2';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { exigirAdmin, EXIGIR_APP_CHECK } from './acceso'; // ✅ V00435 · V00437: solo admin
+import { CATALOGO_ADUANAS, CATALOGO_CV, cambiosCanonicos, catalogoServidor, contextoServidor, invalidarCatalogoServidor } from './canonico';
+import { banderaServidor } from './flags';
+import { derivarDesdeConvenio } from './dominio/operacionCanonica.js';
+import { ESQUEMA_OPERACION_VERSION } from './dominio/constantes.js';
 
 if (getApps().length === 0) initializeApp();
 const dbRel = getFirestore();
 
-const REL_VERSION = 'relacional-v1.4'; // ✅ V00299: + sync INVERSA detalle→línea del tarifario · ✅ V00429: + guardián de integridad del convenio
+const REL_VERSION = 'relacional-v1.5'; // ✅ V00299: + sync INVERSA detalle→línea del tarifario · ✅ V00429: + guardián de integridad del convenio · ✅ V00440: + campos canónicos
 
 /** Normaliza: sin acentos, espacios colapsados, minúsculas (misma regla del cliente V00257). */
 const normR = (t: unknown): string =>
   String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
 
-/** Alias legados en descripciones viejas → nombre del catálogo (V00257). */
-const ALIAS_CV: Record<string, string> = { cargada: 'cargado', vacia: 'vacio' };
-const claveCV = (seg: string): string => ALIAS_CV[seg] || seg;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Caché de catálogos en memoria del contenedor (5 min): los triggers de
-// operaciones se disparan seguido y los catálogos casi no cambian.
-// ─────────────────────────────────────────────────────────────────────────────
-type MapaCatalogo = { porId: Map<string, string>; porNorm: Map<string, string> };
-const cacheCatalogos: Record<string, { data: MapaCatalogo; ts: number }> = {};
-const TTL_CATALOGO_MS = 5 * 60 * 1000;
-
-const cargarCatalogoR = async (coleccion: string, campos: string[]): Promise<MapaCatalogo> => {
-  const hit = cacheCatalogos[coleccion];
-  if (hit && Date.now() - hit.ts < TTL_CATALOGO_MS) return hit.data;
-  const porId = new Map<string, string>();
-  const porNorm = new Map<string, string>();
-  const snap = await dbRel.collection(coleccion).get();
-  snap.docs.forEach((d) => {
-    const x = d.data() as Record<string, unknown>;
-    let nombre = '';
-    for (const c of campos) { const v = String(x[c] || '').trim(); if (v) { nombre = v; break; } }
-    if (!nombre) return;
-    porId.set(d.id, nombre);
-    porNorm.set(normR(nombre), nombre);
-  });
-  const data = { porId, porNorm };
-  cacheCatalogos[coleccion] = { data, ts: Date.now() };
-  return data;
-};
-
-/** Invalida el caché (los triggers de renombre lo llaman). */
-const invalidarCatalogoR = (coleccion: string): void => { delete cacheCatalogos[coleccion]; };
+// ✅ V00440 (Fase 4): los catálogos de Carga/Vacía y Aduanas (5 min en memoria)
+//   y la regla "EL CONVENIO MANDA" se movieron a canonico.ts y a
+//   dominio/operacionCanonica.ts (misma lógica, compartida con la migración).
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1) EMPRESA ACTUALIZADA → el nombre se propaga a todo lo que la referencia.
@@ -129,62 +103,52 @@ export const empresaActualizada = onDocumentUpdated({ document: 'empresas/{empre
 // 2) OPERACIÓN ESCRITA → C/V, Aduana y Expo/Impo derivados del convenio.
 //    (Port server-side del botón "⇊ Normalizar operaciones", por documento.)
 // ─────────────────────────────────────────────────────────────────────────────
-const derivarDesdeConvenio = async (x: Record<string, unknown>): Promise<Record<string, string>> => {
-  const cambios: Record<string, string> = {};
-  const conv = String(x.convenioNombre || '').trim();
-  const segmentos = conv.split(' - ').map((s) => normR(s)).filter(Boolean);
-
-  const [catCV, catAdu] = await Promise.all([
-    cargarCatalogoR('catalogo_carga_vacia', ['nombre', 'estado_carga']),
-    cargarCatalogoR('catalogo_aduanas', ['aduana', 'nombre']),
-  ]);
-
-  // C/V — EL CONVENIO MANDA (V00258); el campo directo es respaldo.
-  let cvFinal = '';
-  for (let i = segmentos.length - 1; i >= 0; i--) {
-    const m = catCV.porNorm.get(claveCV(segmentos[i]));
-    if (m) { cvFinal = m; break; }
-  }
-  if (!cvFinal) {
-    const bruto = String(x.carga || x.estadoCarga || x.cargaVacia || x.cargadoVacio || '').trim();
-    if (bruto && normR(bruto) !== 'n/a') cvFinal = catCV.porId.get(bruto) || catCV.porNorm.get(claveCV(normR(bruto))) || '';
-  }
-  if (cvFinal && String(x.carga || '') !== cvFinal) cambios.carga = cvFinal;
-
-  // Aduana — igual: convenio primero.
-  let aduFinal = '';
-  for (let i = segmentos.length - 1; i >= 0; i--) {
-    const m = catAdu.porNorm.get(segmentos[i]);
-    if (m) { aduFinal = m; break; }
-  }
-  if (!aduFinal) {
-    const bruto = String(x.aduanaNombre || x.aduana || x.aduanaId || '').trim();
-    if (bruto) aduFinal = catAdu.porId.get(bruto) || catAdu.porNorm.get(normR(bruto)) || '';
-  }
-  if (aduFinal && String(x.aduanaNombre || '') !== aduFinal) cambios.aduanaNombre = aduFinal;
-
-  // Expo/Impo — SOLO si la operación no trae uno válido (nunca se sobreescribe).
-  const trafNorm = normR(String(x.trafico || ''));
-  const trafValido = trafNorm.includes('export') || trafNorm.includes('import') || trafNorm.includes('movimiento');
-  if (!trafValido) {
-    const texto = normR(`${conv} ${x.tipoOperacionNombre || x.tipoServicioNombre || x.tipoServicio || ''}`);
-    const trafFinal = texto.includes('export') ? 'Exportación' : texto.includes('import') ? 'Importación' : texto.includes('movimiento') ? 'Movimiento' : '';
-    if (trafFinal) cambios.trafico = trafFinal;
+// ✅ V00440 (Fase 4.4): además, con la bandera `canonicosEnServidor`, los campos
+//   canónicos (fechaServicioISO, *Id, estadoGrupo, empresasIds, porFacturar*,
+//   *Centavos…) se recalculan en la MISMA escritura. La escritura lleva la
+//   precondición lastUpdateTime: si la operación cambió mientras se calculaba, se
+//   vuelve a calcular DENTRO de una transacción con el dato actual (comparando
+//   contra el `antes` de este evento, para no perder un cambio de origen).
+const calcularCambiosOperacion = async (antes: Record<string, unknown> | undefined, x: Record<string, unknown>): Promise<Record<string, unknown>> => {
+  const [catCV, catAdu] = await Promise.all([catalogoServidor(...CATALOGO_CV), catalogoServidor(...CATALOGO_ADUANAS)]);
+  const cambios: Record<string, unknown> = derivarDesdeConvenio(x, catCV, catAdu);
+  if (await banderaServidor('canonicosEnServidor')) {
+    Object.assign(cambios, cambiosCanonicos(antes, { ...x, ...cambios }, await contextoServidor()));
   }
   return cambios;
 };
+
+const codigoError = (e: unknown): string => String((e as { code?: unknown })?.code ?? '').toUpperCase();
+const esPrecondicion = (e: unknown): boolean => ['9', 'FAILED_PRECONDITION', 'FAILED-PRECONDITION'].includes(codigoError(e));
+const esNoExiste = (e: unknown): boolean => ['5', 'NOT_FOUND', 'NOT-FOUND'].includes(codigoError(e));
 
 export const operacionEscrita = onDocumentWritten({ document: 'operaciones/{opId}', region: 'us-central1' }, async (event) => {
   const despues = event.data?.after;
   if (!despues || !despues.exists) return; // borrado: nada que normalizar
   const x = despues.data() as Record<string, unknown>;
+  const antes = event.data?.before?.exists ? (event.data.before.data() as Record<string, unknown>) : undefined;
   try {
-    const cambios = await derivarDesdeConvenio(x);
+    const cambios = await calcularCambiosOperacion(antes, x);
     if (Object.keys(cambios).length === 0) return; // anti-bucle: ya está íntegra
-    await despues.ref.update(cambios);
-    logger.info(`[${REL_VERSION}] operacionEscrita: ${String(x.ref || event.params.opId)} normalizada`, cambios);
+    await despues.ref.update(cambios, { lastUpdateTime: despues.updateTime });
+    logger.info(`[${REL_VERSION}] operacionEscrita: ${String(x.ref || event.params.opId)} normalizada`, Object.keys(cambios));
   } catch (e) {
-    logger.error(`[${REL_VERSION}] operacionEscrita: fallo en ${event.params.opId}`, e);
+    if (esNoExiste(e)) return; // se borró mientras se calculaba
+    if (!esPrecondicion(e)) {
+      logger.error(`[${REL_VERSION}] operacionEscrita: fallo en ${event.params.opId}`, e);
+      return;
+    }
+    // Cambió mientras se calculaba: se recalcula con el dato actual, en transacción.
+    try {
+      await dbRel.runTransaction(async (tx) => {
+        const actual = await tx.get(despues.ref);
+        if (!actual.exists) return;
+        const cambios = await calcularCambiosOperacion(antes, actual.data() as Record<string, unknown>);
+        if (Object.keys(cambios).length > 0) tx.update(despues.ref, cambios);
+      });
+    } catch (e2) {
+      logger.error(`[${REL_VERSION}] operacionEscrita: fallo al recalcular ${event.params.opId}`, e2);
+    }
   }
 });
 
@@ -209,7 +173,7 @@ const propagarRenombreCatalogo = async (
 };
 
 export const catalogoCVRenombrado = onDocumentUpdated({ document: 'catalogo_carga_vacia/{id}', region: 'us-central1' }, async (event) => {
-  invalidarCatalogoR('catalogo_carga_vacia');
+  invalidarCatalogoServidor('catalogo_carga_vacia');
   const antes = String((event.data?.before.data() as Record<string, unknown> | undefined)?.nombre || '').trim();
   const despues = String((event.data?.after.data() as Record<string, unknown> | undefined)?.nombre || '').trim();
   const n = await propagarRenombreCatalogo('carga', antes, despues);
@@ -217,7 +181,7 @@ export const catalogoCVRenombrado = onDocumentUpdated({ document: 'catalogo_carg
 });
 
 export const catalogoAduanaRenombrada = onDocumentUpdated({ document: 'catalogo_aduanas/{id}', region: 'us-central1' }, async (event) => {
-  invalidarCatalogoR('catalogo_aduanas');
+  invalidarCatalogoServidor('catalogo_aduanas');
   const xA = event.data?.before.data() as Record<string, unknown> | undefined;
   const xD = event.data?.after.data() as Record<string, unknown> | undefined;
   const antes = String(xA?.aduana || xA?.nombre || '').trim();
@@ -265,8 +229,8 @@ export const verificarIntegridad = onCall({ region: 'us-central1', timeoutSecond
   // Conjuntos de referencia (ids válidos y nombres canónicos).
   const [empresasSnap, catCV, catAdu] = await Promise.all([
     dbRel.collection('empresas').select().get(),
-    cargarCatalogoR('catalogo_carga_vacia', ['nombre', 'estado_carga']),
-    cargarCatalogoR('catalogo_aduanas', ['aduana', 'nombre']),
+    catalogoServidor(...CATALOGO_CV),
+    catalogoServidor(...CATALOGO_ADUANAS),
   ]);
   const empresasIds = new Set(empresasSnap.docs.map((d) => d.id));
   const cvValidos = new Set(Array.from(catCV.porNorm.keys()));
@@ -283,11 +247,17 @@ export const verificarIntegridad = onCall({ region: 'us-central1', timeoutSecond
     facturasOpsMuertas: nuevoHallazgo(),         // facturas con operacionesIds que ya no existen
     tarifariosClienteInexistente: nuevoHallazgo(),
     tarifariosProveedorInexistente: nuevoHallazgo(),
+    // ✅ V00440 (Fase 4): operaciones sin el esquema canónico al día.
+    opsSinEsquemaV2: nuevoHallazgo(),            // esquemaVersion distinto de 2
+    opsSinFechaISO: nuevoHallazgo(),             // sin fechaServicioISO
+    opsSinEstadoGrupo: nuevoHallazgo(),          // sin estadoGrupo
+    opsRelacionSinId: nuevoHallazgo(),           // trae cliente/proveedor/status/convenio pero no su *Id canónico
   };
 
   // Operaciones.
   const opsSnap = await dbRel.collection('operaciones')
-    .select('ref', 'clientePaga', 'proveedorUnidad', 'carga', 'aduanaNombre').get();
+    .select('ref', 'clientePaga', 'proveedorUnidad', 'carga', 'aduanaNombre', 'status', 'convenio',
+      'esquemaVersion', 'fechaServicioISO', 'estadoGrupo', 'clientePagaId', 'proveedorUnidadId', 'statusId', 'convenioClienteId').get();
   reporte.revisadas.operaciones = opsSnap.size;
   const opsIds = new Set(opsSnap.docs.map((d) => d.id));
   opsSnap.docs.forEach((d) => {
@@ -301,6 +271,13 @@ export const verificarIntegridad = onCall({ region: 'us-central1', timeoutSecond
     if (cv && normR(cv) !== 'n/a' && !cvValidos.has(normR(cv))) anotar(reporte.opsCargaFueraDeCatalogo, `${etiqueta} ("${cv}")`);
     const adu = String(x.aduanaNombre || '').trim();
     if (adu && !aduValidas.has(normR(adu))) anotar(reporte.opsAduanaFueraDeCatalogo, `${etiqueta} ("${adu}")`);
+    if (x.esquemaVersion !== ESQUEMA_OPERACION_VERSION) anotar(reporte.opsSinEsquemaV2, etiqueta);
+    if (!String(x.fechaServicioISO || '').trim()) anotar(reporte.opsSinFechaISO, etiqueta);
+    if (!String(x.estadoGrupo || '').trim()) anotar(reporte.opsSinEstadoGrupo, etiqueta);
+    const sinId = ([['clientePaga', 'clientePagaId'], ['proveedorUnidad', 'proveedorUnidadId'], ['status', 'statusId'], ['convenio', 'convenioClienteId']] as const)
+      .filter(([origen, canon]) => String(x[origen] || '').trim() && !String(x[canon] || '').trim())
+      .map(([origen]) => origen);
+    if (sinId.length) anotar(reporte.opsRelacionSinId, `${etiqueta} (${sinId.join(', ')})`);
   });
 
   // Facturas de clientes.

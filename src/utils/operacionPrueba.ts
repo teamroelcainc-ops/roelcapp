@@ -8,17 +8,11 @@
 //   (para probar flujos, estatus, documentos, peaje…), pero NO entra a
 //   Facturación, Pagos, Estadísticas, Reportes, Panel de Control, Nóminas,
 //   Saldos de Puentes ni auditorías.
+// ✅ V00440 (Fase 4): la regla vive en src/shared/dominio/operacionCanonica.ts
+//   (la misma que usa el servidor para el campo canónico `esPrueba`).
+import { esOperacionPrueba } from '../shared/dominio/operacionCanonica';
 
-export const PREFIJO_PRUEBA = 'PR.';
-
-type ConDatos = { esPrueba?: unknown; ref?: unknown } | null | undefined;
-
-export const esOperacionPrueba = (op: unknown): boolean => {
-  const o = op as ConDatos;
-  if (!o || typeof o !== 'object') return false;
-  if (o.esPrueba === true) return true;
-  return String(o.ref ?? '').trim().toUpperCase().startsWith(PREFIJO_PRUEBA);
-};
+export { esOperacionPrueba, PREFIJO_PRUEBA } from '../shared/dominio/operacionCanonica';
 
 /** Quita las operaciones de prueba de una lista de objetos. */
 export const sinPruebas = <T,>(lista: T[]): T[] =>

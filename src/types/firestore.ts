@@ -97,6 +97,29 @@ export interface OperacionDoc extends ConId<OperacionId> {
   /** Canónico (Fase 4): pendientes de facturar por lado. */
   porFacturarCliente?: boolean;
   porFacturarProveedor?: boolean;
+  // ── Canónicos (Fase 4, los escribe SOLO el servidor; ver shared/dominio/operacionCanonica.ts)
+  /** ID resuelto aunque `clientePaga` traiga un nombre de AppSheet. */
+  clientePagaId?: EmpresaId | null;
+  clienteMercanciaId?: EmpresaId | null;
+  provServiciosId?: EmpresaId | null;
+  proveedorUnidadId?: EmpresaId | null;
+  origenId?: EmpresaId | null;
+  destinoId?: EmpresaId | null;
+  convenioClienteId?: ConvenioDetalleId | null;
+  convenioProveedorId?: ConvenioDetalleId | null;
+  statusId?: StatusId | null;
+  unidadId?: UnidadId | null;
+  operadorId?: EmpleadoId | null;
+  cargaId?: string | null;
+  aduanaId?: string | null;
+  monedaCliente?: Moneda | null;
+  monedaProveedor?: Moneda | null;
+  montoConvenioClienteCentavos?: Centavos;
+  cargosAdicionalesCentavos?: Centavos;
+  totalAPagarProvCentavos?: Centavos;
+  cargosAdicionalesProvCentavos?: Centavos;
+  sueldoOperadorCentavos?: Centavos;
+  nominaId?: NominaId | null;
   esquemaVersion?: number;
   esPrueba?: boolean;
   createdAt?: string;
@@ -252,6 +275,8 @@ export interface TarifarioDoc extends ConId<TarifarioId> {
 export interface NominaDoc extends ConId<NominaId> {
   folio?: string;
   fechaPago?: string;
+  /** Canónico (Fase 4): 'AAAA-MM-DD' para ordenar y paginar. */
+  fechaPagoISO?: FechaISO;
   operadorId?: EmpleadoId;
   operadorNombre?: string;
   operacionesIds?: OperacionId[];

@@ -35,6 +35,7 @@ import type { DocLibre } from '../../../utils/docPorId';
 import { idReal, useCatalogos } from '../../../shared/data/catalogos';
 import type { ColeccionCatalogo } from '../../../shared/data/catalogos';
 import { ID_MXN, ID_USD, STATUS_COMPLETADOS, TIPO_EMPRESA } from '../../../shared/dominio/constantes';
+import { estadoGrupoDe } from '../../../shared/dominio/operacionCanonica';
 
 // ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
 const fmtFechaAuditoria = (iso: any): string => {
@@ -604,10 +605,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   // ───────────────────────────────────────────────────────────────────────────
   // ✅ NUEVO: helpers de status y de CONEXIONES con los demás módulos.
   // ───────────────────────────────────────────────────────────────────────────
-  const nombreStatusOp = (op: any): string => {
-    const r = resolverStatus(op?.status);
-    return String(r.nombre || op?.statusNombre || op?.status || '');
-  };
   // Una operación completada es "Falso" si su status contiene la palabra "falso".
   // ✅ V00293: FILTRO POR TARJETA — clic en una tarjeta del resumen filtra la
   //   tabla; ctrl+clic (o "Abrir en una pestaña nueva") abre la app con el
@@ -626,7 +623,8 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     const t = filtroTarjeta ? `&tarjeta=${filtroTarjeta}` : '';
     return `${base}${f}${t}`;
   };
-  const esFalso = (op: any): boolean => nombreStatusOp(op).toLowerCase().includes('falso');
+  // ✅ V00440 (Fase 4.5): regla compartida (estadoGrupo 'falso'); el nombre del catálogo manda.
+  const esFalso = (op: any): boolean => estadoGrupoDe(op, resolverStatus(op?.status).nombre) === 'falso';
 
   const tieneDiesel = (op: any): boolean => !!(op?.referenciaDieselConsecutivo || op?.referenciaDieselId);
   const tieneNomina = (op: any): boolean => !!(op?.referenciaNominaConsecutivo || op?.referenciaNominaId);

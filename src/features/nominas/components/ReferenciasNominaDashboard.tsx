@@ -32,6 +32,8 @@ import { docsSinPruebas } from '../../../utils/operacionPrueba';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 import { idReal, obtenerCatalogo, useCatalogos } from '../../../shared/data/catalogos';
 import { STATUS_COMPLETADOS } from '../../../shared/dominio/constantes';
+import { esGrupoTerminado, estadoGrupoDe } from '../../../shared/dominio/operacionCanonica';
+import { aFechaServicioISO } from '../../../shared/dominio/fechas';
 
 const ID_CARGO_OPERADOR = 'edda3a2b';
 // ✅ IDs de status "completada" en el catálogo (los mismos que usa Facturación
@@ -680,12 +682,9 @@ export const ReferenciasNominaDashboard = () => {
 
   // ✅ Solo operaciones COMPLETADAS entran al universo de nómina (mismos IDs de
   //   status que usa Facturación de Clientes), con respaldo por nombre.
-  const esCompletada = (op: any) => {
-    const st = String(op.status || '').trim();
-    if (STATUS_COMPLETADOS_NOMINA.includes(st)) return true;
-    const nombre = `${op.statusNombre || ''} ${op.statusServicio || ''}`.toLowerCase();
-    return nombre.includes('complet');
-  };
+  //   ✅ V00440 (Fase 4.5): regla compartida — Completada o Falso (el Falso se paga a la mitad, V00387).
+  const esCompletada = (op: any) =>
+    esGrupoTerminado(estadoGrupoDe({ status: op.status, statusNombre: `${op.statusNombre || ''} ${op.statusServicio || ''}` }));
 
   // ✅ Texto normalizado para comparar nombres (sin acentos, minúsculas).
   const normalizarTxt = (s: any): string =>
@@ -1329,6 +1328,7 @@ export const ReferenciasNominaDashboard = () => {
       // `consecutivo` lo pone la transacción (folio definitivo).
       const data: any = {
         fechaPago, fechaInicio, fechaFin,
+        fechaPagoISO: aFechaServicioISO(fechaPago), // ✅ V00440 (Fase 4.2): canónico para ordenar/paginar
         operadorId: operadorIdSeleccionado || nominaEditando?.operadorId || null,
         operadorNombre: filtroOperador,
         deduccionId: nominaEditando?.deduccionId || deduccionOperador?.id || null,

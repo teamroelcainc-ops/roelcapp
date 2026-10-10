@@ -9,6 +9,8 @@
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log",
     "test": "vitest run",
+    "build:scripts": "node ../scripts/sincronizar-dominio.mjs && tsc -p tsconfig.scripts.json",
+    "migrar:v2": "npm run build:scripts && node lib-scripts/scripts/migrarEsquemaV2.js",
     "prebuild": "node ../scripts/sincronizar-dominio.mjs"
   },
   "engines": {

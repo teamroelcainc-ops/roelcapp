@@ -45,6 +45,7 @@ import { validarFormularioConfigurable } from '../../formularios/configFormulari
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
 import { aduanaDeConvenio, camposPisoColombia, casetaRespaldoColombia, esAduanaColombia, esGastoPisoColombia, nombresAduana, normPuente } from '../../../utils/puenteColombia';
 import { abrirEdicion, useEdicionAbierta } from '../../../shared/utils/edicionesAbiertas'; // ✅ V00438
+import { CAMPOS_CANONICOS, normalizarNumerosOperacion } from '../../../shared/dominio/operacionCanonica';
 
 // ✅ NUEVO: utilidades para el Historial de Actividad (historial_actividad).
 //   Nunca deben romper el guardado: los llamados a registrarLog van con .catch.
@@ -2699,6 +2700,13 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
       }
 
       Object.keys(operacionData).forEach(key => { if (operacionData[key] === undefined) delete operacionData[key]; });
+      // ✅ V00440 (Fase 4.6): montos y cantidades se guardan como NÚMERO (los inputs
+      //   entregan texto: '1250.50' → 1250.5). Un campo vacío se queda vacío.
+      Object.assign(operacionData, normalizarNumerosOperacion(operacionData));
+      // ✅ V00440 (Fase 4.4): los campos canónicos (estadoGrupo, *Id, empresasIds…) los
+      //   escribe SOLO el servidor. El formulario trae una copia del documento que pudo
+      //   quedar vieja mientras estaba abierto; guardarla regresaría valores anteriores.
+      for (const campo of CAMPOS_CANONICOS) if (campo !== 'esPrueba') delete operacionData[campo];
 
       if (initialData && puedeEditarRef && referencia.trim() && referencia.trim() !== String((initialData as any).ref || '')) {
         operacionData.ref = referencia.trim();
@@ -2759,7 +2767,9 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
       }
       const ahoraAuditoria = new Date().toISOString();
       if (initialData) {
-        const cambiosAud = listaCambiosAuditoria(operacionData, initialData as any, etiquetasCamposAut);
+        // ✅ V00440: la comparación usa los números ya normalizados de ambos lados
+        //   ('1250.50' guardado vs 1250.5 nuevo NO es un cambio).
+        const cambiosAud = listaCambiosAuditoria(operacionData, normalizarNumerosOperacion(initialData as Record<string, unknown>) as any, etiquetasCamposAut);
         (operacionData as any).creadoPor = (initialData as any).creadoPor || '';
         (operacionData as any).creadoEn = (initialData as any).creadoEn || '';
         if (cambiosAud.length > 0) {
@@ -2832,7 +2842,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
       //    y cuándo. El usuario y la fecha los resuelve registrarLog. ──
       try {
         if (initialData) {
-          registrarLog('Operaciones', 'Edición', `Editó la operación ${refGuardado}. Cambios → ${describirCambiosLog(operacionData, initialData as any, etiquetasCamposAut)}`).catch(() => {});
+          registrarLog('Operaciones', 'Edición', `Editó la operación ${refGuardado}. Cambios → ${describirCambiosLog(operacionData, normalizarNumerosOperacion(initialData as Record<string, unknown>) as any, etiquetasCamposAut)}`).catch(() => {});
         } else {
           registrarLog('Operaciones', 'Creación', `Creó la operación ${refGuardado} con los campos → ${describirCamposCapturadosLog(operacionData, etiquetasCamposAut)}`).catch(() => {});
         }

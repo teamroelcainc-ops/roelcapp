@@ -97,6 +97,7 @@ const AutorizacionesDashboard = lazyWithRetry(() => import('./features/autorizac
 
 import './App.css';
 import { almacenSesion } from './utils/cacheMemoria';
+import { STATUS_CANCELADO, STATUS_COMPLETADOS } from './shared/dominio/constantes';
 
 // ============================================================================
 // Mapa: etiqueta del módulo (como se guarda en el rol) -> clave interna (moduloActivo).
@@ -304,8 +305,6 @@ const ICON: Record<string, React.ReactNode> = {
 // de cambio del día y el costo del diesel del día. Lecturas mínimas: una
 // consulta puntual por indicador, con botón ↻ para refrescar.
 // ============================================================================
-const RESUMEN_STATUS_COMPLETADOS = ['c2d57403', 'f557b751'];
-const RESUMEN_STATUS_CANCELADO = '7607f692';
 
 const resumenNormalizarISO = (v: any): string => {
   if (v == null) return '';
@@ -509,10 +508,12 @@ const ResumenDelDia = memo(function ResumenDelDia() {
       const snap = await getDocs(query(collection(db, 'operaciones'), where('fechaServicio', '==', hoyISO)));
       snap.docs.forEach((d: any) => {
         const op = d.data() || {};
+        // ✅ V00440: IDs desde las constantes compartidas. La regla por nombre se
+        //   conserva tal cual (pasa a estadoGrupo con las consultas canónicas, Fase 7).
         const nombre = String(op.statusNombre || '').toLowerCase();
         nuevo.totalHoy += 1;
-        if (op.status === RESUMEN_STATUS_CANCELADO || nombre.includes('cancel')) nuevo.canceladasHoy += 1;
-        else if (RESUMEN_STATUS_COMPLETADOS.includes(op.status) || nombre.includes('complet')) {
+        if (op.status === STATUS_CANCELADO || nombre.includes('cancel')) nuevo.canceladasHoy += 1;
+        else if (STATUS_COMPLETADOS.includes(op.status) || nombre.includes('complet')) {
           nuevo.completadasHoy += 1;
           // ✅ V00409: desglose por tipo de operación
           const tipo = String(op.tipoOperacionNombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();

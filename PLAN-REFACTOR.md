@@ -24,6 +24,7 @@ Se crean a mano en Firestore (documento `configuracion/flags`, campos booleanos)
 |---|---|---|---|
 | `usuariosPorServidor` | 1.3 | funciones V00437 desplegadas | Altas/bajas de usuarios por `gestionarUsuario` (sin "app secundaria") |
 | `eliminarPorServidor` | 1.6 | funciones V00437 desplegadas | `eliminarRegistro` usa `eliminarConPapelera` (transacción en servidor) |
+| `canonicosEnServidor` | 4.4 | funciones V00440 desplegadas, ANTES de la migración (P2) | `crearOperacion` y `operacionEscrita` escriben y mantienen los campos canónicos de las operaciones |
 
 ## Orden de despliegue
 | Versión | Pasos |
@@ -32,3 +33,14 @@ Se crean a mano en Firestore (documento `configuracion/flags`, campos booleanos)
 | V00437 | Ver "Antes de publicar" en CAMBIOS-V00437.md: perfil del admin → funciones → "Sincronizar permisos" → desactivar registro público → web → (P1) reglas. |
 | V00438 | Solo web. |
 | V00439 | Solo web. Revisar en Roles si ADMINISTRATIVO necesita el permiso `EDITAR REF` (ver CAMBIOS-V00439.md). |
+| V00440 | Web → `firebase deploy --only functions` → encender `canonicosEnServidor` → **P2**: respaldo, `npm run migrar:v2` (simulación), revisar reportes, `-- --aplicar --confirmo-respaldo`, Verificar integridad. Detalle en CAMBIOS-V00440.md. |
+
+## Migración del esquema v2 (Fase 4, P2)
+- Script: `functions/scripts/migrarEsquemaV2.ts` → `npm --prefix functions run migrar:v2` (simulación por defecto).
+- Reportes: `functions/reportes/migracion-v2-<fecha>/` (fuera de git): `resumen.json`, `cambios.csv`, `pendientes.csv`,
+  `avisos.csv`, `paridad.csv`, `errores.csv`.
+- Criterio de aceptación: Verificar integridad con `opsSinEsquemaV2 = opsSinFechaISO = opsSinEstadoGrupo = 0` (salvo
+  los casos listados en `pendientes.csv`) y `paridad.csv` revisado (las diferencias son datos raros: status por ID
+  vs. por nombre, operaciones dentro de una factura sin `facturaClienteId`).
+- Emulador (recomendado antes de producción): `firebase emulators:start --only firestore --import <export>` y
+  `FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 npm --prefix functions run migrar:v2 -- --aplicar`.
