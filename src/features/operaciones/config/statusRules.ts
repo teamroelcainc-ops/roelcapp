@@ -5,7 +5,10 @@ import type { DocumentData } from 'firebase/firestore';
 // ✅ V00407: un id de documento de Firestore NO puede llevar "/" (p. ej. el servicio
 //   "Rentas (Patio / Equipo)" rompía al guardar). Se cambia por "／" (barra ancha),
 //   igual al guardar y al leer; es idempotente.
-export const idDocFlujo = (configId: unknown): string => String(configId ?? '').replace(/\//g, '／');
+// ✅ V00441 (Fase 5.7): la elección del flujo vive en src/shared/dominio/flujos.ts
+//   (la usa también el servidor para cobrar el puente); aquí solo se lee el catálogo.
+export { idDocFlujo } from '../../../shared/dominio/flujos';
+import { buscarFlujo, descuentaPuenteSegunFlujo, idDocFlujo, normalizarNombreFlujo } from '../../../shared/dominio/flujos';
 import { db } from '../../../config/firebase';
 import { idReal, obtenerCatalogo } from '../../../shared/data/catalogos';
 import type { DocCatalogo } from '../../../shared/data/catalogos';
@@ -18,27 +21,11 @@ import type { DocCatalogo } from '../../../shared/data/catalogos';
 /** Ya no hay caché que limpiar; se conserva por compatibilidad con quien la llama. */
 export const limpiarCacheFlujos = (configId?: string): void => { void configId; };
 
-const obtenerFlujoConCache = async (configId: string): Promise<DocCatalogo | null> => {
-  const idDoc = idDocFlujo(configId);
-  const flujos = await obtenerCatalogo('config_flujos_operacion');
-  return flujos.find((f) => idReal(f) === idDoc) ?? null;
-};
-
-const formatTitleCase = (str: string): string => {
-  if (!str || str === 'N/A') return 'N/A';
-  const limpio = String(str).trim();
-  return limpio.charAt(0).toUpperCase() + limpio.slice(1).toLowerCase();
-};
-
-const sinAcentos = (str: string): string =>
-  String(str || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-
 // ✅ FIX: Función de normalización para comparar nombres de status
 // de forma TOLERANTE (ignora acentos, espacios extra, mayúsculas).
 // Esto evita que un status como "5. En Tránsito (a Origen)" no matchee
 // con "5. En Transito (a Origen) " si hay alguna pequeña diferencia.
-const normalizarNombre = (str: string): string =>
-  sinAcentos(String(str || '').trim().toLowerCase()).replace(/\s+/g, ' ');
+const normalizarNombre = (str: string): string => normalizarNombreFlujo(str);
 
 // ✅ FIX: Buscador de nodo por nombre TOLERANTE.
 // Primero intenta match exacto (rápido), si falla intenta match normalizado.
@@ -56,196 +43,21 @@ const buscarNodoPorNombre = (reglas: any[], nombre: string): any | null => {
   return nodo || null;
 };
 
-const inferirCargaDeConvenio = (operacionInfo: any): string => {
-  const fuentes = [
-    operacionInfo.convenioNombre,
-    operacionInfo.convenio,
-    operacionInfo.convenioTarifa,
-    operacionInfo.tarifaNombre,
-  ].filter(Boolean).map(v => sinAcentos(String(v)).toLowerCase());
-
-  const texto = fuentes.join(' ');
-
-  if (texto.includes('cargada') || texto.includes('llena')) return 'Cargada';
-  if (texto.includes('vacia')   || texto.includes('vacío')) return 'Vacía';
-  return 'N/A';
-};
-
-const inferirTraficoDeConvenio = (operacionInfo: any): string => {
-  const fuentes = [
-    operacionInfo.convenioNombre,
-    operacionInfo.convenio,
-    operacionInfo.convenioTarifa,
-    operacionInfo.tarifaNombre,
-  ].filter(Boolean).map(v => sinAcentos(String(v)).toLowerCase());
-
-  const texto = fuentes.join(' ');
-
-  if (texto.includes('importacion')) return 'Importación';
-  if (texto.includes('exportacion')) return 'Exportación';
-  if (texto.includes('nacional'))    return 'Nacional';
-  return 'N/A';
-};
-
-const construirConfigId = (operacionInfo: any): string => {
-  let tipoOpText = operacionInfo.tipoOperacionNombre
-    || operacionInfo.tipoOperacion
-    || operacionInfo.tipoServicio
-    || 'N/A';
-  if (String(tipoOpText).toLowerCase() === 'logistica') tipoOpText = 'Logística';
-  else if (tipoOpText !== 'N/A') tipoOpText = formatTitleCase(tipoOpText);
-
-  let traficoRaw = operacionInfo.trafico;
-  if (!traficoRaw || String(traficoRaw).trim() === '' || String(traficoRaw).toUpperCase() === 'N/A') {
-    traficoRaw = inferirTraficoDeConvenio(operacionInfo);
-  }
-  const trafico = formatTitleCase(traficoRaw || 'N/A');
-
-  let cargaRaw = operacionInfo.carga;
-  if (!cargaRaw || String(cargaRaw).trim() === '' || String(cargaRaw).toUpperCase() === 'N/A') {
-    cargaRaw = inferirCargaDeConvenio(operacionInfo);
-  }
-  const carga = formatTitleCase(cargaRaw || 'N/A');
-
-  return `${tipoOpText}_${trafico}_${carga}`;
-};
-
-// ✅ V00379: índice de flujos (id + tipoServicio/trafico/carga).
-// ✅ V00439 (Fase 3.x): sale del listener compartido (sin caché de 5 min).
-type EntradaIndiceFlujo = { id: string; tipoServicio: string; trafico: string; carga: string };
-
-const obtenerIndiceFlujos = async (): Promise<EntradaIndiceFlujo[]> => {
-  const flujos = await obtenerCatalogo('config_flujos_operacion');
-  return flujos.map(x => ({
-    id: idReal(x),
-    tipoServicio: String(x.tipoServicio ?? ''),
-    trafico: String(x.trafico ?? ''),
-    carga: String(x.carga ?? ''),
-  }));
-};
-
-// Cargado/Cargada/Llena/Lleno → 'cargado'; Vacio/Vacía → 'vacio'
-const canonCarga = (s: unknown): string => {
-  const n = normalizarNombre(String(s ?? ''));
-  if (n.startsWith('cargad') || n.startsWith('llen')) return 'cargado';
-  if (n.startsWith('vaci')) return 'vacio';
-  return n;
-};
-
-const textoConvenio = (operacionInfo: Record<string, unknown>): string =>
-  [operacionInfo.convenioNombre, operacionInfo.convenio, operacionInfo.convenioTarifa, operacionInfo.tarifaNombre, operacionInfo.tipoConvenioNombre]
-    .filter(Boolean).map(v => normalizarNombre(String(v))).join(' ');
-
-const utilValor = (v: unknown): string => {
-  const s = String(v ?? '').trim();
-  return s && s.toUpperCase() !== 'N/A' ? s : '';
-};
-
-const buscarFlujoPorIndice = async (operacionInfo: Record<string, unknown>): Promise<string | null> => {
-  try {
-    const conv = textoConvenio(operacionInfo);
-
-    const tipos = new Set(
-      [operacionInfo.tipoOperacionNombre, operacionInfo.tipoOperacion, operacionInfo.tipoServicio]
-        .map(utilValor).filter(Boolean).map(normalizarNombre)
-    );
-    const traficos = new Set([utilValor(operacionInfo.trafico)].filter(Boolean).map(normalizarNombre));
-    if (conv.includes('importacion')) traficos.add('importacion');
-    if (conv.includes('exportacion')) traficos.add('exportacion');
-    if (conv.includes('nacional')) traficos.add('nacional');
-
-    const cargas = new Set(
-      [operacionInfo.carga, operacionInfo.cargadoVacio].map(utilValor).filter(Boolean).map(canonCarga)
-    );
-    if (/\b(cargad[oa]|llen[oa])\b/.test(conv)) cargas.add('cargado');
-    if (/\bvaci[oa]\b/.test(conv)) cargas.add('vacio');
-
-    if (tipos.size === 0) return null;
-
-    const lista = await obtenerIndiceFlujos();
-    // Primero lo capturado en la operación; el convenio solo desempata.
-    const traficoOp = normalizarNombre(utilValor(operacionInfo.trafico));
-    const cargaOp = canonCarga(utilValor(operacionInfo.carga));
-    // ✅ V00405: un flujo SIN tráfico o SIN carga es COMODÍN (aplica a cualquiera);
-    //   se prefiere siempre el más específico.
-    const esComodin = (v: string) => { const n = normalizarNombre(v); return !n || n === 'todos' || n === 'n/a'; };
-    const candidatos = lista.filter(f =>
-      tipos.has(normalizarNombre(f.tipoServicio)) &&
-      (esComodin(f.trafico) || traficos.has(normalizarNombre(f.trafico))) &&
-      (esComodin(f.carga) || cargas.has(canonCarga(f.carga)))
-    );
-    if (candidatos.length === 0) return null;
-    const puntaje = (f: EntradaIndiceFlujo) =>
-      (esComodin(f.trafico) ? 0 : (normalizarNombre(f.trafico) === traficoOp ? 4 : 2)) +
-      (esComodin(f.carga) ? 0 : (canonCarga(f.carga) === cargaOp ? 2 : 1));
-    return [...candidatos].sort((x, y) => puntaje(y) - puntaje(x))[0].id;
-  } catch (e) {
-    console.warn('[statusRules] Índice de flujos no disponible:', e);
-    return null;
-  }
-};
-
 // Misma forma que un DocumentSnapshot (exists/data) para no tocar a quien lo usa.
 const docFlujo = (data: DocCatalogo) => ({ exists: () => true, data: () => data });
 
+// Exacto → sin acentos → variantes Cargada/Llena → índice tolerante (V00379/V00405).
 const obtenerDocFlujo = async (operacionInfo: any) => {
-  const idPrincipal = construirConfigId(operacionInfo);
-
-  console.log('[statusRules] configId construido:', idPrincipal, {
-    tipoOperacion: operacionInfo.tipoOperacionNombre || operacionInfo.tipoOperacion,
-    trafico: operacionInfo.trafico,
-    carga: operacionInfo.carga,
-    convenioNombre: operacionInfo.convenioNombre || operacionInfo.convenio,
-  });
-
-  let data = await obtenerFlujoConCache(idPrincipal);
-  if (data) {
-    console.log('[statusRules] ✅ Match exacto con:', idPrincipal);
-    return docFlujo(data);
+  const flujos = await obtenerCatalogo('config_flujos_operacion');
+  const f = buscarFlujo(operacionInfo, flujos.map((x) => ({ id: idReal(x), datos: x })));
+  if (!f) {
+    console.warn('[statusRules] ❌ No se encontró flujo para la operación', {
+      tipoOperacion: operacionInfo?.tipoOperacionNombre || operacionInfo?.tipoOperacion,
+      trafico: operacionInfo?.trafico, carga: operacionInfo?.carga,
+    });
+    return null;
   }
-
-  const idSinAcentos = sinAcentos(idPrincipal);
-  if (idSinAcentos !== idPrincipal) {
-    data = await obtenerFlujoConCache(idSinAcentos);
-    if (data) {
-      console.log('[statusRules] ✅ Match (sin acentos) con:', idSinAcentos);
-      return docFlujo(data);
-    }
-  }
-
-  const variantes = new Set<string>();
-  variantes.add(idPrincipal.replace(/_Cargada$/, '_Llena'));
-  variantes.add(idPrincipal.replace(/_Llena$/, '_Cargada'));
-  variantes.add(idSinAcentos.replace(/_Cargada$/, '_Llena'));
-  variantes.add(idSinAcentos.replace(/_Llena$/, '_Cargada'));
-  variantes.delete(idPrincipal);
-  variantes.delete(idSinAcentos);
-
-  for (const idVar of variantes) {
-    data = await obtenerFlujoConCache(idVar);
-    if (data) {
-      console.log('[statusRules] ✅ Match (variante) con:', idVar);
-      return docFlujo(data);
-    }
-  }
-
-  // ✅ V00379: respaldo TOLERANTE por índice. construirConfigId() aplica
-  //   formatTitleCase al servicio y "Logistica Fletes" se volvía
-  //   "Logistica fletes" (los ids de Firestore distinguen mayúsculas), y la
-  //   carga inferida del convenio no reconocía "Cargado"/"Vacio". Aquí se
-  //   comparan los TRES campos guardados por el configurador (tipoServicio,
-  //   trafico, carga) normalizados, igual que buildConfigId del formulario.
-  const porIndice = await buscarFlujoPorIndice(operacionInfo);
-  if (porIndice) {
-    data = await obtenerFlujoConCache(porIndice);
-    if (data) {
-      console.log('[statusRules] ✅ Match (índice tolerante) con:', porIndice);
-      return docFlujo(data);
-    }
-  }
-
-  console.warn('[statusRules] ❌ No se encontró flujo. Probé:', [idPrincipal, idSinAcentos, ...variantes, '(índice tolerante)']);
-  return null;
+  return docFlujo(f.datos as DocCatalogo);
 };
 
 // =========================================================================
@@ -453,12 +265,8 @@ export const obtenerNombresStatusDelFlujo = async (operacionInfo: any): Promise<
 export const statusDescuentaPuente = async (operacionInfo: any, statusNombre: string): Promise<boolean | null> => {
   try {
     const snap = await obtenerDocFlujo(operacionInfo);
-    if (!snap || !snap.exists() || !snap.data().flujo) return null;
-    const reglas = snap.data().flujo as any[];
-    const conFlag = reglas.filter((r) => !!r?.descuentaPuente);
-    if (conFlag.length === 0) return null;
-    const n = normalizarNombre(String(statusNombre || ''));
-    return conFlag.some((r) => normalizarNombre(String(r?.nombreStatus || '')) === n);
+    if (!snap || !snap.exists()) return null;
+    return descuentaPuenteSegunFlujo(snap.data(), statusNombre);
   } catch { return null; }
 };
 

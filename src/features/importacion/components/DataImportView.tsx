@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx';
 import { db } from '../../../config/firebase';
 import { collection, doc, writeBatch, getDocs, query, limit, getDoc, setDoc, arrayUnion } from 'firebase/firestore';
 import './DataImportView.css';
+import { flagsAhora } from '../../../shared/data/flags';
 
 // ── Paleta Roelca (GitHub dark + acento naranja) ──────────────────────────
 const C = {
@@ -544,6 +545,12 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
     }
     if (csvData.length === 0) {
       alert('No hay datos para importar.');
+      return;
+    }
+    // ✅ V00441 (Fase 5.8): con dinero por servidor, las reglas no dejan crear facturas
+    //   ni pagos desde el navegador (sus saldos los lleva el servidor).
+    if (flagsAhora().dineroPorServidor && ['facturas_clientes', 'facturas_proveedores', 'pagos'].includes(selectedCollection)) {
+      alert('Con "dinero por servidor" encendido, las facturas y los pagos ya no se importan desde aquí: captúralos en Facturación / Pagos, o apaga la bandera mientras se importa (y corre la reconciliación después).');
       return;
     }
 

@@ -61,6 +61,9 @@ import {
   totalNativoFactura,
   totalesTrasCambioDeOps,
 } from '../services/totalesFactura'; // ✅ Fase 1.8
+import { aplicarFacturas, aplicarOperaciones, llamarDinero, mensajeDinero } from '../services/dineroServidor'; // ✅ V00441
+import { useFlags } from '../../../shared/data/flags';
+import { conversionOperacion, montoOperacion } from '../../../shared/dominio/dinero';
 
 // ──────────────────────────────────────────────────────────────────────
 // Constantes
@@ -327,59 +330,17 @@ const COLUMNAS_OPS_BASE: any[] = [
   { id: 'utilidadEstimada',      label: 'Utilidad Estimada',       visible: false, orden: true,  grupo: 'Por Cobrar', tipo: 'monto',  sourceField: 'utilidadEstimada' },
 ];
 
-const calcularConversionCliente = (op: any) => {
-  const fact = op.facturadoEnCobrar;
-  const tc = Number(op.tipoCambioAprobado) || Number(op.tipoCambioDia) || 0;
-  const montoConvenio = Number(op.montoConvenioCliente || 0);
-  const cargos = Number(op.cargosAdicionales || 0);
-  const nombreMoneda = String(op.monedaCobroNombre || '').toUpperCase();
-  const factUSD = fact === ID_USD || nombreMoneda.includes('USD') || nombreMoneda.includes('DOLAR') || nombreMoneda.includes('DÓLAR');
-  const factMXN = fact === ID_MXN || nombreMoneda.includes('MXN') || nombreMoneda.includes('PESO');
-  const monConv = String(op.monedaConvenioCliente || '');
-  const convUSD = monConv === ID_USD || (!!monConv && (monConv.toUpperCase().includes('USD') || monConv.toUpperCase().includes('DOLAR') || monConv.toUpperCase().includes('DÓLAR')));
-  const convMXN = monConv === ID_MXN || (!!monConv && (monConv.toUpperCase().includes('MXN') || monConv.toUpperCase().includes('PESO')));
-  // ✅ V00126 — REGLA DE MONEDAS (igual que el formulario de Operaciones):
-  //   1) El monto del convenio se expresa en la MONEDA DE LA FACTURA:
-  //      Convenio USD + Factura MXN → × TC · Convenio MXN + Factura USD → ÷ TC · misma → igual.
-  //   2) Subtotal = ese monto; Total = Subtotal + Costo Adicional.
-  //   3) Conversión (MXN) = Total en pesos (si la factura es USD → Total × TC).
-  //   Sin redondeo en ningún paso.
-  let subtotal = montoConvenio;
-  if (convUSD && factMXN) subtotal = tc > 0 ? montoConvenio * tc : 0;
-  else if (convMXN && factUSD) subtotal = tc > 0 ? montoConvenio / tc : 0;
-  // ✅ V00243: el COSTO ADICIONAL viene en la moneda del convenio, así que se
-  //   convierte igual que el monto antes de sumarlo (convenio USD + factura en
-  //   Pesos → cargo × TC).
-  let cargosFact = cargos;
-  if (convUSD && factMXN) cargosFact = tc > 0 ? cargos * tc : 0;
-  else if (convMXN && factUSD) cargosFact = tc > 0 ? cargos / tc : 0;
-  // ✅ V00244: a 2 decimales (el flotante dejaba colas tipo 2630,69100000003).
-  const r2f = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
-  const total = r2f(r2f(subtotal) + r2f(cargosFact));
-  let dol = 0, pes = 0, conv = 0;
-  const facturaUSD = factUSD || (!factMXN && convUSD);
-  if (facturaUSD) { dol = total; pes = 0; conv = total * tc; }
-  else { dol = 0; pes = total; conv = total; }
-  return { subtotal: r2f(subtotal), cargos: r2f(cargosFact), total, dol: r2f(dol), pes: r2f(pes), conv: r2f(conv), tc };
-};
+// ✅ V00441 (Fase 5.1): la regla de monedas vive en src/shared/dominio/dinero.ts
+//   (la misma que usa el servidor). Antes estaba copiada aquí, en Proveedores,
+//   en relacional.ts y en Pagos.
+const calcularConversionCliente = (op: any) => conversionOperacion(op, 'cliente');
 
 
 // ✅ FIX MONEDA — TOTAL NATIVO DE LA FACTURA (USD -> dólares, MXN -> pesos):
 //   ✅ Fase 1.8: vive en ../services/totalesFactura (una sola regla para
 //   Clientes y Proveedores, y la misma que recalcula subtotalMonedaFactura).
 
-const obtenerMontoOperacion = (op: any) => {
-  // ✅ V00126: se recalcula SIEMPRE a partir de los campos crudos de la operación
-  //   (convenio, cargos, monedas, TC) para que cualquier cambio en la colección
-  //   `operaciones` se refleje aquí de inmediato. Solo si falta el TC y no se
-  //   puede convertir, se respeta la conversión guardada en la operación.
-  const calc = calcularConversionCliente(op);
-  const convGuardada = Number(op.conversionCliente);
-  if (calc.conv === 0 && !isNaN(convGuardada) && convGuardada > 0) {
-    return { ...calc, conv: convGuardada, total: calc.total || Number(op.subtotalCliente) || 0, pes: Number(op.pesosCliente) || calc.pes, dol: Number(op.dolaresCliente) || calc.dol };
-  }
-  return calc;
-};
+const obtenerMontoOperacion = (op: any) => montoOperacion(op, 'cliente'); // ✅ V00441: dinero.ts
 
 // ✅ V00438 (Fase 2.4): helpers puros movidos fuera del componente para que las
 //   claves de orden se puedan memoizar con dependencias reales.
@@ -425,6 +386,7 @@ const pareceReferencia = (s: unknown): boolean => {
 };
 
 export const FacturacionClientesDashboard = () => {
+  const flags = useFlags(); // ✅ V00441 (Fase 5): dinero por servidor
   const [activeTab, setActiveTab] = useState<'operaciones' | 'historial' | 'pagadas'>('operaciones');
   const [mostrarAuditoria, setMostrarAuditoria] = useState(false); // ✅ V00318
   // ✅ V00126: "Pagadas" reutiliza toda la vista de Historial filtrando facturas liquidadas
@@ -1599,6 +1561,14 @@ export const FacturacionClientesDashboard = () => {
     return snap.exists() ? normalizarFactura({ id: snap.id, ...snap.data() }) : null;
   };
 
+  // ✅ V00441 (Fase 5): campos de una factura editada (para fusionarlos en la ficha
+  //   o el grupo abiertos sin pisar sus operaciones agrupadas).
+  const camposEditadosFactura = (f: Record<string, unknown>) => {
+    const claves = ['invoice', 'fecha', 'facturaCcp', 'statusFactura', 'monedaFacturacion', 'clienteId', 'clienteNombre',
+      'subtotalFactura', 'subtotalMonedaFactura', 'saldoPendiente', 'statusPago', 'totalManualCentavos', 'updatedAt'];
+    return Object.fromEntries(claves.filter((k) => k in f).map((k) => [k, f[k]]));
+  };
+
   const handleGuardarFactura = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!invoiceForm.trim()) return alert('El # de Invoice es obligatorio.');
@@ -1611,6 +1581,29 @@ export const FacturacionClientesDashboard = () => {
     //   factura directo y la fila queda con ⚠ como recordatorio visual.
     setGuardando(true);
     try {
+      // ✅ V00441 (Fase 5.4): con la bandera, factura el SERVIDOR (transacción).
+      if (flags.dineroPorServidor) {
+        const r = await llamarDinero('facturarOperaciones', {
+          lado: 'cliente', empresaId: clienteFacturaId, empresaNombre: nombreClienteFactura || getNombreCliente(clienteFacturaId),
+          invoice: invoiceForm.trim(), fecha: fechaForm, facturaCcp: facturaCcpForm.trim(), statusFactura: statusFacturaForm,
+          moneda: monedaFacturacion === 'USD' || monedaFacturacion === 'MXN' ? monedaFacturacion : '', operacionesIds: seleccionadas,
+        });
+        const idFactura = String(r.facturaId || '');
+        setFacturasGlobales(prev => aplicarFacturas(prev, r.facturas, normalizarFactura));
+        setOperacionesGlobales(prev => aplicarOperaciones(prev, r.operaciones));
+        if (docFacturaFile && idFactura) {
+          try { await subirDocFacturaA(idFactura, docFacturaFile, invoiceForm.trim() || idFactura); }
+          catch (eDoc: unknown) { console.error(eDoc); const det = (eDoc as { code?: string; message?: string })?.code || (eDoc as { message?: string })?.message || String(eDoc); alert(`La factura se guardó, pero el documento no se pudo subir.\n\nMotivo: ${det}\n\nPuedes reintentar desde la fila (⚠).`); }
+          setDocFacturaFile(null);
+        }
+        setModalAbierto(false);
+        setSeleccionadas([]);
+        setInvoiceForm('');
+        setFacturaCcpForm('');
+        setStatusFacturaForm('Facturado');
+        setActiveTab('historial');
+        return;
+      }
       const batch = writeBatch(db);
       const nuevoId = doc(collection(db, 'facturas_clientes')).id;
       const operacionesResumenEstable = seleccionadas.map(id => {
@@ -1750,7 +1743,7 @@ export const FacturacionClientesDashboard = () => {
       setActiveTab('historial');
     } catch (error) {
       console.error(error);
-      alert('Error al guardar la factura.');
+      alert(mensajeDinero(error, 'Error al guardar la factura.'));
     } finally {
       setGuardando(false);
     }
@@ -1779,7 +1772,9 @@ export const FacturacionClientesDashboard = () => {
     setEditCcp(String(f.facturaCcp || ''));
     setEditStatus(String(f.statusFactura || 'Facturado'));
     setEditMoneda(resolverMoneda(f.monedaFacturacion) || '');
-    setEditTotal(String(Number(f.subtotalFactura) || 0));
+    // ✅ V00441: con la bandera, el total EN LA MONEDA de la factura (el que se ve en la
+    //   tabla y el que guarda el servidor); antes se precargaba la conversión a pesos.
+    setEditTotal(String(flags.dineroPorServidor ? r2(totalNativoFactura(f)) : (Number(f.subtotalFactura) || 0)));
     setEditClienteId(String(f.clienteId || '')); // ✅ NUEVO
     setDocFacturaFile(null); // ✅ V00276: sin arrastre entre facturas
   };
@@ -1791,6 +1786,23 @@ export const FacturacionClientesDashboard = () => {
     try {
       const ids: string[] = Array.isArray(facturaEditando.__groupIds) && facturaEditando.__groupIds.length ? facturaEditando.__groupIds : [facturaEditando.id];
       const totalNum = Number(editTotal) || 0;
+      // ✅ V00441 (Fase 5.5): con la bandera, el servidor guarda el total como MANUAL.
+      if (flags.dineroPorServidor) {
+        const r = await llamarDinero('editarFactura', {
+          lado: 'cliente', origen: 'facturacion', facturaIds: ids, invoice: editInvoice.trim(), fecha: editFecha || '', facturaCcp: editCcp.trim(),
+          statusFactura: editStatus, moneda: editMoneda || 'N/A', total: totalNum, ...(editClienteId ? { empresaId: editClienteId } : {}),
+        });
+        setFacturasGlobales(prev => aplicarFacturas(prev, r.facturas, normalizarFactura));
+        const primera = r.facturas[ids[0]];
+        if (primera) setFacturaViendo((prev: Record<string, unknown> | null) => (prev && ids.includes(String(prev.id))) ? { ...prev, ...camposEditadosFactura(primera) } : prev);
+        if (docFacturaFile) {
+          try { await subirDocFacturaA(String(facturaEditando.id), docFacturaFile, String(facturaEditando.invoice || facturaEditando.id)); }
+          catch (eDoc: unknown) { console.error(eDoc); const det = (eDoc as { code?: string; message?: string })?.code || (eDoc as { message?: string })?.message || String(eDoc); alert(`Los cambios de la factura SÍ se guardaron, pero el documento no se pudo subir.\n\nMotivo: ${det}`); }
+          setDocFacturaFile(null);
+        }
+        setFacturaEditando(null);
+        return;
+      }
       const baseUpdate: any = {
         invoice: editInvoice.trim(),
         fecha: editFecha || '',
@@ -1822,6 +1834,7 @@ export const FacturacionClientesDashboard = () => {
           ...baseUpdate,
           subtotalFactura: idx === 0 ? totalNum : 0,
           subtotalMonedaFactura: idx === 0 ? totalNum : 0, // ✅ FIX: el campo que se muestra
+          totalManualCentavos: 0, // ✅ V00441: sin la bandera manda lo capturado aquí (no una marca vieja)
           ...(idx === 0 ? extraPago : {}),
         }, { merge: true });
       });
@@ -1849,7 +1862,7 @@ export const FacturacionClientesDashboard = () => {
       setFacturaEditando(null);
     } catch (e) {
       console.error('Error guardando edición de factura:', e);
-      alert('No se pudo guardar la edición de la factura.');
+      alert(mensajeDinero(e, 'No se pudo guardar la edición de la factura.'));
     } finally {
       setGuardandoEdit(false);
     }
@@ -1905,6 +1918,14 @@ export const FacturacionClientesDashboard = () => {
     if (!window.confirm(`¿Quitar la operación ${refTxt} de su factura? Volverá a "Pendientes" y se restará su monto de la factura.`)) return;
     setGuardandoGestionOp(true);
     try {
+      // ✅ V00441 (Fase 5.4): con la bandera, lo hace el servidor (transacción).
+      if (flags.dineroPorServidor) {
+        const r = await llamarDinero('quitarOperacionFactura', { lado: 'cliente', operacionId: opId, permitirBorrarFactura: true });
+        setFacturasGlobales(prev => aplicarFacturas(prev, r.facturas, normalizarFactura));
+        setOperacionesGlobales(prev => aplicarOperaciones(prev, r.operaciones));
+        setGestionOp(null);
+        return;
+      }
       const facturasConOp = await facturasFrescasConOp(opId, op.facturaClienteId); // ✅ Fase 1.8
       const batch = writeBatch(db);
       const cambios: any[] = [];
@@ -1932,7 +1953,7 @@ export const FacturacionClientesDashboard = () => {
       setGestionOp(null);
     } catch (e) {
       console.error('Error quitando operación de la factura:', e);
-      alert('No se pudo quitar la operación de la factura.');
+      alert(mensajeDinero(e, 'No se pudo quitar la operación de la factura.'));
     } finally {
       setGuardandoGestionOp(false);
     }
@@ -1945,6 +1966,14 @@ export const FacturacionClientesDashboard = () => {
     const clienteId = String(op.clientePaga || op.clienteId || '');
     setGuardandoGestionOp(true);
     try {
+      // ✅ V00441 (Fase 5.4): con la bandera, lo hace el servidor (transacción).
+      if (flags.dineroPorServidor) {
+        const r = await llamarDinero('moverOperacionFactura', { lado: 'cliente', operacionId: opId, nuevoInvoice });
+        setFacturasGlobales(prev => aplicarFacturas(prev, r.facturas, normalizarFactura));
+        setOperacionesGlobales(prev => aplicarOperaciones(prev, r.operaciones));
+        setGestionOp(null);
+        return;
+      }
       const facturasConOp = await facturasFrescasConOp(opId, op.facturaClienteId); // ✅ Fase 1.8
       const batch = writeBatch(db);
       const cambios: any[] = [];
@@ -2024,7 +2053,7 @@ export const FacturacionClientesDashboard = () => {
       setGestionOp(null);
     } catch (e) {
       console.error('Error editando # de factura de la operación:', e);
-      alert('No se pudo cambiar el número de factura de la operación.');
+      alert(mensajeDinero(e, 'No se pudo cambiar el número de factura de la operación.'));
     } finally {
       setGuardandoGestionOp(false);
     }
@@ -2037,6 +2066,31 @@ export const FacturacionClientesDashboard = () => {
     const monto = Number(resumen.monto) || 0;
     setAgregandoRef(true);
     try {
+      // ✅ V00441 (Fase 5.4): con la bandera, lo hace el servidor (transacción).
+      if (flags.dineroPorServidor) {
+        const r = await llamarDinero('agregarOperacionFactura', { lado: 'cliente', facturaId: rawId, operacionId: opId });
+        setFacturasGlobales(prev => aplicarFacturas(prev, r.facturas, normalizarFactura));
+        setOperacionesGlobales(prev => aplicarOperaciones(prev, r.operaciones));
+        const nueva = r.facturas[rawId];
+        if (nueva) {
+          type Fila = Record<string, unknown>;
+          const filas = (v: unknown): Fila[] => (Array.isArray(v) ? v.filter((x): x is Fila => !!x && typeof x === 'object') : []);
+          const renglon: Fila = filas(nueva.operacionesGuardadas).find((o) => String(o.id) === opId) || resumen;
+          const aplicarEnGrupoSrv = <G extends Fila | null>(g: G): G => {
+            if (!g) return g;
+            const mismoGrupo = (Array.isArray(g.__groupIds) ? g.__groupIds : [g.id]).includes(rawId) || g.id === facturaGrupo.id;
+            if (!mismoGrupo) return g;
+            const mapG2 = new Map<string, Fila>();
+            [...filas(g.operacionesGuardadas), renglon].forEach((o) => { if (o.id) mapG2.set(String(o.id), o); });
+            const guardadas2 = Array.from(mapG2.values());
+            const idsPrevios = Array.isArray(g.operacionesIds) ? g.operacionesIds.map(String) : [];
+            return { ...g, ...camposEditadosFactura(nueva), operacionesIds: Array.from(new Set([...idsPrevios, opId])), operacionesGuardadas: guardadas2, remolques: remolquesDeGuardadas(guardadas2), subtotalFactura: r2(Number(g.subtotalFactura || 0) + (Number(renglon.monto) || 0)) };
+          };
+          setAgregarRefFactura((prev: Record<string, unknown> | null) => aplicarEnGrupoSrv(prev));
+          setFacturaViendo((prev: Record<string, unknown> | null) => aplicarEnGrupoSrv(prev));
+        }
+        return;
+      }
       // ✅ Fase 1.8: se fusiona contra la factura FRESCA, no contra la lista en memoria.
       const rawDoc = await leerFacturaFresca(rawId);
       if (!rawDoc) return alert('Esta factura ya no existe (alguien más la eliminó). Recarga el historial.');
@@ -2074,7 +2128,7 @@ export const FacturacionClientesDashboard = () => {
       setFacturaViendo((prev: any) => aplicarEnGrupo(prev));
     } catch (e) {
       console.error('Error agregando operación a la factura:', e);
-      alert('No se pudo agregar la operación a la factura.');
+      alert(mensajeDinero(e, 'No se pudo agregar la operación a la factura.'));
     } finally {
       setAgregandoRef(false);
     }
@@ -2103,6 +2157,13 @@ export const FacturacionClientesDashboard = () => {
       : `¿Estás seguro de eliminar la factura ${facData.invoice}? Las operaciones asociadas quedarán liberadas nuevamente.`;
     if (window.confirm(aviso)) {
       try {
+        // ✅ V00441 (Fase 5.4): con la bandera, lo hace el servidor (transacción).
+        if (flags.dineroPorServidor) {
+          const r = await llamarDinero('eliminarFactura', { lado: 'cliente', facturaIds: ids });
+          setFacturasGlobales(prev => aplicarFacturas(prev, r.facturas, normalizarFactura));
+          setOperacionesGlobales(prev => aplicarOperaciones(prev, r.operaciones));
+          return;
+        }
         // ✅ Fase 1.8 (c): se releen FRESCAS. Una factura con pagos aplicados no se
         //   borra: dejaba entradas huérfanas en pagos.facturas[].
         const frescas = await Promise.all(ids.map(leerFacturaFresca));
@@ -2131,7 +2192,7 @@ export const FacturacionClientesDashboard = () => {
         ));
       } catch (error) {
         console.error('Error al eliminar factura:', error);
-        alert('Hubo un error al eliminar.');
+        alert(mensajeDinero(error, 'Hubo un error al eliminar.'));
       }
     }
   };
@@ -2530,6 +2591,22 @@ export const FacturacionClientesDashboard = () => {
     if (!window.confirm(`¿Quitar la referencia ${refDeOp(opSnap)} de la factura ${fv.invoice}?\n\n· La operación vuelve a "Por facturar".\n· La factura queda con ${restantes.length} operación(es) y total ${formatoMoneda(nativoNuevo)}.${pagado > 0 ? '\n· El pago aplicado se actualizará con el nuevo total/saldo.' : ''}`)) return;
     setQuitandoRef(String(opSnap.id));
     try {
+      // ✅ V00441 (Fase 5.4): con la bandera, lo hace el servidor (transacción;
+      //   el historial del pago ya no se reescribe: el saldo vive en la factura).
+      if (flags.dineroPorServidor) {
+        const r = await llamarDinero('quitarOperacionFactura', { lado: 'cliente', operacionId: String(opSnap.id), permitirBorrarFactura: false });
+        setFacturasGlobales((prev) => aplicarFacturas(prev, r.facturas, normalizarFactura));
+        // La ficha (que puede ser un grupo de documentos) quita la operación aquí y toma
+        // del servidor solo los totales del documento que la tenía.
+        const nueva = r.facturas[fv.id];
+        setFacturaViendo(normalizarFactura({
+          ...fv, operacionesGuardadas: restantes,
+          operacionesIds: (Array.isArray(fv.operacionesIds) ? fv.operacionesIds : []).filter((id: unknown) => String(id) !== String(opSnap.id)),
+          ...(nueva ? camposEditadosFactura(nueva) : {}), id: fv.id,
+        }));
+        setOperacionesGlobales((prev) => aplicarOperaciones(prev, r.operaciones));
+        return;
+      }
       const saldoNuevo = Math.max(0, nativoNuevo - pagado);
       const batch = writeBatch(db);
       const cambiosFactura: any = {
@@ -2576,7 +2653,7 @@ export const FacturacionClientesDashboard = () => {
       setOperacionesGlobales((prev: any[]) => prev.map((o: any) => String(o.id) === String(opSnap.id) ? { ...o, facturaClienteId: '', facturaClienteInvoice: '', facturado: false } : o));
     } catch (e) {
       console.error('No se pudo quitar la referencia:', e);
-      alert('No se pudo quitar la referencia. Intenta de nuevo.');
+      alert(mensajeDinero(e, 'No se pudo quitar la referencia. Intenta de nuevo.'));
     } finally {
       setQuitandoRef('');
     }

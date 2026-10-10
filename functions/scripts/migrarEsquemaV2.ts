@@ -40,10 +40,6 @@
  *   consultas nuevas clasificarían distinto que los filtros actuales) · errores.csv.
  * ------------------------------------------------------------------------------
  */
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-import { initializeApp, getApps } from 'firebase-admin/app';
-import { FieldPath, getFirestore } from 'firebase-admin/firestore';
 import type { DocumentData, Firestore, QueryDocumentSnapshot } from 'firebase-admin/firestore';
 import { COL, STATUS_CANCELADO, STATUS_COMPLETADOS, STATUS_FINALES } from '../src/dominio/constantes.js';
 import { aFechaServicioISO } from '../src/dominio/fechas.js';
@@ -52,44 +48,21 @@ import {
 } from '../src/dominio/operacionCanonica.js';
 import type { Aviso, CatalogoNombres, ContextoCanonico, IndiceIds, Pendiente } from '../src/dominio/operacionCanonica.js';
 import { normalizarTexto } from '../src/dominio/texto.js';
+import { destinoDe, escritorDe, firestoreDe, leerArgumentos, mostrar, recorrer as recorrerCon, Reporte, txt } from './comun.js';
+import type { Datos } from './comun.js';
 
-type Datos = Record<string, unknown>;
-const txt = (v: unknown): string => (v === null || v === undefined ? '' : String(v).trim());
-
-// ── Argumentos ────────────────────────────────────────────────────────────
-const args = process.argv.slice(2);
-const opcion = (nombre: string): string | undefined => {
-  const i = args.indexOf(nombre);
-  if (i < 0) return undefined;
-  const v = args[i + 1];
-  if (v === undefined || v.startsWith('--')) throw new Error(`Falta el valor de ${nombre}`);
-  return v;
-};
-const APLICAR = args.includes('--aplicar');
-const SOLO = opcion('--solo');
-const LIMITE = opcion('--limite') === undefined ? Infinity : Number(opcion('--limite'));
-const PROYECTO = opcion('--proyecto') ?? process.env.GCLOUD_PROJECT ?? 'roelcaapp';
-const EN_EMULADOR = !!process.env.FIRESTORE_EMULATOR_HOST;
-const PAGINA = 500;
-const COLECCIONES_VALIDAS = ['operaciones', 'pagos', 'nominas', 'diesel'];
-
-// ── Reportes ──────────────────────────────────────────────────────────────
-const sello = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-const DIR = resolve(process.env.REPORTES_MIGRACION ?? resolve(process.cwd(), 'reportes'), `migracion-v2-${sello}`);
-const csv = (filas: readonly (readonly unknown[])[]): string =>
-  filas.map((f) => f.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n') + '\n';
-const filasCambios: unknown[][] = [['coleccion', 'docId', 'ref', 'campo', 'antes', 'despues']];
-const filasPendientes: unknown[][] = [['coleccion', 'docId', 'ref', 'campo', 'valor', 'motivo']];
-const filasAvisos: unknown[][] = [['coleccion', 'docId', 'ref', 'campo', 'valor', 'motivo', 'detalle']];
-const filasParidad: unknown[][] = [['docId', 'ref', 'vista', 'filtroActual', 'consultaNueva', 'status', 'statusNombre']];
-const filasErrores: unknown[][] = [['coleccion', 'docId', 'error']];
-const resumen: Record<string, Record<string, number>> = {};
-const contar = (col: string, clave: string, n = 1): void => {
-  resumen[col] ??= {};
-  resumen[col][clave] = (resumen[col][clave] ?? 0) + n;
-};
-
-const mostrar = (v: unknown): string => (typeof v === 'object' && v !== null ? JSON.stringify(v) : txt(v));
+// ── Argumentos y reportes ─────────────────────────────────────────────────
+const ARGS = leerArgumentos(['operaciones', 'pagos', 'nominas', 'diesel'], 'P2');
+const APLICAR = ARGS.aplicar;
+const SOLO = ARGS.solo;
+const reporte = new Reporte('migracion-v2');
+const filasCambios = reporte.tabla('cambios', ['coleccion', 'docId', 'ref', 'campo', 'antes', 'despues']);
+const filasPendientes = reporte.tabla('pendientes', ['coleccion', 'docId', 'ref', 'campo', 'valor', 'motivo']);
+const filasAvisos = reporte.tabla('avisos', ['coleccion', 'docId', 'ref', 'campo', 'valor', 'motivo', 'detalle']);
+const filasParidad = reporte.tabla('paridad', ['docId', 'ref', 'vista', 'filtroActual', 'consultaNueva', 'status', 'statusNombre']);
+const contar = (col: string, clave: string, n = 1): void => reporte.contar(col, clave, n);
+const recorrer = (db: Firestore, col: string, cadaDoc: (d: QueryDocumentSnapshot<DocumentData>) => Promise<void> | void) =>
+  recorrerCon(db, col, ARGS.limite, cadaDoc);
 
 // ── Contexto: índices de las colecciones maestras ────────────────────────
 const nombreEmpleado = (e: Datos): string[] => {
@@ -119,62 +92,20 @@ const catalogoNombresDe = async (db: Firestore, col: string, campos: string[]): 
   return { porId, porNorm, indice: crearIndice(docs), nombrePorId: porId };
 };
 
-// ── Recorrido paginado por documentId ─────────────────────────────────────
-const recorrer = async (db: Firestore, col: string, cadaDoc: (d: QueryDocumentSnapshot<DocumentData>) => Promise<void> | void): Promise<number> => {
-  let ultimo: QueryDocumentSnapshot<DocumentData> | null = null;
-  let n = 0;
-  for (;;) {
-    let q = db.collection(col).orderBy(FieldPath.documentId()).limit(PAGINA);
-    if (ultimo) q = q.startAfter(ultimo);
-    const snap = await q.get();
-    if (snap.empty) break;
-    for (const d of snap.docs) {
-      if (n >= LIMITE) return n;
-      await cadaDoc(d);
-      n += 1;
-    }
-    ultimo = snap.docs[snap.docs.length - 1];
-    process.stdout.write(`\r[${col}] ${n} documentos revisados…`);
-    if (snap.size < PAGINA) break;
-  }
-  process.stdout.write('\n');
-  return n;
-};
-
 // ── Migración ─────────────────────────────────────────────────────────────
 async function main(): Promise<void> {
-  if (SOLO !== undefined && !COLECCIONES_VALIDAS.includes(SOLO)) throw new Error(`--solo debe ser una de: ${COLECCIONES_VALIDAS.join(', ')}`);
-  if (!(LIMITE > 0)) throw new Error('--limite debe ser un número mayor que 0');
-  if (APLICAR && !EN_EMULADOR && !args.includes('--confirmo-respaldo')) {
-    throw new Error('Para escribir en PRODUCCIÓN agrega --confirmo-respaldo (punto de parada P2: dry-run revisado y export de respaldo hecho).');
-  }
-  if (getApps().length === 0) initializeApp({ projectId: PROYECTO });
-  const db = getFirestore();
-  const escritor = APLICAR ? db.bulkWriter() : null;
-  escritor?.onWriteError((err) => {
-    // Precondición fallida (9) = el documento cambió mientras corría: no se
-    // reintenta (la siguiente corrida lo recoge). Se anota solo el error final.
-    const reintentar = err.code !== 9 && err.failedAttempts < 5;
-    if (!reintentar) filasErrores.push([err.documentRef.parent.id, err.documentRef.id, err.message]);
-    return reintentar;
-  });
-
-  const destino = EN_EMULADOR ? `EMULADOR ${process.env.FIRESTORE_EMULATOR_HOST}` : `PRODUCCIÓN (${PROYECTO})`;
+  const db = firestoreDe(ARGS);
+  const escritor = escritorDe(db, ARGS, reporte);
+  const destino = destinoDe(ARGS);
   console.log(`\nMigración esquema v2 → ${destino} · ${APLICAR ? '⚠ APLICANDO CAMBIOS' : 'simulación (no escribe)'}${SOLO ? ` · solo ${SOLO}` : ''}`);
   try {
     await migrar(db, escritor);
   } finally {
     // Los reportes se escriben aunque la corrida falle a la mitad.
     if (escritor) await escritor.close().catch(() => {});
-    mkdirSync(DIR, { recursive: true });
-    writeFileSync(join(DIR, 'resumen.json'), JSON.stringify({ destino, aplicado: APLICAR, solo: SOLO ?? 'todas', limite: Number.isFinite(LIMITE) ? LIMITE : null, resumen }, null, 2));
-    writeFileSync(join(DIR, 'cambios.csv'), csv(filasCambios));
-    writeFileSync(join(DIR, 'pendientes.csv'), csv(filasPendientes));
-    writeFileSync(join(DIR, 'avisos.csv'), csv(filasAvisos));
-    writeFileSync(join(DIR, 'paridad.csv'), csv(filasParidad));
-    if (filasErrores.length > 1) writeFileSync(join(DIR, 'errores.csv'), csv(filasErrores));
-    console.log(JSON.stringify(resumen, null, 2));
-    console.log(`\nReportes en ${DIR}`);
+    const dir = reporte.escribir({ destino, aplicado: APLICAR, solo: SOLO ?? 'todas', limite: Number.isFinite(ARGS.limite) ? ARGS.limite : null }, ['cambios', 'pendientes', 'avisos', 'paridad']);
+    console.log(JSON.stringify(reporte.resumen, null, 2));
+    console.log(`\nReportes en ${dir}`);
     if (!APLICAR) console.log('Simulación: no se escribió nada. Revisa los reportes y corre con --aplicar (punto de parada P2).');
   }
 }

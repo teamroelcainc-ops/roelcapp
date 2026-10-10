@@ -15,6 +15,9 @@ import { idReal, useCatalogos } from '../../../shared/data/catalogos'; // ✅ V0
 import { monedaCanonica } from '../../../shared/dominio/moneda';
 import { DocumentosLista } from '../../documentos/DocumentosLista'; // ✅ V00341
 import { db } from '../../../config/firebase';
+import { useFlags } from '../../../shared/data/flags';
+import { llamarDinero, mensajeDinero } from '../services/dineroServidor';
+import { monedaDeFactura, totalNativoFactura } from '../../../shared/dominio/dinero';
 import * as XLSX from 'xlsx';
 import { EditorOperacionEmbebido } from '../../operaciones/components/EditorOperacionEmbebido';
 import './AuditoriaCadenaCliente.css';
@@ -195,6 +198,7 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
   const [factEdit, setFactEdit] = useState<any | null>(null);
   const [pagoEdit, setPagoEdit] = useState<any | null>(null);
   const [guardandoEdit, setGuardandoEdit] = useState(false);
+  const flags = useFlags();
 
   // ✅ V00319: SOLO clientes que PAGAN (tipo del catálogo + respaldo por tarifario).
   const empresas = useMemo(() => {
@@ -415,6 +419,26 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
     if (total < pagado - 0.009) { alert(`El total (${money(total)}) no puede ser MENOR a lo ya pagado (${money(pagado)}).\n\nPara bajarlo, primero elimina el/los pagos aplicados en el módulo de Pagos.`); return; }
     setGuardandoEdit(true);
     try {
+      // ✅ V00441 (Fase 5.8): con la bandera, el total lo guarda el servidor (queda
+      //   marcado como total manual y el saldo sale de la regla única).
+      //   Aquí se captura la CONVERSIÓN en pesos: solo es el total de la factura si la
+      //   factura es en pesos; en otra moneda se guarda su total de siempre.
+      if (flags.dineroPorServidor) {
+        const enPesos = monedaDeFactura(factEdit) === 'MXN';
+        if (!enPesos && Math.abs(total - (Number(factEdit._totalOriginal) || 0)) > 0.009) {
+          alert('Esta factura no es en pesos: el total de aquí es la conversión y no se puede guardar como total de la factura.\n\nCorrige el total en Facturación Clientes (Editar factura) o en Pagos. El invoice y la fecha sí se pueden cambiar aquí.');
+          return;
+        }
+        await llamarDinero('editarFactura', {
+          lado: 'cliente', origen: 'pagos', facturaIds: [String(factEdit.id)],
+          invoice: String(factEdit._nuevoInvoice || '').trim() || String(factEdit.invoice || ''),
+          fecha: String(factEdit._nuevaFecha || factEdit.fecha || ''),
+          facturaCcp: String(factEdit.facturaCcp ?? ''), statusFactura: String(factEdit.statusFactura ?? ''),
+          moneda: String(factEdit.monedaFacturacion ?? ''), total: r2(enPesos ? total : totalNativoFactura(factEdit)),
+        });
+        setFactEdit(null);
+        return;
+      }
       await updateDoc(doc(db, 'facturas_clientes', String(factEdit.id)), {
         invoice: String(factEdit._nuevoInvoice || '').trim() || String(factEdit.invoice || ''),
         fecha: String(factEdit._nuevaFecha || factEdit.fecha || ''),
@@ -422,7 +446,7 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
         saldoPendiente: r2(Math.max(0, total - pagado)),
       });
       setFactEdit(null); // el onSnapshot refresca solo
-    } catch (e) { console.error('Editar factura:', e); alert('No se pudo guardar la factura.'); }
+    } catch (e) { console.error('Editar factura:', e); alert(mensajeDinero(e, 'No se pudo guardar la factura.')); }
     finally { setGuardandoEdit(false); }
   };
   const guardarPago = async () => {
@@ -606,7 +630,7 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
                         <span className="acc-monto">{money(x.totalNativo)}</span>
                         <span className="acc-acciones" onClick={(e) => e.stopPropagation()}>
                           <button type="button" className="acc-mini" title="Ver el detalle completo de la factura" onClick={() => setDetalle({ titulo: `Factura ${x.invoice}`, docu: x.raw })}>👁</button>
-                          <button type="button" className="acc-mini" title="Editar la factura (invoice, fecha y total; lo demás en Facturación)" onClick={() => setFactEdit({ ...x.raw, id: x.id, invoice: x.invoice, _nuevoInvoice: x.invoice, _nuevaFecha: x.fecha, _nuevoTotal: String(x.conversion) })}>✎</button>
+                          <button type="button" className="acc-mini" title="Editar la factura (invoice, fecha y total; lo demás en Facturación)" onClick={() => setFactEdit({ ...x.raw, id: x.id, invoice: x.invoice, _nuevoInvoice: x.invoice, _nuevaFecha: x.fecha, _nuevoTotal: String(x.conversion), _totalOriginal: x.conversion })}>✎</button>
                           <BotonRevisado tipo="fact" id={x.id} revisado={x.revisado} />
                         </span>
                       </div>

@@ -25,6 +25,7 @@ import { ModalFechaStatus } from './ModalFechaStatus';
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
 import { aduanaDeConvenio, camposPisoColombia, casetaRespaldoColombia, esAduanaColombia, esGastoPisoColombia, normPuente } from '../../../utils/puenteColombia';
 import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
+import { obtenerFlags } from '../../../shared/data/flags';
 import { docPorId, nombreEmpresaPdf } from '../../../utils/docPorId';
 import type { DocLibre } from '../../../utils/docPorId';
 import { idReal, obtenerCatalogo, useCatalogo, useCatalogos } from '../../../shared/data/catalogos';
@@ -857,6 +858,9 @@ const OperacionesDashboard = () => {
   // ✅ V00388: aduana COLOMBIA → además de la caseta se cobra el PISO del
   //   puente ("Puente Mx Colombia", monto fijo del catálogo). Nuevo Laredo: uno solo.
   const camposSaldoPuenteAlCompletar = async (statusId: string, op: { saldoPuente?: unknown; saldoPuentePiso?: unknown; trafico?: unknown; fechaServicio?: unknown; tipoOperacionNombre?: unknown; proveedorUnidadNombre?: unknown; convenio?: unknown; carga?: unknown; convenioNombre?: unknown }, statusNombre?: string, fechaEvento?: string): Promise<Record<string, unknown>> => {
+    // ✅ V00441 (Fase 5.7): con la bandera, el peaje lo cobra el servidor (trigger
+    //   operacionEscrita) para web, Mis Operaciones y la app móvil por igual.
+    if ((await obtenerFlags()).cobroPuenteEnServidor) return {};
     const base = await camposSaldoPuenteBaseSP(statusId, op, statusNombre, fechaEvento);
     if (!(Number(base.saldoPuente) > 0)) return base;
     return { ...base, ...(await camposPisoColombia(op, base.saldoPuenteFecha, base.saldoPuenteEvento)) };

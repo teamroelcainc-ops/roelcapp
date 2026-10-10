@@ -31,5 +31,15 @@ export const banderaServidor = async (nombre: string): Promise<boolean> => {
   return cache.datos[nombre] === true;
 };
 
+/**
+ * ✅ V00441: la bandera leída AL MOMENTO (sin los 60 s de memoria). La usan las
+ * callables de dinero: la web y las reglas ven el cambio al instante, así que el
+ * servidor no debe rechazar durante un minuto después de encenderla. 1 lectura por llamada.
+ */
+export const banderaServidorFresca = async (nombre: string): Promise<boolean> => {
+  cache = null;
+  return banderaServidor(nombre);
+};
+
 /** Para pruebas. */
 export const reiniciarCacheBanderas = (): void => { cache = null; };

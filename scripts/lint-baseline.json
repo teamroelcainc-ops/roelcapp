@@ -61,7 +61,7 @@
     "src/features/operaciones/components/OperacionesDashboard.tsx": 99,
     "src/features/operaciones/components/ServiciosCancelados.tsx": 99,
     "src/features/operaciones/components/ServiciosCompletados.tsx": 156,
-    "src/features/operaciones/config/statusRules.ts": 25,
+    "src/features/operaciones/config/statusRules.ts": 21,
     "src/features/operaciones/context/FormularioOperacionContext.tsx": 8,
     "src/features/operaciones/services/catalogosOperacion.ts": 4,
     "src/features/operaciones/services/operacionesService.ts": 10,
@@ -89,5 +89,5 @@
     "src/utils/pdfGenerator.ts": 2,
     "functions/src/index.ts": 13
   },
-  "anyTotal": 2474
+  "anyTotal": 2470
 }

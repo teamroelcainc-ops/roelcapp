@@ -363,3 +363,9 @@ export * from './portalClientes';
 // ✅ V00437 (Fase 1): claims de acceso, alta/baja de usuarios y borrado con papelera.
 export * from './usuarios';
 export * from './papelera';
+
+// ✅ V00441 (Fase 5): facturación y pagos en el servidor (bandera dineroPorServidor).
+export * from './dinero';
+export * from './proyecciones';
+// ✅ V00441 (Fase 5.6): saldo corriente de diesel (el cobro del puente corre dentro de operacionEscrita).
+export { referenciaDieselEscrita } from './puentesYDiesel';

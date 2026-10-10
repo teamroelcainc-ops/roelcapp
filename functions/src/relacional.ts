@@ -40,12 +40,16 @@ import { exigirAdmin, EXIGIR_APP_CHECK } from './acceso'; // ✅ V00435 · V0043
 import { CATALOGO_ADUANAS, CATALOGO_CV, cambiosCanonicos, catalogoServidor, contextoServidor, invalidarCatalogoServidor } from './canonico';
 import { banderaServidor } from './flags';
 import { derivarDesdeConvenio } from './dominio/operacionCanonica.js';
-import { ESQUEMA_OPERACION_VERSION } from './dominio/constantes.js';
+import { ESQUEMA_OPERACION_VERSION, ID_MXN, ID_USD } from './dominio/constantes.js';
+import { agregadosFactura, conversionOperacion, totalNativoDeRenglonesLegado, totalNativoFactura } from './dominio/dinero.js';
+import { aNumero, deCentavos, r2 } from './dominio/numeros.js';
+import { borrarRenglones, proyectarRenglones } from './proyecciones.js';
+import { cambiosCobroPuente } from './puentesYDiesel.js';
 
 if (getApps().length === 0) initializeApp();
 const dbRel = getFirestore();
 
-const REL_VERSION = 'relacional-v1.5'; // ✅ V00299: + sync INVERSA detalle→línea del tarifario · ✅ V00429: + guardián de integridad del convenio · ✅ V00440: + campos canónicos
+const REL_VERSION = 'relacional-v1.7'; // ✅ V00299: + sync INVERSA detalle→línea del tarifario · ✅ V00429: + guardián de integridad del convenio · ✅ V00440: + campos canónicos · ✅ V00441: + dinero y cobro del puente
 
 /** Normaliza: sin acentos, espacios colapsados, minúsculas (misma regla del cliente V00257). */
 const normR = (t: unknown): string =>
@@ -109,11 +113,15 @@ export const empresaActualizada = onDocumentUpdated({ document: 'empresas/{empre
 //   precondición lastUpdateTime: si la operación cambió mientras se calculaba, se
 //   vuelve a calcular DENTRO de una transacción con el dato actual (comparando
 //   contra el `antes` de este evento, para no perder un cambio de origen).
-const calcularCambiosOperacion = async (antes: Record<string, unknown> | undefined, x: Record<string, unknown>): Promise<Record<string, unknown>> => {
+const calcularCambiosOperacion = async (opId: string, antes: Record<string, unknown> | undefined, x: Record<string, unknown>): Promise<Record<string, unknown>> => {
   const [catCV, catAdu] = await Promise.all([catalogoServidor(...CATALOGO_CV), catalogoServidor(...CATALOGO_ADUANAS)]);
   const cambios: Record<string, unknown> = derivarDesdeConvenio(x, catCV, catAdu);
   if (await banderaServidor('canonicosEnServidor')) {
     Object.assign(cambios, cambiosCanonicos(antes, { ...x, ...cambios }, await contextoServidor()));
+  }
+  // ✅ V00441 (Fase 5.7): cobro del puente al cambiar de estatus (web, Mis Operaciones y app móvil).
+  if (await banderaServidor('cobroPuenteEnServidor')) {
+    Object.assign(cambios, await cambiosCobroPuente(dbRel, opId, antes, { ...x, ...cambios }));
   }
   return cambios;
 };
@@ -128,7 +136,7 @@ export const operacionEscrita = onDocumentWritten({ document: 'operaciones/{opId
   const x = despues.data() as Record<string, unknown>;
   const antes = event.data?.before?.exists ? (event.data.before.data() as Record<string, unknown>) : undefined;
   try {
-    const cambios = await calcularCambiosOperacion(antes, x);
+    const cambios = await calcularCambiosOperacion(event.params.opId, antes, x);
     if (Object.keys(cambios).length === 0) return; // anti-bucle: ya está íntegra
     await despues.ref.update(cambios, { lastUpdateTime: despues.updateTime });
     logger.info(`[${REL_VERSION}] operacionEscrita: ${String(x.ref || event.params.opId)} normalizada`, Object.keys(cambios));
@@ -143,7 +151,7 @@ export const operacionEscrita = onDocumentWritten({ document: 'operaciones/{opId
       await dbRel.runTransaction(async (tx) => {
         const actual = await tx.get(despues.ref);
         if (!actual.exists) return;
-        const cambios = await calcularCambiosOperacion(antes, actual.data() as Record<string, unknown>);
+        const cambios = await calcularCambiosOperacion(event.params.opId, antes, actual.data() as Record<string, unknown>);
         if (Object.keys(cambios).length > 0) tx.update(despues.ref, cambios);
       });
     } catch (e2) {
@@ -325,69 +333,55 @@ export const verificarIntegridad = onCall({ region: 'us-central1', timeoutSecond
 //    Las fórmulas son ESPEJO de Facturación (calcularConversionCliente /
 //    Proveedor y totalNativoFactura) — si cambian allá, cambiar aquí.
 // ─────────────────────────────────────────────────────────────────────────────
-const ID_USD_REL = '7dca62b3';
-const ID_MXN_REL = 'f95d8894';
-const r2rel = (n: unknown): number => Math.round((Number(n) || 0) * 100) / 100;
-
+// ✅ V00441 (Fase 5.1): la conversión de la operación y el total de la factura
+//   viven en dominio/dinero.ts (la MISMA regla que Facturación y Pagos). Antes
+//   aquí había una copia "espejo" que había que cambiar a mano.
 type Dict = Record<string, unknown>;
 
-const esUSDTexto = (v: unknown): boolean => {
-  const t = String(v ?? '').toUpperCase();
-  return t === ID_USD_REL.toUpperCase() || t.includes('USD') || t.includes('DOLAR') || t.includes('DÓLAR');
-};
-const esMXNTexto = (v: unknown): boolean => {
-  const t = String(v ?? '').toUpperCase();
-  return t === ID_MXN_REL.toUpperCase() || t.includes('MXN') || t.includes('PESO');
-};
+const difiere = (a: unknown, b: unknown): boolean => Math.abs((Number(a) || 0) - (Number(b) || 0)) > 0.005;
 
-/** Espejo de calcularConversionCliente / calcularConversionProveedor. */
-const conversionOperacion = (op: Dict, lado: 'cliente' | 'proveedor') => {
+// ── LEGADO (bandera dineroPorServidor apagada): la copia "espejo" de la V00440,
+//    tal cual, para que sin la bandera el servidor calcule EXACTAMENTE lo mismo
+//    que antes (incluye aceptar el ID de moneda en monedaCobroNombre). Se borra
+//    con el resto del camino viejo (punto de parada P4).
+const esUSDTextoLegado = (v: unknown): boolean => {
+  const t = String(v ?? '').toUpperCase();
+  return t === ID_USD.toUpperCase() || t.includes('USD') || t.includes('DOLAR') || t.includes('DÓLAR');
+};
+const esMXNTextoLegado = (v: unknown): boolean => {
+  const t = String(v ?? '').toUpperCase();
+  return t === ID_MXN.toUpperCase() || t.includes('MXN') || t.includes('PESO');
+};
+const conversionOperacionLegado = (op: Dict, lado: 'cliente' | 'proveedor') => {
   const fact = lado === 'cliente' ? op.facturadoEnCobrar : op.facturadoEnUnidad;
   const tc = Number(op.tipoCambioAprobado) || Number(op.tipoCambioDia) || 0;
   const montoConvenio = Number(lado === 'cliente' ? op.montoConvenioCliente : op.totalAPagarProv) || 0;
   const cargos = Number(lado === 'cliente' ? op.cargosAdicionales : op.cargosAdicionalesProv) || 0;
   const nombreMoneda = String((lado === 'cliente' ? op.monedaCobroNombre : op.monedaUnidadNombre) || '');
-  const factUSD = fact === ID_USD_REL || esUSDTexto(nombreMoneda);
-  const factMXN = fact === ID_MXN_REL || esMXNTexto(nombreMoneda);
+  const factUSD = fact === ID_USD || esUSDTextoLegado(nombreMoneda);
+  const factMXN = fact === ID_MXN || esMXNTextoLegado(nombreMoneda);
   const monConv = String((lado === 'cliente' ? op.monedaConvenioCliente : op.monedaConvenioProv) || '');
-  const convUSD = monConv === ID_USD_REL || (!!monConv && esUSDTexto(monConv));
-  const convMXN = monConv === ID_MXN_REL || (!!monConv && esMXNTexto(monConv));
+  const convUSD = monConv === ID_USD || (!!monConv && esUSDTextoLegado(monConv));
+  const convMXN = monConv === ID_MXN || (!!monConv && esMXNTextoLegado(monConv));
   let subtotal = montoConvenio;
   if (convUSD && factMXN) subtotal = tc > 0 ? montoConvenio * tc : 0;
   else if (convMXN && factUSD) subtotal = tc > 0 ? montoConvenio / tc : 0;
   let cargosFact = cargos;
   if (convUSD && factMXN) cargosFact = tc > 0 ? cargos * tc : 0;
   else if (convMXN && factUSD) cargosFact = tc > 0 ? cargos / tc : 0;
-  const total = r2rel(r2rel(subtotal) + r2rel(cargosFact));
+  const total = r2(r2(subtotal) + r2(cargosFact));
   let dol = 0; let pes = 0; let conv = 0;
   const facturaUSD = factUSD || (!factMXN && convUSD);
-  if (facturaUSD) { dol = total; pes = 0; conv = total * tc; }
-  else { dol = 0; pes = total; conv = total; }
-  return { subtotal: r2rel(subtotal), total, dol: r2rel(dol), pes: r2rel(pes), conv: r2rel(conv) };
+  if (facturaUSD) { dol = total; pes = 0; conv = total * tc; } else { dol = 0; pes = total; conv = total; }
+  return { subtotal: r2(subtotal), total, dol: r2(dol), pes: r2(pes), conv: r2(conv) };
 };
-
-/** Espejo de totalNativoFactura (Facturación): total en la MONEDA de la factura. */
-const totalNativoFacturaRel = (fac: Dict, ops: Dict[]): number => {
-  const monTxt = normR(fac.monedaFacturacion || fac.monedaProveedor || fac.moneda || fac.monedaId);
-  const esUSD = monTxt === ID_USD_REL || monTxt === 'usd' || monTxt === 'us$' || monTxt === 'dls' || monTxt.startsWith('dolar');
-  const esMXN = monTxt === ID_MXN_REL || monTxt === 'mxn' || monTxt === 'mn' || monTxt.startsWith('peso');
-  const suma = (campo: string) => ops.reduce((s, o) => s + (Number(o?.[campo]) || 0), 0);
-  if (ops.length > 0) {
-    if (esUSD) { const dol = suma('dol'); if (dol > 0) return r2rel(dol); const base = suma('subtotalBase'); if (base > 0) return r2rel(base); }
-    else if (esMXN) { const conv = suma('monto'); if (conv > 0) return r2rel(conv); const pes = suma('pes'); if (pes > 0) return r2rel(pes); const base = suma('subtotalBase'); if (base > 0) return r2rel(base); }
-    else { const base = suma('subtotalBase'); if (base > 0) return r2rel(base); }
-  }
-  return r2rel(fac.subtotalFactura || fac.total || fac.montoFactura || 0);
-};
-
-const difiere = (a: unknown, b: unknown): boolean => Math.abs((Number(a) || 0) - (Number(b) || 0)) > 0.005;
 
 /** Cascada Operación → Facturas de un lado (clientes o proveedores). */
 const propagarMontoOperacionAFacturas = async (opId: string, op: Dict, lado: 'cliente' | 'proveedor'): Promise<number> => {
   const coleccion = lado === 'cliente' ? 'facturas_clientes' : 'facturas_proveedores';
   const snap = await dbRel.collection(coleccion).where('operacionesIds', 'array-contains', opId).get();
   if (snap.empty) return 0;
-  const m = conversionOperacion(op, lado);
+  const m = (await banderaServidor('dineroPorServidor')) ? conversionOperacion(op, lado) : conversionOperacionLegado(op, lado);
   let n = 0;
   for (const d of snap.docs) {
     const fac = d.data() as Dict;
@@ -410,11 +404,14 @@ const propagarMontoOperacionAFacturas = async (opId: string, op: Dict, lado: 'cl
       (lado === 'cliente' && String(viejo.refCliente || '') !== String(nuevo.refCliente || ''));
     if (!cambioRenglon) continue; // anti-bucle
     ops[idx] = nuevo;
-    const subtotalFactura = r2rel(ops.reduce((s, o) => s + (Number(o?.monto) || 0), 0));
-    const subtotalMonedaFactura = totalNativoFacturaRel(fac, ops);
+    const subtotalFactura = r2(ops.reduce((s, o) => s + (Number(o?.monto) || 0), 0));
     const cambios: Dict = { operacionesGuardadas: ops };
     if (difiere(fac.subtotalFactura, subtotalFactura)) cambios.subtotalFactura = subtotalFactura;
-    if (difiere(fac.subtotalMonedaFactura, subtotalMonedaFactura)) cambios.subtotalMonedaFactura = subtotalMonedaFactura;
+    // ✅ V00441 (Fase 5.5): un total capturado a mano (totalManualCentavos) no se pisa.
+    if (!(aNumero(fac.totalManualCentavos) > 0)) {
+      const subtotalMonedaFactura = totalNativoDeRenglonesLegado(fac, ops);
+      if (difiere(fac.subtotalMonedaFactura, subtotalMonedaFactura)) cambios.subtotalMonedaFactura = subtotalMonedaFactura;
+    }
     await d.ref.update(cambios);
     n += 1;
   }
@@ -443,24 +440,52 @@ export const operacionMontoCambiado = onDocumentUpdated({ document: 'operaciones
 });
 
 /** Cascada Factura → saldo de Pagos: si la factura ya tiene pagos aplicados,
- *  su saldoPendiente y statusPago se recalculan con el total nuevo. */
-const recalcularSaldoFactura = async (event: { data?: { after?: FirebaseFirestore.DocumentSnapshot } }, etiqueta: string) => {
+ *  su saldoPendiente y statusPago se recalculan con el total nuevo.
+ *  ✅ V00441 (Fase 5): sin la bandera, IGUAL que antes (total desde los renglones;
+ *  la diferencia con Pagos, que lee primero subtotalMonedaFactura, la muestra la
+ *  reconciliación — punto de parada P3). Con `dineroPorServidor` usa la regla
+ *  única, mantiene los agregados en centavos y la tabla hija de renglones. */
+const recalcularSaldoFactura = async (
+  event: { data?: { before?: FirebaseFirestore.DocumentSnapshot; after?: FirebaseFirestore.DocumentSnapshot } }, etiqueta: string,
+) => {
+  const antes = event.data?.before;
   const despues = event.data?.after;
-  if (!despues || !despues.exists) return;
+  const dinero = await banderaServidor('dineroPorServidor');
+  if (!despues || !despues.exists) {
+    if (dinero && antes?.exists) await borrarRenglones(antes.ref);
+    return;
+  }
   const fac = despues.data() as Dict;
+  const cambios: Dict = {};
   const montoPagado = Number(fac.montoPagado) || 0;
   const tieneAplicaciones = montoPagado > 0 || typeof fac.saldoPendiente === 'number';
-  if (!tieneAplicaciones) return; // sin pagos: nada que recalcular
-  const ops = Array.isArray(fac.operacionesGuardadas) ? (fac.operacionesGuardadas as Dict[]) : [];
-  const total = totalNativoFacturaRel(fac, ops);
-  const saldo = Math.max(0, r2rel(total - montoPagado));
-  const status = saldo <= 0.009 ? 'PAGADA' : (montoPagado > 0 ? 'PARCIAL' : String(fac.statusPago || ''));
-  const cambios: Dict = {};
-  if (difiere(fac.saldoPendiente, saldo)) cambios.saldoPendiente = saldo;
-  if (status && String(fac.statusPago || '') !== status) cambios.statusPago = status;
+  if (tieneAplicaciones) {
+    // Sin la bandera: el total de SIEMPRE de este trigger (desde los renglones, V00275),
+    // salvo un total manual que haya quedado de cuando la bandera estuvo encendida.
+    const manual = aNumero(fac.totalManualCentavos);
+    const ops = Array.isArray(fac.operacionesGuardadas) ? (fac.operacionesGuardadas as Dict[]) : [];
+    const total = dinero ? totalNativoFactura(fac) : (manual > 0 ? deCentavos(manual) : totalNativoDeRenglonesLegado(fac, ops));
+    const saldo = Math.max(0, r2(total - montoPagado));
+    const status = saldo <= 0.009 ? 'PAGADA' : (montoPagado > 0 ? 'PARCIAL' : String(fac.statusPago || ''));
+    if (difiere(fac.saldoPendiente, saldo)) cambios.saldoPendiente = saldo;
+    if (status && String(fac.statusPago || '') !== status) cambios.statusPago = status;
+  }
+  if (dinero) {
+    const ag = agregadosFactura(fac) as unknown as Dict;
+    for (const [k, v] of Object.entries(ag)) if (fac[k] !== v) cambios[k] = v;
+    if (fac.esquemaDinero !== 2) cambios.esquemaDinero = 2;
+    const n = await proyectarRenglones(despues.ref, antes?.exists ? (antes.data() as Dict) : undefined, fac, despues.updateTime);
+    if (n) logger.info(`[${REL_VERSION}] ${etiqueta}: ${String(fac.invoice || despues.id)} → ${n} renglón(es) sincronizado(s)`);
+  }
   if (Object.keys(cambios).length === 0) return; // anti-bucle
-  await despues.ref.update(cambios);
-  logger.info(`[${REL_VERSION}] ${etiqueta}: ${String(fac.invoice || despues.id)} saldo recalculado`, cambios);
+  try {
+    await despues.ref.update(cambios, { lastUpdateTime: despues.updateTime });
+  } catch (e) {
+    const codigo = String((e as { code?: unknown })?.code ?? '').toUpperCase();
+    if (codigo === '9' || codigo === 'FAILED_PRECONDITION' || codigo === '5' || codigo === 'NOT_FOUND') return; // cambió o se borró: lo recalcula el siguiente evento
+    throw e;
+  }
+  logger.info(`[${REL_VERSION}] ${etiqueta}: ${String(fac.invoice || despues.id)} saldo/agregados recalculados`, Object.keys(cambios));
 };
 
 export const facturaClienteMontoCambiado = onDocumentWritten({ document: 'facturas_clientes/{facId}', region: 'us-central1' }, async (event) => {
@@ -539,8 +564,8 @@ export const tarifarioProveedorEscrito = onDocumentWritten({ document: 'tarifari
 // ─────────────────────────────────────────────────────────────────────────────
 const monedaCortaRel = (m: unknown): string => {
   const t = String(m ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  if (t.includes('dolar') || t.includes('usd') || String(m) === ID_USD_REL) return 'USD';
-  if (t.includes('peso') || t.includes('mxn') || String(m) === ID_MXN_REL) return 'MXN';
+  if (t.includes('dolar') || t.includes('usd') || String(m) === ID_USD) return 'USD';
+  if (t.includes('peso') || t.includes('mxn') || String(m) === ID_MXN) return 'MXN';
   return '';
 };
 

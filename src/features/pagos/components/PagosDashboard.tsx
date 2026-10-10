@@ -28,6 +28,9 @@ import {
   ErrorPago, aplicadoPorFactura, calcularAbono, calcularReversion, totalNativoFactura, validarLimiteFacturas,
 } from '../services/aplicarPagos';
 import type { CambiosPagoFactura } from '../services/aplicarPagos';
+import { llamarDinero, mensajeDinero } from '../../facturacion/services/dineroServidor'; // ✅ V00441
+import { totalNativoFactura as totalNativoFacturaUnica } from '../../../shared/dominio/dinero';
+import { useFlags } from '../../../shared/data/flags';
 import * as XLSX from 'xlsx';
 import html2pdf from 'html2pdf.js';
 import { useUsuarioStore } from '../../../stores/useUsuarioStore';
@@ -117,6 +120,7 @@ const claveFecha = (f: string): string => {
 const hoyISO = () => hoyLocalISO();
 
 export function PagosDashboard() {
+  const flags = useFlags(); // ✅ V00441 (Fase 5): dinero por servidor
   const usuario = useUsuarioStore((s) => s.usuario);
 
   const [tab, setTab] = useState<TipoPago>('cliente');
@@ -296,27 +300,40 @@ export function PagosDashboard() {
       if (facturaViendo.montoPagado > 0.009) {
         cambios.statusPago = saldoNuevo <= 0.009 ? 'PAGADA' : 'PARCIAL';
       }
-      const batch = writeBatch(db);
-      batch.set(doc(db, coleccion, facturaViendo.id), cambios, { merge: true });
-      await batch.commit();
+      let saldoFinal = saldoNuevo;
+      if (flags.dineroPorServidor && tab !== 'mtto') {
+        // ✅ V00441 (Fase 5.5): el servidor valida contra lo pagado ACTUAL (el saldo es el suyo).
+        const r = await llamarDinero('editarFactura', {
+          lado: tab, origen: 'pagos', facturaIds: [facturaViendo.id], invoice: cambios.invoice, fecha: fEditFecha, facturaCcp: cambios.facturaCcp,
+          statusFactura: fEditStatus, moneda: fEditMoneda, total: totalNuevo,
+        });
+        const nueva = r.facturas[facturaViendo.id] ?? {};
+        Object.assign(cambios, nueva);
+        if (typeof nueva.saldoPendiente === 'number') saldoFinal = nueva.saldoPendiente;
+      } else {
+        const batch = writeBatch(db);
+        // ✅ V00441: sin la bandera manda lo capturado aquí (no una marca de total manual vieja).
+        batch.set(doc(db, coleccion, facturaViendo.id), { ...cambios, totalManualCentavos: 0 }, { merge: true });
+        await batch.commit();
+      }
       registrarLog('Pagos', 'Edición', `Editó la factura ${cambios.invoice} de ${facturaViendo.entidadNombre} desde Pagos.`).catch(() => {});
 
       // Refresco EN MEMORIA de la lista del modal (sin recargar todo).
       setFacturasPendientes((prev) => prev.map((f) => f.id === facturaViendo.id
-        ? { ...f, invoice: cambios.invoice, fecha: fEditFecha, total: totalNuevo, saldo: saldoNuevo, moneda: fEditMoneda, raw: { ...(f.raw || {}), ...cambios } }
+        ? { ...f, invoice: cambios.invoice, fecha: fEditFecha, total: totalNuevo, saldo: saldoFinal, moneda: fEditMoneda, raw: { ...(f.raw || {}), ...cambios } }
         : f));
       // Si estaba seleccionada con un monto capturado mayor al nuevo saldo, se acota.
       setPagosPorFactura((pp) => {
         if (!(facturaViendo.id in pp)) return pp;
         const cap = Number(pp[facturaViendo.id]);
-        if (isNaN(cap) || cap <= saldoNuevo) return pp;
-        return { ...pp, [facturaViendo.id]: saldoNuevo.toFixed(2) };
+        if (isNaN(cap) || cap <= saldoFinal) return pp;
+        return { ...pp, [facturaViendo.id]: saldoFinal.toFixed(2) };
       });
-      setFacturaViendo((prev) => prev ? { ...prev, invoice: cambios.invoice, fecha: fEditFecha, total: totalNuevo, saldo: saldoNuevo, moneda: fEditMoneda, raw: { ...(prev.raw || {}), ...cambios } } : prev);
+      setFacturaViendo((prev) => prev ? { ...prev, invoice: cambios.invoice, fecha: fEditFecha, total: totalNuevo, saldo: saldoFinal, moneda: fEditMoneda, raw: { ...(prev.raw || {}), ...cambios } } : prev);
       setEditandoFactura(false);
     } catch (e) {
       console.error('No se pudo guardar la edición de la factura:', e);
-      alert('No se pudo guardar la edición de la factura. Intenta de nuevo.');
+      alert(mensajeDinero(e, 'No se pudo guardar la edición de la factura. Intenta de nuevo.'));
     } finally {
       setGuardandoFactura(false);
     }
@@ -469,6 +486,25 @@ export function PagosDashboard() {
     if (!window.confirm(`Se recalcularán los montos de la factura ${fv.invoice} desde sus ${ids.length} operación(es), aplicando la regla de monedas (convenio + moneda de facturación). ¿Continuar?`)) return;
     setRecalculandoFactura(true);
     try {
+      // ✅ V00441 (Fase 5): con la bandera recalcula el SERVIDOR con la regla única
+      //   (la misma de Facturación) y quita la marca de total manual.
+      if (flags.dineroPorServidor && tab !== 'mtto') {
+        const r = await llamarDinero('recalcularFactura', { lado: tab, facturaId: fv.id });
+        const nueva = r.facturas[fv.id] ?? {};
+        const totalN = Number(nueva.subtotalMonedaFactura) || 0;
+        const saldoN = Number(nueva.saldoPendiente) || 0;
+        setFacturasPendientes((prev) => prev.map((f) => f.id === fv.id ? { ...f, total: totalN, saldo: saldoN, raw: { ...(f.raw || {}), ...nueva } } : f));
+        setPagosPorFactura((pp) => {
+          if (!(fv.id in pp)) return pp;
+          const cap = Number(pp[fv.id]);
+          if (isNaN(cap) || cap <= saldoN) return pp;
+          return { ...pp, [fv.id]: saldoN.toFixed(2) };
+        });
+        setFacturaViendo((prev) => prev ? { ...prev, total: totalN, saldo: saldoN, raw: { ...(prev.raw || {}), ...nueva } } : prev);
+        registrarLog('Pagos', 'Edición', `Recalculó los montos de la factura ${fv.invoice} (regla única, servidor): total ${money(totalN)}.`).catch(() => {});
+        alert(`Factura ${fv.invoice} recalculada: total ${money(totalN)}. ✅`);
+        return;
+      }
       // Operaciones reales de la factura.
       const ops: any[] = [];
       for (let i = 0; i < ids.length; i += 10) {
@@ -510,6 +546,7 @@ export function PagosDashboard() {
         operacionesGuardadas: guardadasNuevas,
         subtotalFactura: sumConv,
         subtotalMonedaFactura: totalNativoNuevo,
+        totalManualCentavos: 0, // ✅ V00441: recalcular = total desde las operaciones
         saldoPendiente: saldoNuevo,
         editadoEn: new Date().toISOString(),
         editadoPor: usuario?.nombre || usuario?.email || usuario?.id || '',
@@ -537,7 +574,7 @@ export function PagosDashboard() {
       alert(`Factura ${fv.invoice} recalculada: total ${money(totalNativoNuevo)} ${monedaCanon}. ✅`);
     } catch (e) {
       console.error('No se pudo recalcular la factura:', e);
-      alert('No se pudo recalcular la factura. Intenta de nuevo.');
+      alert(mensajeDinero(e, 'No se pudo recalcular la factura. Intenta de nuevo.'));
     } finally {
       setRecalculandoFactura(false);
     }
@@ -625,6 +662,22 @@ export function PagosDashboard() {
         editadoPor: usuario?.nombre || usuario?.email || usuario?.id || '',
       };
 
+      // ✅ V00441 (Fase 5.3): con la bandera, lo hace el servidor (transacción).
+      //   Los de MTTO siguen por aquí (no tocan facturas).
+      if (flags.dineroPorServidor && pago.tipo !== 'mtto') {
+        const r = await llamarDinero('editarPago', {
+          pagoId: pago.id, ...cambios,
+          agregadas: agregadas.map(({ fac, monto: m }) => ({ facturaId: fac.id, invoice: fac.invoice, fecha: fac.fecha, total: fac.total, saldoAnterior: fac.saldo, aplicado: m, saldoNuevo: Math.max(0, fac.saldo - m) })),
+        });
+        setFacturasPendientes((prev) => prev.map((fx) => {
+          const n = r.facturas[fx.id];
+          return n ? { ...fx, montoPagado: Number(n.montoPagado) || 0, saldo: Number(n.saldoPendiente) || 0 } : fx;
+        }));
+        registrarLog('Pagos', 'Edición', `Editó el pago ${cambios.numeroPago} de ${pago.entidadNombre}.`).catch(() => {});
+        setPagoViendo((prev) => prev && prev.id === pago.id ? { ...prev, ...cambios, ...((r.pago ?? {}) as Partial<PagoDoc>) } : prev);
+        setPagoEditando(null);
+        return;
+      }
       const coleccionFact = pago.tipo === 'cliente' ? 'facturas_clientes' : 'facturas_proveedores';
       const tocaFacturas = pago.tipo !== 'mtto'; // ✅ MTTO: saldo derivado, sin doc de factura
       const pagoRef = doc(db, 'pagos', pago.id);
@@ -695,7 +748,7 @@ export function PagosDashboard() {
         alert(e.message);
       } else {
         console.error('No se pudo guardar la edición del pago:', e);
-        alert('No se pudo guardar la edición del pago. Intenta de nuevo.');
+        alert(mensajeDinero(e, 'No se pudo guardar la edición del pago. Intenta de nuevo.'));
       }
     } finally {
       setGuardandoEdicion(false);
@@ -723,6 +776,7 @@ export function PagosDashboard() {
 
   // ── Modal Registrar Pago ──
   const [modalAbierto, setModalAbierto] = useState(false);
+  const pagoPendienteRef = useRef<string | null>(null); // ✅ V00441: id del pago en captura (reintentos)
   const [facturasPendientes, setFacturasPendientes] = useState<FacturaPagable[]>([]);
   const [cargandoFacturas, setCargandoFacturas] = useState(false);
   const [entidadSel, setEntidadSel] = useState('');       // nombre de la entidad
@@ -1124,7 +1178,8 @@ export function PagosDashboard() {
   //   carga masiva y por la apertura individual desde los chips de pagos).
   const mapearFacturaPagable = (id: string, raw: any, tipo: TipoPago): FacturaPagable => {
     // ✅ FIX MONEDA: total a pagar en la MONEDA de la factura (no la conversión).
-    const total = totalNativoFactura(raw);
+    // ✅ V00441: con la bandera, la regla ÚNICA (la que valida el servidor).
+    const total = flags.dineroPorServidor ? totalNativoFacturaUnica(raw) : totalNativoFactura(raw);
     const pagado = Number(raw.montoPagado) || 0;
     return {
       id,
@@ -1211,6 +1266,7 @@ export function PagosDashboard() {
 
   // ── Cargar facturas con saldo pendiente al abrir el modal ──
   const abrirModal = async () => {
+    pagoPendienteRef.current = null;
     setModalAbierto(true);
     setCargandoFacturas(true);
     setEntidadSel('');
@@ -1409,7 +1465,11 @@ export function PagosDashboard() {
       const aplicables = tipo === 'mtto' ? new Map<string, number>() : aplicadoPorFactura(aplicacion);
       validarLimiteFacturas(aplicables.size);
 
-      const pagoRef = doc(collection(db, 'pagos'));
+      // ✅ V00441: por servidor, el MISMO id en cada intento del mismo pago (si la
+      //   respuesta se perdió después de guardar, el reintento no lo duplica).
+      const porServidor = flags.dineroPorServidor && tipo !== 'mtto';
+      const pagoId = porServidor ? (pagoPendienteRef.current ??= doc(collection(db, 'pagos')).id) : doc(collection(db, 'pagos')).id;
+      const pagoRef = doc(db, 'pagos', pagoId);
 
       // Comprobante PDF (opcional): se sube ANTES de la transacción.
       let pdfUrl = '';
@@ -1433,6 +1493,20 @@ export function PagosDashboard() {
       const creadoEn = new Date().toISOString();
       const creadoPor = usuario.nombre || usuario.email || usuario.id;
 
+      // ✅ V00441 (Fase 5.3): con la bandera, lo registra el servidor (transacción;
+      //   el id del pago hace idempotente un reintento tras un corte de red).
+      //   Los de MTTO siguen por aquí (no tocan facturas; las reglas los permiten).
+      if (porServidor) {
+        const r = await llamarDinero('registrarPago', {
+          tipo, pagoId: pagoRef.id, numeroPago, fecha: fechaPago, metodoPago, referencia: referenciaPago, entidadId, entidadNombre: entidadSel,
+          monto: montoRecibido, observaciones: observacionesPago, pdfUrl, pdfNombre, aplicacion: aplicacion.map((a) => ({ ...a })),
+        });
+        pagoPendienteRef.current = null;
+        if (r.yaExistia) alert('Este pago ya se había registrado en el intento anterior (no se duplicó).');
+        registrarLog('Pagos', 'Creación', `Registró el pago ${numeroPago} (${money(monto, monedasSel[0])}) de ${entidadSel} cubriendo ${aplicacion.filter(a => a.aplicado > 0).length} factura(s).`).catch(() => {});
+        setModalAbierto(false);
+        return;
+      }
       // ✅ Fase 1.8a: TRANSACCIÓN. Relee cada factura y calcula montoPagado /
       //   saldoPendiente / statusPago con sus datos ACTUALES; si lo capturado
       //   supera el saldo fresco se aborta con aviso (no se acota en silencio).
@@ -1489,7 +1563,7 @@ export function PagosDashboard() {
         alert(e.message);
       } else {
         console.error('No se pudo guardar el pago:', e);
-        alert('No se pudo guardar el pago. Intenta de nuevo.');
+        alert(mensajeDinero(e, 'No se pudo guardar el pago. Intenta de nuevo.'));
       }
     } finally {
       setGuardando(false);
@@ -1500,6 +1574,13 @@ export function PagosDashboard() {
   const eliminarPago = async (p: PagoDoc) => {
     if (!window.confirm(`¿Eliminar el pago ${p.numeroPago} de ${p.entidadNombre} por ${money(p.monto, p.moneda)}?\n\nSe REVERTIRÁ lo aplicado en sus ${p.facturas?.length || 0} factura(s).`)) return;
     try {
+      // ✅ V00441 (Fase 5.3): con la bandera, lo revierte el servidor (transacción).
+      if (flags.dineroPorServidor) {
+        await llamarDinero('eliminarPago', { pagoId: p.id });
+        registrarLog('Pagos', 'Eliminación', `Eliminó el pago ${p.numeroPago} de ${p.entidadNombre} (${money(p.monto, p.moneda)}) y revirtió su aplicación.`).catch(() => {});
+        setPagoViendo(null);
+        return;
+      }
       const coleccion = p.tipo === 'cliente' ? 'facturas_clientes' : 'facturas_proveedores';
       const pagoRef = doc(db, 'pagos', p.id);
       // ✅ Fase 1.8a: TRANSACCIÓN. Relee el PAGO para revertir exactamente lo que
@@ -1530,7 +1611,7 @@ export function PagosDashboard() {
         alert(e.message);
       } else {
         console.error('No se pudo eliminar el pago:', e);
-        alert('No se pudo eliminar el pago. Intenta de nuevo.');
+        alert(mensajeDinero(e, 'No se pudo eliminar el pago. Intenta de nuevo.'));
       }
     }
   };

@@ -25,6 +25,7 @@ import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 // ✅ NUEVO: historial de actividad (colección historial_actividad)
 import { registrarLog } from '../../../utils/logger';
 import { statusDescuentaPuente, calcularStatusDinamico, idDocFlujo, leerFlujoFresco } from '../config/statusRules';
+import { obtenerFlags } from '../../../shared/data/flags';
 import { obtenerFilaTipoCambioDeFecha } from '../services/tipoCambioPorFecha'; // ✅ V00438 (Fase 2.9)
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
@@ -999,6 +1000,8 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
   // ✅ V00388: aduana COLOMBIA → además de la caseta, el PISO del puente
   //   ("Puente Mx Colombia", monto fijo del catálogo). Nuevo Laredo: uno solo.
   const camposSaldoPuente = async (statusFinal: string, statusNombreSP?: string): Promise<Record<string, unknown>> => {
+    // ✅ V00441 (Fase 5.7): con la bandera, el peaje lo cobra el servidor (trigger operacionEscrita).
+    if ((await obtenerFlags()).cobroPuenteEnServidor) return {};
     const base = await camposSaldoPuenteBase(statusFinal, statusNombreSP);
     if (!(Number(base.saldoPuente) > 0)) return base;
     const previoPiso = (initialData as Record<string, unknown> | undefined)?.saldoPuentePiso;

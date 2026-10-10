@@ -13,6 +13,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { collection, getDocs, getDoc, setDoc, deleteDoc, doc, writeBatch } from 'firebase/firestore';
 import { db, COL_PAPELERA_GLOBAL } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger';
+import { useFlags } from '../../../shared/data/flags';
 import './PapeleraDashboard.css';
 
 const COL_LEGADA = 'papelera_catalogos';
@@ -35,6 +36,7 @@ const PapeleraDashboard: React.FC = () => {
   const [busqueda, setBusqueda] = useState('');
   const [filtroColeccion, setFiltroColeccion] = useState('');
   const [restaurandoId, setRestaurandoId] = useState<string | null>(null);
+  const flags = useFlags();
   const [vaciando, setVaciando] = useState(false);
 
   const cargar = async () => {
@@ -101,6 +103,12 @@ const PapeleraDashboard: React.FC = () => {
 
   const restaurar = async (item: ItemPapelera) => {
     if (restaurandoId || !item.coleccion || !item.registroId) return;
+    // ✅ V00441 (Fase 5.8): con la bandera dineroPorServidor las reglas no dejan
+    //   recrear facturas ni pagos desde el navegador (su dinero lo lleva el servidor).
+    if (flags.dineroPorServidor && ['facturas_clientes', 'facturas_proveedores', 'pagos'].includes(item.coleccion)) {
+      alert('Las facturas y los pagos ya no se restauran desde la papelera: vuelve a capturarlos en Facturación o Pagos para que el servidor calcule sus saldos.');
+      return;
+    }
     setRestaurandoId(item.id);
     try {
       const destino = doc(db, item.coleccion, item.registroId);

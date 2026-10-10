@@ -119,6 +119,10 @@ describe('configuración, bitácora y meta', () => {
     await assertFails(updateDoc(doc(db, 'historial_actividad', 'h1'), { accion: 'z' }));
     await assertFails(deleteDoc(doc(db, 'historial_actividad', 'h1')));
   });
+  it('saldos_corrientes (V00441): se lee, solo el servidor escribe', async () => {
+    await assertSucceeds(getDoc(doc(sinClaims('pers1'), 'saldos_corrientes', 'diesel_x')));
+    await assertFails(setDoc(doc(sinClaims('pers1'), 'saldos_corrientes', 'diesel_x'), { dias: {} }));
+  });
   it('meta: se lee, no se escribe', async () => {
     await assertSucceeds(getDoc(doc(sinClaims('pers1'), 'meta', 'versionesCatalogos')));
     await assertFails(setDoc(doc(sinClaims('admin1'), 'meta', 'versionesCatalogos'), { x: 1 }));
@@ -132,5 +136,67 @@ describe('contrato de la app móvil (operador = personal)', () => {
     await assertSucceeds(updateDoc(doc(db, 'operaciones', 'op1'), { status: 's3', statusNombre: 'Verde' }));
     await assertSucceeds(setDoc(doc(db, 'rastreo_operaciones', 'op1'), { activo: true }));
     await assertSucceeds(setDoc(doc(db, 'rastreo_operaciones', 'op1', 'puntos', 't1'), { puntos: [] }));
+  });
+});
+
+// ✅ V00441 (Fase 5.8) — dinero: con la bandera dineroPorServidor, solo el servidor.
+describe('dinero (bandera dineroPorServidor)', () => {
+  const ponerBandera = (valor: boolean) => env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'configuracion', 'flags'), { dineroPorServidor: valor }, { merge: true });
+    await setDoc(doc(db, 'facturas_clientes', 'F1'), { invoice: 'A-1', subtotalMonedaFactura: 100, montoPagado: 0, statusFactura: 'Enviada' });
+    await setDoc(doc(db, 'facturas_proveedores', 'FP1'), { invoice: 'B-1', subtotalMonedaFactura: 50 });
+    await setDoc(doc(db, 'pagos', 'P1'), { tipo: 'cliente', monto: 10, facturas: [] });
+    await setDoc(doc(db, 'pagos', 'PM1'), { tipo: 'mtto', monto: 10, facturas: [] });
+  });
+
+  describe('apagada (como antes)', () => {
+    beforeAll(() => ponerBandera(false));
+    it('el personal escribe dinero de facturas y pagos', async () => {
+      const db = sinClaims('pers1');
+      await assertSucceeds(updateDoc(doc(db, 'facturas_clientes', 'F1'), { montoPagado: 5, saldoPendiente: 95 }));
+      await assertSucceeds(setDoc(doc(db, 'facturas_clientes', 'F2'), { invoice: 'A-2', subtotalMonedaFactura: 10 }));
+      await assertSucceeds(deleteDoc(doc(db, 'facturas_clientes', 'F2')));
+      await assertSucceeds(setDoc(doc(db, 'pagos', 'P2'), { tipo: 'cliente', monto: 5 }));
+      await assertSucceeds(updateDoc(doc(db, 'pagos', 'P1'), { monto: 12 }));
+    });
+    it('renglones y aplicaciones: nunca desde el navegador', async () => {
+      const db = sinClaims('pers1');
+      await assertFails(setDoc(doc(db, 'facturas_clientes', 'F1', 'renglones', 'o1'), { montoCentavos: 100 }));
+      await assertFails(setDoc(doc(db, 'facturas_proveedores', 'FP1', 'aplicaciones', 'P1'), { aplicadoCentavos: 100 }));
+      await assertSucceeds(getDoc(doc(db, 'facturas_clientes', 'F1', 'renglones', 'o1')));
+    });
+  });
+
+  describe('encendida', () => {
+    beforeAll(() => ponerBandera(true));
+    afterAll(() => ponerBandera(false));
+    it('no crea, borra ni cambia el dinero de una factura', async () => {
+      const db = sinClaims('pers1');
+      await assertFails(setDoc(doc(db, 'facturas_clientes', 'F3'), { invoice: 'A-3' }));
+      await assertFails(deleteDoc(doc(db, 'facturas_clientes', 'F1')));
+      await assertFails(updateDoc(doc(db, 'facturas_clientes', 'F1'), { montoPagado: 50 }));
+      await assertFails(updateDoc(doc(db, 'facturas_clientes', 'F1'), { subtotalMonedaFactura: 1 }));
+      await assertFails(updateDoc(doc(db, 'facturas_proveedores', 'FP1'), { totalManualCentavos: 1 }));
+      await assertFails(updateDoc(doc(db, 'facturas_proveedores', 'FP1'), { operacionesIds: ['x'] }));
+    });
+    it('sí cambia documento, status de factura y nombres', async () => {
+      const db = sinClaims('pers1');
+      await assertSucceeds(updateDoc(doc(db, 'facturas_clientes', 'F1'), { docFacturaUrl: 'u', docFacturaNombre: 'f.pdf', statusFactura: 'Pagada' }));
+      await assertSucceeds(updateDoc(doc(db, 'facturas_clientes', 'F1'), { clienteNombre: 'Acme' }));
+      await assertSucceeds(updateDoc(doc(db, 'facturas_proveedores', 'FP1'), { rateProveedor: { a: 1 } }));
+    });
+    it('pagos de clientes/proveedores: solo datos sin dinero; MTTO sigue igual', async () => {
+      const db = sinClaims('pers1');
+      await assertFails(setDoc(doc(db, 'pagos', 'P3'), { tipo: 'cliente', monto: 5 }));
+      await assertFails(updateDoc(doc(db, 'pagos', 'P1'), { monto: 99 }));
+      await assertFails(updateDoc(doc(db, 'pagos', 'P1'), { tipo: 'mtto' }));
+      await assertFails(deleteDoc(doc(db, 'pagos', 'P1')));
+      await assertSucceeds(updateDoc(doc(db, 'pagos', 'P1'), { referencia: 'R-1', observaciones: 'ok', entidadNombre: 'Acme' }));
+      await assertSucceeds(setDoc(doc(db, 'pagos', 'PM2'), { tipo: 'mtto', monto: 5 }));
+      await assertSucceeds(updateDoc(doc(db, 'pagos', 'PM1'), { monto: 7 }));
+      await assertFails(updateDoc(doc(db, 'pagos', 'PM1'), { tipo: 'proveedor' }));
+      await assertSucceeds(deleteDoc(doc(db, 'pagos', 'PM2')));
+    });
   });
 });

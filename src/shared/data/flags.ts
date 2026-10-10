@@ -29,6 +29,8 @@ export interface Flags {
   dineroPorServidor: boolean;
   /** Fase 5.7 — el peaje del puente lo cobra el servidor (trigger), no el navegador. */
   cobroPuenteEnServidor: boolean;
+  /** Fase 5.6 — la tarjeta "Saldo Diesel" lee el saldo corriente del servidor (saldos_corrientes). */
+  saldosCorrientes: boolean;
   /** Fase 6.2 — los nombres los propaga el servidor; se ocultan los botones de reparación. */
   propagacionEnServidor: boolean;
   /** Fase 7 — consultas por campos canónicos (requiere la migración de la Fase 4). */
@@ -41,6 +43,7 @@ export const FLAGS_APAGADAS: Flags = {
   canonicosEnServidor: false,
   dineroPorServidor: false,
   cobroPuenteEnServidor: false,
+  saldosCorrientes: false,
   propagacionEnServidor: false,
   consultasCanonicas: false,
 };

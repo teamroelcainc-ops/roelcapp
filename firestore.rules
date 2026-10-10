@@ -1,7 +1,7 @@
 rules_version = '2';
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  REGLAS DE FIRESTORE — V00437 (Fase 1.4)
+//  REGLAS DE FIRESTORE — V00437 (Fase 1.4) · V00441 (Fase 5.8: dinero)
 // ═══════════════════════════════════════════════════════════════════════════
 //  ⚠ PUNTO DE PARADA P1 (PLAN-REFACTOR.md): NO publicar hasta que
 //    1) estén desplegadas las funciones de la V00437 (usuarioEscrito, sincronizarClaims),
@@ -26,6 +26,14 @@ rules_version = '2';
 //      ni borra desde el navegador.
 //    · meta/* lo escriben solo las Cloud Functions.
 //  Las Cloud Functions usan el Admin SDK y no pasan por estas reglas.
+//
+//  ✅ V00441 (Fase 5.8) — Dinero: con la bandera configuracion/flags.dineroPorServidor
+//  encendida, el navegador ya no crea/borra facturas ni pagos de clientes/proveedores
+//  ni cambia sus campos de dinero (montoPagado, saldo*, statusPago, totales, *Centavos,
+//  renglones guardados): eso lo hacen las callables de functions/src/dinero.ts.
+//  Las tablas hijas renglones/ y aplicaciones/ solo las escribe el servidor (siempre).
+//  Con la bandera apagada todo sigue como en la V00437. Documentos, status de
+//  factura, notas y nombres se siguen editando desde la web.
 // ═══════════════════════════════════════════════════════════════════════════
 
 service cloud.firestore {
@@ -83,7 +91,7 @@ service cloud.firestore {
 
     // Colecciones que el personal NO escribe por la regla general (tienen la suya abajo).
     function protegida(coleccion) {
-      return coleccion in ['usuarios', 'roles', 'config_autorizaciones', 'configuracion', 'meta', 'historial_actividad'];
+      return coleccion in ['usuarios', 'roles', 'config_autorizaciones', 'configuracion', 'meta', 'historial_actividad', 'saldos_corrientes'];
     }
 
     // Campos de SU perfil que un usuario puede cambiar (sesión y app móvil).
@@ -92,10 +100,74 @@ service cloud.firestore {
         .hasOnly(['isOnline', 'ultimoAcceso', 'fotoPerfil', 'ultimoAccesoMovil', 'plataformaMovil', 'versionAppMovil']);
     }
 
+    function escritor() {
+      return esPersonal() && perfilVigente();
+    }
+
+    // ── Dinero (V00441, Fase 5.8) ──
+    function coleccionDeDinero(coleccion) {
+      return coleccion in ['facturas_clientes', 'facturas_proveedores', 'pagos'];
+    }
+
+    function rutaFlags() {
+      return /databases/$(database)/documents/configuracion/flags;
+    }
+
+    // 1 lectura extra, solo en escrituras que tocan dinero (las demás no la pagan:
+    // en cada regla se revisa primero si cambia un campo de dinero).
+    function dineroEnServidor() {
+      return exists(rutaFlags()) && get(rutaFlags()).data.get('dineroPorServidor', false) == true;
+    }
+
+    function tocaAlguno(campos) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny(campos);
+    }
+
+    function camposDineroFactura() {
+      return ['montoPagado', 'saldoPendiente', 'saldoAFavor', 'statusPago', 'subtotalFactura', 'subtotalMonedaFactura',
+              'total', 'montoFactura', 'totalCentavos', 'montoPagadoCentavos', 'saldoCentavos', 'saldoAFavorCentavos',
+              'abierta', 'totalManualCentavos', 'esquemaDinero', 'operacionesGuardadas', 'operacionesIds', 'pagosIds'];
+    }
+
+    function camposDineroPago() {
+      return ['tipo', 'monto', 'montoAplicado', 'saldoAFavor', 'moneda', 'facturas',
+              'montoCentavos', 'montoAplicadoCentavos', 'saldoAFavorCentavos'];
+    }
+
+    // Pagos de clientes/proveedores (afectan facturas). Los de MTTO siguen desde la web.
+    function pagoConFacturas(datos) {
+      return datos.get('tipo', '') in ['cliente', 'proveedor'];
+    }
+
     // ── Regla general: todo el sistema para el personal ──
     match /{coleccion}/{resto=**} {
       allow read: if esPersonal();
-      allow write: if esPersonal() && perfilVigente() && !protegida(coleccion);
+      allow write: if escritor() && !protegida(coleccion) && !coleccionDeDinero(coleccion);
+    }
+
+    // ── Facturas: con la bandera, se crean/borran y cambian de dinero solo por el servidor ──
+    match /facturas_clientes/{id} {
+      allow create, delete: if escritor() && !dineroEnServidor();
+      allow update: if escritor() && (!tocaAlguno(camposDineroFactura()) || !dineroEnServidor());
+    }
+    match /facturas_proveedores/{id} {
+      allow create, delete: if escritor() && !dineroEnServidor();
+      allow update: if escritor() && (!tocaAlguno(camposDineroFactura()) || !dineroEnServidor());
+    }
+
+    // ── Pagos: los de clientes/proveedores, por el servidor con la bandera ──
+    match /pagos/{id} {
+      allow create: if escritor() && (!pagoConFacturas(request.resource.data) || !dineroEnServidor());
+      allow delete: if escritor() && (!pagoConFacturas(resource.data) || !dineroEnServidor());
+      allow update: if escritor() && (
+        (!pagoConFacturas(resource.data) && !pagoConFacturas(request.resource.data))
+        || !tocaAlguno(camposDineroPago())
+        || !dineroEnServidor());
+    }
+
+    // ── Tablas hijas de facturas y pagos: renglones/ y aplicaciones/ solo el servidor ──
+    match /{coleccion}/{id}/{sub}/{resto=**} {
+      allow write: if coleccionDeDinero(coleccion) && escritor() && !(sub in ['renglones', 'aplicaciones']);
     }
 
     // ── Usuarios ──
@@ -126,6 +198,7 @@ service cloud.firestore {
       allow create: if esPersonal() && perfilVigente();
     }
 
+    // ── saldos_corrientes/*: lo mantiene el servidor (V00441, Fase 5.6); se lee por la regla general ──
     // ── meta/*: lo escriben las Cloud Functions (versiones de catálogos, reportes) ──
     // (lectura por la regla general; escritura: nadie desde el navegador)
   }

@@ -9,8 +9,11 @@
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log",
     "test": "vitest run",
+    "test:emulador": "firebase emulators:exec --only firestore --project demo-roelca \"vitest run -c vitest.emulador.config.ts\"",
     "build:scripts": "node ../scripts/sincronizar-dominio.mjs && tsc -p tsconfig.scripts.json",
     "migrar:v2": "npm run build:scripts && node lib-scripts/scripts/migrarEsquemaV2.js",
+    "reconciliar": "npm run build:scripts && node lib-scripts/scripts/reconciliarFacturas.js",
+    "saldos:diesel": "npm run build:scripts && node lib-scripts/scripts/reconstruirSaldosDiesel.js",
     "prebuild": "node ../scripts/sincronizar-dominio.mjs"
   },
   "engines": {
