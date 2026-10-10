@@ -36,6 +36,7 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions/v2';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
+import { exigirPersonal } from './acceso'; // ✅ V00435
 
 if (getApps().length === 0) initializeApp();
 const dbRel = getFirestore();
@@ -237,6 +238,7 @@ const anotar = (h: Hallazgo, etiqueta: string): void => {
 
 export const verificarIntegridad = onCall({ region: 'us-central1', timeoutSeconds: 300, memory: '512MiB' }, async (request) => {
   if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Debes iniciar sesión.');
+  await exigirPersonal(request.auth.uid); // ✅ V00435: reporta datos de TODAS las empresas
 
   // Conjuntos de referencia (ids válidos y nombres canónicos).
   const [empresasSnap, catCV, catAdu] = await Promise.all([

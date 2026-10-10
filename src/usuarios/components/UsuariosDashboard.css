@@ -172,6 +172,18 @@
 
 .ud-colab-nota { color: #8b949e; font-size: 0.76rem; line-height: 1.4; }
 
+/* ✅ V00435: acceso de cliente (app móvil) */
+.ud-cli-empresas { display: flex; flex-direction: column; gap: 6px; }
+.ud-cli-badge {
+  background-color: rgba(216, 67, 21, 0.12);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  border: 1px solid #D84315;
+  color: #ff7b52;
+  font-weight: 600;
+}
+
 /* ✅ Horario de trabajo semanal */
 .ud-horario { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
 .ud-horario-nota { color: #8b949e; font-size: 0.76rem; line-height: 1.4; }

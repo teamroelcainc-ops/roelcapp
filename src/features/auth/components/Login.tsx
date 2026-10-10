@@ -50,6 +50,15 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
       if (!userDoc.exists()) throw new Error("Perfil de usuario no encontrado.");
       const userData = userDoc.data();
 
+      // ✅ V00435: los usuarios de CLIENTE solo entran por la app móvil
+      //   (las reglas de Firestore no les dan acceso a este sistema).
+      if (String(userData.tipoUsuario || '') === 'cliente') {
+        await signOut(auth);
+        setError('Este usuario es de CLIENTE: entra desde la app móvil de Roelca.');
+        setLoading(false);
+        return;
+      }
+
       // 3. Traer la configuración de seguridad global (La IP de la Oficina)
       const configDoc = await getDoc(doc(db, 'configuracion', 'seguridad'));
       const ipOficina = configDoc.exists() ? configDoc.data().ipOficina : '';

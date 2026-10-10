@@ -1,6 +1,6 @@
 // src/usuarios/components/UsuariosDashboard.tsx
 import React, { useState, useEffect, useRef } from 'react';
-import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, query, where } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, query, where, getDocs } from 'firebase/firestore';
 import { createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
 import { db, secondaryAuth } from '../../config/firebase';
 import { registrarLog } from '../../utils/logger';
@@ -57,6 +57,14 @@ export const UsuariosDashboard = () => {
   const [colaboradores, setColaboradores] = useState<{ id: string; nombre: string }[]>([]);
   const [colaboradorId, setColaboradorId] = useState('');
   const [busquedaColab, setBusquedaColab] = useState('');
+  // ✅ V00435: ACCESO DE CLIENTE (app móvil). Un usuario cliente NO entra a la
+  //   web: solo a la app móvil, donde ve SUS operaciones, facturas, pagos y el
+  //   trayecto de su mercancía (Cloud Function portalCliente). Se liga a una o
+  //   varias empresas (id de `empresas`); los nombres se guardan como copia.
+  const [esCliente, setEsCliente] = useState(false);
+  const [empresasCliente, setEmpresasCliente] = useState<{ id: string; nombre: string }[]>([]);
+  const [busquedaEmpresa, setBusquedaEmpresa] = useState('');
+  const [catalogoEmpresas, setCatalogoEmpresas] = useState<{ id: string; nombre: string }[] | null>(null);
   // ✅ NUEVO: horario de trabajo semanal (lo usan el Reloj Checador y la
   //   alerta global de "no has marcado").
   const [horarioTrabajo, setHorarioTrabajo] = useState<HorarioTrabajo>({ ...HORARIO_VACIO });
@@ -134,6 +142,30 @@ export const UsuariosDashboard = () => {
     };
   }, []);
 
+  // ✅ V00435: catálogo de empresas — se lee UNA vez y solo cuando se marca
+  //   "Acceso de cliente" (la mayoría de los usuarios son personal).
+  useEffect(() => {
+    if (!modalAbierto || !esCliente || catalogoEmpresas !== null) return;
+    let activo = true;
+    getDocs(collection(db, 'empresas'))
+      .then((snap) => {
+        if (!activo) return;
+        const lista = snap.docs
+          .map((d) => {
+            const x = d.data() as { razonSocial?: string; nombre?: string };
+            return { id: d.id, nombre: String(x.razonSocial || x.nombre || d.id).trim(), corto: String(x.nombre || '').trim() };
+          })
+          .sort((a, b) => a.nombre.localeCompare(b.nombre))
+          .map(({ id, nombre, corto }) => ({ id, nombre: corto && corto !== nombre ? `${nombre} (${corto})` : nombre }));
+        setCatalogoEmpresas(lista);
+      })
+      .catch((e) => {
+        console.error('No se pudo leer el catálogo de empresas:', e);
+        if (activo) setCatalogoEmpresas([]);
+      });
+    return () => { activo = false; };
+  }, [modalAbierto, esCliente, catalogoEmpresas]);
+
   // EFECTO PARA BUSCAR EL HISTORIAL CUANDO SE ABRE EL MODAL
   useEffect(() => {
     if (!historialAbierto || !usuarioHistorial) return;
@@ -168,6 +200,14 @@ export const UsuariosDashboard = () => {
       setExentoIpChecador(user.exentoIpChecador === true); // ✅ NUEVO
       setColaboradorId(user.colaboradorId || ''); // ✅ NUEVO
       setBusquedaColab('');
+      // ✅ V00435: acceso de cliente (app móvil)
+      setEsCliente(String(user.tipoUsuario || '') === 'cliente');
+      {
+        const ids: string[] = Array.isArray(user.empresasClienteIds) ? user.empresasClienteIds.map(String) : [];
+        const nombres: string[] = Array.isArray(user.empresasClienteNombres) ? user.empresasClienteNombres.map(String) : [];
+        setEmpresasCliente(ids.map((id, i) => ({ id, nombre: nombres[i] || id })));
+      }
+      setBusquedaEmpresa('');
       setHorarioTrabajo({ ...HORARIO_VACIO, ...(user.horarioTrabajo || {}) }); // ✅ NUEVO
       setRequiereChecador(user.requiereChecador === true);
       setPuedeEditarApp(user.puedeEditarApp === true);
@@ -181,6 +221,9 @@ export const UsuariosDashboard = () => {
       setExentoIpChecador(false); // ✅ NUEVO
       setColaboradorId(''); // ✅ NUEVO
       setBusquedaColab('');
+      setEsCliente(false); // ✅ V00435
+      setEmpresasCliente([]);
+      setBusquedaEmpresa('');
       setHorarioTrabajo({ ...HORARIO_VACIO }); // ✅ NUEVO
     }
     setModalAbierto(true);
@@ -219,6 +262,16 @@ export const UsuariosDashboard = () => {
 
   const handleGuardar = async (e: React.FormEvent) => {
     e.preventDefault();
+    // ✅ V00435: un cliente sin empresa no vería nada en la app.
+    if (esCliente && empresasCliente.length === 0) {
+      alert('Liga al menos una empresa al usuario de cliente.');
+      return;
+    }
+    const camposCliente = {
+      tipoUsuario: esCliente ? 'cliente' : '',
+      empresasClienteIds: esCliente ? empresasCliente.map((x) => x.id) : [],
+      empresasClienteNombres: esCliente ? empresasCliente.map((x) => x.nombre) : [],
+    };
     setCargando(true);
     try {
       if (usuarioActual) {
@@ -227,6 +280,7 @@ export const UsuariosDashboard = () => {
           roles: rolesAsignados,
           fotoPerfil: fotoPerfil || '', // ✅ NUEVO
           exentoIpChecador, // ✅ NUEVO: puede checar desde cualquier red
+          ...camposCliente, // ✅ V00435: acceso de cliente (app móvil)
           colaboradorId: colaboradorId || '', // ✅ NUEVO: vínculo con Colaborador
           horarioTrabajo, // ✅ NUEVO: horario semanal para el Reloj Checador
           requiereChecador,
@@ -250,6 +304,7 @@ export const UsuariosDashboard = () => {
           email: email.toLowerCase(),
           nombre: nombre.toUpperCase(),
           roles: rolesAsignados,
+          ...camposCliente, // ✅ V00435: acceso de cliente (app móvil)
           fotoPerfil: fotoPerfil || '', // ✅ NUEVO
           exentoIpChecador, // ✅ NUEVO: puede checar desde cualquier red
           colaboradorId: colaboradorId || '', // ✅ NUEVO: vínculo con Colaborador
@@ -365,6 +420,9 @@ export const UsuariosDashboard = () => {
                   <td className="ud-x25">{user.email}</td>
                   <td className="ud-x26">
                     <div className="ud-x27">
+                      {user.tipoUsuario === 'cliente' && (
+                        <span className="ud-cli-badge" title={(user.empresasClienteNombres || []).join(', ')}>Cliente · App móvil</span>
+                      )}
                       {user.roles?.map((r: string) => (
                         <span className="ud-x28" key={r}>{r}</span>
                       ))}
@@ -518,6 +576,68 @@ export const UsuariosDashboard = () => {
                   })()}
                   <small className="ud-colab-nota">Vincula este usuario con su registro de Colaboradores (para "Mis Operaciones"). Cada colaborador solo puede conectarse a un usuario.</small>
                 </div>
+
+                {/* ✅ V00435: ACCESO DE CLIENTE (solo app móvil) */}
+                <label className="ud-exento-ip">
+                  <input className="ud-x49"
+                    type="checkbox"
+                    checked={esCliente}
+                    onChange={(e) => setEsCliente(e.target.checked)}
+                  />
+                  <span>
+                    <strong>Acceso de CLIENTE (solo app móvil)</strong>
+                    <small>No entra a este sistema: en la app móvil ve sus servicios, su estado de cuenta y el trayecto de su mercancía. Los roles no aplican a un cliente.</small>
+                  </span>
+                </label>
+                {esCliente && (
+                  <div className="ud-colab">
+                    <label className="form-label">Empresas del cliente</label>
+                    {empresasCliente.length > 0 && (
+                      <div className="ud-cli-empresas">
+                        {empresasCliente.map((emp) => (
+                          <div className="ud-colab-seleccionado" key={emp.id}>
+                            <span>{emp.nombre}</span>
+                            <button type="button" onClick={() => setEmpresasCliente((prev) => prev.filter((x) => x.id !== emp.id))} title="Quitar empresa">✕</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="ud-colab-buscador">
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder={catalogoEmpresas === null ? 'Cargando empresas…' : 'Buscar empresa por nombre o razón social...'}
+                        value={busquedaEmpresa}
+                        onChange={(e) => setBusquedaEmpresa(e.target.value)}
+                        disabled={catalogoEmpresas === null}
+                      />
+                      {busquedaEmpresa.trim() && (
+                        <ul className="ud-colab-sugerencias">
+                          {(() => {
+                            const sinAcento = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+                            const b = sinAcento(busquedaEmpresa.trim());
+                            const elegidas = new Set(empresasCliente.map((x) => x.id));
+                            const encontradas = (catalogoEmpresas || [])
+                              .filter((x) => !elegidas.has(x.id) && sinAcento(x.nombre).includes(b))
+                              .slice(0, 8);
+                            return encontradas.length === 0 ? (
+                              <li className="ud-colab-vacio">Sin coincidencias.</li>
+                            ) : encontradas.map((x) => (
+                              <li key={x.id}>
+                                <button type="button" onClick={() => {
+                                  // La app consulta hasta 10 empresas por usuario de cliente.
+                                  if (empresasCliente.length >= 10) { alert('Un usuario de cliente puede tener hasta 10 empresas.'); return; }
+                                  setEmpresasCliente((prev) => [...prev, x]); setBusquedaEmpresa('');
+                                }}>{x.nombre}</button>
+                              </li>
+                            ));
+                          })()}
+                        </ul>
+                      )}
+                    </div>
+                    <small className="ud-colab-nota">Verá las operaciones donde su empresa es Cliente (Paga) o Cliente (Mercancía), y las facturas y pagos de Cliente (Paga). Nunca ve costos de proveedor ni sueldos.</small>
+                  </div>
+                )}
 
                 {/* ✅ NUEVO: exención de IP en el Reloj Checador por usuario */}
                 <label className="ud-exento-ip">

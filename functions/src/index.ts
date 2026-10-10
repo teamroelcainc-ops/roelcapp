@@ -67,6 +67,7 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import type { DocumentReference } from 'firebase-admin/firestore';
+import { exigirPersonal } from './acceso'; // ✅ V00435
 
 if (getApps().length === 0) initializeApp();
 const db = getFirestore();
@@ -96,6 +97,7 @@ export const crearOperacion = onCall({ region: 'us-central1' }, async (request) 
   if (!uid) {
     throw new HttpsError('unauthenticated', 'Debes iniciar sesión para crear una operación.');
   }
+  await exigirPersonal(uid); // ✅ V00435: los usuarios de CLIENTE no crean operaciones
 
   const data = request.data || {};
   const operacion = data.operacion;
@@ -247,6 +249,7 @@ export const crearOperacion = onCall({ region: 'us-central1' }, async (request) 
 export const renumerarOperacion = onCall({ region: 'us-central1' }, async (request) => {
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Debes iniciar sesión.');
+  await exigirPersonal(uid); // ✅ V00435
   const operacionId = String(request.data?.operacionId || '');
   const prefijo = String(request.data?.prefijo || '').toUpperCase();
   const ddmmyy = String(request.data?.ddmmyy || '');
@@ -301,3 +304,6 @@ export const renumerarOperacion = onCall({ region: 'us-central1' }, async (reque
 
 // ✅ V00266: MOTOR RELACIONAL — cascadas automáticas y verificador de integridad.
 export * from './relacional';
+
+// ✅ V00435: PORTAL DE CLIENTES (app móvil) — única puerta de datos del cliente.
+export * from './portalClientes';
