@@ -23,6 +23,7 @@ import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import type { DocumentReference, Timestamp, Transaction } from 'firebase-admin/firestore';
 import { banderaServidor } from './flags.js';
+import { conReintento, OPCIONES_TRIGGER } from './eventos.js';
 import { aplicadoPorFactura, monedaDeFactura, renglonEnCentavos } from './dominio/dinero.js';
 import { aCentavos } from './dominio/numeros.js';
 
@@ -139,12 +140,14 @@ const aplicacionesPorClave = (pago: Datos | undefined): Map<string, string> => {
 };
 
 /** pagos/{id} escrito → facturas_x/{facturaId}/aplicaciones/{pagoId}. */
-export const pagoEscrito = onDocumentWritten({ document: 'pagos/{pagoId}', region: 'us-central1' }, async (event) => {
-  try {
+export const pagoEscrito = onDocumentWritten({ document: 'pagos/{pagoId}', ...OPCIONES_TRIGGER }, (event) => conReintento('pagoEscrito', event, async () => {
+  {
     if (!(await banderaServidor('dineroPorServidor'))) return;
     const pagoId = event.params.pagoId;
     const antes = event.data?.before?.exists ? (event.data.before.data() as Datos) : undefined;
     const despues = event.data?.after?.exists ? (event.data.after.data() as Datos) : undefined;
+    // ✅ V00442 (Fase 6.1): solo si cambió lo que se proyecta (facturas, tipo, fecha o número).
+    if (antes && despues && ['facturas', 'tipo', 'fecha', 'numeroPago'].every((k) => JSON.stringify(antes[k]) === JSON.stringify(despues[k]))) return;
     const db = getFirestore();
     const refPago = db.collection('pagos').doc(pagoId);
     const destino = (clave: string): DocumentReference => {
@@ -166,7 +169,5 @@ export const pagoEscrito = onDocumentWritten({ document: 'pagos/{pagoId}', regio
     });
     await escribirEnLotes(pendientes);
     if (n) logger.info(`[proyecciones] pago ${pagoId}: ${n} aplicación(es) sincronizada(s)`);
-  } catch (e) {
-    logger.error(`[proyecciones] pagoEscrito: fallo en ${event.params.pagoId}`, e);
   }
-});
+}));

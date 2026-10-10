@@ -39,12 +39,15 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { exigirAdmin, EXIGIR_APP_CHECK } from './acceso'; // ✅ V00435 · V00437: solo admin
 import { CATALOGO_ADUANAS, CATALOGO_CV, cambiosCanonicos, catalogoServidor, contextoServidor, invalidarCatalogoServidor } from './canonico';
 import { banderaServidor } from './flags';
-import { derivarDesdeConvenio } from './dominio/operacionCanonica.js';
+import { CAMPOS_CANONICOS, derivarDesdeConvenio } from './dominio/operacionCanonica.js';
 import { ESQUEMA_OPERACION_VERSION, ID_MXN, ID_USD } from './dominio/constantes.js';
-import { agregadosFactura, conversionOperacion, totalNativoDeRenglonesLegado, totalNativoFactura } from './dominio/dinero.js';
+import { conversionOperacion, derivadosFactura, totalNativoDeRenglonesLegado } from './dominio/dinero.js';
 import { aNumero, deCentavos, r2 } from './dominio/numeros.js';
 import { borrarRenglones, proyectarRenglones } from './proyecciones.js';
 import { cambiosCobroPuente } from './puentesYDiesel.js';
+import { conReintento, OPCIONES_TRIGGER } from './eventos.js';
+import { actualizarUsos } from './usos.js';
+import { OPCIONES_PROPAGACION, propagarSiCambioNombre } from './propagacion.js';
 
 if (getApps().length === 0) initializeApp();
 const dbRel = getFirestore();
@@ -72,10 +75,15 @@ const OBJETIVOS_NOMBRE_EMPRESA: { coleccion: string; campoId: string; campoNombr
   { coleccion: 'tarifario_proveedores', campoId: 'proveedorId',    campoNombre: 'proveedorNombre' },
 ];
 
-export const empresaActualizada = onDocumentUpdated({ document: 'empresas/{empresaId}', region: 'us-central1' }, async (event) => {
+export const empresaActualizada = onDocumentUpdated({ document: 'empresas/{empresaId}', ...OPCIONES_PROPAGACION }, (event) => conReintento('empresaActualizada', event, async () => {
   const antes = event.data?.before.data() as Record<string, unknown> | undefined;
   const despues = event.data?.after.data() as Record<string, unknown> | undefined;
   if (!antes || !despues) return;
+  // ✅ V00442 (Fase 6.2): con la bandera, UN mapa y UNA regla (propagacion.ts).
+  if (await banderaServidor('propagacionEnServidor')) {
+    await propagarSiCambioNombre('empresas', event.params.empresaId, antes, despues);
+    return;
+  }
 
   const nombreAntes = String(antes.nombre || '').trim();
   const nombreDespues = String(despues.nombre || '').trim();
@@ -101,7 +109,7 @@ export const empresaActualizada = onDocumentUpdated({ document: 'empresas/{empre
     }
   }
   logger.info(`[${REL_VERSION}] empresaActualizada: "${nombreAntes}" → "${nombreDespues}" propagado a ${total} documento(s).`);
-});
+}));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 2) OPERACIÓN ESCRITA → C/V, Aduana y Expo/Impo derivados del convenio.
@@ -130,35 +138,64 @@ const codigoError = (e: unknown): string => String((e as { code?: unknown })?.co
 const esPrecondicion = (e: unknown): boolean => ['9', 'FAILED_PRECONDITION', 'FAILED-PRECONDITION'].includes(codigoError(e));
 const esNoExiste = (e: unknown): boolean => ['5', 'NOT_FOUND', 'NOT-FOUND'].includes(codigoError(e));
 
-export const operacionEscrita = onDocumentWritten({ document: 'operaciones/{opId}', region: 'us-central1' }, async (event) => {
-  const despues = event.data?.after;
-  if (!despues || !despues.exists) return; // borrado: nada que normalizar
-  const x = despues.data() as Record<string, unknown>;
-  const antes = event.data?.before?.exists ? (event.data.before.data() as Record<string, unknown>) : undefined;
+// ✅ V00442 (Fase 6.1): campos que SOLO escribe este trigger. Si un evento solo
+//   cambió estos (la escritura del propio trigger), se sale sin calcular nada.
+//   (esPrueba no: lo marca el usuario.)
+const CAMPOS_PROPIOS_OPERACION: ReadonlySet<string> = new Set<string>([
+  ...CAMPOS_CANONICOS.filter((c) => c !== 'esPrueba'), 'puenteCobradoEn', 'puenteCobradoPor',
+]);
+const mismoValor = (a: unknown, b: unknown): boolean => a === b || JSON.stringify(a) === JSON.stringify(b);
+export const soloCamposPropios = (antes: Dict, despues: Dict): boolean => {
+  for (const k of new Set([...Object.keys(antes), ...Object.keys(despues)])) {
+    if (!mismoValor(antes[k], despues[k]) && !CAMPOS_PROPIOS_OPERACION.has(k)) return false;
+  }
+  return true;
+};
+
+/**
+ * ✅ V00442 (Fase 6.1): UN solo trigger por escritura de operación. Antes había dos
+ * (operacionEscrita + operacionMontoCambiado) y facturar N operaciones costaba 2N
+ * invocaciones (4N con la escritura de los canónicos). Hace, en orden:
+ *   1) sale si solo cambiaron campos que escribe él mismo,
+ *   2) cascada de montos a las facturas (lo que hacía operacionMontoCambiado; en
+ *      transacción y con la operación actual),
+ *   3) derivados del convenio, canónicos y cobro del puente (una escritura con precondición),
+ *   4) contadores de uso (6.5; una vez por evento; si fallan, solo se registra: los
+ *      corrige el recuento, nunca frenan lo demás).
+ * Con retry (6.4): los errores de 2) y 3) se relanzan; ambos son seguros de repetir.
+ */
+export const operacionEscrita = onDocumentWritten({ document: 'operaciones/{opId}', ...OPCIONES_TRIGGER }, (event) => conReintento('operacionEscrita', event, async () => {
+  const antes = event.data?.before?.exists ? (event.data.before.data() as Dict) : undefined;
+  const x = event.data?.after?.exists ? (event.data.after.data() as Dict) : undefined;
+  await normalizarOperacion(event.params.opId, event.data?.after, antes, x);
   try {
-    const cambios = await calcularCambiosOperacion(event.params.opId, antes, x);
+    await actualizarUsos(dbRel, event.id, antes, x);
+  } catch (e) {
+    logger.error(`[${REL_VERSION}] operacionEscrita: contadores de uso de ${event.params.opId} (los corrige npm run usos)`, e);
+  }
+}));
+
+const normalizarOperacion = async (opId: string, despues: FirebaseFirestore.DocumentSnapshot | undefined, antes: Dict | undefined, x: Dict | undefined): Promise<void> => {
+  if (!despues || !x) return; // borrado: nada que normalizar
+  if (antes && soloCamposPropios(antes, x)) return;
+  if (antes) await propagarMontosDeOperacion(opId, antes, x);
+  try {
+    const cambios = await calcularCambiosOperacion(opId, antes, x);
     if (Object.keys(cambios).length === 0) return; // anti-bucle: ya está íntegra
     await despues.ref.update(cambios, { lastUpdateTime: despues.updateTime });
-    logger.info(`[${REL_VERSION}] operacionEscrita: ${String(x.ref || event.params.opId)} normalizada`, Object.keys(cambios));
+    logger.info(`[${REL_VERSION}] operacionEscrita: ${String(x.ref || opId)} normalizada`, Object.keys(cambios));
   } catch (e) {
     if (esNoExiste(e)) return; // se borró mientras se calculaba
-    if (!esPrecondicion(e)) {
-      logger.error(`[${REL_VERSION}] operacionEscrita: fallo en ${event.params.opId}`, e);
-      return;
-    }
+    if (!esPrecondicion(e)) throw e;
     // Cambió mientras se calculaba: se recalcula con el dato actual, en transacción.
-    try {
-      await dbRel.runTransaction(async (tx) => {
-        const actual = await tx.get(despues.ref);
-        if (!actual.exists) return;
-        const cambios = await calcularCambiosOperacion(event.params.opId, antes, actual.data() as Record<string, unknown>);
-        if (Object.keys(cambios).length > 0) tx.update(despues.ref, cambios);
-      });
-    } catch (e2) {
-      logger.error(`[${REL_VERSION}] operacionEscrita: fallo al recalcular ${event.params.opId}`, e2);
-    }
+    await dbRel.runTransaction(async (tx) => {
+      const actual = await tx.get(despues.ref);
+      if (!actual.exists) return;
+      const cambios = await calcularCambiosOperacion(opId, antes, actual.data() as Dict);
+      if (Object.keys(cambios).length > 0) tx.update(despues.ref, cambios);
+    });
   }
-});
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 3) CATÁLOGO RENOMBRADO → las operaciones que usaban el nombre viejo se
@@ -180,23 +217,28 @@ const propagarRenombreCatalogo = async (
   return n;
 };
 
-export const catalogoCVRenombrado = onDocumentUpdated({ document: 'catalogo_carga_vacia/{id}', region: 'us-central1' }, async (event) => {
+export const catalogoCVRenombrado = onDocumentUpdated({ document: 'catalogo_carga_vacia/{id}', ...OPCIONES_TRIGGER }, (event) => conReintento('catalogoCVRenombrado', event, async () => {
   invalidarCatalogoServidor('catalogo_carga_vacia');
   const antes = String((event.data?.before.data() as Record<string, unknown> | undefined)?.nombre || '').trim();
-  const despues = String((event.data?.after.data() as Record<string, unknown> | undefined)?.nombre || '').trim();
+  if (antes === String((event.data?.after.data() as Record<string, unknown> | undefined)?.nombre || '').trim()) return;
+  // ✅ V00442 (6.4): el nombre ACTUAL (si se renombró otra vez, un reintento no regresa el intermedio).
+  const actual = await event.data?.after.ref.get();
+  const despues = String((actual?.data() as Record<string, unknown> | undefined)?.nombre || '').trim();
   const n = await propagarRenombreCatalogo('carga', antes, despues);
   if (n) logger.info(`[${REL_VERSION}] catalogoCVRenombrado: "${antes}" → "${despues}" en ${n} operación(es).`);
-});
+}));
 
-export const catalogoAduanaRenombrada = onDocumentUpdated({ document: 'catalogo_aduanas/{id}', region: 'us-central1' }, async (event) => {
+export const catalogoAduanaRenombrada = onDocumentUpdated({ document: 'catalogo_aduanas/{id}', ...OPCIONES_TRIGGER }, (event) => conReintento('catalogoAduanaRenombrada', event, async () => {
   invalidarCatalogoServidor('catalogo_aduanas');
   const xA = event.data?.before.data() as Record<string, unknown> | undefined;
   const xD = event.data?.after.data() as Record<string, unknown> | undefined;
   const antes = String(xA?.aduana || xA?.nombre || '').trim();
-  const despues = String(xD?.aduana || xD?.nombre || '').trim();
+  if (antes === String(xD?.aduana || xD?.nombre || '').trim()) return;
+  const xActual = (await event.data?.after.ref.get())?.data() as Record<string, unknown> | undefined; // ✅ V00442 (6.4)
+  const despues = String(xActual?.aduana || xActual?.nombre || '').trim();
   const n = await propagarRenombreCatalogo('aduanaNombre', antes, despues);
   if (n) logger.info(`[${REL_VERSION}] catalogoAduanaRenombrada: "${antes}" → "${despues}" en ${n} operación(es).`);
-});
+}));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 4) VERIFICADOR DE INTEGRIDAD (callable) — reporta referencias rotas.
@@ -377,43 +419,54 @@ const conversionOperacionLegado = (op: Dict, lado: 'cliente' | 'proveedor') => {
 };
 
 /** Cascada Operación → Facturas de un lado (clientes o proveedores). */
-const propagarMontoOperacionAFacturas = async (opId: string, op: Dict, lado: 'cliente' | 'proveedor'): Promise<number> => {
+const propagarMontoOperacionAFacturas = async (opId: string, lado: 'cliente' | 'proveedor'): Promise<number> => {
   const coleccion = lado === 'cliente' ? 'facturas_clientes' : 'facturas_proveedores';
-  const snap = await dbRel.collection(coleccion).where('operacionesIds', 'array-contains', opId).get();
+  const snap = await dbRel.collection(coleccion).where('operacionesIds', 'array-contains', opId).select().get();
   if (snap.empty) return 0;
-  const m = (await banderaServidor('dineroPorServidor')) ? conversionOperacion(op, lado) : conversionOperacionLegado(op, lado);
+  const dineroOn = await banderaServidor('dineroPorServidor');
+  const refOp = dbRel.collection('operaciones').doc(opId);
   let n = 0;
   for (const d of snap.docs) {
-    const fac = d.data() as Dict;
-    const ops = Array.isArray(fac.operacionesGuardadas) ? [...(fac.operacionesGuardadas as Dict[])] : [];
-    const idx = ops.findIndex((o) => String(o?.id || '') === opId);
-    if (idx === -1) continue; // factura sin snapshot detallado: no se inventa
-    const viejo = ops[idx] as Dict;
-    const nuevo: Dict = {
-      ...viejo,
-      monto: m.conv,
-      subtotalBase: m.subtotal,
-      dol: m.dol,
-      pes: m.pes,
-      convenioNombre: String((lado === 'cliente' ? (op.convenioNombre || op.convenioClienteNombre) : (op.convenioProveedorNombre || op.convenioNombre)) ?? viejo.convenioNombre ?? ''),
-    };
-    if (lado === 'cliente') nuevo.refCliente = String(op.refCliente ?? viejo.refCliente ?? '');
-    const cambioRenglon = difiere(viejo.monto, nuevo.monto) || difiere(viejo.subtotalBase, nuevo.subtotalBase) ||
-      difiere(viejo.dol, nuevo.dol) || difiere(viejo.pes, nuevo.pes) ||
-      String(viejo.convenioNombre || '') !== String(nuevo.convenioNombre || '') ||
-      (lado === 'cliente' && String(viejo.refCliente || '') !== String(nuevo.refCliente || ''));
-    if (!cambioRenglon) continue; // anti-bucle
-    ops[idx] = nuevo;
-    const subtotalFactura = r2(ops.reduce((s, o) => s + (Number(o?.monto) || 0), 0));
-    const cambios: Dict = { operacionesGuardadas: ops };
-    if (difiere(fac.subtotalFactura, subtotalFactura)) cambios.subtotalFactura = subtotalFactura;
-    // ✅ V00441 (Fase 5.5): un total capturado a mano (totalManualCentavos) no se pisa.
-    if (!(aNumero(fac.totalManualCentavos) > 0)) {
-      const subtotalMonedaFactura = totalNativoDeRenglonesLegado(fac, ops);
-      if (difiere(fac.subtotalMonedaFactura, subtotalMonedaFactura)) cambios.subtotalMonedaFactura = subtotalMonedaFactura;
-    }
-    await d.ref.update(cambios);
-    n += 1;
+    // ✅ V00442 (Fase 6.4): en transacción y con la operación ACTUAL (no la copia del evento):
+    //   un reintento tardío no regresa montos viejos, y varias operaciones de la misma
+    //   factura que se propagan a la vez no se pisan el arreglo de renglones.
+    const escribio = await dbRel.runTransaction(async (tx) => {
+      const [fSnap, opSnap] = await tx.getAll(d.ref, refOp);
+      if (!fSnap.exists || !opSnap.exists) return false;
+      const fac = fSnap.data() as Dict;
+      const op = opSnap.data() as Dict;
+      const ops = Array.isArray(fac.operacionesGuardadas) ? [...(fac.operacionesGuardadas as Dict[])] : [];
+      const idx = ops.findIndex((o) => String(o?.id || '') === opId);
+      if (idx === -1) return false; // factura sin snapshot detallado: no se inventa
+      const m = dineroOn ? conversionOperacion(op, lado) : conversionOperacionLegado(op, lado);
+      const viejo = ops[idx] as Dict;
+      const nuevo: Dict = {
+        ...viejo,
+        monto: m.conv,
+        subtotalBase: m.subtotal,
+        dol: m.dol,
+        pes: m.pes,
+        convenioNombre: String((lado === 'cliente' ? (op.convenioNombre || op.convenioClienteNombre) : (op.convenioProveedorNombre || op.convenioNombre)) ?? viejo.convenioNombre ?? ''),
+      };
+      if (lado === 'cliente') nuevo.refCliente = String(op.refCliente ?? viejo.refCliente ?? '');
+      const cambioRenglon = difiere(viejo.monto, nuevo.monto) || difiere(viejo.subtotalBase, nuevo.subtotalBase) ||
+        difiere(viejo.dol, nuevo.dol) || difiere(viejo.pes, nuevo.pes) ||
+        String(viejo.convenioNombre || '') !== String(nuevo.convenioNombre || '') ||
+        (lado === 'cliente' && String(viejo.refCliente || '') !== String(nuevo.refCliente || ''));
+      if (!cambioRenglon) return false; // anti-bucle
+      ops[idx] = nuevo;
+      const subtotalFactura = r2(ops.reduce((s, o) => s + (Number(o?.monto) || 0), 0));
+      const cambios: Dict = { operacionesGuardadas: ops };
+      if (difiere(fac.subtotalFactura, subtotalFactura)) cambios.subtotalFactura = subtotalFactura;
+      // ✅ V00441 (Fase 5.5): un total capturado a mano (totalManualCentavos) no se pisa.
+      if (!(aNumero(fac.totalManualCentavos) > 0)) {
+        const subtotalMonedaFactura = totalNativoDeRenglonesLegado(fac, ops);
+        if (difiere(fac.subtotalMonedaFactura, subtotalMonedaFactura)) cambios.subtotalMonedaFactura = subtotalMonedaFactura;
+      }
+      tx.update(d.ref, cambios);
+      return true;
+    });
+    if (escribio) n += 1;
   }
   return n;
 };
@@ -421,23 +474,16 @@ const propagarMontoOperacionAFacturas = async (opId: string, op: Dict, lado: 'cl
 const CAMPOS_DINERO_CLIENTE = ['montoConvenioCliente', 'cargosAdicionales', 'facturadoEnCobrar', 'monedaConvenioCliente', 'monedaCobroNombre', 'tipoCambioAprobado', 'tipoCambioDia', 'convenioNombre', 'refCliente'];
 const CAMPOS_DINERO_PROV = ['totalAPagarProv', 'cargosAdicionalesProv', 'facturadoEnUnidad', 'monedaConvenioProv', 'monedaUnidadNombre', 'tipoCambioAprobado', 'tipoCambioDia', 'convenioProveedorNombre'];
 
-export const operacionMontoCambiado = onDocumentUpdated({ document: 'operaciones/{opId}', region: 'us-central1' }, async (event) => {
-  const antes = event.data?.before.data() as Dict | undefined;
-  const despues = event.data?.after.data() as Dict | undefined;
-  if (!antes || !despues) return;
-  const opId = event.params.opId;
-  try {
-    const cambioCliente = CAMPOS_DINERO_CLIENTE.some((c) => String(antes[c] ?? '') !== String(despues[c] ?? ''));
-    const cambioProv = CAMPOS_DINERO_PROV.some((c) => String(antes[c] ?? '') !== String(despues[c] ?? ''));
-    if (!cambioCliente && !cambioProv) return;
-    let n = 0;
-    if (cambioCliente) n += await propagarMontoOperacionAFacturas(opId, despues, 'cliente');
-    if (cambioProv) n += await propagarMontoOperacionAFacturas(opId, despues, 'proveedor');
-    if (n > 0) logger.info(`[${REL_VERSION}] operacionMontoCambiado: ${String(despues.ref || opId)} → ${n} factura(s) actualizada(s)`);
-  } catch (e) {
-    logger.error(`[${REL_VERSION}] operacionMontoCambiado: fallo en ${opId}`, e);
-  }
-});
+/** ✅ V00442 (Fase 6.1): la cascada de montos (antes el trigger operacionMontoCambiado) corre dentro de operacionEscrita. */
+const propagarMontosDeOperacion = async (opId: string, antes: Dict, despues: Dict): Promise<void> => {
+  const cambioCliente = CAMPOS_DINERO_CLIENTE.some((c) => String(antes[c] ?? '') !== String(despues[c] ?? ''));
+  const cambioProv = CAMPOS_DINERO_PROV.some((c) => String(antes[c] ?? '') !== String(despues[c] ?? ''));
+  if (!cambioCliente && !cambioProv) return;
+  let n = 0;
+  if (cambioCliente) n += await propagarMontoOperacionAFacturas(opId, 'cliente');
+  if (cambioProv) n += await propagarMontoOperacionAFacturas(opId, 'proveedor');
+  if (n > 0) logger.info(`[${REL_VERSION}] operacionEscrita (montos): ${String(despues.ref || opId)} → ${n} factura(s) actualizada(s)`);
+};
 
 /** Cascada Factura → saldo de Pagos: si la factura ya tiene pagos aplicados,
  *  su saldoPendiente y statusPago se recalculan con el total nuevo.
@@ -456,47 +502,67 @@ const recalcularSaldoFactura = async (
     return;
   }
   const fac = despues.data() as Dict;
-  const cambios: Dict = {};
-  const montoPagado = Number(fac.montoPagado) || 0;
-  const tieneAplicaciones = montoPagado > 0 || typeof fac.saldoPendiente === 'number';
-  if (tieneAplicaciones) {
-    // Sin la bandera: el total de SIEMPRE de este trigger (desde los renglones, V00275),
-    // salvo un total manual que haya quedado de cuando la bandera estuvo encendida.
-    const manual = aNumero(fac.totalManualCentavos);
-    const ops = Array.isArray(fac.operacionesGuardadas) ? (fac.operacionesGuardadas as Dict[]) : [];
-    const total = dinero ? totalNativoFactura(fac) : (manual > 0 ? deCentavos(manual) : totalNativoDeRenglonesLegado(fac, ops));
-    const saldo = Math.max(0, r2(total - montoPagado));
-    const status = saldo <= 0.009 ? 'PAGADA' : (montoPagado > 0 ? 'PARCIAL' : String(fac.statusPago || ''));
-    if (difiere(fac.saldoPendiente, saldo)) cambios.saldoPendiente = saldo;
-    if (status && String(fac.statusPago || '') !== status) cambios.statusPago = status;
-  }
+  // ✅ V00442 (Fase 6.1): con la bandera, un evento que no tocó nada de dinero (documento
+  //   adjunto, status de la factura, nombres, o la escritura de este mismo trigger) sale aquí.
+  if (dinero && antes?.exists && !cambioDeDinero(antes.data() as Dict, fac)) return;
+  let cambios: Dict = {};
   if (dinero) {
-    const ag = agregadosFactura(fac) as unknown as Dict;
-    for (const [k, v] of Object.entries(ag)) if (fac[k] !== v) cambios[k] = v;
-    if (fac.esquemaDinero !== 2) cambios.esquemaDinero = 2;
+    cambios = derivadosFactura(fac);
     const n = await proyectarRenglones(despues.ref, antes?.exists ? (antes.data() as Dict) : undefined, fac, despues.updateTime);
     if (n) logger.info(`[${REL_VERSION}] ${etiqueta}: ${String(fac.invoice || despues.id)} → ${n} renglón(es) sincronizado(s)`);
+  } else {
+    // Sin la bandera: el total de SIEMPRE de este trigger (desde los renglones, V00275),
+    // salvo un total manual que haya quedado de cuando la bandera estuvo encendida.
+    const montoPagado = Number(fac.montoPagado) || 0;
+    if (montoPagado > 0 || typeof fac.saldoPendiente === 'number') {
+      const manual = aNumero(fac.totalManualCentavos);
+      const ops = Array.isArray(fac.operacionesGuardadas) ? (fac.operacionesGuardadas as Dict[]) : [];
+      const total = manual > 0 ? deCentavos(manual) : totalNativoDeRenglonesLegado(fac, ops);
+      const saldo = Math.max(0, r2(total - montoPagado));
+      const status = saldo <= 0.009 ? 'PAGADA' : (montoPagado > 0 ? 'PARCIAL' : String(fac.statusPago || ''));
+      if (difiere(fac.saldoPendiente, saldo)) cambios.saldoPendiente = saldo;
+      if (status && String(fac.statusPago || '') !== status) cambios.statusPago = status;
+    }
   }
   if (Object.keys(cambios).length === 0) return; // anti-bucle
   try {
     await despues.ref.update(cambios, { lastUpdateTime: despues.updateTime });
   } catch (e) {
-    const codigo = String((e as { code?: unknown })?.code ?? '').toUpperCase();
-    if (codigo === '9' || codigo === 'FAILED_PRECONDITION' || codigo === '5' || codigo === 'NOT_FOUND') return; // cambió o se borró: lo recalcula el siguiente evento
-    throw e;
+    if (esNoExiste(e)) return; // se borró
+    if (!esPrecondicion(e)) throw e;
+    // ✅ V00442: cambió mientras se calculaba. Con la bandera se recalcula AQUÍ con el dato
+    //   actual (el siguiente evento puede no tocar dinero y salir por la lista blanca).
+    if (!dinero) return; // sin la bandera, como antes: lo recalcula el siguiente evento
+    await dbRel.runTransaction(async (tx) => {
+      const actual = await tx.get(despues.ref);
+      if (!actual.exists) return;
+      const nuevos = derivadosFactura(actual.data() as Dict);
+      if (Object.keys(nuevos).length > 0) tx.update(despues.ref, nuevos);
+    });
   }
   logger.info(`[${REL_VERSION}] ${etiqueta}: ${String(fac.invoice || despues.id)} saldo/agregados recalculados`, Object.keys(cambios));
 };
 
-export const facturaClienteMontoCambiado = onDocumentWritten({ document: 'facturas_clientes/{facId}', region: 'us-central1' }, async (event) => {
-  try { await recalcularSaldoFactura(event, 'facturaClienteMontoCambiado'); }
-  catch (e) { logger.error(`[${REL_VERSION}] facturaClienteMontoCambiado: fallo en ${event.params.facId}`, e); }
-});
+/** Campos de la factura que NO mueven su dinero (ni sus renglones). Las escrituras del propio trigger también. */
+const CAMPOS_SIN_DINERO_FACTURA: ReadonlySet<string> = new Set([
+  // (statusFactura NO: "Cancelada" cambia `abierta`)
+  'docFacturaUrl', 'docFacturaNombre', 'docFacturaFecha', 'docFacturaPor', 'rateProveedor', 'encabezadoRemision',
+  'auditRevisado', 'clienteNombre', 'proveedorNombre', 'updatedAt', 'editadoEn', 'editadoPor', 'facturaCcp', 'fecha', 'invoice',
+  // del propio trigger:
+  'saldoPendiente', 'statusPago', 'totalCentavos', 'montoPagadoCentavos', 'saldoCentavos', 'saldoAFavorCentavos', 'abierta', 'esquemaDinero',
+]);
+export const cambioDeDinero = (antes: Dict, despues: Dict): boolean => {
+  for (const k of new Set([...Object.keys(antes), ...Object.keys(despues)])) {
+    if (!CAMPOS_SIN_DINERO_FACTURA.has(k) && JSON.stringify(antes[k]) !== JSON.stringify(despues[k])) return true;
+  }
+  return false;
+};
 
-export const facturaProveedorMontoCambiado = onDocumentWritten({ document: 'facturas_proveedores/{facId}', region: 'us-central1' }, async (event) => {
-  try { await recalcularSaldoFactura(event, 'facturaProveedorMontoCambiado'); }
-  catch (e) { logger.error(`[${REL_VERSION}] facturaProveedorMontoCambiado: fallo en ${event.params.facId}`, e); }
-});
+export const facturaClienteMontoCambiado = onDocumentWritten({ document: 'facturas_clientes/{facId}', ...OPCIONES_TRIGGER }, (event) =>
+  conReintento('facturaClienteMontoCambiado', event, () => recalcularSaldoFactura(event, 'facturaClienteMontoCambiado')));
+
+export const facturaProveedorMontoCambiado = onDocumentWritten({ document: 'facturas_proveedores/{facId}', ...OPCIONES_TRIGGER }, (event) =>
+  conReintento('facturaProveedorMontoCambiado', event, () => recalcularSaldoFactura(event, 'facturaProveedorMontoCambiado')));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 6) ✅ V00282 — SINCRONIZACIÓN TARIFARIO → DETALLES DE CONVENIO (server-side).
@@ -532,27 +598,31 @@ const sincronizarDetallesDeTarifario = async (
   return n;
 };
 
-export const tarifarioClienteEscrito = onDocumentWritten({ document: 'tarifario_clientes/{tarId}', region: 'us-central1' }, async (event) => {
+export const tarifarioClienteEscrito = onDocumentWritten({ document: 'tarifario_clientes/{tarId}', ...OPCIONES_TRIGGER }, (event) => conReintento('tarifarioClienteEscrito', event, async () => {
   const despues = event.data?.after;
   if (!despues || !despues.exists) return;
-  try {
-    const n = await sincronizarDetallesDeTarifario(event.params.tarId, despues.data() as Dict, 'convenios_clientes_detalles');
-    if (n > 0) logger.info(`[${REL_VERSION}] tarifarioClienteEscrito: ${event.params.tarId} → ${n} detalle(s) sincronizado(s)`);
-  } catch (e) {
-    logger.error(`[${REL_VERSION}] tarifarioClienteEscrito: fallo en ${event.params.tarId}`, e);
-  }
-});
+  // ✅ V00442 (Fase 6.1): solo si cambiaron las líneas o el status del tarifario.
+  const antes = event.data?.before?.exists ? (event.data.before.data() as Dict) : undefined;
+  const x = despues.data() as Dict;
+  if (antes && JSON.stringify(antes.tarifas) === JSON.stringify(x.tarifas) && antes.status === x.status) return;
+  const actual = await despues.ref.get(); // ✅ V00442: el dato actual (un reintento tardío no regresa status viejos)
+  if (!actual.exists) return;
+  const n = await sincronizarDetallesDeTarifario(event.params.tarId, actual.data() as Dict, 'convenios_clientes_detalles');
+  if (n > 0) logger.info(`[${REL_VERSION}] tarifarioClienteEscrito: ${event.params.tarId} → ${n} detalle(s) sincronizado(s)`);
+}));
 
-export const tarifarioProveedorEscrito = onDocumentWritten({ document: 'tarifario_proveedores/{tarId}', region: 'us-central1' }, async (event) => {
+export const tarifarioProveedorEscrito = onDocumentWritten({ document: 'tarifario_proveedores/{tarId}', ...OPCIONES_TRIGGER }, (event) => conReintento('tarifarioProveedorEscrito', event, async () => {
   const despues = event.data?.after;
   if (!despues || !despues.exists) return;
-  try {
-    const n = await sincronizarDetallesDeTarifario(event.params.tarId, despues.data() as Dict, 'convenios_proveedores_detalles');
-    if (n > 0) logger.info(`[${REL_VERSION}] tarifarioProveedorEscrito: ${event.params.tarId} → ${n} detalle(s) sincronizado(s)`);
-  } catch (e) {
-    logger.error(`[${REL_VERSION}] tarifarioProveedorEscrito: fallo en ${event.params.tarId}`, e);
-  }
-});
+  // ✅ V00442 (Fase 6.1): solo si cambiaron las líneas o el status del tarifario.
+  const antes = event.data?.before?.exists ? (event.data.before.data() as Dict) : undefined;
+  const x = despues.data() as Dict;
+  if (antes && JSON.stringify(antes.tarifas) === JSON.stringify(x.tarifas) && antes.status === x.status) return;
+  const actual = await despues.ref.get(); // ✅ V00442: el dato actual
+  if (!actual.exists) return;
+  const n = await sincronizarDetallesDeTarifario(event.params.tarId, actual.data() as Dict, 'convenios_proveedores_detalles');
+  if (n > 0) logger.info(`[${REL_VERSION}] tarifarioProveedorEscrito: ${event.params.tarId} → ${n} detalle(s) sincronizado(s)`);
+}));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 7) ✅ V00299 — SINCRONIZACIÓN INVERSA: DETALLE DE CONVENIO → LÍNEA DEL
@@ -574,32 +644,35 @@ const sincronizarLineaDeDetalle = async (detalleId: string, det: Dict, coleccion
   if (!tarId) return false;
   const consec = String(det.consecutivo || detalleId).trim();
   const ref = dbRel.collection(coleccionTarifarios).doc(tarId);
-  const snap = await ref.get();
-  if (!snap.exists) return false;
-  const data = snap.data() as Dict;
-  const tarifas = Array.isArray(data.tarifas) ? [...(data.tarifas as Dict[])] : [];
-  const idx = tarifas.findIndex((t) => String(t?.consecutivo || '').trim() === consec);
-  if (idx < 0) return false;
-  const antes = tarifas[idx];
-  const nueva: Dict = { ...antes };
-  const costo = Number(det.tarifa) || 0;
-  if (costo > 0 && difiere(Number(antes.tarifa) || 0, costo)) nueva.tarifa = costo;
-  const mon = monedaCortaRel(det.moneda);
-  if (mon && String(antes.cotizadoEn || '') !== mon) nueva.cotizadoEn = mon;
-  const st = String(det.status || '').trim();
-  if (st && String(antes.status || '') !== st) nueva.status = st;
-  const ori = String(det.origenNombre || det.origen || '').trim();
-  if (ori && String(antes.origen || '') !== ori) nueva.origen = ori;
-  const dest = String(det.destinoNombre || det.destino || '').trim();
-  if (dest && String(antes.destino || '') !== dest) nueva.destino = dest;
-  const tipoId = String(det.tipoConvenioId || '').trim();
-  if (tipoId && String(antes.tarifaReferenciaId || '') !== tipoId) nueva.tarifaReferenciaId = tipoId;
-  const tipoNom = String(det.tipoConvenioNombre || '').trim();
-  if (tipoNom && String(antes.descripcion || '') !== tipoNom) nueva.descripcion = tipoNom;
-  if (JSON.stringify(nueva) === JSON.stringify(antes)) return false;
-  tarifas[idx] = nueva;
-  await ref.update({ tarifas });
-  return true;
+  // ✅ V00442: en transacción (varios detalles del mismo tarifario no se pisan el arreglo de líneas).
+  return dbRel.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) return false;
+    const data = snap.data() as Dict;
+    const tarifas = Array.isArray(data.tarifas) ? [...(data.tarifas as Dict[])] : [];
+    const idx = tarifas.findIndex((t) => String(t?.consecutivo || '').trim() === consec);
+    if (idx < 0) return false;
+    const antes = tarifas[idx];
+    const nueva: Dict = { ...antes };
+    const costo = Number(det.tarifa) || 0;
+    if (costo > 0 && difiere(Number(antes.tarifa) || 0, costo)) nueva.tarifa = costo;
+    const mon = monedaCortaRel(det.moneda);
+    if (mon && String(antes.cotizadoEn || '') !== mon) nueva.cotizadoEn = mon;
+    const st = String(det.status || '').trim();
+    if (st && String(antes.status || '') !== st) nueva.status = st;
+    const ori = String(det.origenNombre || det.origen || '').trim();
+    if (ori && String(antes.origen || '') !== ori) nueva.origen = ori;
+    const dest = String(det.destinoNombre || det.destino || '').trim();
+    if (dest && String(antes.destino || '') !== dest) nueva.destino = dest;
+    const tipoId = String(det.tipoConvenioId || '').trim();
+    if (tipoId && String(antes.tarifaReferenciaId || '') !== tipoId) nueva.tarifaReferenciaId = tipoId;
+    const tipoNom = String(det.tipoConvenioNombre || '').trim();
+    if (tipoNom && String(antes.descripcion || '') !== tipoNom) nueva.descripcion = tipoNom;
+    if (JSON.stringify(nueva) === JSON.stringify(antes)) return false;
+    tarifas[idx] = nueva;
+    tx.update(ref, { tarifas });
+    return true;
+  });
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -672,31 +745,60 @@ const garantizarIntegridadDetalle = async (ref: FirebaseFirestore.DocumentRefere
   if (llaves.length > 0) await ref.update(cambios);
   return llaves;
 };
+/** Campos del detalle que deciden su relación o su línea en el tarifario (V00299/V00429). */
+const CAMPOS_RELEVANTES_DETALLE = [
+  'tarifarioId', 'consecutivo', 'clienteId', 'proveedorId', 'convenioId', 'tipoConvenioId', 'tipoConvenioNombre',
+  'tarifa', 'moneda', 'status', 'origen', 'origenNombre', 'destino', 'destinoNombre', '_eliminado',
+];
+const cambioRelevanteDetalle = (antes: Dict, despues: Dict): boolean =>
+  CAMPOS_RELEVANTES_DETALLE.some((c) => JSON.stringify(antes[c]) !== JSON.stringify(despues[c]));
+const integridadIncompleta = (det: Dict, cfg: CfgGuard): boolean =>
+  det._eliminado !== true && (!String(det.tarifarioId || '').trim() || !String(det[cfg.campoId] || '').trim()
+    || !String(det.convenioId || '').trim() || !String(det.tipoConvenioId || '').trim());
+
 const CFG_GUARD_CLI: CfgGuard = { tarifarios: 'tarifario_clientes', maestros: 'convenios_clientes', campoId: 'clienteId', campoNombre: 'clienteNombre' };
 const CFG_GUARD_PROV: CfgGuard = { tarifarios: 'tarifario_proveedores', maestros: 'convenios_proveedores', campoId: 'proveedorId', campoNombre: 'proveedorNombre' };
 
-export const convenioClienteDetalleEscrito = onDocumentWritten({ document: 'convenios_clientes_detalles/{detId}', region: 'us-central1' }, async (event) => {
+export const convenioClienteDetalleEscrito = onDocumentWritten({ document: 'convenios_clientes_detalles/{detId}', ...OPCIONES_TRIGGER }, (event) => conReintento('convenioClienteDetalleEscrito', event, async () => {
   const despues = event.data?.after;
   if (!despues || !despues.exists) return;
-  try {
-    const reparados = await garantizarIntegridadDetalle(despues.ref, despues.data() as Dict, CFG_GUARD_CLI); // ✅ V00429
+  const antes = event.data?.before?.exists ? (event.data.before.data() as Dict) : undefined;
+  // ✅ V00442 (Fase 6.1): lista blanca. Un cambio que no toca la relación ni la línea
+  //   del tarifario no lee nada (salvo que al convenio le falte algo: el guardián lo completa).
+  if (antes && !cambioRelevanteDetalle(antes, despues.data() as Dict) && !integridadIncompleta(despues.data() as Dict, CFG_GUARD_CLI)) return;
+  // El detalle ACTUAL (6.4: un reintento tardío no regresa datos viejos al tarifario).
+  const fresco = await despues.ref.get();
+  if (!fresco.exists) return;
+  const det = fresco.data() as Dict;
+  const relevante = !antes || cambioRelevanteDetalle(antes, det);
+  if (relevante || integridadIncompleta(det, CFG_GUARD_CLI)) {
+    const reparados = await garantizarIntegridadDetalle(despues.ref, det, CFG_GUARD_CLI); // ✅ V00429
     if (reparados.length > 0) { logger.info(`[${REL_VERSION}] convenioClienteDetalleEscrito: ${event.params.detId} → integridad completada (${reparados.join(', ')})`); return; } // la próxima escritura sincroniza la línea
-    const cambio = await sincronizarLineaDeDetalle(event.params.detId, despues.data() as Dict, 'tarifario_clientes');
-    if (cambio) logger.info(`[${REL_VERSION}] convenioClienteDetalleEscrito: ${event.params.detId} → línea del tarifario sincronizada`);
-  } catch (e) {
-    logger.error(`[${REL_VERSION}] convenioClienteDetalleEscrito: fallo en ${event.params.detId}`, e);
   }
-});
+  if (relevante) {
+    const cambio = await sincronizarLineaDeDetalle(event.params.detId, det, 'tarifario_clientes');
+    if (cambio) logger.info(`[${REL_VERSION}] convenioClienteDetalleEscrito: ${event.params.detId} → línea del tarifario sincronizada`);
+  }
+}));
 
-export const convenioProveedorDetalleEscrito = onDocumentWritten({ document: 'convenios_proveedores_detalles/{detId}', region: 'us-central1' }, async (event) => {
+export const convenioProveedorDetalleEscrito = onDocumentWritten({ document: 'convenios_proveedores_detalles/{detId}', ...OPCIONES_TRIGGER }, (event) => conReintento('convenioProveedorDetalleEscrito', event, async () => {
   const despues = event.data?.after;
   if (!despues || !despues.exists) return;
-  try {
-    const reparados = await garantizarIntegridadDetalle(despues.ref, despues.data() as Dict, CFG_GUARD_PROV); // ✅ V00429
-    if (reparados.length > 0) { logger.info(`[${REL_VERSION}] convenioProveedorDetalleEscrito: ${event.params.detId} → integridad completada (${reparados.join(', ')})`); return; }
-    const cambio = await sincronizarLineaDeDetalle(event.params.detId, despues.data() as Dict, 'tarifario_proveedores');
-    if (cambio) logger.info(`[${REL_VERSION}] convenioProveedorDetalleEscrito: ${event.params.detId} → línea del tarifario sincronizada`);
-  } catch (e) {
-    logger.error(`[${REL_VERSION}] convenioProveedorDetalleEscrito: fallo en ${event.params.detId}`, e);
+  const antes = event.data?.before?.exists ? (event.data.before.data() as Dict) : undefined;
+  // ✅ V00442 (Fase 6.1): lista blanca. Un cambio que no toca la relación ni la línea
+  //   del tarifario no lee nada (salvo que al convenio le falte algo: el guardián lo completa).
+  if (antes && !cambioRelevanteDetalle(antes, despues.data() as Dict) && !integridadIncompleta(despues.data() as Dict, CFG_GUARD_PROV)) return;
+  // El detalle ACTUAL (6.4: un reintento tardío no regresa datos viejos al tarifario).
+  const fresco = await despues.ref.get();
+  if (!fresco.exists) return;
+  const det = fresco.data() as Dict;
+  const relevante = !antes || cambioRelevanteDetalle(antes, det);
+  if (relevante || integridadIncompleta(det, CFG_GUARD_PROV)) {
+    const reparados = await garantizarIntegridadDetalle(despues.ref, det, CFG_GUARD_PROV); // ✅ V00429
+    if (reparados.length > 0) { logger.info(`[${REL_VERSION}] convenioProveedorDetalleEscrito: ${event.params.detId} → integridad completada (${reparados.join(', ')})`); return; } // la próxima escritura sincroniza la línea
   }
-});
+  if (relevante) {
+    const cambio = await sincronizarLineaDeDetalle(event.params.detId, det, 'tarifario_proveedores');
+    if (cambio) logger.info(`[${REL_VERSION}] convenioProveedorDetalleEscrito: ${event.params.detId} → línea del tarifario sincronizada`);
+  }
+}));

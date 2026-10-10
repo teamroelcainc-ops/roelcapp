@@ -369,3 +369,7 @@ export * from './dinero';
 export * from './proyecciones';
 // ✅ V00441 (Fase 5.6): saldo corriente de diesel (el cobro del puente corre dentro de operacionEscrita).
 export { referenciaDieselEscrita } from './puentesYDiesel';
+// ✅ V00442 (Fase 6.2): propagación de nombres de los maestros sin trigger previo (bandera propagacionEnServidor).
+//   Empresas y detalles de convenio propagan desde empresaActualizada / convenioClienteDetalleEscrito.
+//   operacionMontoCambiado ya no existe (va dentro de operacionEscrita): el deploy pedirá borrarla.
+export { propagarEmpleado, propagarStatus, propagarTipoOperacion, propagarUnidad } from './propagacion';

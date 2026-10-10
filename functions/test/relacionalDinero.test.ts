@@ -5,21 +5,36 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Datos = Record<string, unknown>;
 
-const estado = vi.hoisted(() => ({ banderas: {} as Record<string, boolean>, actualizaciones: [] as { path: string; datos: Datos }[], facturas: [] as { id: string; datos: Datos }[] }));
+const estado = vi.hoisted(() => ({ banderas: {} as Record<string, boolean>, actualizaciones: [] as { path: string; datos: Datos }[], docs: new Map<string, Record<string, unknown>>() }));
 
 vi.mock('firebase-admin/app', () => ({ initializeApp: () => ({}), getApps: () => [{}] }));
-vi.mock('firebase-admin/firestore', () => ({
-  getFirestore: () => ({
-    collection: () => ({
-      where: () => ({
-        get: async () => ({
-          empty: estado.facturas.length === 0,
-          docs: estado.facturas.map((f) => ({ id: f.id, data: () => f.datos, ref: { update: async (datos: Datos) => { estado.actualizaciones.push({ path: f.id, datos }); } } })),
+vi.mock('firebase-admin/firestore', () => {
+  type Ref = { path: string; id: string };
+  const ref = (path: string): Ref => ({ path, id: path.split('/').pop() as string });
+  const snap = (r: Ref) => ({ id: r.id, exists: estado.docs.has(r.path), data: () => estado.docs.get(r.path) });
+  return {
+    getFirestore: () => ({
+      collection: (col: string) => ({
+        doc: (id: string) => ref(`${col}/${id}`),
+        where: (campo: string, _op: string, valor: unknown) => ({
+          select: () => ({
+            get: async () => {
+              const docs = Array.from(estado.docs.entries())
+                .filter(([p, d]) => p.startsWith(`${col}/`) && Array.isArray(d[campo]) && (d[campo] as unknown[]).includes(valor))
+                .map(([p]) => ({ id: p.split('/').pop(), ref: ref(p) }));
+              return { empty: docs.length === 0, docs };
+            },
+          }),
         }),
       }),
+      runTransaction: async <T,>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn({
+        getAll: async (...refs: Ref[]) => refs.map(snap),
+        get: async (r: Ref) => snap(r),
+        update: (r: Ref, datos: Datos) => { estado.actualizaciones.push({ path: r.path, datos }); estado.docs.set(r.path, { ...estado.docs.get(r.path), ...datos }); },
+      }),
     }),
-  }),
-}));
+  };
+});
 vi.mock('firebase-functions/v2', () => ({ logger: { error: () => {}, info: () => {} } }));
 vi.mock('firebase-functions/v2/firestore', () => ({ onDocumentWritten: (_o: unknown, fn: unknown) => fn, onDocumentUpdated: (_o: unknown, fn: unknown) => fn }));
 vi.mock('firebase-functions/v2/https', () => ({ onCall: (_o: unknown, fn: unknown) => fn, HttpsError: class extends Error {} }));
@@ -32,6 +47,8 @@ vi.mock('../src/canonico', () => ({
 vi.mock('../src/flags', () => ({ banderaServidor: async (n: string) => estado.banderas[n] === true }));
 vi.mock('../src/proyecciones.js', () => ({ proyectarRenglones: async () => 0, borrarRenglones: async () => 0 }));
 vi.mock('../src/puentesYDiesel.js', () => ({ cambiosCobroPuente: async () => ({}) }));
+vi.mock('../src/usos.js', () => ({ actualizarUsos: async () => 0 }));
+vi.mock('../src/propagacion.js', () => ({ propagarSiCambioNombre: async () => 0, OPCIONES_PROPAGACION: {} }));
 
 const mod = await import('../src/relacional');
 type Trigger = (e: unknown) => Promise<void>;
@@ -39,10 +56,10 @@ type Trigger = (e: unknown) => Promise<void>;
 const eventoFactura = (datos: Datos) => {
   const actualizado: Datos[] = [];
   const despues = { exists: true, id: 'F1', data: () => datos, updateTime: {}, ref: { update: async (c: Datos) => { actualizado.push(c); } } };
-  return { evento: { params: { facId: 'F1' }, data: { before: { exists: false }, after: despues } }, actualizado };
+  return { evento: { id: 'e1', time: new Date().toISOString(), params: { facId: 'F1' }, data: { before: { exists: false }, after: despues } }, actualizado };
 };
 
-beforeEach(() => { estado.banderas = {}; estado.actualizaciones = []; estado.facturas = []; });
+beforeEach(() => { estado.banderas = {}; estado.actualizaciones = []; estado.docs.clear(); });
 
 describe('saldo de la factura (facturaClienteMontoCambiado)', () => {
   // Factura en USD cuyo subtotalMonedaFactura quedó con la conversión (18,000) pero sus renglones suman 1,000.
@@ -65,14 +82,34 @@ describe('saldo de la factura (facturaClienteMontoCambiado)', () => {
   });
 });
 
-describe('cascada operación → factura (operacionMontoCambiado)', () => {
+describe('cascada operación → factura (dentro de operacionEscrita desde la V00442)', () => {
   const opAntes = { montoConvenioCliente: 100, monedaConvenioCliente: '7dca62b3', facturadoEnCobrar: '', monedaCobroNombre: 'f95d8894', tipoCambioAprobado: 18 };
   const correr = async () => {
-    estado.facturas = [{ id: 'F1', datos: { monedaFacturacion: 'MXN', operacionesIds: ['o1'], operacionesGuardadas: [{ id: 'o1', monto: 1, subtotalBase: 1, dol: 0, pes: 1 }] } }];
-    await (mod.operacionMontoCambiado as unknown as Trigger)({ params: { opId: 'o1' }, data: { before: { data: () => opAntes }, after: { data: () => ({ ...opAntes, montoConvenioCliente: 200 }) } } });
+    estado.docs.set('facturas_clientes/F1', { monedaFacturacion: 'MXN', operacionesIds: ['o1'], operacionesGuardadas: [{ id: 'o1', monto: 1, subtotalBase: 1, dol: 0, pes: 1 }] });
+    const despues = { ...opAntes, montoConvenioCliente: 200 };
+    estado.docs.set('operaciones/o1', despues); // la cascada lee la operación ACTUAL
+    await (mod.operacionEscrita as unknown as Trigger)({
+      id: 'e2', time: new Date().toISOString(), params: { opId: 'o1' },
+      data: { before: { exists: true, data: () => opAntes }, after: { exists: true, data: () => despues, updateTime: {}, ref: { update: async () => {} } } },
+    });
     return estado.actualizaciones[0]?.datos.operacionesGuardadas as Datos[] | undefined;
   };
   it('bandera apagada: el ID de moneda en monedaCobroNombre cuenta como pesos (convierte × TC), como antes', async () => {
     expect((await correr())?.[0]).toMatchObject({ monto: 3600, pes: 3600 });
   });
 });
+
+describe('operacionEscrita: sale sin calcular si solo cambiaron sus propios campos', () => {
+  it('soloCamposPropios', () => {
+    expect(mod.soloCamposPropios({ a: 1, estadoGrupo: 'activa' }, { a: 1, estadoGrupo: 'completada', empresasIds: ['x'] })).toBe(true);
+    expect(mod.soloCamposPropios({ a: 1 }, { a: 2, estadoGrupo: 'activa' })).toBe(false);
+    expect(mod.soloCamposPropios({ esPrueba: false }, { esPrueba: true })).toBe(false); // lo marca el usuario
+  });
+  it('facturas: un documento adjunto o la escritura del propio trigger no cuentan como dinero', () => {
+    const f = { montoPagado: 1, subtotalMonedaFactura: 10 };
+    expect(mod.cambioDeDinero(f, { ...f, docFacturaUrl: 'u', saldoCentavos: 900, abierta: true })).toBe(false);
+    expect(mod.cambioDeDinero(f, { ...f, statusFactura: 'Cancelada' })).toBe(true);
+    expect(mod.cambioDeDinero(f, { ...f, montoPagado: 2 })).toBe(true);
+  });
+});
+

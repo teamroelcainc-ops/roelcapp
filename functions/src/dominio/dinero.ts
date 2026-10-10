@@ -479,6 +479,28 @@ export const agregadosFactura = (factura: unknown): AgregadosFactura => {
   };
 };
 
+/**
+ * ✅ V00442 (Fase 6.1) — Campos que mantiene el servidor en una factura (regla única):
+ * saldo y status de pago (si tiene pagos o saldo guardado), agregados en centavos y
+ * `esquemaDinero: 2`. Solo los que DIFIEREN del documento (vacío = nada que escribir).
+ * Lo usan el trigger de saldo y las callables (que los escriben de una vez para que el
+ * trigger ya no tenga que volver a escribir la factura).
+ */
+export const derivadosFactura = (factura: unknown): Datos => {
+  const fac = comoDatos(factura);
+  const cambios: Datos = {};
+  const montoPagado = Number(fac.montoPagado) || 0;
+  if (montoPagado > 0 || typeof fac.saldoPendiente === 'number') {
+    const saldo = Math.max(0, r2(totalNativoFactura(fac) - montoPagado));
+    const status = saldo <= 0.009 ? 'PAGADA' : (montoPagado > 0 ? 'PARCIAL' : String(fac.statusPago || ''));
+    if (Math.abs((Number(fac.saldoPendiente) || 0) - saldo) > 0.005) cambios.saldoPendiente = saldo;
+    if (status && String(fac.statusPago || '') !== status) cambios.statusPago = status;
+  }
+  for (const [k, v] of Object.entries(agregadosFactura(fac))) if (fac[k] !== v) cambios[k] = v;
+  if (fac.esquemaDinero !== 2) cambios.esquemaDinero = 2;
+  return cambios;
+};
+
 /** Renglón para la subcolección facturas_x/{id}/renglones/{opId} (Fase 5.2). */
 export interface RenglonCentavos {
   ref: string;

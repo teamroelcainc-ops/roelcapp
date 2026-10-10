@@ -22,6 +22,7 @@ import { useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
 import { idReal, useCatalogo, useCatalogos } from '../../../shared/data/catalogos';
 import type { DocCatalogo } from '../../../shared/data/catalogos';
 import { monedaCanonica } from '../../../shared/dominio/moneda';
+import { useFlags } from '../../../shared/data/flags';
 
 const opcionesFiltro = [
   'Todo', 'Proveedor (Servicios)', 'Empresa Inactiva', 'Baja', 'Cliente (Mercancía)', 
@@ -77,6 +78,7 @@ const COLUMNAS_BASE = [
 ];
 
 const EmpresasDashboard = () => {
+  const flags = useFlags(); // ✅ V00442 (Fase 6.2)
   const [estadoFormulario, setEstadoFormulario] = useState<'cerrado' | 'abierto' | 'minimizado'>('cerrado');
   const [empresaEditando, setEmpresaEditando] = useState<any | null>(null);
   
@@ -1417,6 +1419,7 @@ const EmpresasDashboard = () => {
             )}
             {/* ✅ V00342: escribe la razón social actual de TODAS las empresas
                 en operaciones, facturación y pagos (desnormalizado). */}
+            {!flags.propagacionEnServidor && (
             <button
               type="button"
               className="btn btn-outline ed-razon-btn"
@@ -1427,6 +1430,7 @@ const EmpresasDashboard = () => {
                 catch (e) { alert(`No se pudo sincronizar: ${(e as Error)?.message || e}`); }
               }}
             >🏷 Razón social</button>
+            )}
             <button 
               className="btn btn-primary ed-x19" 
               title="Agregar Empresa"

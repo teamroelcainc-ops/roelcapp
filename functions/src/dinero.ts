@@ -21,9 +21,10 @@ import { getFirestore } from 'firebase-admin/firestore';
 import type { DocumentReference, Firestore, Transaction } from 'firebase-admin/firestore';
 import { z } from 'zod';
 import { exigirPersonal, EXIGIR_APP_CHECK } from './acceso.js';
-import { banderaServidorFresca } from './flags.js';
-import { catalogoServidor } from './canonico.js';
-import { ErrorDinero } from './dominio/dinero.js';
+import { banderaServidor, banderaServidorFresca } from './flags.js';
+import { cambiosCanonicos, catalogoServidor, contextoServidor } from './canonico.js';
+import { derivadosFactura, ErrorDinero } from './dominio/dinero.js';
+import type { ContextoCanonico } from './dominio/operacionCanonica.js';
 import {
   empresaDeOperacion, idFacturaDeterminista, LADOS, lista, mismoFolio, monedaDeEmpresa, planAgregarOperacion, planEditarFactura,
   planEditarPago, planEliminarFacturas, planEliminarPago, planFacturar, planMoverOperacion, planQuitarOperacion,
@@ -48,8 +49,36 @@ export const sinIndefinidos = (v: unknown): unknown => {
   return v;
 };
 
-/** Escribe un plan dentro de la transacción. */
-export const ejecutarPlan = (db: Firestore, tx: Transaction, plan: PlanDinero): void => {
+/** Lo que la callable leyó y el contexto canónico (para escribir TODO de una vez). */
+export interface ContextoEscritura { ops?: readonly DocLeido[]; canon?: ContextoCanonico | null }
+
+/**
+ * ✅ V00442 (Fase 6.1): completa el plan con lo que si no escribirían DESPUÉS los
+ * triggers (una segunda escritura y una segunda invocación por documento):
+ *   · facturas: saldo/status y agregados en centavos (derivadosFactura);
+ *   · operaciones: sus campos canónicos (porFacturar*, …) si `canonicosEnServidor`.
+ */
+export const completarPlan = (plan: PlanDinero, extra: ContextoEscritura = {}): void => {
+  const opsPorId = new Map((extra.ops ?? []).map((o) => [o.id, o.datos]));
+  for (const e of plan.escrituras as Escritura[]) {
+    if (e.tipo === 'borrar') continue;
+    if (e.coleccion === LADOS.cliente.coleccion || e.coleccion === LADOS.proveedor.coleccion) {
+      const final = plan.facturas[e.id];
+      if (final) {
+        const derivados = derivadosFactura(final);
+        Object.assign(e.datos, derivados);
+        plan.facturas[e.id] = { ...final, ...derivados };
+      }
+    } else if (e.coleccion === 'operaciones' && extra.canon) {
+      const op = opsPorId.get(e.id);
+      if (op) Object.assign(e.datos, cambiosCanonicos(op, { ...op, ...e.datos }, extra.canon));
+    }
+  }
+};
+
+/** Escribe un plan dentro de la transacción (completado con completarPlan). */
+export const ejecutarPlan = (db: Firestore, tx: Transaction, plan: PlanDinero, extra: ContextoEscritura = {}): void => {
+  completarPlan(plan, extra);
   for (const e of plan.escrituras as Escritura[]) {
     const ref = db.collection(e.coleccion).doc(e.id);
     if (e.tipo === 'borrar') tx.delete(ref);
@@ -147,6 +176,9 @@ const destinoDeFolio = async (
   return { existente: null, id: db.collection(c.coleccion).doc().id };
 };
 
+/** Contexto canónico (catálogos en memoria) solo si el servidor mantiene los canónicos. */
+const canonDe = async (): Promise<ContextoCanonico | null> => ((await banderaServidor('canonicosEnServidor')) ? contextoServidor() : null);
+
 const respuesta = (plan: PlanDinero, extra: Datos = {}) => ({ ok: true, facturas: plan.facturas, operaciones: plan.operaciones, ...extra });
 
 // ── Facturación ──────────────────────────────────────────────────────────
@@ -157,6 +189,7 @@ export const facturarOperaciones = callable(z.object({
   const db = getFirestore();
   const nombreRemolque = await resolverRemolque();
   const ids = Array.from(new Set(d.operacionesIds));
+  const canon = await canonDe();
   return db.runTransaction(async (tx) => {
     const [ops, destino] = await Promise.all([
       leer(tx, ids.map((x) => db.collection('operaciones').doc(x))),
@@ -166,7 +199,7 @@ export const facturarOperaciones = callable(z.object({
     const existente = destino.existente;
     const idNueva = destino.id;
     const plan = planFacturar({ ...d, ahoraISO: new Date().toISOString(), nombreRemolque }, ops, existente, idNueva);
-    ejecutarPlan(db, tx, plan);
+    ejecutarPlan(db, tx, plan, { ops, canon });
     return respuesta(plan, { facturaId: idNueva, fusionada: !!existente });
   });
 });
@@ -198,11 +231,12 @@ export const quitarOperacionFactura = callable(z.object({
   lado, operacionId: id, permitirBorrarFactura: z.boolean().default(true),
 }), async (d) => {
   const db = getFirestore();
+  const canon = await canonDe();
   return db.runTransaction(async (tx) => {
     const ops = await leer(tx, [db.collection('operaciones').doc(d.operacionId)]);
     const facturas = await facturasConOperacion(db, tx, d.lado, d.operacionId, ops[0] ?? null);
     const plan = planQuitarOperacion(d.lado, d.operacionId, ops[0] ?? null, facturas, d.permitirBorrarFactura, new Date().toISOString());
-    ejecutarPlan(db, tx, plan);
+    ejecutarPlan(db, tx, plan, { ops, canon });
     return respuesta(plan);
   });
 });
@@ -212,6 +246,7 @@ export const moverOperacionFactura = callable(z.object({
 }), async (d) => {
   const db = getFirestore();
   const nombreRemolque = await resolverRemolque();
+  const canon = await canonDe();
   return db.runTransaction(async (tx) => {
     const [op] = await leer(tx, [db.collection('operaciones').doc(d.operacionId)]);
     if (!op) throw new ErrorDinero('La operación ya no existe (otro usuario la eliminó).');
@@ -222,7 +257,7 @@ export const moverOperacionFactura = callable(z.object({
     const empresa = destino ? null : await tx.get(db.collection('empresas').doc(empresaId || '-'));
     const nombreEmpresa = () => (empresa?.exists ? String((empresa.data() as Datos).nombre ?? '') : '');
     const plan = planMoverOperacion({ lado: d.lado, nuevoInvoice: d.nuevoInvoice, ahoraISO: new Date().toISOString(), nombreEmpresa, nombreRemolque }, op, origen, destino, idNueva);
-    ejecutarPlan(db, tx, plan);
+    ejecutarPlan(db, tx, plan, { ops: [op], canon });
     return respuesta(plan, { facturaId: idNueva });
   });
 });
@@ -230,6 +265,7 @@ export const moverOperacionFactura = callable(z.object({
 export const agregarOperacionFactura = callable(z.object({ lado, facturaId: id, operacionId: id }), async (d) => {
   const db = getFirestore();
   const nombreRemolque = await resolverRemolque();
+  const canon = await canonDe();
   return db.runTransaction(async (tx) => {
     const [facturas, ops] = await Promise.all([
       leer(tx, [db.collection(LADOS[d.lado].coleccion).doc(d.facturaId)]),
@@ -238,13 +274,14 @@ export const agregarOperacionFactura = callable(z.object({ lado, facturaId: id, 
     if (!facturas[0]) throw new ErrorDinero('Esta factura ya no existe (alguien más la eliminó). Recarga el historial.');
     if (!ops[0]) throw new ErrorDinero('La operación ya no existe (otro usuario la eliminó).');
     const plan = planAgregarOperacion(d.lado, facturas[0], ops[0], new Date().toISOString(), nombreRemolque);
-    ejecutarPlan(db, tx, plan);
+    ejecutarPlan(db, tx, plan, { ops, canon });
     return respuesta(plan);
   });
 });
 
 export const eliminarFactura = callable(z.object({ lado, facturaIds: z.array(id).min(1).max(50) }), async (d) => {
   const db = getFirestore();
+  const canon = await canonDe();
   return db.runTransaction(async (tx) => {
     const grupo = await leer(tx, d.facturaIds.map((x) => db.collection(LADOS[d.lado].coleccion).doc(x)));
     if (grupo.length === 0) throw new ErrorDinero('La factura ya no existe (otro usuario la eliminó). Recarga el historial.');
@@ -252,7 +289,7 @@ export const eliminarFactura = callable(z.object({ lado, facturaIds: z.array(id)
     if (opsIds.length + grupo.length > 450) throw new ErrorDinero('La factura tiene demasiadas operaciones para eliminarla de una vez. Quita primero algunas operaciones y vuelve a intentar.');
     const ops = await leer(tx, opsIds.map((x) => db.collection('operaciones').doc(x)));
     const plan = planEliminarFacturas(d.lado, grupo, ops);
-    ejecutarPlan(db, tx, plan);
+    ejecutarPlan(db, tx, plan, { ops, canon });
     return respuesta(plan);
   });
 });

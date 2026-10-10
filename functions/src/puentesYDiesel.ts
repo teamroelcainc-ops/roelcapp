@@ -17,8 +17,8 @@
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import type { DocumentReference, Firestore, Transaction } from 'firebase-admin/firestore';
-import { logger } from 'firebase-functions/v2';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
+import { conReintento, OPCIONES_TRIGGER } from './eventos.js';
 import { CATALOGO_ADUANAS, catalogoServidor } from './canonico';
 import { aplicaPeaje, cobroAlCambiarStatus, disparoCobroPuente } from './dominio/cobroPuente.js';
 import type { CtxCobroPuente } from './dominio/cobroPuente.js';
@@ -95,7 +95,7 @@ const fechaDelHorario = async (db: Firestore, opId: string, statusId: string, st
   return mios.length ? (aFechaISO(mios[0].fechaHora) ?? '') : '';
 };
 
-const CAMPOS_QUE_DECIDEN_PUENTE = ['convenio', 'convenioNombre', 'tipoOperacionNombre', 'proveedorUnidadNombre', 'trafico', 'carga'];
+const CAMPOS_QUE_DECIDEN_PUENTE = ['convenio', 'tipoOperacion', 'tipoOperacionId', 'proveedorUnidad'];
 
 /**
  * Campos del cobro del puente para una operación que acaba de cambiar de estatus
@@ -104,9 +104,10 @@ const CAMPOS_QUE_DECIDEN_PUENTE = ['convenio', 'convenioNombre', 'tipoOperacionN
 export const cambiosCobroPuente = async (db: Firestore, opId: string, antes: Datos | undefined, x: Datos): Promise<Datos> => {
   const statusId = String(x.status || '').trim();
   if (!statusId) return {};
-  // Se evalúa al CAMBIAR DE ESTATUS o, ya en un estatus que cobra, si se corrigen los
-  // datos que deciden el puente (p. ej. faltaba el convenio). Otras ediciones no cobran:
-  // así una migración o un cambio de notas nunca cobra operaciones viejas.
+  // Se evalúa al CAMBIAR DE ESTATUS o, ya en un estatus que cobra, si el USUARIO corrige
+  // el convenio, el tipo de operación o el proveedor (sus IDs). Los NOMBRES y lo que
+  // deriva el servidor (carga, aduana, tráfico) no cuentan: un renombre en catálogos, la
+  // propagación de nombres o una migración nunca cobran operaciones viejas (V00442).
   const cambioStatus = statusId !== String(antes?.status || '').trim();
   const cambioDatos = !!antes && CAMPOS_QUE_DECIDEN_PUENTE.some((c) => String(antes[c] ?? '') !== String(x[c] ?? ''));
   if (!cambioStatus && !cambioDatos) return {};
@@ -153,7 +154,7 @@ export const recalcularDiaDiesel = async (db: Firestore, fecha: string, claves: 
   });
 };
 
-export const referenciaDieselEscrita = onDocumentWritten({ document: 'referencias_diesel/{refId}', region: 'us-central1' }, async (event) => {
+export const referenciaDieselEscrita = onDocumentWritten({ document: 'referencias_diesel/{refId}', ...OPCIONES_TRIGGER }, (event) => conReintento('referenciaDieselEscrita', event, async () => {
   const antes = event.data?.before?.exists ? (event.data.before.data() as Datos) : undefined;
   const despues = event.data?.after?.exists ? (event.data.after.data() as Datos) : undefined;
   if (!aporteDieselCambio(antes, despues)) return; // fotos, observaciones…: no mueve el saldo
@@ -165,10 +166,5 @@ export const referenciaDieselEscrita = onDocumentWritten({ document: 'referencia
     if (!ap || !ap.fecha) continue;
     porFecha.set(ap.fecha, new Set([...(porFecha.get(ap.fecha) ?? []), ap.clave]));
   }
-  try {
-    for (const [fecha, claves] of porFecha) await recalcularDiaDiesel(db, fecha, Array.from(claves));
-  } catch (e) {
-    logger.error(`[saldosCorrientes] referencia ${event.params.refId}: no se pudo recalcular`, e);
-    throw e; // ✅ se registra y el evento falla visible (Fase 6.4 decide reintentos)
-  }
-});
+  for (const [fecha, claves] of porFecha) await recalcularDiaDiesel(db, fecha, Array.from(claves));
+}));

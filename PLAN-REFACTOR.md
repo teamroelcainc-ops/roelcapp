@@ -27,6 +27,7 @@ Se crean a mano en Firestore (documento `configuracion/flags`, campos booleanos)
 | `canonicosEnServidor` | 4.4 | funciones V00440 desplegadas, ANTES de la migración (P2) | `crearOperacion` y `operacionEscrita` escriben y mantienen los campos canónicos de las operaciones |
 | `dineroPorServidor` | 5.1–5.5, 5.8 | funciones V00441 desplegadas + reglas V00441 publicadas (P1) + `diferencias.csv` de la reconciliación aprobado (P3); justo ANTES de `reconciliar --aplicar` | Facturación y Pagos por callables con transacción; trigger de saldo con la regla única y agregados en centavos; tablas hijas renglones/aplicaciones; las reglas bloquean los campos de dinero desde el navegador |
 | `cobroPuenteEnServidor` | 5.7 | funciones V00441 desplegadas | El peaje lo cobra `operacionEscrita` al cambiar de estatus (web, Mis Operaciones y app móvil); la web deja de calcularlo |
+| `propagacionEnServidor` | 6.2 | funciones V00442 desplegadas + `npm run nombres -- --aplicar` (P2) con `cambios.csv` revisado | Los nombres de empresas, status, tipos de operación, unidades y empleados se copian solos a operaciones, facturas, pagos, tarifarios y convenios; se ocultan los botones "Sincronizar nombres" y "🏷 Razón social" |
 | `saldosCorrientes` | 5.6 | funciones V00441 desplegadas + `npm run saldos:diesel -- --aplicar` (P2) con `paridad.csv` revisado | La tarjeta Saldo Diesel lee `saldos_corrientes` (1 documento por proveedor) en vez de 3,000 referencias |
 
 ## Orden de despliegue
@@ -37,6 +38,7 @@ Se crean a mano en Firestore (documento `configuracion/flags`, campos booleanos)
 | V00438 | Solo web. |
 | V00439 | Solo web. Revisar en Roles si ADMINISTRATIVO necesita el permiso `EDITAR REF` (ver CAMBIOS-V00439.md). |
 | V00440 | Web → `firebase deploy --only functions` → encender `canonicosEnServidor` → **P2**: respaldo, `npm run migrar:v2` (simulación), revisar reportes, `-- --aplicar --confirmo-respaldo`, Verificar integridad. Detalle en CAMBIOS-V00440.md. |
+| V00442 | Web → functions (**borrar `operacionMontoCambiado` cuando lo pregunte**) → `firebase deploy --only firestore:indexes` → P1 reglas → alerta de `[reintentos]` → **P2** `npm run usos` y `npm run nombres` (simulación → `--aplicar`) → `propagacionEnServidor`. Detalle en CAMBIOS-V00442.md. |
 | V00441 | Web → functions → **P1** reglas (`npm run test:rules`) → **P2** `npm run saldos:diesel` (simulación → `--aplicar`) → `saldosCorrientes` → **P3** `npm run reconciliar` (simulación, el negocio revisa `diferencias.csv`) → `dineroPorServidor` (esperar 1 min) → `reconciliar -- --aplicar --confirmo-respaldo` → `cobroPuenteEnServidor`. Detalle en CAMBIOS-V00441.md. |
 
 ## Reconciliación de facturas (Fase 5, P3)
@@ -50,6 +52,11 @@ Se crean a mano en Firestore (documento `configuracion/flags`, campos booleanos)
 ## Saldo corriente de diésel (Fase 5.6, P2)
 - Script: `functions/scripts/reconstruirSaldosDiesel.ts` → `npm --prefix functions run saldos:diesel`. `paridad.csv` compara la
   tarjeta de siempre contra la nueva por cada saldo; `--limite` solo en simulación.
+
+## Contadores de uso y nombres (Fase 6, P2)
+- `npm --prefix functions run usos`: recuento de `usos/{tipo}_{id}` desde cero (`usos.csv`: antes/después).
+- `npm --prefix functions run nombres`: pone al día todas las copias `*Nombre` con el mapa de `src/shared/dominio/nombres.ts`
+  (`cambios.csv`). Se corre antes de encender `propagacionEnServidor`.
 
 ## Migración del esquema v2 (Fase 4, P2)
 - Script: `functions/scripts/migrarEsquemaV2.ts` → `npm --prefix functions run migrar:v2` (simulación por defecto).

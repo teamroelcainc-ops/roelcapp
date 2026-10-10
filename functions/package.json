@@ -14,6 +14,8 @@
     "migrar:v2": "npm run build:scripts && node lib-scripts/scripts/migrarEsquemaV2.js",
     "reconciliar": "npm run build:scripts && node lib-scripts/scripts/reconciliarFacturas.js",
     "saldos:diesel": "npm run build:scripts && node lib-scripts/scripts/reconstruirSaldosDiesel.js",
+    "usos": "npm run build:scripts && node lib-scripts/scripts/recontarUsos.js",
+    "nombres": "npm run build:scripts && node lib-scripts/scripts/propagarNombres.js",
     "prebuild": "node ../scripts/sincronizar-dominio.mjs"
   },
   "engines": {

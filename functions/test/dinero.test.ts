@@ -75,8 +75,8 @@ vi.mock('firebase-functions/v2/https', () => {
   return { HttpsError, onCall: (_o: unknown, fn: unknown) => fn };
 });
 vi.mock('../src/acceso.js', () => ({ exigirPersonal: async () => {}, EXIGIR_APP_CHECK: false }));
-vi.mock('../src/flags.js', () => ({ banderaServidor: async () => true, banderaServidorFresca: async () => true }));
-vi.mock('../src/canonico.js', () => ({ catalogoServidor: async () => ({ porId: new Map([['r1', 'CAJA 1']]) }) }));
+vi.mock('../src/flags.js', () => ({ banderaServidor: async (n: string) => n === 'dineroPorServidor', banderaServidorFresca: async () => true }));
+vi.mock('../src/canonico.js', () => ({ catalogoServidor: async () => ({ porId: new Map([['r1', 'CAJA 1']]) }), contextoServidor: async () => ({}), cambiosCanonicos: () => ({}) }));
 
 const mod = await import('../src/dinero');
 type Llamable = (req: { auth?: { uid: string }; data: unknown }) => Promise<Datos>;
@@ -98,6 +98,8 @@ describe('callables de dinero', () => {
     const r = await llamar(mod.facturarOperaciones, { lado: 'cliente', empresaId: 'EMP1', empresaNombre: 'Acme', invoice: 'A-100', fecha: '2026-10-10', moneda: 'USD', operacionesIds: ['o1', 'o2'] });
     expect(r).toMatchObject({ ok: true, facturaId: 'EMP1_a-100', fusionada: false });
     expect(falso.docs.get('facturas_clientes/EMP1_a-100')).toMatchObject({ subtotalMonedaFactura: 200, remolques: ['CAJA 1'], operacionesIds: ['o1', 'o2'] });
+    // ✅ V00442 (6.1): los agregados ya van en la misma escritura (el trigger no vuelve a escribir).
+    expect(falso.docs.get('facturas_clientes/EMP1_a-100')).toMatchObject({ totalCentavos: 20000, saldoCentavos: 20000, abierta: true, esquemaDinero: 2 });
     expect(falso.docs.get('operaciones/o1')).toMatchObject({ facturaClienteId: 'EMP1_a-100', facturado: true });
   });
 

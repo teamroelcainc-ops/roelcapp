@@ -36,6 +36,7 @@ import { idReal, useCatalogos } from '../../../shared/data/catalogos';
 import type { ColeccionCatalogo } from '../../../shared/data/catalogos';
 import { ID_MXN, ID_USD, STATUS_COMPLETADOS, TIPO_EMPRESA } from '../../../shared/dominio/constantes';
 import { estadoGrupoDe } from '../../../shared/dominio/operacionCanonica';
+import { useFlags } from '../../../shared/data/flags';
 
 // ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
 const fmtFechaAuditoria = (iso: any): string => {
@@ -337,6 +338,9 @@ interface ServiciosCompletadosProps {
 }
 
 const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar }) => {
+  // ✅ V00442 (Fase 6.2): el servidor mantiene nombres (propagacionEnServidor) y fechas
+  //   (consultasCanonicas, tras la migración): se ocultan "Sincronizar nombres" y ⚡.
+  const flags = useFlags();
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
   const [cargandoOperaciones, setCargandoOperaciones] = useState(false);
   // ✅ NUEVO (V00114) — Sincronizar nombres (solo NOMBRES; nunca montos):
@@ -2783,19 +2787,23 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
           <div className="sc-x68">
             {/* ✅ V00310: indexar fechas UNA vez → búsquedas por rango al instante */}
+            {!flags.consultasCanonicas && (
             <button
               className={`btn btn-outline sc-btn-acelerar${fechasIndexadas ? '' : ' sc-btn-acelerar--pendiente'}`}
               onClick={acelerarBusquedas}
               disabled={acelerando}
               title={fechasIndexadas ? 'Fechas ya indexadas: las búsquedas consultan solo el rango pedido. Puedes volver a correrlo después de importar datos.' : 'ACELERAR BÚSQUEDAS (una sola vez): indexa las fechas para que Buscar y "Ver en nueva pestaña" consulten SOLO el rango pedido en vez de descargar todo el histórico'}
             >{acelerando ? '⏳' : '⚡'}</button>
+            )}
             <button className="btn btn-outline" onClick={refrescarDatos} disabled={cargandoOperaciones} style={{ padding: '10px 12px', cursor: cargandoOperaciones ? 'wait' : 'pointer' }} title="Actualizar (recargar desde la base de datos)">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
             </button>
             {/* ✅ NUEVO (V00114): sincronizar nombres contra catálogos actuales */}
+            {!flags.propagacionEnServidor && (
             <button className="btn btn-outline" onClick={sincronizarNombres} disabled={sincronizandoNombres || operacionesGlobales.length === 0} style={{ padding: '10px 12px', cursor: sincronizandoNombres ? 'wait' : 'pointer', opacity: (sincronizandoNombres || operacionesGlobales.length === 0) ? 0.6 : 1 }} title="Sincronizar nombres: actualiza registro por registro los nombres que quedaron viejos tras renombrar en Catálogos (no toca montos)">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
             </button>
+            )}
             <button className="btn btn-outline sc-x69" onClick={() => setModalColumnas(true)} title="Configurar Columnas">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
             </button>

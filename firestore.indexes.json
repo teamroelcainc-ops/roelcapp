@@ -41,5 +41,12 @@
       ]
     }
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    { "collectionGroup": "facturas_clientes", "fieldPath": "operacionesGuardadas", "indexes": [] },
+    { "collectionGroup": "facturas_proveedores", "fieldPath": "operacionesGuardadas", "indexes": [] },
+    { "collectionGroup": "tarifario_clientes", "fieldPath": "tarifas", "indexes": [] },
+    { "collectionGroup": "tarifario_proveedores", "fieldPath": "tarifas", "indexes": [] },
+    { "collectionGroup": "pagos", "fieldPath": "facturas", "indexes": [] },
+    { "collectionGroup": "eventos_procesados", "fieldPath": "expiraEn", "ttl": true, "indexes": [] }
+  ]
 }

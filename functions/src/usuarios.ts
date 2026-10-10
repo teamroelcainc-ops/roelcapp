@@ -28,6 +28,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { z } from 'zod';
 import { claimsDePerfil, exigirAdmin, EXIGIR_APP_CHECK } from './acceso.js';
 import type { ClaimsRoelca } from './acceso.js';
+import { conReintento, OPCIONES_TRIGGER } from './eventos.js';
 
 if (getApps().length === 0) initializeApp();
 
@@ -54,10 +55,13 @@ const aplicarClaims = async (uid: string, perfil: Record<string, unknown> | null
   return true;
 };
 
-export const usuarioEscrito = onDocumentWritten({ document: 'usuarios/{uid}', region: 'us-central1' }, async (event) => {
+export const usuarioEscrito = onDocumentWritten({ document: 'usuarios/{uid}', ...OPCIONES_TRIGGER }, (event) => conReintento('usuarioEscrito', event, async () => {
   const uid = event.params.uid;
   const despues = event.data?.after;
-  const perfil = despues?.exists ? (despues.data() as Record<string, unknown>) : null;
+  // ✅ V00442 (6.4): el perfil ACTUAL, no la copia del evento: con reintentos, un evento
+  //   viejo que se reintenta tarde no debe regresar permisos que ya se quitaron (o al revés).
+  const actual = despues ? await despues.ref.get() : null;
+  const perfil = actual?.exists ? (actual.data() as Record<string, unknown>) : null;
   try {
     const cambio = await aplicarClaims(uid, perfil);
     if (cambio && despues?.exists) {
@@ -69,7 +73,7 @@ export const usuarioEscrito = onDocumentWritten({ document: 'usuarios/{uid}', re
     logger.error(`[usuarios] no se pudieron fijar los claims de ${uid}`, e);
     throw e; // reintento automático (retry) si está habilitado en la consola
   }
-});
+}));
 
 export const sincronizarClaims = onCall({ region: 'us-central1', timeoutSeconds: 540, enforceAppCheck: EXIGIR_APP_CHECK }, async (request) => {
   await exigirAdmin(request.auth?.uid);

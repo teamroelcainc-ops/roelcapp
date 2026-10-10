@@ -25,7 +25,7 @@ import { ModalFechaStatus } from './ModalFechaStatus';
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
 import { aduanaDeConvenio, camposPisoColombia, casetaRespaldoColombia, esAduanaColombia, esGastoPisoColombia, normPuente } from '../../../utils/puenteColombia';
 import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
-import { obtenerFlags } from '../../../shared/data/flags';
+import { obtenerFlags, useFlags } from '../../../shared/data/flags';
 import { docPorId, nombreEmpresaPdf } from '../../../utils/docPorId';
 import type { DocLibre } from '../../../utils/docPorId';
 import { idReal, obtenerCatalogo, useCatalogo, useCatalogos } from '../../../shared/data/catalogos';
@@ -189,6 +189,7 @@ const COLUMNAS_BASE = [
 
 const OperacionesDashboard = () => {
   const { config: empresaConfig } = useEmpresaConfig();
+  const flags = useFlags(); // ✅ V00442 (Fase 6.2): con propagacionEnServidor se oculta "Sincronizar nombres"
 
   const [estadoFormulario, setEstadoFormulario] = useState<'cerrado' | 'abierto' | 'minimizado'>('cerrado');
   const [operacionEditando, setOperacionEditando] = useState<any | null>(null);
@@ -2090,7 +2091,7 @@ const OperacionesDashboard = () => {
             </button>
             {/* ✅ NUEVO (V00113): re-resuelve los nombres guardados en cada
                 operación contra los catálogos actuales (repara renombres) */}
-            {!btnOculto('sincronizarNombres') && <button className="btn btn-outline" onClick={sincronizarNombresOperaciones} disabled={sincronizandoNombres || cargandoOperaciones} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px', cursor: sincronizandoNombres ? 'wait' : 'pointer' }} title="Sincronizar nombres: actualiza registro por registro los nombres (tipo de operación, status, empresas, carga) que quedaron viejos tras renombrar en Catálogos">
+            {!btnOculto('sincronizarNombres') && !flags.propagacionEnServidor && <button className="btn btn-outline" onClick={sincronizarNombresOperaciones} disabled={sincronizandoNombres || cargandoOperaciones} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px', cursor: sincronizandoNombres ? 'wait' : 'pointer' }} title="Sincronizar nombres: actualiza registro por registro los nombres (tipo de operación, status, empresas, carga) que quedaron viejos tras renombrar en Catálogos">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
               <span>{sincronizandoNombres ? 'Sincronizando...' : 'Sincronizar nombres'}</span>
             </button>}

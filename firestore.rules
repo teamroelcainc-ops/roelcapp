@@ -91,7 +91,8 @@ service cloud.firestore {
 
     // Colecciones que el personal NO escribe por la regla general (tienen la suya abajo).
     function protegida(coleccion) {
-      return coleccion in ['usuarios', 'roles', 'config_autorizaciones', 'configuracion', 'meta', 'historial_actividad', 'saldos_corrientes'];
+      return coleccion in ['usuarios', 'roles', 'config_autorizaciones', 'configuracion', 'meta', 'historial_actividad',
+                           'saldos_corrientes', 'usos', 'eventos_procesados'];
     }
 
     // Campos de SU perfil que un usuario puede cambiar (sesión y app móvil).
@@ -198,7 +199,8 @@ service cloud.firestore {
       allow create: if esPersonal() && perfilVigente();
     }
 
-    // ── saldos_corrientes/*: lo mantiene el servidor (V00441, Fase 5.6); se lee por la regla general ──
+    // ── saldos_corrientes/* (V00441) y usos/* (V00442, contadores): los mantiene el servidor; se leen por la regla general ──
+    // ── eventos_procesados/*: control de reintentos del servidor (V00442) ──
     // ── meta/*: lo escriben las Cloud Functions (versiones de catálogos, reportes) ──
     // (lectura por la regla general; escritura: nadie desde el navegador)
   }
