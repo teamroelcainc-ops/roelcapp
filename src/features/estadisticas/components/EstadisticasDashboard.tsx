@@ -27,6 +27,7 @@ import type { DocCatalogo } from '../../../shared/data/catalogos';
 import { useEsAdmin } from '../../../shared/data/sesion';
 import { useUsuarioStore } from '../../../stores/useUsuarioStore';
 import { STATUS_CANCELADO } from '../../../shared/dominio/constantes';
+import { flagsAhora } from '../../../shared/data/flags';
 import { esMXN, esUSD, monedaCanonica } from '../../../shared/dominio/moneda';
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
 import { Download, RefreshCw, X, Settings2, Truck, Wallet } from 'lucide-react';
@@ -206,6 +207,9 @@ const costoProveedorDe = (op: Op): number => {
 };
 
 const fechaISODe = (op: Op): string => {
+  // ✅ V00443: con `consultasCanonicas` el rango se pidió por fechaServicioISO: la misma fecha
+  //   para los desgloses (las guardadas como Timestamp ya no quedan fuera de meses y días).
+  if (flagsAhora().consultasCanonicas && /^\d{4}-\d{2}-\d{2}$/.test(String(op.fechaServicioISO || ''))) return String(op.fechaServicioISO);
   const s = String(op.fechaServicio || op.fecha || '').trim();
   const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
@@ -426,11 +430,15 @@ export function EstadisticasDashboard() {
     if (fechaHasta < fechaDesde) { alert('La fecha Hasta no puede ser menor que la fecha Desde.'); return; }
     setCargando(true);
     if (subOpsRef.current) { subOpsRef.current(); subOpsRef.current = null; }
+    // ✅ V00443 (Fase 7.5): con `consultasCanonicas`, el rango va sobre fechaServicioISO
+    //   (normalizada por la migración): ya no se pierden las fechas guardadas como
+    //   d/m/aaaa o Timestamp, que el rango por texto de fechaServicio no veía.
+    const campoFecha = flagsAhora().consultasCanonicas ? 'fechaServicioISO' : 'fechaServicio';
     subOpsRef.current = onSnapshot(
       query(
         collection(db, 'operaciones'),
-        where('fechaServicio', '>=', fechaDesde),
-        where('fechaServicio', '<=', fechaHasta)
+        where(campoFecha, '>=', fechaDesde),
+        where(campoFecha, '<=', fechaHasta)
       ),
       (snap) => {
         const lista = snap.docs

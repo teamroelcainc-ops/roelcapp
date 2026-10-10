@@ -65,15 +65,15 @@
     "src/features/operaciones/context/FormularioOperacionContext.tsx": 8,
     "src/features/operaciones/services/catalogosOperacion.ts": 4,
     "src/features/operaciones/services/operacionesService.ts": 10,
-    "src/features/pagos/components/PagosDashboard.tsx": 49,
+    "src/features/pagos/components/PagosDashboard.tsx": 47,
     "src/features/panelControl/PanelControlDashboard.tsx": 10,
     "src/features/proveedoresUnidad/components/FormularioProveedorUnidad.tsx": 3,
     "src/features/proveedoresUnidad/components/ProveedoresUnidadDashboard.tsx": 5,
     "src/features/puentes/components/ReferenciasPuentesDashboard.tsx": 33,
     "src/features/remolques/components/FormularioRemolque.tsx": 3,
     "src/features/remolques/components/RemolquesDashboard.tsx": 1,
-    "src/features/reportes/components/ReportesDashboard.tsx": 56,
-    "src/features/reportes/components/ResumenDiarioOperaciones.tsx": 30,
+    "src/features/reportes/components/ReportesDashboard.tsx": 55,
+    "src/features/reportes/components/ResumenDiarioOperaciones.tsx": 27,
     "src/features/tablero/TableroOperacionesDashboard.tsx": 5,
     "src/features/tipoCambio/components/FormularioTipoCambio.tsx": 12,
     "src/features/tipoCambio/components/TipoCambioDashboard.tsx": 16,
@@ -89,5 +89,5 @@
     "src/utils/pdfGenerator.ts": 2,
     "functions/src/index.ts": 13
   },
-  "anyTotal": 2470
+  "anyTotal": 2465
 }

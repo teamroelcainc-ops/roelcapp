@@ -34,7 +34,7 @@
 //   consecutivo, status, uso en operaciones [op.convenioProveedor], selección
 //   múltiple, edición en modal, Sin cotización) aplican también a proveedores.
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { createPortal } from 'react-dom'; // ✅ V00237
 import { collection, getDocs, getDoc, doc, updateDoc, writeBatch, setDoc, query, where } from 'firebase/firestore';
@@ -54,6 +54,26 @@ import { mismoConsecutivo } from '../../../utils/claveConsecutivo';
 import { asegurarIntegridad, contarIncompletos, huboCambios, resumenReporte } from '../../conveniosCompartido/integridadConvenios'; // ✅ V00429
 import { ResumenStatusOps } from '../../conveniosCompartido/StatusOperaciones'; // ✅ V00429
 import { cargarNombresStatus, nombreStatusOp, familiaStatus, type OpConStatus } from '../../conveniosCompartido/logicaStatusOps'; // ✅ V00429
+import { useFlags, useFlagsCargadas } from '../../../shared/data/flags';
+import { sinPruebas } from '../../../utils/operacionPrueba';
+import { paginaOperacionesDeConvenio, usosPorTipo } from '../../../shared/data/consultas';
+
+/** Una operación en la lista de uso de un detalle de convenio. */
+interface UsoOp { ref: string; fecha: string; status: string; tipo: string; entidad: string; monto: string; docId: string }
+/** ✅ V00443: tamaño de la lista bajo demanda de la ficha (con `consultasCanonicas`). */
+const TAMANO_USO = 50;
+
+/** Fila de uso a partir de los datos de la operación (los dos caminos la arman igual). */
+const aUsoOp = (o: Record<string, unknown>, docId: string, esClientes: boolean, mapaStatus: Map<string, string>): UsoOp => ({
+  ref: String(o.ref || docId.substring(0, 6)),
+  fecha: String(o.fechaServicio || ''),
+  status: nombreStatusOp(o, mapaStatus), // ✅ V00429: NOMBRE del status (antes el id)
+  // ✅ V00218: más contexto en el modal de uso
+  tipo: String(o.tipoOperacionNombre || o.trafico || ''),
+  entidad: String((esClientes ? (o.clientePagaNombre || o.clienteNombre) : (o.proveedorUnidadNombre || o.proveedorNombre)) || ''),
+  monto: String((esClientes ? o.montoConvenioCliente : o.totalAPagarProv) ?? ''),
+  docId, // ✅ V00232: para abrir su formulario de edición
+});
 
 /** ✅ V00231: campo de BÚSQUEDA para elegir de una lista (no desplegable). */
 const BuscadorSimple = ({ etiqueta, opciones, valor, onElegir }: {
@@ -215,8 +235,35 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   const clicOrden = (col: ColOrden) => setOrdenCol((p) => (!p || p.col !== col) ? { col, asc: true } : (p.asc ? { col, asc: false } : null));
   const flechaOrden = (col: ColOrden) => (ordenCol?.col === col ? (ordenCol.asc ? ' ▲' : ' ▼') : '');
   // ✅ V00206: operaciones que usan cada detalle (op.convenio = id del detalle)
-  const [usosOps, setUsosOps] = useState<Record<string, { ref: string; fecha: string; status: string; tipo: string; entidad: string; monto: string; docId: string }[]>>({});
+  const [usosOps, setUsosOps] = useState<Record<string, UsoOp[]>>({});
   const [usoAbierto, setUsoAbierto] = useState<FilaDetalle | null>(null);
+  // ✅ V00443 (Fase 7.7): con `consultasCanonicas`, el número de operaciones por detalle sale de los
+  //   contadores usos/convenio{Cliente|Proveedor}_* (Fase 6.5) y la lista se pide AL ABRIR la ficha
+  //   (las 50 más recientes), en lugar de descargar TODAS las operaciones al entrar al módulo.
+  const flags = useFlags();
+  const flagsCargadas = useFlagsCargadas();
+  const canon = flags.consultasCanonicas;
+  const [conteoUsos, setConteoUsos] = useState<Record<string, number>>({});
+  const [usoFicha, setUsoFicha] = useState<{ id: string; lista: UsoOp[]; hayMas: boolean; cargando: boolean } | null>(null);
+  /** Operaciones que usan un detalle (contador con la bandera; la lista completa sin ella). */
+  const nUsos = useCallback((id: string): number => (canon ? (conteoUsos[id] || 0) : (usosOps[id] || []).length), [canon, conteoUsos, usosOps]);
+  /** Lista de operaciones de un detalle: sin la bandera, todas; con ella, solo la ficha abierta. */
+  const usosDe = (id: string): UsoOp[] => (canon ? (usoFicha?.id === id ? usoFicha.lista : []) : (usosOps[id] || []));
+  const abrirUso = (f: FilaDetalle) => {
+    setUsoAbierto(f);
+    if (!canon) return;
+    setUsoFicha({ id: f.id, lista: [], hayMas: false, cargando: true });
+    Promise.all([paginaOperacionesDeConvenio(esClientes ? 'cliente' : 'proveedor', f.id, TAMANO_USO), cargarNombresStatus()])
+      .then(([p, mapaStatus]) => {
+        // Sin las de prueba: el contador (usoOps) tampoco las cuenta.
+        const lista = sinPruebas(p.docs).map((o) => aUsoOp(o, o._docId as string, esClientes, mapaStatus));
+        setUsoFicha((prev) => (prev?.id === f.id ? { id: f.id, lista, hayMas: p.hayMas, cargando: false } : prev));
+      })
+      .catch((e: unknown) => {
+        console.error('No se pudieron leer las operaciones del convenio:', e);
+        setUsoFicha((prev) => (prev?.id === f.id ? { ...prev, cargando: false } : prev));
+      });
+  };
   // ✅ V00236: la operación se edita aquí mismo, sin salir de Convenios.
   const [opEditando, setOpEditando] = useState<Record<string, unknown> | null>(null);
   // ✅ V00238: el formulario de operación necesita SUS catálogos; sin ellos se
@@ -300,7 +347,13 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     if (!aut.verificarAccion('editar', camposTocados)) return;
     setGuardando(true);
     try {
-      for (const id of ids) await updateDoc(doc(dbFs, COL_DETALLES, id), { ...cambios[id] } as Record<string, unknown>);
+      // ✅ V00443 (Fase 7.8): en lotes (antes una escritura tras otra; un error a la mitad dejaba
+      //   unos guardados y otros no).
+      for (let i = 0; i < ids.length; i += 450) {
+        const lote = writeBatch(dbFs);
+        ids.slice(i, i + 450).forEach((id) => lote.update(doc(dbFs, COL_DETALLES, id), { ...cambios[id] } as Record<string, unknown>));
+        await lote.commit();
+      }
       setFilas((prev) => (prev || []).map((f) => cambios[f.id] ? { ...f, costo: cambios[f.id].tarifa ?? f.costo, moneda: String(cambios[f.id].moneda ?? f.moneda), status: String(cambios[f.id].status ?? f.status) } : f));
       setCambios({});
       alert(`Se guardaron ${ids.length} detalle(s). ✅`);
@@ -619,7 +672,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     const ids = Array.from(seleccion);
     // Por defecto se conserva el que más operaciones tenga (y a igualdad, el consecutivo menor).
     const mejor = [...ids].sort((a, b) => {
-      const ua = (usosOps[a] || []).length, ub = (usosOps[b] || []).length;
+      const ua = nUsos(a), ub = nUsos(b);
       if (ub !== ua) return ub - ua;
       const fa = (filas || []).find((f) => f.id === a), fb = (filas || []).find((f) => f.id === b);
       return String(fa?.consecutivo || '').localeCompare(String(fb?.consecutivo || ''));
@@ -632,7 +685,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     if (!conservarId || seleccion.size < 2 || uniendo) return;
     if (!aut.verificarAccion('borrar')) return;
     const descartados = Array.from(seleccion).filter((id) => id !== conservarId);
-    const opsAfectadas = descartados.reduce((n, id) => n + (usosOps[id] || []).length, 0);
+    const opsAfectadas = descartados.reduce((n, id) => n + nUsos(id), 0);
     const consConservado = (filas || []).find((f) => f.id === conservarId)?.consecutivo || conservarId;
     if (!window.confirm(`¿Unir ${descartados.length + 1} convenios en ${consConservado}?\n\n· ${opsAfectadas} operación(es) que usaban los otros quedarán apuntando a ${consConservado}.\n· Los ${descartados.length} restantes se enviarán a la Papelera.`)) return;
     setUniendo(true);
@@ -641,11 +694,16 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       const campoOp = esClientes ? 'convenio' : 'convenioProveedor';
       const campoNombre = esClientes ? 'convenioNombre' : 'convenioProveedorNombre';
       const filaConservada = (filas || []).find((f) => f.id === conservarId);
-      const snapOps = await getDocs(collection(db, 'operaciones'));
+      // ✅ V00443 (Fase 7.8): solo las operaciones de los descartados (`in` de 30 en 30, en paralelo),
+      //   en lugar de descargar TODAS las operaciones para filtrarlas aquí. Mismo criterio: el campo
+      //   guardado es exactamente el id del descartado.
+      const tandas: string[][] = [];
+      for (let i = 0; i < descartados.length; i += 30) tandas.push(descartados.slice(i, i + 30));
+      const snapsOps = await Promise.all(tandas.map((t) => getDocs(query(collection(db, 'operaciones'), where(campoOp, 'in', t)))));
       let lote = writeBatch(db);
       let enLote = 0;
       let reapuntadas = 0;
-      for (const d of snapOps.docs) {
+      for (const d of snapsOps.flatMap((x) => x.docs)) {
         const o = d.data() as Record<string, unknown>;
         if (!descartados.includes(String(o[campoOp] || ''))) continue;
         const cambios: Record<string, unknown> = { [campoOp]: conservarId };
@@ -861,6 +919,23 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   //   por useCatalogo.
   const cargar = async (forzar = false) => {
     if (cargando) return;
+    if (canon) {
+      // ✅ V00443 (Fase 7.7): una lectura por detalle usado (contadores), no todas las operaciones.
+      const enCache = forzar ? null : obtenerCacheMemoria<Record<string, number>>(`${CLAVE_CACHE}_conteos`, TTL_MS);
+      if (enCache) { setConteoUsos(enCache); return; }
+      setCargando(true);
+      try {
+        const m = await usosPorTipo(esClientes ? 'convenioCliente' : 'convenioProveedor');
+        const conteos = Object.fromEntries(Array.from(m, ([id, u]) => [id, u.usoOps]));
+        setConteoUsos(conteos);
+        guardarCacheMemoria(`${CLAVE_CACHE}_conteos`, conteos);
+      } catch (e) {
+        console.error('No se pudieron leer los contadores de uso:', e);
+        setConteoUsos({});
+      }
+      setCargando(false);
+      return;
+    }
     if (!forzar) {
       const usos = obtenerCacheMemoria<typeof usosOps>(`${CLAVE_CACHE}_usos`, TTL_MS);
       if (usos) { setUsosOps(usos); return; }
@@ -869,22 +944,13 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     // ✅ V00206/V00211: operaciones que usan cada detalle (clientes: op.convenio; proveedores: op.convenioProveedor)
     try {
       const [snapOps, mapaStatus] = await Promise.all([getDocs(collection(db, 'operaciones')), cargarNombresStatus()]); // ✅ V00429: nombre del status
-      const mapa: Record<string, { ref: string; fecha: string; status: string; tipo: string; entidad: string; monto: string; docId: string }[]> = {};
+      const mapa: Record<string, UsoOp[]> = {};
       snapOps.docs.forEach((d) => {
         const o = d.data() as Record<string, unknown>;
         const conv = String((esClientes ? o.convenio : o.convenioProveedor) || '').trim();
         if (!conv) return;
         if (!mapa[conv]) mapa[conv] = [];
-        mapa[conv].push({
-          ref: String(o.ref || d.id.substring(0, 6)),
-          fecha: String(o.fechaServicio || ''),
-          status: nombreStatusOp(o, mapaStatus), // ✅ V00429: NOMBRE del status (antes el id)
-          // ✅ V00218: más contexto en el modal de uso
-          tipo: String(o.tipoOperacionNombre || o.trafico || ''),
-          entidad: String((esClientes ? (o.clientePagaNombre || o.clienteNombre) : (o.proveedorUnidadNombre || o.proveedorNombre)) || ''),
-          monto: String((esClientes ? o.montoConvenioCliente : o.totalAPagarProv) ?? ''),
-          docId: d.id, // ✅ V00232: para abrir su formulario de edición
-        });
+        mapa[conv].push(aUsoOp(o, d.id, esClientes, mapaStatus));
       });
       Object.values(mapa).forEach((lista) => lista.sort((a, b) => b.fecha.localeCompare(a.fecha)));
       setUsosOps(mapa);
@@ -895,9 +961,10 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   };
 
   useEffect(() => {
+    if (!flagsCargadas) return; // ✅ V00443: sin esto empezaría por la descarga vieja (todas las operaciones)
     cargar(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tipo]);
+  }, [tipo, canon, flagsCargadas]);
 
   // ✅ V00302: ESCUCHAS EN VIVO (base relacional de verdad) — cualquier alta,
   //   edición o eliminación en convenios_*_detalles o en los convenios
@@ -988,7 +1055,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     const valorDe = (f: FilaDetalle): string | number => {
       switch (ordenCol.col) {
         case 'consecutivo': return parseInt(f.consecutivo.replace(/\D/g, ''), 10) || 0;
-        case 'usos': return (usosOps[f.id] || []).length;
+        case 'usos': return nUsos(f.id);
         case 'costo': return f.costo ?? -1;
         case 'entidad': return f.entidad;
         case 'tarifa': return f.tarifa;
@@ -1004,7 +1071,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       const c = (typeof va === 'number' && typeof vb === 'number') ? va - vb : String(va).localeCompare(String(vb), 'es', { sensitivity: 'base' });
       return c * dir;
     });
-  }, [filas, busqueda, ordenAsc, esClientes, pestana, filtroEntidad, ordenCol, usosOps]);
+  }, [filas, busqueda, ordenAsc, esClientes, pestana, filtroEntidad, ordenCol, nUsos]);
 
   // ✅ V00218: detecta duplicados EXACTOS — mismo cliente/proveedor, misma
   //   tarifa, mismo costo y misma moneda (el caso que sí conviene unir).
@@ -1129,7 +1196,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
    *  Unir (que ahora además ABSORBE los montos en el convenio conservado). */
   const prepararUnificacion = (grupo: FilaDetalle[]) => {
     const mejor = [...grupo].sort((a, b) => {
-      const ua = (usosOps[a.id] || []).length, ub = (usosOps[b.id] || []).length;
+      const ua = nUsos(a.id), ub = nUsos(b.id);
       if (ub !== ua) return ub - ua;
       return a.consecutivo.localeCompare(b.consecutivo);
     })[0];
@@ -1169,10 +1236,10 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   }, [filasVisibles, gruposAbiertos]);
 
   // ✅ V00429: operaciones del convenio con el NOMBRE de su status
-  const opsConStatus = (id: string): OpConStatus[] => (usosOps[id] || []).map((o) => ({ id: o.docId, ref: o.ref, fecha: o.fecha, statusNombre: o.status, tipo: o.tipo }));
+  const opsConStatus = (id: string): OpConStatus[] => usosDe(id).map((o) => ({ id: o.docId, ref: o.ref, fecha: o.fecha, statusNombre: o.status, tipo: o.tipo }));
   // ✅ V00429: una fila de convenio (también las del grupo desplegado, con `sub`)
   const renderFila = (f: FilaDetalle, esMontos: boolean, sub: boolean, ultima = false) => (
-                <tr key={f.id} className={`dcv-fila-click${eliminandoIds.has(f.id) ? ' dcv-fila-eliminando' : ''}${sub ? ' dcv-fila-sub' : ''}${ultima ? ' dcv-fila-sub--ultima' : ''}`} onClick={() => setUsoAbierto(f)}>
+                <tr key={f.id} className={`dcv-fila-click${eliminandoIds.has(f.id) ? ' dcv-fila-eliminando' : ''}${sub ? ' dcv-fila-sub' : ''}${ultima ? ' dcv-fila-sub--ultima' : ''}`} onClick={() => abrirUso(f)}>
                   {(
                     /* ✅ V00207: checkbox de selección para borrado masivo */
                     <td className="dcv-th-check dcv-fija-check" onClick={(e) => e.stopPropagation()}>
@@ -1222,7 +1289,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                   )}
                   {(
                     /* ✅ V00206: total de operaciones que usaron este convenio */
-                    <td className="dcv-td-usos">{(usosOps[f.id] || []).length}<ResumenStatusOps ops={opsConStatus(f.id)} /></td>
+                    <td className="dcv-td-usos">{nUsos(f.id)}<ResumenStatusOps ops={opsConStatus(f.id)} /></td>
                   )}
                   <td className="dcv-x8" onClick={(e) => e.stopPropagation()}>
                     {esMontos ? (
@@ -1424,7 +1491,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                   <td>{Array.from(new Set(item.grupo.map((v) => v.moneda || '—'))).join(' / ')}</td>
                   <td>{Array.from(new Set(item.grupo.map((v) => v.status || 'Aprobado'))).join(' / ')}</td>
                   <td className="dcv-td-usos">
-                    {item.grupo.reduce((a, v) => a + (usosOps[v.id] || []).length, 0)}
+                    {item.grupo.reduce((a, v) => a + nUsos(v.id), 0)}
                     <ResumenStatusOps ops={item.grupo.flatMap((v) => opsConStatus(v.id))} />
                   </td>
                   <td className="dcv-x8 dcv-rango-costos">{(() => { const cs = item.grupo.map((v) => v.costo ?? 0); return `${fmtCosto(Math.min(...cs))} – ${fmtCosto(Math.max(...cs))}`; })()}</td>
@@ -1551,7 +1618,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
               {Array.from(seleccion).map((id) => {
                 const f = (filas || []).find((x) => x.id === id);
                 if (!f) return null;
-                const usos = (usosOps[id] || []).length;
+                const usos = nUsos(id);
                 return (
                   <label key={id} className={`dcv-unir-opcion ${conservarId === id ? 'dcv-unir-elegida' : ''}`}>
                     <input type="radio" name="conservar" checked={conservarId === id} onChange={() => setConservarId(id)} />
@@ -1687,7 +1754,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
               </div>
               <div className="dcv-kpi">
                 <span className="dcv-kpi-lbl">Operaciones</span>
-                <span className="dcv-kpi-val">{(usosOps[usoAbierto.id] || []).length}</span>
+                <span className="dcv-kpi-val">{nUsos(usoAbierto.id)}</span>
                 <ResumenStatusOps ops={opsConStatus(usoAbierto.id)} />{/* ✅ V00429 */}
               </div>
               <div className="dcv-kpi">
@@ -1703,8 +1770,8 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
               <div className="dcv-ficha-ancho">
                 <span className="dcv-x1lbl">Último uso en operaciones</span>
                 {(() => {
-                  const ult = [...(usosOps[usoAbierto.id] || [])].filter((o) => o.fecha).sort((a, b) => a.fecha.localeCompare(b.fecha)).slice(-1)[0];
-                  if (!ult) return <b>Sin uso registrado</b>;
+                  const ult = [...usosDe(usoAbierto.id)].filter((o) => o.fecha).sort((a, b) => a.fecha.localeCompare(b.fecha)).slice(-1)[0];
+                  if (!ult) return <b>{canon && usoFicha?.cargando ? 'Cargando…' : 'Sin uso registrado'}</b>;
                   return (
                     <b>
                       {ult.fecha} · <button type="button" className="dcv-ref-link" onClick={() => editarOperacion(ult)}>{ult.ref}</button>
@@ -1715,14 +1782,14 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
               </div>
             </div>
 
-            {(usosOps[usoAbierto.id] || []).length > 0 && (
+            {usosDe(usoAbierto.id).length > 0 && (
               <div className="dcv-ficha-ops">
-                <div className="dcv-ficha-ops-tit">Operaciones que lo usaron</div>
+                <div className="dcv-ficha-ops-tit">Operaciones que lo usaron{canon && usoFicha?.hayMas ? ` (las ${TAMANO_USO} más recientes)` : ''}</div>
                 <div className="dcv-modal-marco">
                   <table className="dcv-tabla-usos">
                     <thead><tr><th>#</th><th>REF</th><th>FECHA</th><th>STATUS</th><th>TIPO</th><th className="dcv-usos-monto">MONTO</th></tr></thead>{/* ✅ V00429: con # y STATUS */}
                     <tbody>
-                      {(usosOps[usoAbierto.id] || []).map((o, i) => (
+                      {usosDe(usoAbierto.id).map((o, i) => (
                         <tr key={`${o.ref}-${i}`}>
                           <td className="dcv-num">{i + 1}</td>
                           <td><button type="button" className="dcv-ref-link" title={`Editar ${o.ref}`} onClick={() => editarOperacion(o)}>{o.ref || '—'}</button></td>

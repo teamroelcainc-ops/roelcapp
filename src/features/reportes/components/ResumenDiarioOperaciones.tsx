@@ -29,14 +29,16 @@
 //   • REF. COBRABLES    = Servicios − No Cobrables (cancelada / no cobrable).
 // ═══════════════════════════════════════════════════════════════════════
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { collection, getDocs } from 'firebase/firestore';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db, auth } from '../../../config/firebase';
 import { idReal, obtenerCatalogo } from '../../../shared/data/catalogos';
 // Mismo logo base64 que usan los demás PDF del proyecto.
 import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
 import './ResumenDiarioOperaciones.css';
-import { docsSinPruebas } from '../../../utils/operacionPrueba';
+import { docsSinPruebas, sinPruebas } from '../../../utils/operacionPrueba';
+import { obtenerFlags } from '../../../shared/data/flags';
+import { operacionesDelDia } from '../../../shared/data/consultas';
 
 type TipoResumen = 'Transfer' | 'Logística' | 'Fletes';
 const TIPOS: TipoResumen[] = ['Transfer', 'Logística', 'Fletes'];
@@ -135,6 +137,8 @@ export const ResumenDiarioOperaciones = () => {
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cargadoRef = useRef(false);
+  const enCaminoRef = useRef(false); // ✅ V00443
+  const peticionRef = useRef(0); // ✅ V00443
 
   // Prefill "Realizado por" con el nombre del usuario logueado (editable).
   useEffect(() => {
@@ -146,13 +150,22 @@ export const ResumenDiarioOperaciones = () => {
 
   // Carga catálogos + TODAS las operaciones una sola vez (filtramos por día en memoria
   // porque las fechas pueden venir en formatos mezclados).
-  const cargarTodo = async () => {
+  // ✅ V00443 (Fase 7.5): con `consultasCanonicas`, solo las operaciones y las cargas de
+  //   diésel DEL DÍA elegido (fechaServicioISO ya normalizada por la migración); se vuelve
+  //   a leer al cambiar de día. Sin la bandera, todo una vez como antes.
+  const cargarTodo = useCallback(async (diaPedido: string, forzar = false) => {
+    const canon = (await obtenerFlags()).consultasCanonicas;
+    // Sin la bandera, una sola descarga (si ya va una en camino, no se pide otra).
+    if (!canon && (cargadoRef.current || enCaminoRef.current) && !forzar) return;
+    // La última petición manda: la de un día anterior que llega tarde se descarta.
+    const id = ++peticionRef.current;
+    enCaminoRef.current = true;
     setCargando(true); setError(null);
     try {
       // ✅ V00439 (Fase 3.x): los catálogos salen del listener compartido
       //   (obtenerCatalogo); solo operaciones y diésel se leen con getDocs.
-      const [opSnap, empresas, tiposOp, statusCat, convDetalles, tarifasRef, unidades, empleados, dzSnap] = await Promise.all([
-        getDocs(collection(db, 'operaciones')),
+      const [opsCrudas, empresas, tiposOp, statusCat, convDetalles, tarifasRef, unidades, empleados, dzSnap] = await Promise.all([
+        canon ? operacionesDelDia(diaPedido) : getDocs(collection(db, 'operaciones')).then((s): (Record<string, unknown> & { id: string })[] => docsSinPruebas(s.docs).map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }) as Record<string, unknown> & { id: string })),
         obtenerCatalogo('empresas'),
         obtenerCatalogo('catalogo_tipo_operacion'),
         obtenerCatalogo('catalogo_status_servicio'),
@@ -162,7 +175,7 @@ export const ResumenDiarioOperaciones = () => {
         obtenerCatalogo('empleados'),
         // ✅ V00191: referencias del diésel — para contar las VECES que cada
         //   unidad fue a cargar en el día (columna DIESEL del resumen Transfer).
-        getDocs(collection(db, 'referencias_diesel')),
+        getDocs(canon ? query(collection(db, 'referencias_diesel'), where('fecha', '==', diaPedido)) : collection(db, 'referencias_diesel')),
       ]);
 
       const emp: Record<string, string> = {};
@@ -197,10 +210,10 @@ export const ResumenDiarioOperaciones = () => {
         if (nombre) conv[idReal(data)] = nombre;
       });
 
-      const ops = docsSinPruebas(opSnap.docs).map(d => { // ✅ V00380
-        const data = d.data() as any;
-        const iso = normalizarFechaISO(data.fechaServicio);
-        return { id: d.id, ...data, _fechaISO: iso };
+      if (id !== peticionRef.current) return;
+      const ops = sinPruebas(opsCrudas).map(data => { // ✅ V00380
+        const iso = canon ? String(data.fechaServicioISO || '') : normalizarFechaISO(data.fechaServicio);
+        return { ...data, _fechaISO: iso };
       });
 
       setMaps({ emp, tipo, status, conv, uni, ope });
@@ -212,15 +225,15 @@ export const ResumenDiarioOperaciones = () => {
         return { id: d.id, ...r, _fechaISO: normalizarFechaISO(r.fecha || r.createdAt) };
       }));
       cargadoRef.current = true;
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Error cargando datos para resúmenes diarios:', e);
-      setError(e?.message || 'No se pudieron cargar las operaciones.');
+      if (id === peticionRef.current) setError((e as { message?: string })?.message || 'No se pudieron cargar las operaciones.');
     } finally {
-      setCargando(false);
+      if (id === peticionRef.current) { enCaminoRef.current = false; setCargando(false); }
     }
-  };
+  }, []);
 
-  useEffect(() => { cargarTodo(); /* eslint-disable-next-line */ }, []);
+  useEffect(() => { void cargarTodo(fecha); }, [cargarTodo, fecha]);
 
   // ---------- Resolutores de nombres (desnormalizado → catálogo → crudo) ----------
   const tipoTexto = (o: any): string => String(o.tipoOperacionNombre || maps.tipo[String(o.tipoOperacionId)] || '');
@@ -589,7 +602,7 @@ export const ResumenDiarioOperaciones = () => {
           <label className="rdo-x5">Realizado por</label>
           <input type="text" value={realizadoPor} onChange={e => setRealizadoPor(e.target.value)} placeholder="Nombre de quien realiza el reporte" style={{ ...inputEstilo, width: '100%' }} />
         </div>
-        <button onClick={cargarTodo} disabled={cargando} style={{ ...btnOutline, opacity: cargando ? 0.6 : 1 }} title="Volver a leer las operaciones desde la base de datos">
+        <button onClick={() => cargarTodo(fecha, true)} disabled={cargando} style={{ ...btnOutline, opacity: cargando ? 0.6 : 1 }} title="Volver a leer las operaciones desde la base de datos">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
           {cargando ? 'Cargando…' : 'Recargar'}
         </button>

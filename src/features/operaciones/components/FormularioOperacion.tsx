@@ -1,6 +1,6 @@
 import { useState, useEffect, useEffectEvent, useMemo, useCallback, useRef, cloneElement, Fragment, memo } from 'react';
 import { createPortal } from 'react-dom'; // ✅ V00264: el formulario vive en document.body
-import { doc, getDoc, updateDoc, collection, getDocs, setDoc, addDoc, query, where, limit } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, getDocs, setDoc, addDoc, query, where, limit, orderBy } from 'firebase/firestore';
 import type { DocumentData } from 'firebase/firestore';
 import { prefijoTipoOperacion } from '../../../utils/generarReferencia';
 import { db, storage, auth } from '../../../config/firebase';
@@ -26,6 +26,7 @@ import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 import { registrarLog } from '../../../utils/logger';
 import { statusDescuentaPuente, calcularStatusDinamico, idDocFlujo, leerFlujoFresco } from '../config/statusRules';
 import { obtenerFlags } from '../../../shared/data/flags';
+import { usosEnCache } from '../../../shared/data/consultas';
 import { obtenerFilaTipoCambioDeFecha } from '../services/tipoCambioPorFecha'; // ✅ V00438 (Fase 2.9)
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
@@ -895,16 +896,23 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
       try {
         // Último servicio: operaciones de la unidad (campo `unidad` y respaldo
         // `unidadId` en registros viejos), la más reciente por fechaServicio.
+        // ✅ V00443 (Fase 7.8): con `consultasCanonicas`, solo las 2 más recientes por el canónico
+        //   (unidadId + fechaServicioISO; 2 por si una es la que se edita) en lugar de hasta 600.
+        const canon = (await obtenerFlags()).consultasCanonicas;
         const [s1, s2, sd] = await Promise.all([
-          getDocs(query(collection(db, 'operaciones'), where('unidad', '==', uid), limit(300))),
-          getDocs(query(collection(db, 'operaciones'), where('unidadId', '==', uid), limit(300))),
+          canon
+            ? getDocs(query(collection(db, 'operaciones'), where('unidadId', '==', uid), orderBy('fechaServicioISO', 'desc'), limit(2)))
+            : getDocs(query(collection(db, 'operaciones'), where('unidad', '==', uid), limit(300))),
+          canon ? Promise.resolve(null) : getDocs(query(collection(db, 'operaciones'), where('unidadId', '==', uid), limit(300))),
           getDocs(query(collection(db, 'referencias_diesel'), where('unidadId', '==', uid), limit(300))),
         ]);
         const opsMap = new Map<string, any>();
-        [...s1.docs, ...s2.docs].forEach((d) => opsMap.set(d.id, { id: d.id, ...(d.data() as any) }));
+        [...s1.docs, ...(s2?.docs ?? [])].forEach((d) => opsMap.set(d.id, { id: d.id, ...(d.data() as any) }));
         const ops = Array.from(opsMap.values())
           .filter((o: any) => !initialData?.id || o.id !== initialData.id) // sin contar la que se edita
-          .sort((a: any, b: any) => String(b.fechaServicio || '').localeCompare(String(a.fechaServicio || '')));
+          .sort((a: any, b: any) => (canon
+            ? String(b.fechaServicioISO || '').localeCompare(String(a.fechaServicioISO || ''))
+            : String(b.fechaServicio || '').localeCompare(String(a.fechaServicio || ''))));
         const ultimaOp = ops[0] || null;
 
         const refsDiesel = sd.docs.map((d) => ({ id: d.id, ...(d.data() as any) }))
@@ -2920,6 +2928,21 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
         const tid = String(d.tipoConvenioId ?? d.tipo_convenio_id ?? d.tipoConvenio ?? d.tipo_convenio ?? d.tarifaId ?? d.tarifa_id ?? '').trim();
         if (tid) detProv.set(String(d.id), tid);
       });
+      // ✅ V00443 (Fase 7.8): con `consultasCanonicas`, los contadores usos/convenio* (una lectura por
+      //   detalle usado) en lugar de TODAS las operaciones. Diferencia: una operación cuyo convenio de
+      //   cliente y de proveedor apuntan a la MISMA tarifa cuenta dos veces (antes una).
+      if ((await obtenerFlags()).consultasCanonicas) {
+        const [usosCli, usosProv] = await Promise.all([usosEnCache('convenioCliente'), usosEnCache('convenioProveedor')]);
+        const conteoCanon: Record<string, number> = {};
+        const sumar = (usos: Map<string, { usoOps: number }>, det: Map<string, string>) => usos.forEach((u, idDet) => {
+          const tid = det.get(idDet);
+          if (tid) conteoCanon[tid] = (conteoCanon[tid] || 0) + u.usoOps;
+        });
+        sumar(usosCli, detCli);
+        sumar(usosProv, detProv);
+        setUsoTarifaMap(conteoCanon);
+        return;
+      }
       const snap = await getDocs(collection(db, 'operaciones'));
       const conteo: Record<string, number> = {};
       snap.docs.forEach((docu: any) => {

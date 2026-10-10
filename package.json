@@ -15,7 +15,7 @@
     "test:watch": "vitest",
     "test:rules": "firebase emulators:exec --only firestore,storage \"vitest run -c vitest.rules.config.ts\"",
     "test:functions": "npm --prefix functions test",
-    "verificar": "tsc -b && node scripts/verificar-lint.mjs && vitest run"
+    "verificar": "tsc -b && node scripts/verificar-lint.mjs && node scripts/verificar-consultas.mjs && vitest run"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",

@@ -140,7 +140,9 @@ export function MisOperacionesDashboard() {
   useEffect(() => {
     if (!idsOperador || idsOperador.length === 0) { setOperaciones([]); return; }
     if (!moduloVisible) return;
-    const q = query(collection(db, 'operaciones'), where('operador', 'in', idsOperador.slice(0, 10)));
+    // ✅ V00443 (Fase 7.10): `in` acepta 30 valores (antes se cortaba en 10 sin avisar).
+    if (idsOperador.length > 30) console.error(`[MisOperaciones] ${idsOperador.length} ids de operador: solo se consultan 30.`);
+    const q = query(collection(db, 'operaciones'), where('operador', 'in', idsOperador.slice(0, 30)));
     const unsubscribe = onSnapshot(q, (snap) => {
       const lista: OperacionAsignada[] = snap.docs
         .map((d) => {

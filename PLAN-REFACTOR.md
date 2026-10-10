@@ -29,6 +29,7 @@ Se crean a mano en Firestore (documento `configuracion/flags`, campos booleanos)
 | `cobroPuenteEnServidor` | 5.7 | funciones V00441 desplegadas | El peaje lo cobra `operacionEscrita` al cambiar de estatus (web, Mis Operaciones y app móvil); la web deja de calcularlo |
 | `propagacionEnServidor` | 6.2 | funciones V00442 desplegadas + `npm run nombres -- --aplicar` (P2) con `cambios.csv` revisado | Los nombres de empresas, status, tipos de operación, unidades y empleados se copian solos a operaciones, facturas, pagos, tarifarios y convenios; se ocultan los botones "Sincronizar nombres" y "🏷 Razón social" |
 | `saldosCorrientes` | 5.6 | funciones V00441 desplegadas + `npm run saldos:diesel -- --aplicar` (P2) con `paridad.csv` revisado | La tarjeta Saldo Diesel lee `saldos_corrientes` (1 documento por proveedor) en vez de 3,000 referencias |
+| `consultasCanonicas` | 7 | índices V00443 "Habilitados" + `canonicosEnServidor` encendida + migración v2 aplicada (P2, integridad en cero) + `npm run usos -- --aplicar` | Las pantallas consultan por `estadoGrupo`/`fechaServicioISO`/`empresasIds`/`porFacturar*`/`*Id` con páginas y topes, y los conteos salen de `usos/`. El modal de Pagos acotado necesita además `dineroPorServidor` |
 
 ## Orden de despliegue
 | Versión | Pasos |
@@ -38,8 +39,9 @@ Se crean a mano en Firestore (documento `configuracion/flags`, campos booleanos)
 | V00438 | Solo web. |
 | V00439 | Solo web. Revisar en Roles si ADMINISTRATIVO necesita el permiso `EDITAR REF` (ver CAMBIOS-V00439.md). |
 | V00440 | Web → `firebase deploy --only functions` → encender `canonicosEnServidor` → **P2**: respaldo, `npm run migrar:v2` (simulación), revisar reportes, `-- --aplicar --confirmo-respaldo`, Verificar integridad. Detalle en CAMBIOS-V00440.md. |
-| V00442 | Web → functions (**borrar `operacionMontoCambiado` cuando lo pregunte**) → `firebase deploy --only firestore:indexes` → P1 reglas → alerta de `[reintentos]` → **P2** `npm run usos` y `npm run nombres` (simulación → `--aplicar`) → `propagacionEnServidor`. Detalle en CAMBIOS-V00442.md. |
 | V00441 | Web → functions → **P1** reglas (`npm run test:rules`) → **P2** `npm run saldos:diesel` (simulación → `--aplicar`) → `saldosCorrientes` → **P3** `npm run reconciliar` (simulación, el negocio revisa `diferencias.csv`) → `dineroPorServidor` (esperar 1 min) → `reconciliar -- --aplicar --confirmo-respaldo` → `cobroPuenteEnServidor`. Detalle en CAMBIOS-V00441.md. |
+| V00442 | Web → functions (**borrar `operacionMontoCambiado` cuando lo pregunte**) → `firebase deploy --only firestore:indexes` → P1 reglas → alerta de `[reintentos]` → **P2** `npm run usos` y `npm run nombres` (simulación → `--aplicar`) → `propagacionEnServidor`. Detalle en CAMBIOS-V00442.md. |
+| V00443 | Web → `firebase deploy --only firestore:indexes` (esperar "Habilitado") → con los requisitos de la tabla de banderas, `consultasCanonicas` → medir con `npm run dev:medir`. Detalle en CAMBIOS-V00443.md. |
 
 ## Reconciliación de facturas (Fase 5, P3)
 - Script: `functions/scripts/reconciliarFacturas.ts` → `npm --prefix functions run reconciliar` (simulación por defecto).
@@ -67,3 +69,12 @@ Se crean a mano en Firestore (documento `configuracion/flags`, campos booleanos)
   vs. por nombre, operaciones dentro de una factura sin `facturaClienteId`).
 - Emulador (recomendado antes de producción): `firebase emulators:start --only firestore --import <export>` y
   `FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 npm --prefix functions run migrar:v2 -- --aplicar`.
+
+## Consultas acotadas (Fase 7)
+- Capa única: `src/shared/data/consultas.ts` (`paginaOperaciones`, `paginaPorFacturar`, `paginaOperacionesDeEmpresa`,
+  `paginaOperacionesDeConvenio`, `paginaFacturasAbiertas`, `operacionesDelDia/DelRango`, `todasLasPaginas` con tope,
+  `porIds` en lotes de 30, `usosPorTipo`/`usosEnCache`). Una pantalla nueva consulta por ahí, no con `getDocs` propio.
+- Sin índice no hay respaldo de "leer todo": el error se ve en pantalla y el índice va en `firestore.indexes.json`.
+- Pendiente (decisión): lista de Pagos por empresa/periodo (necesita un selector de periodo), historial de facturas
+  paginado, "Facturadas/Todas" de Facturación por rango, resúmenes diarios precalculados por una función programada
+  (`resumenes_diarios/{fecha}`) y `getAggregateFromServer` en Estadísticas. Ver code-notes.md.

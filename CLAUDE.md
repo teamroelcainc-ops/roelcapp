@@ -234,7 +234,7 @@ Utilidades existentes, listeners globales, excepciones documentadas y decisiones
 
 ### ESLint, estilos y verificación en este repo
 - El repo arrastra ~3,000 problemas de ESLint (casi todos `any`) y ~1,100 `style={{` heredados. Regla: **no pueden crecer**. `node scripts/verificar-lint.mjs` (trinquete contra `scripts/lint-baseline.json`) falla si un archivo empeora o sube el total de `any`; cuando un archivo mejora, `--actualizar` baja su línea base. En lugar del paso 1 general, comprueba que `grep -c "style={{"` de cada archivo tocado no suba y que lo nuevo no agregue ninguno.
-- `npm run verificar` = `tsc -b` + trinquete de ESLint + `vitest run`. Las Cloud Functions: `npm --prefix functions run build` y `npm --prefix functions test`.
+- `npm run verificar` = `tsc -b` + trinquete de ESLint + trinquete de consultas (`scripts/verificar-consultas.mjs`: ninguna lectura nueva de `operaciones` completa) + `vitest run`. Las Cloud Functions: `npm --prefix functions run build` y `npm --prefix functions test`.
 - Medir lecturas: `npm run dev:medir` y en la consola `__lecturas.marcar('acción')`, `__lecturas.tabla()`, `__lecturas.listeners()`.
 
 ### Excepciones documentadas

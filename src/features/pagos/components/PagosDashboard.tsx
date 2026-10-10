@@ -31,6 +31,7 @@ import type { CambiosPagoFactura } from '../services/aplicarPagos';
 import { llamarDinero, mensajeDinero } from '../../facturacion/services/dineroServidor'; // ✅ V00441
 import { totalNativoFactura as totalNativoFacturaUnica } from '../../../shared/dominio/dinero';
 import { useFlags } from '../../../shared/data/flags';
+import { paginaFacturasAbiertas, porIds, todasLasPaginas } from '../../../shared/data/consultas';
 import * as XLSX from 'xlsx';
 import html2pdf from 'html2pdf.js';
 import { useUsuarioStore } from '../../../stores/useUsuarioStore';
@@ -238,11 +239,10 @@ export function PagosDashboard() {
     setCargandoOpsFactura(true);
     try {
       const encontradas: any[] = [];
-      for (let i = 0; i < ids.length; i += 10) {
-        const lote = ids.slice(i, i + 10);
-        const snap = await getDocs(query(collection(db, 'operaciones'), where(documentId(), 'in', lote)));
-        snap.docs.forEach((d) => {
-          const o = { id: d.id, ...(d.data() as any) };
+      // ✅ V00443 (Fase 7.8): lotes de 30 EN PARALELO (antes de 10, uno tras otro).
+      {
+        (await porIds('operaciones', ids)).forEach((o) => {
+          const d = { id: String(o._docId) };
           const m = desgloseDeOp(o, tab);
           const esCli = tab === 'cliente';
           const convenioBase = esCli
@@ -506,12 +506,8 @@ export function PagosDashboard() {
         return;
       }
       // Operaciones reales de la factura.
-      const ops: any[] = [];
-      for (let i = 0; i < ids.length; i += 10) {
-        const lote = ids.slice(i, i + 10);
-        const snap = await getDocs(query(collection(db, 'operaciones'), where(documentId(), 'in', lote)));
-        snap.docs.forEach((d) => ops.push({ id: d.id, ...(d.data() as any) }));
-      }
+      // ✅ V00443 (Fase 7.8): lotes de 30 EN PARALELO (antes de 10, uno tras otro).
+      const ops: any[] = await porIds('operaciones', ids);
       if (ops.length === 0) { alert('No se encontraron las operaciones de la factura.'); setRecalculandoFactura(false); return; }
 
       const porId: Record<string, any> = {};
@@ -812,7 +808,10 @@ export function PagosDashboard() {
       const colFact = tab === 'cliente' ? 'facturas_clientes' : 'facturas_proveedores';
       const campoN = tab === 'cliente' ? 'clienteNombre' : 'proveedorNombre';
       const kOri = claveEntidad(origen);
-      const factIds = facturasPendientes.filter((fx) => claveEntidad(fx.entidadNombre) === kOri).map((fx) => fx.id);
+      // ✅ V00443: con las facturas abiertas por servidor, la lista en memoria ya no trae las
+      //   pagadas; para renombrarlas TODAS se leen completas (acción rara, de administración).
+      const fuente = flags.consultasCanonicas && flags.dineroPorServidor ? await cargarFacturasPendientes(tab, true) : facturasPendientes;
+      const factIds = fuente.filter((fx) => claveEntidad(fx.entidadNombre) === kOri).map((fx) => fx.id);
       const pagosIdsUnir = pagos.filter((p) => p.tipo === tab && claveEntidad(p.entidadNombre) === kOri).map((p) => p.id);
       let n = 0;
       for (let i = 0; i < factIds.length; i += 400) {
@@ -875,8 +874,10 @@ export function PagosDashboard() {
   };
 
   // Recarga automática al volver el foco a la pestaña (máx. 1 vez cada 10 s).
+  // ✅ V00443 (Fase 7.4): con `consultasCanonicas` ya no se recarga sola al volver el foco (el botón ↻
+  //   sigue; con `dineroPorServidor` el servidor rechaza aplicar más que el saldo actual).
   useEffect(() => {
-    if (!modalAbierto || !entidadSel) return;
+    if (!modalAbierto || !entidadSel || flags.consultasCanonicas) return;
     const alVolver = () => {
       if (document.visibilityState !== 'visible') return;
       if (Date.now() - ultimaRecargaModal.current < 10000) return;
@@ -889,7 +890,7 @@ export function PagosDashboard() {
       document.removeEventListener('visibilitychange', alVolver);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modalAbierto, entidadSel, tab]);
+  }, [modalAbierto, entidadSel, tab, flags.consultasCanonicas]);
 
 
   const [observaciones, setObservaciones] = useState('');
@@ -1195,7 +1196,8 @@ export function PagosDashboard() {
     };
   };
 
-  const cargarFacturasPendientes = async (tipo: TipoPago): Promise<FacturaPagable[]> => {
+  /** `completas`: todas las facturas cobrables (pagadas incluidas), aunque haya consultas acotadas. */
+  const cargarFacturasPendientes = async (tipo: TipoPago, completas = false): Promise<FacturaPagable[]> => {
     // ✅ MTTO: los "pendientes" son los GRUPOS POR INVOICE de gastos_mtto,
     //   agrupados por PROVEEDOR. El saldo se DERIVA de los pagos tipo mtto
     //   (no se tocan los documentos de gastos).
@@ -1243,6 +1245,25 @@ export function PagosDashboard() {
 
     // Descarga paginada por cursor (misma técnica que Facturación).
     const docs: { id: string; raw: any }[] = [];
+    // ✅ V00443 (Fase 7.4): con `consultasCanonicas` + `dineroPorServidor` (el servidor mantiene
+    //   `abierta`), SOLO las facturas abiertas — el modal, la edición y los reportes se quedan con
+    //   saldo > 0; "Unir entidades" pide `completas` —
+    //   en lugar de descargar hasta 12,000 facturas para filtrarlas aquí.
+    if (!completas && flags.consultasCanonicas && flags.dineroPorServidor) {
+      const r = await todasLasPaginas((c) => paginaFacturasAbiertas(coleccion, PAG_FACT_PAGOS, c), LIMITE_FACT_PAGOS);
+      if (r.truncado) console.error(`[Pagos] más de ${LIMITE_FACT_PAGOS} facturas abiertas: la lista se cortó.`);
+      return r.docs
+        // `raw` como antes (d.data()): sin el `id` que agrega armarDoc cuando el documento no lo guarda.
+        .map((x) => {
+          if (x.id !== x._docId) return { id: String(x._docId), raw: x };
+          const raw: Record<string, unknown> = { ...x };
+          delete raw.id;
+          return { id: String(x._docId), raw };
+        })
+        .filter(({ raw }) => esFacturaCobrable(raw))
+        .map(({ id, raw }) => mapearFacturaPagable(id, raw, tipo))
+        .filter((f) => f.total > 0);
+    }
     let cursor: any = null;
     for (let i = 0; i < Math.ceil(LIMITE_FACT_PAGOS / PAG_FACT_PAGOS); i++) {
       const cons: any[] = [orderBy(documentId()), limit(PAG_FACT_PAGOS)];

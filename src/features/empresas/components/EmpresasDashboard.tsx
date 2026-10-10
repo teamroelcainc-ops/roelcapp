@@ -4,7 +4,7 @@ import { AuditoriaCadenaEmpresa } from './AuditoriaCadenaEmpresa'; // ✅ V00333
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { propagarMonedaEmpresa } from '../services/propagarMoneda';
 import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
-import { docsSinPruebas } from '../../../utils/operacionPrueba';
+import { docsSinPruebas, sinPruebas } from '../../../utils/operacionPrueba';
 import { collection, onSnapshot, getDocs, query, where, limit, orderBy, writeBatch, doc, deleteDoc, getCountFromServer } from 'firebase/firestore'; // ✅ V00269
 import { db, eliminarRegistro, actualizarRegistro } from '../../../config/firebase';
 import { FormularioEmpresa, TIPOS_DOCUMENTO_EMPRESA } from './FormularioEmpresa';
@@ -22,7 +22,8 @@ import { useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
 import { idReal, useCatalogo, useCatalogos } from '../../../shared/data/catalogos';
 import type { DocCatalogo } from '../../../shared/data/catalogos';
 import { monedaCanonica } from '../../../shared/dominio/moneda';
-import { useFlags } from '../../../shared/data/flags';
+import { useFlags, useFlagsCargadas } from '../../../shared/data/flags';
+import { paginaOperacionesDeEmpresa, todasLasPaginas, usosEnCache } from '../../../shared/data/consultas';
 
 const opcionesFiltro = [
   'Todo', 'Proveedor (Servicios)', 'Empresa Inactiva', 'Baja', 'Cliente (Mercancía)', 
@@ -77,8 +78,12 @@ const COLUMNAS_BASE = [
   { id: 'fechaServicio', label: 'Fecha Serv.', visible: true }
 ];
 
+/** ✅ V00443 (Fase 7.6): tope de operaciones en la pestaña Referencias (las más recientes). */
+const TOPE_REFS_OPS = 3000;
+
 const EmpresasDashboard = () => {
-  const flags = useFlags(); // ✅ V00442 (Fase 6.2)
+  const flags = useFlags();
+  const flagsCargadas = useFlagsCargadas(); // ✅ V00443 // ✅ V00442 (Fase 6.2)
   const [estadoFormulario, setEstadoFormulario] = useState<'cerrado' | 'abierto' | 'minimizado'>('cerrado');
   const [empresaEditando, setEmpresaEditando] = useState<any | null>(null);
   
@@ -87,6 +92,8 @@ const EmpresasDashboard = () => {
   // ✅ NUEVO: referencias (operaciones) del cliente, cargadas al abrir su pestaña.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docs de operación sin tipo canónico (mismo criterio del resto del módulo).
   const [refsCliente, setRefsCliente] = useState<any[] | null>(null);
+  // ✅ V00443: aviso de la lista de operaciones (tope alcanzado o error de la consulta acotada).
+  const [refsOpsAviso, setRefsOpsAviso] = useState('');
   const [cargandoRefs, setCargandoRefs] = useState(false);
   const [busquedaRefs, setBusquedaRefs] = useState('');
   // ✅ NUEVO (V00191): la pestaña Referencias ahora también trae los CONVENIOS,
@@ -210,16 +217,20 @@ const EmpresasDashboard = () => {
         { etiqueta: 'Convenios de Clientes', col: 'convenios_clientes', campo: 'clienteId' },
         { etiqueta: 'Contactos', col: 'contactos', campo: 'empresaId' },
       ];
+      // ✅ V00443 (Fase 7.10): el conteo es EXACTO con agregación del servidor (antes: hasta 300
+      //   documentos descargados y `snap.size`, que se cortaba en 300 sin avisar) y solo se leen
+      //   las 30 referencias que se muestran.
       const resultados = await Promise.all(consultas.map(async (c) => {
         try {
-          const snap = await getDocs(query(collection(db, c.col), where(c.campo, '==', empresaId), limit(300)));
+          const q = query(collection(db, c.col), where(c.campo, '==', empresaId));
+          const [cuenta, muestra] = await Promise.all([
+            getCountFromServer(q),
+            c.conRefs ? getDocs(query(q, limit(30))) : Promise.resolve(null),
+          ]);
           return {
             etiqueta: c.etiqueta,
-            cuantos: snap.size,
-            refs: c.conRefs
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc de operación sin tipo canónico.
-              ? snap.docs.slice(0, 30).map(d => String((d.data() as any).ref || d.id))
-              : undefined,
+            cuantos: cuenta.data().count,
+            refs: muestra ? muestra.docs.map((d) => String((d.data() as { ref?: unknown }).ref || d.id)) : undefined,
           };
         } catch {
           return { etiqueta: c.etiqueta, cuantos: 0 };
@@ -259,7 +270,23 @@ const EmpresasDashboard = () => {
         ];
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docs de operación sin tipo canónico.
         const porOp = new Map<string, any>();
-        await Promise.all(ROLES.map(async ([campo, etiqueta]) => {
+        // ✅ V00443 (Fase 7.6): con `consultasCanonicas`, UNA consulta (empresasIds contiene la
+        //   empresa, de la más reciente) en lugar de 6 (una por papel); el papel sale de los IDs canónicos.
+        if (flags.consultasCanonicas) {
+          // Su propio try: si falla (p. ej. índice en construcción), convenios, facturas y pagos
+          // se muestran igual y la pestaña dice qué pasó.
+          try {
+            const r = await todasLasPaginas((c) => paginaOperacionesDeEmpresa(idEmp, 500, c), TOPE_REFS_OPS);
+            sinPruebas(r.docs).forEach((op) => {
+              const roles = ROLES.filter(([campo]) => String(op[`${campo}Id`] ?? op[campo] ?? '') === idEmp).map(([, etiqueta]) => etiqueta);
+              porOp.set(String(op._docId), { ...op, _roles: roles });
+            });
+            if (r.truncado && activo) setRefsOpsAviso(`Se muestran las ${TOPE_REFS_OPS.toLocaleString('es-MX')} operaciones más recientes.`);
+          } catch (e: unknown) {
+            console.error('No se pudieron leer las operaciones de la empresa:', e);
+            if (activo) setRefsOpsAviso(`No se pudieron leer las operaciones: ${String((e as { message?: string })?.message || e)}`);
+          }
+        } else await Promise.all(ROLES.map(async ([campo, etiqueta]) => {
           try {
             const snap = await getDocs(query(collection(db, 'operaciones'), where(campo, '==', idEmp), limit(1000)));
             docsSinPruebas(snap.docs).forEach((d) => { // ✅ V00380
@@ -305,11 +332,11 @@ const EmpresasDashboard = () => {
       }
     })();
     return () => { activo = false; };
-  }, [empresaViendo?.id, activeTabDetalle, refsCliente]);
+  }, [empresaViendo?.id, activeTabDetalle, refsCliente, flags.consultasCanonicas]);
 
   // Al cambiar de empresa, las referencias del anterior se descartan.
   useEffect(() => {
-    setRefsCliente(null); setBusquedaRefs('');
+    setRefsCliente(null); setBusquedaRefs(''); setRefsOpsAviso('');
     setRefsConvenios(null); setRefsFacturas(null); setRefsPagos(null);
     setSeccionRefs('operaciones'); setOpDetalle(null);
   }, [empresaViendo?.id]);
@@ -340,6 +367,16 @@ const EmpresasDashboard = () => {
   }), [datosEmpresas]);
   useEffect(() => {
     if (!empresas || empresas.length === 0) return; // ✅ V00269: espera las empresas para resolver nombres→id
+    if (!flagsCargadas) return; // ✅ V00443: sin esto empezaría por el conteo viejo (todas las operaciones)
+    // ✅ V00443 (Fase 7.6): con `consultasCanonicas`, los contadores usos/empresa_* (Fase 6.5):
+    //   una lectura por empresa en lugar de TODAS las operaciones (y sin copia en localStorage).
+    if (flags.consultasCanonicas) {
+      let vigente = true;
+      usosEnCache('empresa')
+        .then((m) => { if (vigente) setConteoOps(Object.fromEntries(Array.from(m, ([id, u]) => [id, u.usoOps]))); })
+        .catch((e: unknown) => { console.error('No se pudieron leer los contadores de uso:', e); if (vigente) setConteoOps({}); });
+      return () => { vigente = false; };
+    }
     const CLAVE = 'empresas_conteo_ops_v2'; // ✅ V00269: v2 = resuelve nombres→id
     const enMemoria = obtenerCacheMemoria<Record<string, number>>(CLAVE, 5 * 60 * 1000);
     if (enMemoria) { setConteoOps(enMemoria); return; }
@@ -386,7 +423,7 @@ const EmpresasDashboard = () => {
       }
     })();
     return () => { activo = false; };
-  }, [empresas]); // ✅ V00269: recalcula al llegar/cambiar las empresas (resuelve nombres→id)
+  }, [empresas, flags.consultasCanonicas, flagsCargadas]); // ✅ V00269: recalcula al llegar/cambiar las empresas (resuelve nombres→id)
   const [lastUsedMap, setLastUsedMap] = useState<Record<string, string>>({}); 
   const [filtroActivo, setFiltroActivo] = useState('Todo');
   // ✅ V00186: filtro por MONEDA + autocompletado del buscador
@@ -429,7 +466,16 @@ const EmpresasDashboard = () => {
   //   useCatalogo, que ya se pausa solo con el módulo oculto.)
   const visible = useModuloVivoActivo();
   useEffect(() => {
-    if (!visible) return;
+    if (!visible || !flagsCargadas) return;
+    // ✅ V00443 (Fase 7.6): con `consultasCanonicas`, "último uso" sale de usos/empresa_* (ultimoUsoISO).
+    //   Misma lectura (en caché) que el conteo de operaciones.
+    if (flags.consultasCanonicas) {
+      let vigente = true;
+      usosEnCache('empresa')
+        .then((m) => { if (vigente) setLastUsedMap(Object.fromEntries(Array.from(m, ([id, u]) => [id, u.ultimoUsoISO]).filter(([, f]) => !!f))); })
+        .catch((e: unknown) => console.error('No se pudo leer el último uso:', e));
+      return () => { vigente = false; };
+    }
     const qOps = query(collection(db, 'operaciones'), orderBy('fechaServicio', 'desc'), limit(1500));
     const unsubscribeOperaciones = onSnapshot(qOps, (snap) => {
       const usageMap: Record<string, string> = {};
@@ -462,7 +508,7 @@ const EmpresasDashboard = () => {
     return () => {
       unsubscribeOperaciones();
     };
-  }, [visible]);
+  }, [visible, flags.consultasCanonicas, flagsCargadas]);
 
   // ✅ V00439 (Fase 3.x): diccionarios id → etiqueta desde los catálogos en vivo
   //   (antes getDocs + copia en localStorage 'roelca_empresas_dict_v2' sin vencimiento).
@@ -593,6 +639,27 @@ const EmpresasDashboard = () => {
 
     const opsMap = new Map();
     const conteos: Record<string, number> = {};
+
+    // ✅ V00443 (Fase 7.6): con `consultasCanonicas`, conteo por papel con su ID canónico
+    //   (6 agregaciones en lugar de 12) y la lista con UNA consulta por empresasIds (50 más recientes).
+    if (flags.consultasCanonicas) {
+      const idEmp = String(empresa.id);
+      Promise.all([
+        ...camposConsulta.map(async (c) => {
+          try {
+            conteos[c.label] = (await getCountFromServer(query(collection(db, 'operaciones'), where(`${c.field}Id`, '==', idEmp)))).data().count;
+          } catch { conteos[c.label] = 0; }
+        }),
+        paginaOperacionesDeEmpresa(idEmp, 50).then((p) => p.docs.forEach((op) => {
+          opsMap.set(op.id, { ...op, rolesUso: camposConsulta.filter((c) => String(op[`${c.field}Id`] ?? op[c.field] ?? '') === idEmp).map((c) => c.label) });
+        })),
+      ]).then(() => {
+        setOperacionesUso(Array.from(opsMap.values()));
+        setUsoPorRol(conteos);
+        setCargandoUso(false);
+      }).catch(() => setCargandoUso(false));
+      return;
+    }
 
     Promise.all(camposConsulta.map(async (c) => {
       // Conteo EXACTO por agregación del servidor (al momento, sin caché).
@@ -1890,7 +1957,7 @@ const EmpresasDashboard = () => {
 
                       {seccionRefs === 'operaciones' && (
                         !refsCliente || refsCliente.length === 0 ? (
-                          <p className="ed-refs-vacio">Esta empresa no participa en ninguna operación registrada.</p>
+                          <p className="ed-refs-vacio">{refsOpsAviso || 'Esta empresa no participa en ninguna operación registrada.'}</p>
                         ) : (() => {
                           const b = busquedaRefs.trim().toLowerCase();
                           const visibles = !b ? refsCliente : refsCliente.filter(op =>
@@ -1906,6 +1973,7 @@ const EmpresasDashboard = () => {
                             <>
                               <div className="ed-refs-encabezado">
                                 <span className="ed-refs-conteo"><b>{visibles.length}</b>{b ? ` de ${refsCliente.length}` : ''} referencia(s) — clic en la referencia para ver su detalle</span>
+                                {refsOpsAviso && <span className="ed-refs-aviso">{refsOpsAviso}</span>}
                                 <input
                                   type="text"
                                   className="ed-refs-buscador"
@@ -2361,7 +2429,7 @@ const EmpresasDashboard = () => {
                                   .map(u => (
                                     <div className="ed-dup-uso-fila" key={u.etiqueta}>
                                       <span className="ed-dup-uso-etiqueta">{u.etiqueta}</span>
-                                      <span className="ed-dup-uso-conteo">{u.cuantos}{u.cuantos >= 300 ? '+' : ''}</span>
+                                      <span className="ed-dup-uso-conteo">{u.cuantos}</span>
                                       {u.refs && u.refs.length > 0 && (
                                         <div className="ed-dup-uso-refs">
                                           {u.refs.map(r => <span className="ed-refs-ref" key={r}>{r}</span>)}

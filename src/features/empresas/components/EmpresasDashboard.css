@@ -192,6 +192,8 @@
 
 .ed-refs-conteo { color: #8b949e; font-size: 0.86rem; }
 .ed-refs-conteo b { color: #f0f6fc; }
+/* ✅ V00443: tope alcanzado o error de la consulta acotada */
+.ed-refs-aviso { color: #d29922; font-size: 0.82rem; }
 
 .ed-refs-buscador {
   flex: 1;

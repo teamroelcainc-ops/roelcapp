@@ -26,6 +26,8 @@ import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
 import { aduanaDeConvenio, camposPisoColombia, casetaRespaldoColombia, esAduanaColombia, esGastoPisoColombia, normPuente } from '../../../utils/puenteColombia';
 import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
 import { obtenerFlags, useFlags } from '../../../shared/data/flags';
+import { paginaOperaciones } from '../../../shared/data/consultas';
+import type { Cursor } from '../../../shared/data/consultas';
 import { docPorId, nombreEmpresaPdf } from '../../../utils/docPorId';
 import type { DocLibre } from '../../../utils/docPorId';
 import { idReal, obtenerCatalogo, useCatalogo, useCatalogos } from '../../../shared/data/catalogos';
@@ -396,6 +398,10 @@ const OperacionesDashboard = () => {
   // ✅ Cursor robusto de paginación: guardamos el ÚLTIMO documento (snapshot),
   //    no solo su fecha, para no depender de que exista el campo `fechaServicio`.
   const ultimoDocRef = useRef<any>(null);
+  const cursorCanonicoRef = useRef<Cursor>(null); // ✅ V00443 (Fase 7.1)
+  // ✅ V00443: con qué camino se cargó la lista ("Cargar más" sigue el MISMO, aunque la bandera
+  //   llegue o cambie después: no se mezclan páginas de los dos caminos).
+  const modoCanonicoRef = useRef(false);
 
   const IDS_STATUS_EXCLUIDOS = STATUS_FINALES; // ✅ V00439 (Fase 3.x): constantes compartidas
   // ✅ V00432: además de los ids, se excluye por NOMBRE del status (catálogo o
@@ -420,6 +426,24 @@ const OperacionesDashboard = () => {
 
   const descargarOperaciones = async () => {
     setCargandoOperaciones(true);
+    // ✅ V00443 (Fase 7.1): con `consultasCanonicas`, estadoGrupo == 'activa' ordenadas por
+    //   fechaServicioISO (más recientes primero), de 50 en 50. Sin `not-in` ni el respaldo de
+    //   2,000 sin filtro: si falta el índice, se avisa (regla 7 del plan).
+    //   La bandera se ESPERA (al montar puede no haber llegado todavía).
+    modoCanonicoRef.current = (await obtenerFlags()).consultasCanonicas;
+    if (modoCanonicoRef.current) {
+      try {
+        const p = await paginaOperaciones({ estados: ['activa'] }, TAMANO_PAGINA);
+        cursorCanonicoRef.current = p.cursor;
+        setOperacionesGlobales(p.docs.map((d): Record<string, unknown> & { id: string; _docId: string; status?: unknown; statusNombre?: unknown } => ({ ...d, _docId: idReal(d) })).filter((o) => esOperacionActiva(o)));
+        setHayMasOperaciones(p.hayMas);
+      } catch (e: unknown) {
+        console.error('Error al cargar operaciones activas:', e);
+        alert(`No se pudieron cargar las operaciones activas.\n\nDetalle: ${String((e as { message?: string })?.message || e)}`);
+      }
+      setCargandoOperaciones(false);
+      return;
+    }
     try {
       let docs: any[] = [];
       let metodo = 'directa (not-in)';
@@ -683,6 +707,23 @@ const OperacionesDashboard = () => {
   const cargarMasOperaciones = async () => {
     if (!hayMasOperaciones || cargandoMas || operacionesGlobales.length === 0) return;
     setCargandoMas(true);
+    if (modoCanonicoRef.current) {
+      try {
+        const p = await paginaOperaciones({ estados: ['activa'] }, TAMANO_PAGINA, cursorCanonicoRef.current);
+        cursorCanonicoRef.current = p.cursor;
+        const nuevas = p.docs.map((d): Record<string, unknown> & { id: string; _docId: string; status?: unknown; statusNombre?: unknown } => ({ ...d, _docId: idReal(d) })).filter((o) => esOperacionActiva(o));
+        setOperacionesGlobales((prev) => {
+          const idsPrev = new Set(prev.map((o: { id?: unknown }) => String(o.id)));
+          return [...prev, ...nuevas.filter((o) => !idsPrev.has(String(o.id)))];
+        });
+        setHayMasOperaciones(p.hayMas);
+      } catch (e: unknown) {
+        console.error('Error al cargar más operaciones:', e);
+        alert('No se pudieron cargar más operaciones.');
+      }
+      setCargandoMas(false);
+      return;
+    }
     try {
       const cursor = ultimoDocRef.current;
 

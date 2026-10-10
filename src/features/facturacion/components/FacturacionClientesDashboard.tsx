@@ -62,7 +62,8 @@ import {
   totalesTrasCambioDeOps,
 } from '../services/totalesFactura'; // ✅ Fase 1.8
 import { aplicarFacturas, aplicarOperaciones, llamarDinero, mensajeDinero } from '../services/dineroServidor'; // ✅ V00441
-import { useFlags } from '../../../shared/data/flags';
+import { useFlags, useFlagsCargadas } from '../../../shared/data/flags';
+import { paginaOperaciones, paginaPorFacturar, todasLasPaginas } from '../../../shared/data/consultas'; // ✅ V00443 (Fase 7.3)
 import { conversionOperacion, montoOperacion } from '../../../shared/dominio/dinero';
 
 // ──────────────────────────────────────────────────────────────────────
@@ -387,6 +388,7 @@ const pareceReferencia = (s: unknown): boolean => {
 
 export const FacturacionClientesDashboard = () => {
   const flags = useFlags(); // ✅ V00441 (Fase 5): dinero por servidor
+  const flagsCargadas = useFlagsCargadas(); // ✅ V00443
   const [activeTab, setActiveTab] = useState<'operaciones' | 'historial' | 'pagadas'>('operaciones');
   const [mostrarAuditoria, setMostrarAuditoria] = useState(false); // ✅ V00318
   // ✅ V00126: "Pagadas" reutiliza toda la vista de Historial filtrando facturas liquidadas
@@ -903,8 +905,54 @@ export const FacturacionClientesDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ✅ V00443 (Fase 7.3): con `consultasCanonicas` se bajan primero SOLO las pendientes de
+  //   facturar (porFacturar*, sin respaldo de "leer todo"); las ya facturadas se piden al
+  //   abrir la vista "Facturadas" o "Todas" (efecto de abajo).
+  const [facturadasCargadas, setFacturadasCargadas] = useState(false);
+  // La ÚLTIMA petición manda: una anterior que llega tarde se descarta, y ninguna se cancela al
+  // cambiar de vista (así "Cargando…" siempre se apaga y no se repiten descargas).
+  const peticionCanonRef = useRef({ id: 0, conFacturadas: false, enVuelo: false });
+  const cargarCanonico = async (conFacturadas: boolean) => {
+    const id = peticionCanonRef.current.id + 1;
+    peticionCanonRef.current = { id, conFacturadas, enVuelo: true };
+    setCargandoOperaciones(true);
+    try {
+      const [pend, fact] = await Promise.all([
+        todasLasPaginas((c) => paginaPorFacturar('cliente', null, PAG_OPS, c), LIMITE_OPS_TODAS),
+        conFacturadas
+          ? todasLasPaginas((c) => paginaOperaciones({ estados: ['completada', 'falso'] }, PAG_OPS, c), LIMITE_OPS_TODAS)
+          : Promise.resolve(null),
+      ]);
+      if (peticionCanonRef.current.id !== id) return;
+      const vistos = new Set<string>();
+      const todas = sinPruebas([...pend.docs, ...(fact?.docs ?? [])]).filter((o) => {
+        const k = String(o._docId);
+        if (vistos.has(k)) return false;
+        vistos.add(k);
+        return true;
+      }) as Record<string, unknown>[];
+      todas.sort((a, b) => String(b.fechaServicio || b.createdAt || '').localeCompare(String(a.fechaServicio || a.createdAt || '')));
+      setOperacionesGlobales(todas);
+      setFacturadasCargadas(conFacturadas);
+      setTopeOpsAlcanzado(pend.truncado || !!fact?.truncado);
+    } catch (e: unknown) {
+      if (peticionCanonRef.current.id !== id) return;
+      console.error('[Facturación] Error al cargar operaciones:', e);
+      alert(`No se pudieron cargar las operaciones.\n\nDetalle: ${String((e as { message?: string })?.message || e)}`);
+    } finally {
+      if (peticionCanonRef.current.id === id) {
+        peticionCanonRef.current = { ...peticionCanonRef.current, enVuelo: false };
+        setCargandoOperaciones(false);
+      }
+    }
+  };
   const descargarOpsCompletadas = async (forzar = false) => {
     if (!forzar && operacionesGlobales.length > 0) return;
+    if (flags.consultasCanonicas) {
+      if (!forzar && peticionCanonRef.current.enVuelo) return; // ya viene una en camino
+      await cargarCanonico(facturadasCargadas || vistaOps !== 'pendientes');
+      return;
+    }
     setCargandoOperaciones(true);
     try {
       let todas: any[] = [];
@@ -962,9 +1010,22 @@ export const FacturacionClientesDashboard = () => {
     if (operacionesGlobales.length > 0) return;
     // ✅ V00439 (Fase 3.x): espera el catálogo de status (los "Falso" entran en el filtro).
     if (!statusListos) return;
+    if (!flagsCargadas) return; // ✅ V00443: sin esto empezaría por la descarga vieja (hasta 20,000)
     descargarOpsCompletadas();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, operacionesGlobales.length, statusListos]);
+  }, [activeTab, operacionesGlobales.length, statusListos, flagsCargadas]);
+
+  // ✅ V00443 (Fase 7.3): con `consultasCanonicas`, las ya facturadas (completadas y falsos)
+  //   se piden solo al ver "Facturadas" o "Todas", y se suman a las pendientes.
+  const pedirFacturadas = useEffectEvent(() => {
+    const p = peticionCanonRef.current;
+    if (p.enVuelo && p.conFacturadas) return; // ya viene en camino
+    void cargarCanonico(true);
+  });
+  useEffect(() => {
+    if (!flags.consultasCanonicas || vistaOps === 'pendientes' || facturadasCargadas) return;
+    pedirFacturadas();
+  }, [flags.consultasCanonicas, vistaOps, facturadasCargadas]);
 
   // ✅ V00126: cualquier guardado en la colección `operaciones` (formulario,
   //   cambio de status, etc.) se refleja aquí al instante sin recargar.
@@ -2430,8 +2491,11 @@ export const FacturacionClientesDashboard = () => {
   const opsPedidasRef = useRef<Set<string>>(new Set());
   const resolverOpsFaltantes = useEffectEvent(async (ids: string[]) => {
     const nuevos: Record<string, any> = {};
-    for (let i = 0; i < ids.length; i += 30) {
-      const chunk = ids.slice(i, i + 30);
+    // ✅ V00443 (Fase 7.8/7.10): tandas de 30 EN PARALELO y TODAS las faltantes de lo visible
+    //   (antes 150 por vuelta: si ninguna de esas 150 existía, las demás no se pedían nunca).
+    const tandas: string[][] = [];
+    for (let i = 0; i < ids.length; i += 30) tandas.push(ids.slice(i, i + 30));
+    await Promise.all(tandas.map(async (chunk) => {
       try {
         const snap = await getDocs(query(collection(db, 'operaciones'), where(documentId(), 'in', chunk)));
         snap.docs.forEach(d => {
@@ -2448,11 +2512,11 @@ export const FacturacionClientesDashboard = () => {
         chunk.forEach((id) => opsPedidasRef.current.delete(id)); // si falló la red, se puede volver a pedir
         console.warn('No se pudo resolver lote de operaciones del historial:', e);
       }
-    }
+    }));
     if (Object.keys(nuevos).length) setOpInfoMap(prev => ({ ...prev, ...nuevos }));
   });
   useEffect(() => {
-    const ids = (JSON.parse(claveOpsPorResolver) as string[]).filter((id) => !opsPedidasRef.current.has(id)).slice(0, 150);
+    const ids = (JSON.parse(claveOpsPorResolver) as string[]).filter((id) => !opsPedidasRef.current.has(id));
     if (ids.length === 0) return;
     ids.forEach((id) => opsPedidasRef.current.add(id));
     void resolverOpsFaltantes(ids);
@@ -2934,15 +2998,17 @@ export const FacturacionClientesDashboard = () => {
       const esUSD = esMonedaUSD(monedaFacturaMostrar(f));
       const emisor = esUSD ? emisorUSD : emisorMXN;
 
-      const ids = (Array.from(new Set((f.operacionesIds || []).map((x: any) => String(x)))) as string[]).filter(Boolean).slice(0, 60);
+      const ids = (Array.from(new Set((f.operacionesIds || []).map((x: any) => String(x)))) as string[]).filter(Boolean); // ✅ V00443 (Fase 7.10): todas (antes solo las primeras 60)
       const byId = new Map<string, any>();
-      for (let i = 0; i < ids.length; i += 30) {
-        const chunk = ids.slice(i, i + 30);
+      // ✅ V00443 (Fase 7.8): tandas de 30 EN PARALELO (antes una tras otra).
+      const tandas: string[][] = [];
+      for (let i = 0; i < ids.length; i += 30) tandas.push(ids.slice(i, i + 30));
+      await Promise.all(tandas.map(async (chunk) => {
         try {
           const snap = await getDocs(query(collection(db, 'operaciones'), where(documentId(), 'in', chunk)));
           snap.docs.forEach(d => byId.set(d.id, { id: d.id, ...(d.data() as any) }));
         } catch (e) { console.warn('No se pudieron leer operaciones para la remisión:', e); }
-      }
+      }));
 
       const guardadas: any[] = Array.isArray(f.operacionesGuardadas) && f.operacionesGuardadas.length
         ? f.operacionesGuardadas
@@ -3307,7 +3373,7 @@ export const FacturacionClientesDashboard = () => {
                   <label className="fcd-x55">VISTA</label>
                   <div className="fcd-x56">
                     <button onClick={() => { setVistaOps('pendientes'); setSeleccionadas([]); }} style={{ ...segBtnStyle(vistaOps === 'pendientes', '#f59e0b'), flex: 1 }}>Pendientes ({resumenOps.porFacturar})</button>
-                    <button onClick={() => { setVistaOps('facturadas'); setSeleccionadas([]); }} style={{ ...segBtnStyle(vistaOps === 'facturadas', '#10b981'), flex: 1 }}>Facturadas ({resumenOps.facturadas})</button>
+                    <button onClick={() => { setVistaOps('facturadas'); setSeleccionadas([]); }} style={{ ...segBtnStyle(vistaOps === 'facturadas', '#10b981'), flex: 1 }}>Facturadas ({flags.consultasCanonicas && !facturadasCargadas ? '…' : resumenOps.facturadas})</button>
                     <button onClick={() => { setVistaOps('todas'); setSeleccionadas([]); }} style={{ ...segBtnStyle(vistaOps === 'todas', '#58a6ff'), flex: 1 }}>Todas ({resumenOps.total})</button>
                   </div>
                 </div>

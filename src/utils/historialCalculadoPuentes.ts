@@ -164,25 +164,6 @@ export const registrarVerdeAutomatico = async (op: Record<string, unknown>, stat
   }
 };
 
-/** Revisa la bitácora de HOY y agrega a las referencias automáticas los verdes que falten. */
-export const recalcularHistorialCalculadoHoy = async (): Promise<number> => {
-  const hoy = hoyLocal();
-  const snap = await getDocs(query(collection(db, 'horarios'), where('fechaHora', '>=', hoy), where('fechaHora', '<', `${hoy}~`)));
-  const verdes = snap.docs.map((d) => d.data() as Record<string, unknown>).filter((h) => esStatusVerde(h.statusNombre));
-  const vistos = new Set<string>();
-  let n = 0;
-  for (const h of verdes) {
-    const id = String(h.operacionId || '');
-    if (!id || vistos.has(id)) continue;
-    vistos.add(id);
-    const opSnap = await getDoc(doc(db, 'operaciones', id));
-    if (!opSnap.exists()) continue;
-    await registrarVerdeAutomatico({ id: opSnap.id, _docId: opSnap.id, ...(opSnap.data() as Record<string, unknown>) }, h.statusNombre, h.fechaHora);
-    n += 1;
-  }
-  return n;
-};
-
 /** ✅ V00412: SACA una operación de la referencia (regresa a "Operaciones sin asignar"). Si queda vacía, se elimina. */
 export const quitarOperacionDeReferenciaAuto = async (docId: string, opId: string): Promise<'quitada' | 'eliminada'> => {
   // ✅ V00420: sin transacción (daba "Connection failed"). La escritura se aplica al

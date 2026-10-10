@@ -73,6 +73,13 @@ const marcarCargadas = (): void => {
 export const iniciarFlags = (): void => {
   if (escuchando) return;
   escuchando = true;
+  // ✅ V00443: como obtenerFlags, a los 3 s sin respuesta (sin red y sin caché) se da por
+  //   "todas apagadas" para que useFlagsCargadas no deje pantallas esperando para siempre.
+  setTimeout(() => {
+    if (cargadas) return;
+    marcarCargadas();
+    suscriptores.forEach((fn) => fn());
+  }, 3000);
   cancelar = onSnapshot(
     doc(db, COL.configuracion, DOC_FLAGS),
     (snap) => {
@@ -118,4 +125,11 @@ const suscribir = (fn: () => void): (() => void) => {
 /** Hook: banderas en vivo. */
 export function useFlags(): Flags {
   return useSyncExternalStore(suscribir, flagsAhora, flagsAhora);
+}
+
+const cargadasAhora = (): boolean => cargadas;
+/** ✅ V00443: true cuando ya llegó la primera lectura de las banderas (o falló). Para efectos que al
+ *  montar eligen entre el camino viejo y el nuevo: sin esperar, empezarían por el viejo. */
+export function useFlagsCargadas(): boolean {
+  return useSyncExternalStore(suscribir, cargadasAhora, cargadasAhora);
 }

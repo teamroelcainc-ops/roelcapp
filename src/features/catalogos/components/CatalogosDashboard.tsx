@@ -244,11 +244,12 @@ const CatalogosDashboard = () => {
         const asegura = (t: string) => { if (!uso[t]) uso[t] = { convC: [], convP: [], opsCount: 0, detIds: [] }; return uso[t]; };
         detC.forEach((x) => { const t = String(x.tipoConvenioId || ''); if (!t) return; const u = asegura(t); u.detIds.push(idReal(x)); u.convC.push(nomC[String(x.convenioId)] || String(x.convenioId || '').slice(0, 8)); });
         detP.forEach((x) => { const t = String(x.tipoConvenioId || ''); if (!t) return; const u = asegura(t); u.detIds.push(idReal(x)); u.convP.push(nomP[String(x.convenioId)] || String(x.convenioId || '').slice(0, 8)); });
-        // Conteo por tarifa: una consulta agregada por cada 10 detalles ('in').
+        // Conteo por tarifa: una consulta agregada por cada 30 detalles ('in').
+        // ✅ V00443 (Fase 7.8): tandas de 30 (el máximo de 'in'; antes 10 → el triple de consultas).
         const tareas: Promise<void>[] = [];
         Object.values(uso).forEach((u) => {
-          for (let i = 0; i < u.detIds.length; i += 10) {
-            const chunk = u.detIds.slice(i, i + 10);
+          for (let i = 0; i < u.detIds.length; i += 30) {
+            const chunk = u.detIds.slice(i, i + 30);
             tareas.push(
               getCountFromServer(query(collection(db, 'operaciones'), where('convenio', 'in', chunk)))
                 .then((snap) => { u.opsCount += snap.data().count; })
@@ -348,8 +349,11 @@ const CatalogosDashboard = () => {
 
         // Operaciones que usan cualquiera de esos detalles.
         const operaciones: UsoFila[] = [];
-        for (let i = 0; i < detIds.length; i += 10) {
-          const snap = await getDocs(query(collection(db, 'operaciones'), where('convenio', 'in', detIds.slice(i, i + 10))));
+        // ✅ V00443 (Fase 7.8): tandas de 30 EN PARALELO (antes de 10, una tras otra).
+        const tandas: string[][] = [];
+        for (let i = 0; i < detIds.length; i += 30) tandas.push(detIds.slice(i, i + 30));
+        const snaps = await Promise.all(tandas.map((t) => getDocs(query(collection(db, 'operaciones'), where('convenio', 'in', t)))));
+        for (const snap of snaps) {
           snap.docs.forEach((d) => {
             const o = d.data() as Record<string, unknown>;
             const completada = String(o.status || o.estatus || '').toLowerCase().includes('completad');

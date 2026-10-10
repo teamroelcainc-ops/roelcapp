@@ -39,6 +39,80 @@
         { "fieldPath": "clienteMercancia", "order": "ASCENDING" },
         { "fieldPath": "fechaServicio", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "operaciones",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "estadoGrupo", "order": "ASCENDING" },
+        { "fieldPath": "fechaServicioISO", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "operaciones",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "porFacturarCliente", "order": "ASCENDING" },
+        { "fieldPath": "fechaServicioISO", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "operaciones",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "porFacturarCliente", "order": "ASCENDING" },
+        { "fieldPath": "clientePagaId", "order": "ASCENDING" },
+        { "fieldPath": "fechaServicioISO", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "operaciones",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "porFacturarProveedor", "order": "ASCENDING" },
+        { "fieldPath": "fechaServicioISO", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "operaciones",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "porFacturarProveedor", "order": "ASCENDING" },
+        { "fieldPath": "proveedorUnidadId", "order": "ASCENDING" },
+        { "fieldPath": "fechaServicioISO", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "operaciones",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "empresasIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "fechaServicioISO", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "operaciones",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "convenioClienteId", "order": "ASCENDING" },
+        { "fieldPath": "fechaServicioISO", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "operaciones",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "convenioProveedorId", "order": "ASCENDING" },
+        { "fieldPath": "fechaServicioISO", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "operaciones",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "unidadId", "order": "ASCENDING" },
+        { "fieldPath": "fechaServicioISO", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [

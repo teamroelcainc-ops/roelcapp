@@ -35,7 +35,8 @@ import { datosDireccionEmpresaPdf, direccionesParaPdf } from '../../../utils/dir
 import { mostrarCartaPara, useConfigCarta } from '../../../utils/configCartaInstrucciones';
 import { ConfigCartaModal } from './ConfigCartaModal';
 import { usePermisoFormularios } from '../../formularios/configFormularios';
-import { useFlags } from '../../../shared/data/flags';
+import { obtenerFlags, useFlags } from '../../../shared/data/flags';
+import { paginaOperaciones, todasLasPaginas } from '../../../shared/data/consultas';
 
 // ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
 const fmtFechaAuditoria = (iso: any): string => {
@@ -343,7 +344,47 @@ const ServiciosCancelados = () => {
   const CACHE_MEM_CANCELADOS = 'cancelados_ops_v1';
   const CACHE_MEM_TTL = 10 * 60 * 1000;
 
-  const descargarOperaciones = async (opciones: { forzar?: boolean } = {}) => {
+  // ✅ V00443 (Fase 7.2): con `consultasCanonicas`, solo las canceladas DEL RANGO buscado
+  //   (estadoGrupo + fechaServicioISO), no las 9,000 de la colección.
+  const rangoCanonRef = useRef('');
+  /** Buscar un rango: con la bandera, solo ese rango (si cambió); sin ella, la descarga única de siempre.
+   *  La bandera se ESPERA (al restaurar el filtro al montar puede no haber llegado todavía). */
+  const buscarRango = async (desde: string, hasta: string) => {
+    if ((await obtenerFlags()).consultasCanonicas) {
+      const k = `${desde}_${hasta}`;
+      if (rangoCanonRef.current === k) return;
+      rangoCanonRef.current = k;
+      await descargarOperaciones({ desde, hasta });
+    } else if (!yaDescargado.current) {
+      yaDescargado.current = true;
+      await descargarOperaciones();
+    }
+  };
+  const descargarOperaciones = async (opciones: { forzar?: boolean; desde?: string; hasta?: string } = {}) => {
+    if (opciones.desde && opciones.hasta && (await obtenerFlags()).consultasCanonicas) {
+      const clave = `cancelados_canon_${opciones.desde}_${opciones.hasta}`;
+      if (!opciones.forzar) {
+        const enCache = obtenerCacheMemoria<(Record<string, unknown> & { id: string })[]>(clave, CACHE_MEM_TTL);
+        if (enCache) { setOperacionesGlobales(enCache); return; }
+      }
+      setCargandoOperaciones(true);
+      setErrorCarga(null);
+      try {
+        const r = await todasLasPaginas((c) => paginaOperaciones({ estados: ['cancelada'], desde: opciones.desde, hasta: opciones.hasta }, 1000, c), 30000);
+        if (r.truncado) alert('El rango tiene más de 30,000 operaciones canceladas: se muestran las más recientes. Acorta el rango.');
+        // `_fechaISO`: la fecha por la que se consultó (el filtro de abajo la usa en lugar de re-normalizar).
+        const lista = r.docs.map((d) => ({ ...d, _fechaISO: String(d.fechaServicioISO || '') }));
+        guardarCacheMemoria(clave, lista);
+        setOperacionesGlobales(lista);
+      } catch (e: unknown) {
+        console.error('Error al cargar operaciones canceladas:', e);
+        setOperacionesGlobales([]);
+        rangoCanonRef.current = ''; // "Buscar" con el mismo rango vuelve a intentar
+        setErrorCarga(`No se pudieron cargar las operaciones canceladas: ${String((e as { message?: string })?.message || e)}`);
+      }
+      setCargandoOperaciones(false);
+      return;
+    }
     if (!opciones.forzar) {
       const enCache = obtenerCacheMemoria<(Record<string, unknown> & { id: string })[]>(CACHE_MEM_CANCELADOS, CACHE_MEM_TTL);
       if (enCache) { setOperacionesGlobales(enCache); return; }
@@ -412,10 +453,7 @@ const ServiciosCancelados = () => {
     setDrawerFiltrosAbierto(false);
     // ✅ NUEVO: recuerda el último filtro de ESTE usuario para restaurarlo después.
     try { localStorage.setItem(claveFiltrosGuardados(), JSON.stringify(snapshot)); } catch { /* almacenamiento lleno: ignorar */ }
-    if (!yaDescargado.current) {
-      yaDescargado.current = true;
-      descargarOperaciones();
-    }
+    void buscarRango(filterFechaInicio, filterFechaFin);
     // ✅ HISTORIAL: deja constancia de la búsqueda y de los filtros usados.
     registrarLog('Servicios Cancelados', 'Búsqueda', `Buscó operaciones canceladas con filtros → ${describirFiltrosLog(snapshot)}`).catch(() => { });
   };
@@ -463,10 +501,7 @@ const ServiciosCancelados = () => {
         referencia: f.referencia || '',
         busqueda: f.busqueda || '',
       });
-      if (!yaDescargado.current) {
-        yaDescargado.current = true;
-        descargarOperaciones();
-      }
+      void buscarRango(f.fechaInicio, f.fechaFin);
     } catch { /* filtro guardado corrupto: ignorar */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -980,7 +1015,7 @@ const ServiciosCancelados = () => {
     return operacionesGlobales.filter(op => {
       // Rango de fechas (obligatorio)
       {
-        const f = normalizarFechaISO(op.fechaServicio);
+        const f = String(op._fechaISO || '') || normalizarFechaISO(op.fechaServicio); // ✅ V00443
         if (!f || f < ini || f > fin) return false;
       }
 
@@ -1194,7 +1229,7 @@ const ServiciosCancelados = () => {
     setEstadoFormulario('cerrado');
     setOperacionEditando(null);
     setOperacionViendo(null);
-    if (filtrosAplicados) descargarOperaciones({ forzar: true });
+    if (filtrosAplicados) descargarOperaciones({ forzar: true, desde: filtrosAplicados.fechaInicio, hasta: filtrosAplicados.fechaFin });
   };
 
   // ✅ V00438 (Fase 2.3b): props ESTABLES para memo(FormularioOperacion).
@@ -1545,7 +1580,7 @@ const ServiciosCancelados = () => {
             <div className="sc-x56">
               <div className="sc-x57">No se pudieron cargar las operaciones</div>
               <div className="sc-x58">{errorCarga}</div>
-              <button className="sc-x59" onClick={() => descargarOperaciones({ forzar: true })}>Reintentar</button>
+              <button className="sc-x59" onClick={() => descargarOperaciones({ forzar: true, desde: filtrosAplicados?.fechaInicio, hasta: filtrosAplicados?.fechaFin })}>Reintentar</button>
             </div>
           ) : operacionesFiltradas.length === 0 ? (
             <div className="sc-x50">

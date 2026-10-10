@@ -4,12 +4,15 @@
 //   recargas − cruces, con semáforo (amarillo/rojo por umbral). El importe del
 //   catálogo Tipos de Gastos es la TARIFA por cruce (ya no se pisa con saldos).
 //   Recargas en la colección saldos_puentes (varias por día permitidas).
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { addDoc, collection, deleteDoc, doc, getDocs, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
 import { db } from '../../../config/firebase';
 import './SaldosPuentesDashboard.css';
-import { docsSinPruebas } from '../../../utils/operacionPrueba';
+import { docsSinPruebas, sinPruebas } from '../../../utils/operacionPrueba';
+import { useFlags } from '../../../shared/data/flags';
+import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
+import { operacionesDelRango } from '../../../shared/data/consultas';
 import { idReal, useCatalogo } from '../../../shared/data/catalogos';
 import { STATUS_COMPLETADOS } from '../../../shared/dominio/constantes';
 import { monedaCanonica, nombreMoneda as nombreMonedaCanonica } from '../../../shared/dominio/moneda';
@@ -142,21 +145,40 @@ export const SaldosPuentesDashboard: React.FC = () => {
   const [repFilas, setRepFilas] = useState<FilaRep[]>([]);
   const [repDe, setRepDe] = useState('');
   const [repHasta, setRepHasta] = useState('');
-  const abrirReporte = async () => {
-    setRepAbierto(true); setRepCargando(true);
+  // ✅ V00443 (Fase 7.5): con `consultasCanonicas`, el reporte pide al servidor SOLO el rango
+  //   De–Hasta (por `fechaServicioISO`; por omisión, del inicio del mes a hoy) y se vuelve a pedir
+  //   al cambiar las fechas — en lugar de descargar TODAS las operaciones y filtrar aquí.
+  const flags = useFlags();
+  const peticionRepRef = useRef(0); // la última petición manda (una vieja que llega tarde se descarta)
+  const temporizadorRepRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (temporizadorRepRef.current) clearTimeout(temporizadorRepRef.current); }, []);
+  const cargarReporte = async (de: string, hasta: string) => {
+    const id = ++peticionRepRef.current;
+    setRepCargando(true);
     try {
-      const snap = await getDocs(collection(db, 'operaciones'));
+      let ops: { id: string; x: Record<string, unknown> }[];
+      if (flags.consultasCanonicas) {
+        const r = await operacionesDelRango(de, hasta);
+        if (id !== peticionRepRef.current) return;
+        if (r.truncado) alert('El rango tiene demasiadas operaciones: el reporte muestra solo una parte. Acorta las fechas.');
+        ops = sinPruebas(r.docs).map((x) => ({ id: String(x._docId), x }));
+      } else {
+        const snap = await getDocs(collection(db, 'operaciones'));
+        ops = docsSinPruebas(snap.docs).map((d) => ({ id: d.id, x: d.data() as Record<string, unknown> })); // ✅ V00380
+      }
       const filas: FilaRep[] = [];
-      docsSinPruebas(snap.docs).forEach((d) => { // ✅ V00380
-        const x = d.data() as Record<string, unknown>;
+      ops.forEach((d) => {
+        const x = d.x;
         if (!aplicaPeajeSP(x)) return;
         if (norm(x.statusNombre).includes('cancel')) return;
         const traf = norm(x.trafico);
         const tieneSaldo = Number(x.saldoPuente) > 0;
         const puenteDef = traf.includes('import') ? 'Caseta AVI' : traf.includes('export') ? 'Caseta Puente III' : '';
+        // ✅ V00443: con la bandera, la fecha canónica (la misma por la que se filtró el rango).
+        const fecha = String((flags.consultasCanonicas ? x.fechaServicioISO : '') || x.fechaServicio || '').slice(0, 10);
         filas.push({
           ref: String(x.ref || d.id),
-          fecha: String(x.fechaServicio || '').slice(0, 10),
+          fecha,
           tipo: String(x.tipoOperacionNombre || '—'),
           trafico: traf.includes('import') ? 'Importación' : traf.includes('export') ? 'Exportación' : String(x.trafico || '—'),
           puente: String(x.saldoPuentePuente || '') || puenteDef || '—',
@@ -167,7 +189,7 @@ export const SaldosPuentesDashboard: React.FC = () => {
         if (Number(x.saldoPuentePiso) > 0) {
           filas.push({
             ref: String(x.ref || d.id),
-            fecha: String(x.fechaServicio || '').slice(0, 10),
+            fecha,
             tipo: String(x.tipoOperacionNombre || '—'),
             trafico: traf.includes('import') ? 'Importación' : traf.includes('export') ? 'Exportación' : String(x.trafico || '—'),
             puente: String(x.saldoPuentePisoPuente || 'Puente Mx Colombia'),
@@ -177,9 +199,28 @@ export const SaldosPuentesDashboard: React.FC = () => {
         }
       });
       filas.sort((a, b) => b.fecha.localeCompare(a.fecha) || a.ref.localeCompare(b.ref));
+      if (id !== peticionRepRef.current) return;
       setRepFilas(filas);
-    } catch (e) { alert(`No se pudo armar el reporte: ${(e as Error)?.message || e}`); }
-    finally { setRepCargando(false); }
+    } catch (e) { if (id === peticionRepRef.current) alert(`No se pudo armar el reporte: ${(e as Error)?.message || e}`); }
+    finally { if (id === peticionRepRef.current) setRepCargando(false); }
+  };
+  const abrirReporte = () => {
+    setRepAbierto(true);
+    if (!flags.consultasCanonicas) { void cargarReporte('', ''); return; }
+    const hasta = repHasta || hoyLocalISO();
+    const de = repDe || `${hasta.slice(0, 8)}01`;
+    setRepDe(de); setRepHasta(hasta);
+    void cargarReporte(de, hasta);
+  };
+  /** Con `consultasCanonicas`, cambiar una fecha vuelve a pedir el rango (sin la bandera solo filtra).
+   *  Con espera de 400 ms (escribir el año a mano no dispara una consulta por tecla). */
+  const cambiarRangoReporte = (de: string, hasta: string) => {
+    setRepDe(de); setRepHasta(hasta);
+    if (!flags.consultasCanonicas) return;
+    if (temporizadorRepRef.current) clearTimeout(temporizadorRepRef.current);
+    const valida = (f: string) => /^\d{4}-\d{2}-\d{2}$/.test(f) && f >= '2000-01-01';
+    if (!valida(de) || !valida(hasta) || de > hasta) return;
+    temporizadorRepRef.current = setTimeout(() => { void cargarReporte(de, hasta); }, 400);
   };
   const repVisibles = repFilas.filter((f) => (!repDe || f.fecha >= repDe) && (!repHasta || f.fecha <= repHasta));
   const repExcel = () => {
@@ -494,8 +535,8 @@ export const SaldosPuentesDashboard: React.FC = () => {
               <div className="sp-modal-titulo">Reporte de saldos del puente</div>
               <p className="sp-rep-nota">Operaciones de Transfer y de Logística de Cruces con proveedor Roelca (Fletes no cruza puente). "Sin descuento" = aún no marca Verde MX / Verde USA.</p>
               <div className="sp-rep-barra">
-                <label>De <input type="date" className="form-control" value={repDe} onChange={(e) => setRepDe(e.target.value)} /></label>
-                <label>Hasta <input type="date" className="form-control" value={repHasta} onChange={(e) => setRepHasta(e.target.value)} /></label>
+                <label>De <input type="date" className="form-control" value={repDe} onChange={(e) => cambiarRangoReporte(e.target.value, repHasta)} /></label>
+                <label>Hasta <input type="date" className="form-control" value={repHasta} onChange={(e) => cambiarRangoReporte(repDe, e.target.value)} /></label>
                 <span className="sp-conteo">{repVisibles.length} operación(es) · sin descuento: {sinSaldo}</span>
                 <button type="button" className="sp-btn" onClick={repExcel} disabled={repVisibles.length === 0}>Exportar Excel</button>
               </div>

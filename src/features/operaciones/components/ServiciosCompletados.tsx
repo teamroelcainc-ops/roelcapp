@@ -23,6 +23,8 @@ import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 import { FormularioOperacion, TIPOS_DOCUMENTO_OPERACION } from './FormularioOperacion';
 import './ServiciosCompletados.css';
 import { almacenSesion } from '../../../utils/cacheMemoria';
+import { obtenerFlags, useFlags } from '../../../shared/data/flags';
+import { paginaOperaciones, todasLasPaginas } from '../../../shared/data/consultas';
 import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
 import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
@@ -36,7 +38,6 @@ import { idReal, useCatalogos } from '../../../shared/data/catalogos';
 import type { ColeccionCatalogo } from '../../../shared/data/catalogos';
 import { ID_MXN, ID_USD, STATUS_COMPLETADOS, TIPO_EMPRESA } from '../../../shared/dominio/constantes';
 import { estadoGrupoDe } from '../../../shared/dominio/operacionCanonica';
-import { useFlags } from '../../../shared/data/flags';
 
 // ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
 const fmtFechaAuditoria = (iso: any): string => {
@@ -641,7 +642,19 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   );
 
   // ✅ MODIFICADO: clave de caché ÚNICA (todos los completados). Filtramos en memoria.
-  const claveCacheActual = () => CACHE_KEY_TODOS;
+  // ✅ V00443: la clave del conjunto que REALMENTE se descargó (rango o todos). Antes
+  //   siempre era la de "todos": editar o borrar con una búsqueda por rango guardaba
+  //   SOLO ese rango bajo la clave de todos y las búsquedas siguientes salían incompletas.
+  const claveCacheRef = useRef<string>(CACHE_KEY_TODOS);
+  const claveCacheActual = () => claveCacheRef.current;
+  /** ✅ V00443: guarda la lista vigente en su caché (memoria siempre; el rango canónico NUNCA va a
+   *  localStorage — CLAUDE.md: la caché persistente de Firestore es la única en disco). */
+  const guardarCacheActual = (ops: unknown[]) => {
+    const clave = claveCacheActual();
+    guardarCacheMemoria(clave, ops);
+    if (clave.startsWith(`${CACHE_PREFIX}canon_`)) return;
+    try { almacenSesion.setItem(clave, JSON.stringify({ ts: Date.now(), ops })); } catch { /* cuota: la memoria ya lo tiene */ }
+  };
 
   // ✅ REESCRITO: descarga TODOS los servicios completados (status c2d57403 y
   //   f557b751) paginando por status. NO depende de índices compuestos ni del
@@ -665,6 +678,36 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       return;
     }
 
+    // ✅ V00443 (Fase 7.2): con `consultasCanonicas`, completadas y falsos (estadoGrupo) del
+    //   rango sobre fechaServicioISO (normalizada por la migración). Sin la descarga completa
+    //   de respaldo ni copias en localStorage (solo memoria).
+    //   Va ANTES de la caché "todos" del camino viejo (al encender la bandera no se sirve esa).
+    if ((await obtenerFlags()).consultasCanonicas) { // se ESPERA: al restaurar al montar puede no haber llegado
+      const claveRango = `${CACHE_PREFIX}canon_${fechaInicio}_${fechaFin}`;
+      claveCacheRef.current = claveRango;
+      if (!opciones.ignorarCache) {
+        const enMem = obtenerCacheMemoria<(Record<string, unknown> & { id: string })[]>(claveRango, CACHE_TTL_MS);
+        if (enMem) { setOperacionesGlobales(enMem); return; }
+      }
+      setCargandoOperaciones(true);
+      try {
+        const r = await todasLasPaginas((c) => paginaOperaciones({ estados: ['completada', 'falso'], desde: fechaInicio, hasta: fechaFin }, 1000, c), 30000);
+        if (r.truncado) alert('El rango tiene más de 30,000 operaciones: se muestran las más recientes. Acorta el rango.');
+        const lista = r.docs.map((d) => ({ ...d, _fechaISO: String(d.fechaServicioISO || '') })).sort((a, b) => {
+          if (a._fechaISO !== b._fechaISO) return b._fechaISO.localeCompare(a._fechaISO);
+          return obtenerConsecutivoRef(b) - obtenerConsecutivoRef(a);
+        });
+        setOperacionesGlobales(lista);
+        guardarCacheMemoria(claveRango, lista);
+      } catch (e: unknown) {
+        console.error('[ServiciosCompletados] Error al buscar completados:', e);
+        setOperacionesGlobales([]);
+        rangoDescargado.current = ''; // "Buscar" con el mismo rango vuelve a intentar
+        alert(`No se pudieron cargar las operaciones completadas.\n\nDetalle: ${String((e as { message?: string })?.message || e)}`);
+      }
+      setCargandoOperaciones(false);
+      return;
+    }
     // [0] Caché (mismo dataset completo para cualquier rango/cliente).
     //     ✅ VELOCIDAD: primero MEMORIA (sin límite de cuota — el sessionStorage
     //     falla en silencio cuando el dataset excede ~5MB y por eso cada
@@ -672,6 +715,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     if (!opciones.ignorarCache) {
       const enMemoria = obtenerCacheMemoria<(Record<string, unknown> & { id: string })[]>(CACHE_KEY_TODOS, CACHE_TTL_MS);
       if (enMemoria) {
+        claveCacheRef.current = CACHE_KEY_TODOS;
         setOperacionesGlobales(enMemoria);
         setHayMasOperaciones(false);
         return;
@@ -682,6 +726,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
           const cache = JSON.parse(cacheStr);
           if (cache && Date.now() - cache.ts < CACHE_TTL_MS && Array.isArray(cache.ops)) {
             guardarCacheMemoria(CACHE_KEY_TODOS, cache.ops);
+            claveCacheRef.current = CACHE_KEY_TODOS;
             setOperacionesGlobales(cache.ops);
             setHayMasOperaciones(false);
             return;
@@ -702,6 +747,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     try { if (!fechasListas) fechasListas = localStorage.getItem(CLAVE_FECHAS_INDEXADAS) === '1'; } catch { /* sin localStorage */ }
     if (fechasListas) {
       const claveRango = `${CACHE_PREFIX}rango_${fechaInicio}_${fechaFin}`;
+      claveCacheRef.current = claveRango;
       if (!opciones.ignorarCache) {
         const enMem = obtenerCacheMemoria<(Record<string, unknown> & { id: string })[]>(claveRango, CACHE_TTL_MS);
         if (enMem) { setOperacionesGlobales(enMem); return; }
@@ -749,6 +795,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     }
 
     setCargandoOperaciones(true);
+    claveCacheRef.current = CACHE_KEY_TODOS;
 
     const todas: any[] = [];
     const vistos = new Set<string>();
@@ -835,7 +882,15 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   //   los filtros — fecha, cliente, tipo y remolque se aplican en memoria. Por eso
   //   sólo descargamos UNA vez por sesión: en cuanto hay un rango de fechas válido.
   //   Cambiar cualquier filtro después es instantáneo (no vuelve a consultar la BD).
-  const yaDescargado = useRef(false);
+  // ✅ V00443: se recuerda el RANGO descargado (antes solo "ya se descargó"): con la ruta por
+  //   rango, buscar otro rango filtraba en memoria los datos del primero y faltaban operaciones.
+  const rangoDescargado = useRef('');
+  const descargarSiCambioRango = (ini: string, fin: string, cliente: string) => {
+    const clave = `${ini}_${fin}`;
+    if (rangoDescargado.current === clave) return;
+    rangoDescargado.current = clave;
+    descargarOperaciones(ini, fin, cliente);
+  };
 
   // ✅ MODIFICADO: ya NO se descarga automáticamente al cambiar las fechas.
   //   La descarga y la aplicación de filtros ocurren SOLO al presionar BUSCAR.
@@ -869,10 +924,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     setDrawerFiltrosAbierto(false);
     // ✅ NUEVO: recuerda el último filtro de ESTE usuario para restaurarlo después.
     try { localStorage.setItem(claveFiltrosGuardados(), JSON.stringify(snapshot)); } catch { /* almacenamiento lleno: ignorar */ }
-    if (!yaDescargado.current) {
-      yaDescargado.current = true;
-      descargarOperaciones(filterFechaInicio, filterFechaFin, filterCliente);
-    }
+    descargarSiCambioRango(filterFechaInicio, filterFechaFin, filterCliente);
     // ✅ HISTORIAL: deja constancia de la búsqueda y de los filtros usados.
     registrarLog('Servicios Completados', 'Búsqueda', `Buscó operaciones completadas con filtros → ${describirFiltrosLog(snapshot)}`).catch(() => {});
   };
@@ -935,10 +987,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         referencia: f.referencia || '',
         busqueda: f.busqueda || '',
       });
-      if (!yaDescargado.current) {
-        yaDescargado.current = true;
-        descargarOperaciones(f.fechaInicio, f.fechaFin, f.cliente || '');
-      }
+      descargarSiCambioRango(f.fechaInicio, f.fechaFin, f.cliente || '');
     };
     try {
       // ✅ V00294: DEEP-LINK — ?filtros= trae la búsqueda completa serializada
@@ -1012,7 +1061,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       limpiarCachesPorPrefijo(CACHE_PREFIX);
       try { almacenSesion.removeItem(CACHE_KEY_TODOS); } catch { /* ignorar */ }
       alert(`Búsquedas aceleradas. ✅\n\n· Operaciones indexadas: ${escritas} (las demás ya estaban al día)\n· Desde ahora Buscar consulta SOLO el rango pedido, en todas las pestañas y dispositivos.`);
-      if (filtrosAplicados) { yaDescargado.current = true; descargarOperaciones(filtrosAplicados.fechaInicio, filtrosAplicados.fechaFin, filtrosAplicados.cliente, { ignorarCache: true }); }
+      if (filtrosAplicados) { rangoDescargado.current = `${filtrosAplicados.fechaInicio}_${filtrosAplicados.fechaFin}`; descargarOperaciones(filtrosAplicados.fechaInicio, filtrosAplicados.fechaFin, filtrosAplicados.cliente, { ignorarCache: true }); }
     } catch (e) {
       console.error('[ServiciosCompletados] No se pudieron indexar las fechas:', e);
       alert('No se pudieron indexar las fechas. Revisa tu conexión e inténtalo de nuevo.');
@@ -1030,7 +1079,8 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     try { almacenSesion.removeItem(CACHE_KEY_TODOS); } catch { /* ignorar */ }
     limpiarCachesPorPrefijo(`${CACHE_PREFIX}rango_`); // ✅ V00310
     try { almacenSesion.removeItem(`${CACHE_PREFIX}rango_${filtrosAplicados.fechaInicio}_${filtrosAplicados.fechaFin}`); } catch { /* ignorar */ }
-    yaDescargado.current = true;
+    rangoDescargado.current = `${filtrosAplicados.fechaInicio}_${filtrosAplicados.fechaFin}`;
+    limpiarCachesPorPrefijo(`${CACHE_PREFIX}canon_`); // ✅ V00443
     descargarOperaciones(filtrosAplicados.fechaInicio, filtrosAplicados.fechaFin, filtrosAplicados.cliente, { ignorarCache: true });
   };
 
@@ -1142,10 +1192,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const aplicarStatusEnMemoria = (opId: string, statusId: string, statusNombre: string) => {
     setOperacionesGlobales(prev => {
       const next = prev.map((o: any) => (o.id === opId ? { ...o, status: statusId, statusNombre } : o));
-      if (filtrosAplicados) {
-        guardarCacheMemoria(claveCacheActual(), next);
-        try { almacenSesion.setItem(claveCacheActual(), JSON.stringify({ ts: Date.now(), ops: next })); } catch { /* ignorar */ }
-      }
+      if (filtrosAplicados) guardarCacheActual(next);
       return next;
     });
     setOperacionViendo((prev: any) => (prev && prev.id === opId ? { ...prev, status: statusId, statusNombre } : prev));
@@ -1526,14 +1573,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         setOperacionViendo({ ...operacionViendo, ...payload });
       }
 
-      if (filtrosAplicados) {
-        try {
-          almacenSesion.setItem(
-            claveCacheActual(),
-            JSON.stringify({ ts: Date.now(), ops: nuevasGlobales })
-          );
-        } catch { /* ignorar */ }
-      }
+      if (filtrosAplicados) guardarCacheActual(nuevasGlobales);
 
       setOperacionEditando(null);
       setFormEdicion({});
@@ -1563,14 +1603,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       const restantes = operacionesGlobales.filter((o: any) => o.id !== op.id);
       setOperacionesGlobales(restantes);
       if (operacionViendo?.id === op.id) setOperacionViendo(null);
-      if (filtrosAplicados) {
-        try {
-          almacenSesion.setItem(
-            claveCacheActual(),
-            JSON.stringify({ ts: Date.now(), ops: restantes })
-          );
-        } catch { /* cuota agotada: ignorar */ }
-      }
+      if (filtrosAplicados) guardarCacheActual(restantes);
     } catch (err: any) {
       console.error('[ServiciosCompletados] Error al eliminar la operación:', err);
       alert(`No se pudo eliminar la operación.\n\nDetalle: ${err?.message || err}`);

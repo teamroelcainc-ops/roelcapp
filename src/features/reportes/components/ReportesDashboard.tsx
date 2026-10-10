@@ -37,7 +37,9 @@ import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
 // ✅ NUEVO: Resúmenes Diarios (Transfer / Logística / Fletes) en PDF.
 import { ResumenDiarioOperaciones } from './ResumenDiarioOperaciones';
 import './ReportesDashboard.css';
-import { docsSinPruebas } from '../../../utils/operacionPrueba';
+import { docsSinPruebas, sinPruebas } from '../../../utils/operacionPrueba';
+import { obtenerFlags } from '../../../shared/data/flags';
+import { operacionesDelRango } from '../../../shared/data/consultas';
 import { idReal, obtenerCatalogo, useCatalogo } from '../../../shared/data/catalogos';
 import { ID_MXN, ID_USD } from '../../../shared/dominio/constantes';
 import { esMXN, esUSD } from '../../../shared/dominio/moneda';
@@ -698,13 +700,26 @@ export const ReportesDashboard = () => {
       //   el rango por texto solo capturaba las que ya estaban en ISO, perdiendo
       //   muchos registros. Solución: bajar TODA la colección, normalizar cada
       //   fecha a ISO en memoria y filtrar por el rango. Así salen TODOS.
-      const snap = await getDocs(collection(db, modulo.coleccion));
-      // ✅ V00380: en el reporte de Operaciones no entran las de prueba
-      const docsRep = modulo.coleccion === 'operaciones' ? docsSinPruebas(snap.docs) : snap.docs;
-      const opsTodas = docsRep.map(d => {
-        const data = d.data() as any;
-        const iso = normalizarFechaISO(data[modulo.campoFecha]);
-        const base = { id: d.id, ...data, [modulo.campoFecha]: iso || data[modulo.campoFecha], _fechaISO: iso };
+      // ✅ V00443 (Fase 7.5): con `consultasCanonicas`, Operaciones pide al servidor SOLO el
+      //   rango (fechaServicioISO ya normalizada por la migración). Los demás módulos siguen
+      //   bajando su colección (sus fechas aún vienen en formatos mezclados).
+      const porRango = modulo.coleccion === 'operaciones' && (await obtenerFlags()).consultasCanonicas;
+      let crudos: Record<string, unknown>[];
+      if (porRango) {
+        const r = await operacionesDelRango(desde, hasta);
+        if (r.truncado) alert('El rango tiene demasiadas operaciones: el reporte muestra las primeras 20,000. Acorta el rango.');
+        crudos = sinPruebas(r.docs);
+      } else {
+        const snap = await getDocs(collection(db, modulo.coleccion));
+        // ✅ V00380: en el reporte de Operaciones no entran las de prueba
+        const docsRep = modulo.coleccion === 'operaciones' ? docsSinPruebas(snap.docs) : snap.docs;
+        crudos = docsRep.map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }));
+      }
+      const opsTodas = crudos.map(data0 => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- documento de cualquier módulo del reporte (forma dinámica), como antes.
+        const data = data0 as any;
+        const iso = porRango ? String(data.fechaServicioISO || '') : normalizarFechaISO(data[modulo.campoFecha]);
+        const base = { ...data, [modulo.campoFecha]: iso || data[modulo.campoFecha], _fechaISO: iso };
         // ✅ Conversiones (Dólares/Pesos/Conversión/Utilidad) recalculadas con la
         //   matriz convenio×factura; ver normalizarConversionesOp arriba.
         return normalizarConversionesOp(base, monMap);
