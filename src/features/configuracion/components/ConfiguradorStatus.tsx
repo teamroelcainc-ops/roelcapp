@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { collection, doc, getDoc, setDoc, getDocs, deleteDoc } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import './ConfiguradorStatus.css';
-import { idDocFlujo } from '../../operaciones/config/statusRules';
+import { idDocFlujo, limpiarCacheFlujos } from '../../operaciones/config/statusRules';
 
 /* ============================================================
    TIPOS
@@ -1268,6 +1268,7 @@ const EditorFlujoAppSheet = ({
         flujo: flujoFinal,
         ...configFormulario,
       });
+      limpiarCacheFlujos(); // ✅ V00438: la caché de flujos de ESTE navegador no queda vieja
       // ✅ NUEVO (V00111): si se está EDITANDO un flujo existente y se cambió
       //   la combinación (p. ej. renombrar la carga Cargada → Cargado), el
       //   flujo viejo sigue guardado bajo la combinación anterior. Se ofrece

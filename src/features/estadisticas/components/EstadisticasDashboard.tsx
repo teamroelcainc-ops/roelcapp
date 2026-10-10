@@ -15,7 +15,7 @@
 // respaldo en la Confirmación de Tarifa guardada).
 // Exportación: Excel (XLSX) y PDF horizontal con el logo de la empresa.
 // ---------------------------------------------------------------------------
-import { useRef, useState, useMemo, useEffect } from 'react';
+import { useRef, useState, useMemo, useEffect, useDeferredValue } from 'react';
 import { obtenerUsuarioAut } from '../../autorizaciones/autorizaciones';
 import { addDoc, collection, deleteDoc, doc, getDocs, onSnapshot, query, updateDoc, where } from 'firebase/firestore'; // ✅ V00340: configuraciones del Excel
 import { EditorOperacionEmbebido } from '../../operaciones/components/EditorOperacionEmbebido'; // ✅ V00340: auditar/editar desde Estadísticas // ✅ V00339: EN VIVO (documentId ya no se usa: el join se suscribe completo)
@@ -50,6 +50,29 @@ type Op = any;
 
 const money = (n: number) => `$${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const num = (n: number) => (Number(n) || 0).toLocaleString('en-US');
+
+// ✅ V00438 (Fase 2.4): funciones puras fuera del componente (dependencias estables).
+const numeroDeTexto = (s: string): number | null => {
+  const limpio = String(s).replace(/[$,\s]/g, '');
+  if (limpio === '' || isNaN(Number(limpio))) return null;
+  return Number(limpio);
+};
+// Filas visibles por tanda en la tabla de referencias ("Mostrar más").
+const PAGINA_REFS = 100;
+type PagoJoin = { fecha: string; metodo: string; obs: string };
+// Último pago (por fecha) que aplicó monto a cada factura.
+const mapaPagosPorFactura = (docs: { data: () => unknown }[]): Record<string, PagoJoin> => {
+  const mapa: Record<string, PagoJoin> = {};
+  docs
+    .map((d) => d.data() as Record<string, unknown>)
+    .sort((a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')))
+    .forEach((pg) => {
+      (Array.isArray(pg.facturas) ? pg.facturas : []).forEach((fa: Record<string, unknown>) => {
+        if (Number(fa.aplicado) > 0) mapa[String(fa.facturaId)] = { fecha: String(pg.fecha || ''), metodo: String(pg.metodoPago || ''), obs: String(pg.observaciones || '') };
+      });
+    });
+  return mapa;
+};
 
 // ── Clasificación de línea de negocio (nombre del tipo; respaldo: prefijo de la ref) ──
 const lineaDeOp = (op: Op): Linea => {
@@ -703,16 +726,13 @@ export function EstadisticasDashboard() {
   };
   useEffect(() => { setFiltrosDet([]); }, [detalleSel?.titulo]);
   useEffect(() => { setTabLineaDet('Todas'); }, [detalleSel?.titulo]);
-  useEffect(() => { setFiltrosCols({}); setOrdenRefs(null); }, [refsFiltro]);
+  useEffect(() => { setFiltrosCols({}); setOrdenRefs(null); setLimiteRefs(PAGINA_REFS); }, [refsFiltro]);
   // ✅ NUEVO — ORDEN POR COLUMNA en la tabla de operaciones (mismo patrón
   //   que Operaciones Activas): clic asc, segundo clic desc.
   const [ordenRefs, setOrdenRefs] = useState<{ col: string; dir: 1 | -1 } | null>(null);
+  // ✅ V00438 (Fase 2.4): la tabla pinta por tandas; totales y exportes usan TODAS las filas.
+  const [limiteRefs, setLimiteRefs] = useState(PAGINA_REFS);
   const clickOrdenRefs = (col: string) => setOrdenRefs((prev) => prev && prev.col === col ? { col, dir: prev.dir === 1 ? -1 : 1 } : { col, dir: 1 });
-  const numeroDeTexto = (s: string): number | null => {
-    const limpio = String(s).replace(/[$,\s]/g, '');
-    if (limpio === '' || isNaN(Number(limpio))) return null;
-    return Number(limpio);
-  };
 
   // Al hacer drill-down desde el desglose, si la pestaña activa es Transfer
   // la tabla se abre con el formato del Excel de Transfer.
@@ -891,32 +911,24 @@ export function EstadisticasDashboard() {
   // Join perezoso con FACTURACIÓN y PAGOS (solo al abrir la pestaña Transfer):
   //   op.facturaClienteId -> doc de facturas_clientes; facturaId -> último pago.
   const [joinFacturas, setJoinFacturas] = useState<Record<string, any>>({});
-  const [joinPagos, setJoinPagos] = useState<Record<string, { fecha: string; metodo: string; obs: string }> | null>(null);
+  const [joinPagos, setJoinPagos] = useState<Record<string, PagoJoin> | null>(null);
   const [joinFacturasProv, setJoinFacturasProv] = useState<Record<string, any>>({});
-  const [joinPagosProv, setJoinPagosProv] = useState<Record<string, { fecha: string; metodo: string; obs: string }> | null>(null);
+  const [joinPagosProv, setJoinPagosProv] = useState<Record<string, PagoJoin> | null>(null);
   const [cargandoJoin, setCargandoJoin] = useState(false);
 
+  // ✅ V00339: el join de FACTURAS y PAGOS ahora es EN VIVO — se suscribe a
+  //   las colecciones mientras el formato Transfer/Cruces/Fletes está activo:
+  //   editar una factura o aplicar un pago se refleja al momento.
+  // ✅ V00438 (Fase 2.5): dependencias PRIMITIVAS. Antes dependía de objetos
+  //   (refsFiltro, detalleSel): cada clic en una celda cerraba y volvía a leer
+  //   las colecciones completas. Ahora solo cambia si cambia QUÉ se necesita.
+  const fmtJoin = (refsFiltro?.formato as FormatoExcel | undefined)
+    || (detalleSel !== null ? formatoDeLinea(tabLineaDet) : undefined);
+  const necesitaJoin = !!fmtJoin;
+  const necesitaJoinProv = fmtJoin === 'cruces' || fmtJoin === 'fletes';
+
   useEffect(() => {
-    // ✅ V00339: el join de FACTURAS y PAGOS ahora es EN VIVO — se suscribe a
-    //   las colecciones mientras el formato Transfer/Cruces/Fletes está activo:
-    //   editar una factura o aplicar un pago se refleja al momento.
-    const fmtTabla = refsFiltro?.formato as FormatoExcel | undefined;
-    const fmtDetalle = detalleSel !== null ? formatoDeLinea(tabLineaDet) : undefined;
-    const fmt = fmtTabla || fmtDetalle;
-    if (!fmt) return;
-    const necesitaProv = fmt === 'cruces' || fmt === 'fletes';
-    const armaMapaPagos = (docs: { data: () => unknown }[]) => {
-      const mapa: Record<string, { fecha: string; metodo: string; obs: string }> = {};
-      docs
-        .map((d) => d.data() as Record<string, unknown>)
-        .sort((a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')))
-        .forEach((pg) => {
-          (Array.isArray(pg.facturas) ? pg.facturas : []).forEach((fa: Record<string, unknown>) => {
-            if (Number(fa.aplicado) > 0) mapa[String(fa.facturaId)] = { fecha: String(pg.fecha || ''), metodo: String(pg.metodoPago || ''), obs: String(pg.observaciones || '') };
-          });
-        });
-      return mapa;
-    };
+    if (!necesitaJoin) return;
     const subs: (() => void)[] = [
       onSnapshot(collection(db, 'facturas_clientes'), (snap) => {
         const m: Record<string, unknown> = {};
@@ -925,22 +937,26 @@ export function EstadisticasDashboard() {
         setCargandoJoin(false);
       }, (e) => { console.warn('Join de facturas:', e); setCargandoJoin(false); }),
       onSnapshot(query(collection(db, 'pagos'), where('tipo', '==', 'cliente')), (snap) => {
-        setJoinPagos(armaMapaPagos(snap.docs));
+        setJoinPagos(mapaPagosPorFactura(snap.docs));
       }, (e) => console.warn('Join de pagos:', e)),
     ];
-    if (necesitaProv) {
-      subs.push(onSnapshot(collection(db, 'facturas_proveedores'), (snap) => {
+    return () => subs.forEach((u) => u());
+  }, [necesitaJoin]);
+
+  useEffect(() => {
+    if (!necesitaJoinProv) return;
+    const subs: (() => void)[] = [
+      onSnapshot(collection(db, 'facturas_proveedores'), (snap) => {
         const m: Record<string, unknown> = {};
         snap.docs.forEach((d) => { m[d.id] = { id: d.id, ...(d.data() as Record<string, unknown>) }; });
         setJoinFacturasProv(m as Record<string, any>);
-      }, (e) => console.warn('Join de facturas proveedor:', e)));
-      subs.push(onSnapshot(query(collection(db, 'pagos'), where('tipo', '==', 'proveedor')), (snap) => {
-        setJoinPagosProv(armaMapaPagos(snap.docs));
-      }, (e) => console.warn('Join de pagos proveedor:', e)));
-    }
+      }, (e) => console.warn('Join de facturas proveedor:', e)),
+      onSnapshot(query(collection(db, 'pagos'), where('tipo', '==', 'proveedor')), (snap) => {
+        setJoinPagosProv(mapaPagosPorFactura(snap.docs));
+      }, (e) => console.warn('Join de pagos proveedor:', e)),
+    ];
     return () => subs.forEach((u) => u());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refsFiltro, detalleSel, tabLineaDet]);
+  }, [necesitaJoinProv]);
 
   const nummx = (n: number) => (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -1050,29 +1066,39 @@ export function EstadisticasDashboard() {
   const esModoTransfer = !!formatoTabla; // (nombre histórico: ahora cubre transfer/cruces/fletes)
   const columnasFormatoTabla = formatoTabla ? COLUMNAS_POR_FORMATO[formatoTabla] : null;
 
-  const refsVisibles = useMemo(() => {
-    if (!refsFiltro) return [];
-    const porLinea = refsFiltro.ops;
-    const cols = columnasFormatoTabla || columnasActivas;
+  // ✅ V00438 (Fase 2.4): los filtros por columna se aplican DIFERIDOS (teclear
+  //   no congela la tabla) y el orden calcula la clave de cada fila UNA sola vez
+  //   por (filas, columna); antes valor() corría dentro de cada comparación.
+  const filtrosColsDiferidos = useDeferredValue(filtrosCols);
+  const refsFiltradas = useMemo(() => {
     const valor = esModoTransfer ? valorTransfer : valorColumna;
-    const filtradas = porLinea.filter(op =>
-      cols.every(c => {
-        const f = (filtrosCols[c.campo] || '').trim().toLowerCase();
-        if (!f) return true;
-        return valor(op, c.campo).toLowerCase().includes(f);
-      })
-    );
-    // ✅ Orden por la columna activa (numérico si la celda es numérica).
-    if (!ordenRefs) return filtradas;
-    const { col, dir } = ordenRefs;
-    return [...filtradas].sort((a, b) => {
-      const va = valor(a, col) || '', vb = valor(b, col) || '';
-      const na = numeroDeTexto(va), nb = numeroDeTexto(vb);
-      if (na !== null && nb !== null) return (na - nb) * dir;
-      return va.localeCompare(vb, 'es') * dir;
-    });
+    if (!refsFiltro) return { filas: [] as Op[], valor };
+    const cols = columnasFormatoTabla || columnasActivas;
+    const activos = cols
+      .map(c => ({ campo: c.campo, f: (filtrosColsDiferidos[c.campo] || '').trim().toLowerCase() }))
+      .filter(x => x.f);
+    const filas = refsFiltro.ops.filter(op => activos.every(({ campo, f }) => valor(op, campo).toLowerCase().includes(f)));
+    return { filas, valor };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refsFiltro, columnasActivas, filtrosCols, esModoTransfer, joinFacturas, joinPagos, joinFacturasProv, joinPagosProv, mapasNombres, ordenRefs]);
+  }, [refsFiltro, columnasActivas, filtrosColsDiferidos, esModoTransfer, joinFacturas, joinPagos, joinFacturasProv, joinPagosProv, mapasNombres]);
+  const colOrdenRefs = ordenRefs?.col ?? null;
+  const dirOrdenRefs = ordenRefs?.dir ?? 1;
+  const clavesOrdenRefs = useMemo(() => {
+    if (colOrdenRefs === null) return null;
+    return refsFiltradas.filas.map((op: Op) => {
+      const texto = refsFiltradas.valor(op, colOrdenRefs) || '';
+      return { op, texto, numero: numeroDeTexto(texto) };
+    });
+  }, [refsFiltradas, colOrdenRefs]);
+  // ✅ Orden por la columna activa (numérico si la celda es numérica).
+  const refsVisibles = useMemo(() => {
+    if (!clavesOrdenRefs) return refsFiltradas.filas;
+    return [...clavesOrdenRefs]
+      .sort((a, b) => (a.numero !== null && b.numero !== null)
+        ? (a.numero - b.numero) * dirOrdenRefs
+        : a.texto.localeCompare(b.texto, 'es') * dirOrdenRefs)
+      .map((k) => k.op);
+  }, [refsFiltradas, clavesOrdenRefs, dirOrdenRefs]);
 
   // Totales de la pestaña Transfer (fila TOTAL en pantalla y exportes).
   // ✅ Totales GENÉRICOS del formato activo: suma cada columna numérica
@@ -2095,7 +2121,7 @@ export function EstadisticasDashboard() {
                             <tbody>
                               {visibles.length === 0 ? (
                                 <tr><td colSpan={columnas.length} className="est-vacio">Sin operaciones con esos filtros.</td></tr>
-                              ) : visibles.map((op) => {
+                              ) : visibles.slice(0, limiteRefs).map((op) => {
                                 const linea = lineaDeOp(op);
                                 const claseLinea = linea === 'Transfer' ? 'transfer' : linea === 'Logística' ? 'logistica' : linea === 'Fletes' ? 'fletes' : 'otro';
                                 const valor = esModoTransfer ? valorTransfer : valorColumna;
@@ -2129,6 +2155,14 @@ export function EstadisticasDashboard() {
                             </tbody>
                           </table>
                         </div>
+                        {/* ✅ V00438 (Fase 2.4): tope de filas pintadas; la fila TOTAL y los exportes cubren todas. */}
+                        {visibles.length > limiteRefs && (
+                          <span className="est-refs-conteo">
+                            Mostrando <b>{limiteRefs}</b> de {visibles.length}
+                            <button type="button" className="est-btn-liga" onClick={() => setLimiteRefs((n) => n + PAGINA_REFS)}>Mostrar {Math.min(PAGINA_REFS, visibles.length - limiteRefs)} más</button>
+                            <button type="button" className="est-btn-liga" onClick={() => setLimiteRefs(visibles.length)}>Mostrar todas ({visibles.length})</button>
+                          </span>
+                        )}
                       </>
                     );
                   })()}

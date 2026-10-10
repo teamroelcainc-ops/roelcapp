@@ -1,9 +1,11 @@
-import { useState, useEffect, useMemo, Suspense, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, Suspense, useRef, useCallback, memo, useTransition } from 'react';
 import { TarjetaCasetas } from './features/operaciones/components/TarjetaCasetas'; // ✅ V00349
 import { TarjetaSaldoDiesel } from './features/operaciones/components/TarjetaSaldoDiesel'; // ✅ V00411
 import { DocumentosLista } from './features/documentos/DocumentosLista';
 import { APP_VERSION, APP_AUTOR } from './config/version';
-import { emitirBusquedaGlobal, hayReceptorBusqueda, etiquetaReceptorBusqueda, suscribirReceptorBusqueda } from './utils/busquedaGlobal'; // ✅ V00263
+import BuscadorTopbar from './components/layout/BuscadorTopbar'; // ✅ V00263 · V00438: estado propio
+import CargandoModulo from './components/layout/CargandoModulo'; // ✅ V00438
+import AvisoRecargaPendiente from './components/AvisoRecargaPendiente'; // ✅ V00438
 import { MantenerVivo } from './utils/mantenerVivo'; // ✅ V00264: módulos que no se desmontan al navegar
 import { Bell } from 'lucide-react';
 import type { CSSProperties } from 'react';
@@ -293,12 +295,6 @@ const ICON: Record<string, React.ReactNode> = {
 };
 
 // Indicador mientras se descarga el chunk de un módulo (carga diferida).
-const CargandoModulo = () => (
-  <div className="app-x2">
-    <span className="app-x3" />
-    Cargando módulo…<style>{`@keyframes spinRoelca { to { transform: rotate(360deg); } }`}</style>
-  </div>
-);
 
 // ============================================================================
 // ✅ NUEVO — RESUMEN DEL DÍA (vista principal)
@@ -309,10 +305,6 @@ const CargandoModulo = () => (
 // ============================================================================
 const RESUMEN_STATUS_COMPLETADOS = ['c2d57403', 'f557b751'];
 const RESUMEN_STATUS_CANCELADO = '7607f692';
-const RESUMEN_COLECCIONES_TC = [
-  'tipo_cambio', 'tipos_cambio', 'catalogo_tipo_cambio', 'catalogo_tipos_cambio',
-  'catalogo_tc', 'tipo_cambio_oficial', 'tipoCambio', 'tc', 'tc_dof', 'tipos_de_cambio',
-];
 
 const resumenNormalizarISO = (v: any): string => {
   if (v == null) return '';
@@ -353,7 +345,9 @@ const resumenMejorFechaFila = (row: any): string => {
   return mejor;
 };
 
-function ResumenDelDia() {
+// ✅ V00438 (Fase 2.1): memo — vive dentro del MantenerVivo de Operaciones; sin
+//   memo se re-renderizaba (con sus tarjetas) con cada render de App.
+const ResumenDelDia = memo(function ResumenDelDia() {
   const [cargando, setCargando] = useState(true);
   const [datos, setDatos] = useState<{
     totalHoy: number; completadasHoy: number; canceladasHoy: number;
@@ -362,6 +356,15 @@ function ResumenDelDia() {
     diesel: number | null; dieselFecha: string; dieselProveedores: number; dieselProveedor: string; dieselCapturas: number;
   }>({ totalHoy: 0, completadasHoy: 0, canceladasHoy: 0, completadasPorTipo: { cruces: 0, transfer: 0, fletes: 0, renta: 0, otros: 0 }, tc: null, tcFecha: '', diesel: null, dieselFecha: '', dieselProveedores: 0, dieselProveedor: '', dieselCapturas: 0 });
 
+  // ✅ V00438: ResumenDelDia está en memo (ya no se re-renderiza con App); a la
+  //   medianoche se re-renderiza solo y recarga, para que "hoy" no se quede en ayer.
+  const [diaActual, setDiaActual] = useState(() => new Date().toDateString());
+  useEffect(() => {
+    const ahora = new Date();
+    const manana = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate() + 1, 0, 0, 5);
+    const t = setTimeout(() => setDiaActual(new Date().toDateString()), manana.getTime() - ahora.getTime());
+    return () => clearTimeout(t);
+  }, [diaActual]);
   const hoy = new Date();
   const hoyISO = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
 
@@ -521,25 +524,27 @@ function ResumenDelDia() {
     } catch (e) { console.error('[Resumen del día] operaciones:', e); }
 
     // 2) Tipo de cambio del día (o el más reciente disponible).
+    // ✅ V00438 (Fase 2.9): antes se probaban ~10 nombres de colección y se
+    //   descargaba la colección COMPLETA de tipos de cambio (crece un registro por
+    //   día) en cada carga. Ahora: el de hoy (1 lectura) o el más reciente anterior
+    //   (1 lectura). `fecha` se guarda AAAA-MM-DD (FormularioTipoCambio y la captura
+    //   rápida de esta tarjeta); por orden de texto los ISO quedan antes que los
+    //   registros viejos d/m/aaaa.
     try {
-      let filas: any[] = [];
-      for (const nombre of RESUMEN_COLECCIONES_TC) {
-        try {
-          const snap = await getDocs(collection(db, nombre));
-          if (!snap.empty) { filas = snap.docs.map((d: any) => ({ id: d.id, ...d.data() })); break; }
-        } catch { /* colección inexistente: probar la siguiente */ }
-      }
-      const deHoy = filas.find(f => Object.values(f).some((v: any) => resumenNormalizarISO(v) === hoyISO));
-      if (deHoy) {
-        nuevo.tc = resumenExtraerTC(deHoy);
+      const colTC = collection(db, 'tipo_cambio');
+      let fila: any = null;
+      const snapHoy = await getDocs(query(colTC, where('fecha', '==', hoyISO), limit(1)));
+      if (!snapHoy.empty) {
+        fila = { id: snapHoy.docs[0].id, ...snapHoy.docs[0].data() };
         nuevo.tcFecha = hoyISO;
-      } else if (filas.length > 0) {
-        const ordenadas = filas
-          .map(f => ({ f, fecha: resumenMejorFechaFila(f), rate: resumenExtraerTC(f) }))
-          .filter(x => x.rate != null && x.fecha && x.fecha <= hoyISO)
-          .sort((a, b) => b.fecha.localeCompare(a.fecha));
-        if (ordenadas.length > 0) { nuevo.tc = ordenadas[0].rate; nuevo.tcFecha = ordenadas[0].fecha; }
+      } else {
+        const snapUlt = await getDocs(query(colTC, where('fecha', '<=', hoyISO), orderBy('fecha', 'desc'), limit(1)));
+        if (!snapUlt.empty) {
+          fila = { id: snapUlt.docs[0].id, ...snapUlt.docs[0].data() };
+          nuevo.tcFecha = resumenMejorFechaFila(fila) || String(fila.fecha || '');
+        }
       }
+      if (fila) nuevo.tc = resumenExtraerTC(fila);
     } catch (e) { console.error('[Resumen del día] tipo de cambio:', e); }
 
     // 3) Costo del diesel del día (promedio si hay varios proveedores) o el más reciente.
@@ -574,7 +579,7 @@ function ResumenDelDia() {
     setCargando(false);
   };
 
-  useEffect(() => { cargar(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  useEffect(() => { cargar(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [diaActual]);
 
   const fmtDia = (iso: string) => {
     if (!iso) return '';
@@ -770,7 +775,7 @@ function ResumenDelDia() {
       )}
     </div>
   );
-}
+});
 
 
 function AppContenido() {
@@ -797,6 +802,9 @@ function AppContenido() {
   };
   const [usuarioActualDB, setUsuarioActualDB] = useState<any>(null); 
   const [rolesCatalogo, setRolesCatalogo] = useState<any[]>([]); // catálogo de roles (para permisos)
+  // ✅ V00438 (Fase 2.10): hasta que llega el catálogo de roles no se sabe qué
+  //   módulos tiene el usuario; antes se mostraba "Sin módulos asignados" un instante.
+  const [rolesCargados, setRolesCargados] = useState(false);
   
   const { etq } = useEtiquetas();
   const [moduloActivo, setModuloActivo] = useState<'tableroCrm' | 'panelControl' | 'reporteVencimientos' | 'etiquetas' | 'estadisticas' | 'pagos' | 'misOperaciones' | 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'saldosPuentes' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'tarifarioClientes' | 'conveniosProveedores' | 'tarifarioProveedores' | 'detallesConvenioClientes' | 'detallesConvenioProveedores' | 'papeleraReciclaje' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones' | 'historialCambios'>(() => {
@@ -826,17 +834,8 @@ function AppContenido() {
   // ✅ MÓVIL: en pantallas chicas el menú inicia CERRADO (flota sobre el
   //   contenido); en escritorio inicia abierto como siempre.
   const [menuAbierto, setMenuAbierto] = useState(() => window.innerWidth > 768);
-  // ✅ V00263: BUSCADOR GLOBAL del topbar — filtra el módulo activo. Si el
-  //   módulo no tiene búsqueda, el campo se deshabilita solo.
-  const [busquedaTopbar, setBusquedaTopbar] = useState('');
-  const [receptorBusquedaActivo, setReceptorBusquedaActivo] = useState(hayReceptorBusqueda());
-  const [etiquetaBusquedaTopbar, setEtiquetaBusquedaTopbar] = useState(etiquetaReceptorBusqueda());
-  useEffect(() => suscribirReceptorBusqueda(() => {
-    setReceptorBusquedaActivo(hayReceptorBusqueda());
-    setEtiquetaBusquedaTopbar(etiquetaReceptorBusqueda());
-    setBusquedaTopbar(''); // al cambiar de módulo, el buscador arranca limpio
-  }), []);
-  const escribirBusquedaTopbar = (t: string) => { setBusquedaTopbar(t); emitirBusquedaGlobal(t); };
+  // ✅ V00263 / V00438: el buscador global del topbar vive en <BuscadorTopbar/>
+  //   con su propio estado (una tecla ya no re-renderiza App ni los módulos).
   
   const [menuBasesDatosAbierto, setMenuBasesDatosAbierto] = useState(false);
   const [menuClientesAbierto, setMenuClientesAbierto] = useState(false);
@@ -1096,8 +1095,12 @@ function AppContenido() {
 
   // ✅ MÓVIL: navegar desde el sidebar cierra el menú automáticamente (en
   //   teléfono el sidebar flota sobre el contenido; ver src/styles/mobile.css).
+  const [navegando, iniciarNavegacion] = useTransition();
   const navegarA = (modulo: typeof moduloActivo) => {
-    setModuloActivo(modulo);
+    // ✅ V00438 (Fase 2.10): transición — mientras carga el código de un módulo
+    //   nuevo se sigue viendo el actual (antes toda el área se cambiaba por
+    //   "Cargando módulo…", incluidos los módulos que MantenerVivo conserva).
+    iniciarNavegacion(() => setModuloActivo(modulo));
     if (window.innerWidth <= 768) setMenuAbierto(false);
   };
 
@@ -1228,6 +1231,10 @@ function AppContenido() {
     if (!estaAutenticado) return;
     const unsub = onSnapshot(collection(db, 'roles'), (snap) => {
       setRolesCatalogo(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+      setRolesCargados(true);
+    }, (err) => {
+      console.error('[roles] No se pudo leer el catálogo de roles.', err);
+      setRolesCargados(true);
     });
     return () => unsub();
   }, [estaAutenticado]);
@@ -1461,7 +1468,7 @@ function AppContenido() {
   const verBasesDatos = puede('empresas') || puede('contactos') || puede('direcciones') || puede('tipoCambio') || puede('saldosPuentes') || puede('combustible') || puede('unidades') || puede('remolques') || puede('proveedoresUnidad') || puede('unidadesProveedor');
   const verConfiguracion = puede('usuarios') || puede('roles') || puede('logs') || puede('flujosOperacion') || puede('datosEmpresa') || puede('autorizaciones');
 
-  const sinModulos = !accesoTotal && clavesPermitidas.size === 0;
+  const sinModulos = !accesoTotal && clavesPermitidas.size === 0 && (rolesCargados || !usuarioActualDB);
 
   // Avatar (foto si existe; si no, iniciales)
   const inicialesUsuario = usuarioActualDB?.nombre ? usuarioActualDB.nombre.substring(0, 2).toUpperCase() : 'JM';
@@ -1472,6 +1479,7 @@ function AppContenido() {
 
       {/* PWA: aviso global cuando el dispositivo pierde internet */}
       <AvisoSinConexion />
+      <AvisoRecargaPendiente />
       {/* ✅ Alerta del Reloj Checador: FLOTANTE (position fixed), no ocupa
           espacio en el layout — imposible que desacomode la vista. */}
       <AvisoChecador />
@@ -1867,24 +1875,11 @@ function AppContenido() {
         <div className="topbar app-x44">
           <div className="app-x45">
             <button className="menu-toggle-btn" onClick={() => setMenuAbierto(!menuAbierto)} title="Ocultar/Mostrar Menú">☰</button>
+            {navegando && <span className="app-x3 app-navegando" title="Cargando módulo…" />}
           </div>
 
-          {/* ✅ V00263: buscador global — filtra el módulo activo */}
-          <div className="topbar-buscador">
-            <span className="topbar-buscador__lupa">🔍</span>
-            <input
-              className="topbar-buscador__input"
-              type="text"
-              value={busquedaTopbar}
-              disabled={!receptorBusquedaActivo}
-              placeholder={receptorBusquedaActivo ? `Buscar en ${etiquetaBusquedaTopbar}…` : 'Sin búsqueda en este módulo'}
-              title={receptorBusquedaActivo ? 'Filtra lo que ves en el módulo actual' : 'Este módulo no tiene búsqueda'}
-              onChange={(e) => escribirBusquedaTopbar(e.target.value)}
-            />
-            {busquedaTopbar && (
-              <button className="topbar-buscador__limpiar" onClick={() => escribirBusquedaTopbar('')} title="Limpiar búsqueda">✕</button>
-            )}
-          </div>
+          {/* ✅ V00263: buscador global — filtra el módulo activo (✅ V00438: componente propio) */}
+          <BuscadorTopbar />
 
           <div className="topbar-right app-x46">
             {accesoTotalReal && !vistaComoAplicada && (
@@ -2044,7 +2039,7 @@ function AppContenido() {
             {moduloActivo === 'referenciasPuentes' && puede('referenciasPuentes') && <ReferenciasPuentesDashboard />} 
             {moduloActivo === 'costosAdicionales' && puede('costosAdicionales') && <CostosAdicionalesDashboard />} 
             {moduloActivo === 'referenciasNomina' && puede('referenciasNomina') && <ReferenciasNominaDashboard />}
-            {moduloActivo === 'importacion' && <DataImportView onOpenMenu={() => setMenuAbierto(true)} />} 
+            {moduloActivo === 'importacion' && !!usuarioActualDB && <DataImportView onOpenMenu={() => setMenuAbierto(true)} />} 
             {moduloActivo === 'deducciones' && puede('deducciones') && <DeduccionesDashboard />} 
             <MantenerVivo activo={moduloActivo === 'empresas' && puede('empresas')}><EmpresasDashboard /></MantenerVivo>{/* ✅ V00264 */}
             {moduloActivo === 'contactos' && puede('contactos') && <ContactosDashboard />}

@@ -1,0 +1,16 @@
+/* ✅ V00438: aviso de versión nueva esperando a que se cierre un formulario */
+.aviso-recarga {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 4000;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid #a855f7;
+  background-color: #161b22;
+  color: #f0f6fc;
+  font-size: 0.85rem;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}

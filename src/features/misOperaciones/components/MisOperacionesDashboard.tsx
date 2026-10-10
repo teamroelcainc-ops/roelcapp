@@ -18,6 +18,7 @@ import {
 import { db } from '../../../config/firebase';
 import { useUsuarioStore } from '../../../stores/useUsuarioStore';
 import { useEstadoConexion } from '../../../hooks/useEstadoConexion';
+import { useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
 import { registrarLog } from '../../../utils/logger';
 import { nombreDeEmpleado } from '../../../utils/nombreEmpleado';
 import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
@@ -137,8 +138,12 @@ export function MisOperacionesDashboard() {
   }, []);
 
   // [3] Operaciones ACTIVAS asignadas al operador, en tiempo real.
+  // ✅ V00438 (Fase 2.7): solo mientras el módulo se ve; oculto conserva la
+  //   lista ya pintada y al volver se re-suscribe sin vaciarla.
+  const moduloVisible = useModuloVivoActivo();
   useEffect(() => {
     if (!idsOperador || idsOperador.length === 0) { setOperaciones([]); return; }
+    if (!moduloVisible) return;
     const q = query(collection(db, 'operaciones'), where('operador', 'in', idsOperador.slice(0, 10)));
     const unsubscribe = onSnapshot(q, (snap) => {
       const lista: OperacionAsignada[] = snap.docs
@@ -153,7 +158,7 @@ export function MisOperacionesDashboard() {
       setOpAbierta((prev) => (prev ? lista.find((o) => o.id === prev.id) || null : prev));
     });
     return () => unsubscribe();
-  }, [idsOperador]);
+  }, [idsOperador, moduloVisible]);
 
   // [4] Horarios ya marcados de la operación abierta.
   useEffect(() => {

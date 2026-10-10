@@ -7,6 +7,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
 import './TarjetaCasetas.css';
 
 const ID_USD = '7dca62b3';
@@ -69,7 +70,14 @@ export const TarjetaCasetas: React.FC = () => {
   const [fechaRecarga, setFechaRecarga] = useState(hoyISO());
   const [horaRecarga, setHoraRecarga] = useState(horaAhora());
 
+  // ✅ V00438 (Fase 2.7): la tarjeta vive dentro del módulo Operaciones (MantenerVivo):
+  //   escucha solo mientras se ve; oculta conserva las cifras y al volver se re-suscribe.
+  //   Sin ventana de fechas a propósito: el saldo restante sale de TODO el historial
+  //   (recargas − cruces desde la 1ª recarga) y lo de "hoy" sale de esos mismos datos;
+  //   acotar cambiaría las cifras. Saldo corrido en un documento → Fase 5.6.
+  const moduloVisible = useModuloVivoActivo();
   useEffect(() => {
+    if (!moduloVisible) return;
     const u1 = onSnapshot(collection(db, 'catalogo_tipos_gastos'), (snap) => {
       const lista: Puente[] = [];
       snap.docs.forEach((d) => {
@@ -109,7 +117,7 @@ export const TarjetaCasetas: React.FC = () => {
       }));
     }, () => setCrucesOtros([]));
     return () => { u1(); u2(); u3(); u4(); };
-  }, []);
+  }, [moduloVisible]);
 
   /** Saldo pendiente (disponible) del puente = Σ recargas − Σ cruces desde la 1ª recarga. */
   const pendienteDe = (p: Puente | undefined): number => {

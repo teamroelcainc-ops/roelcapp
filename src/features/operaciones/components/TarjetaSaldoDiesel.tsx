@@ -5,6 +5,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
 
 type Fila = Record<string, unknown>;
 const hoyISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -14,11 +15,17 @@ const cargado = (r: Fila) => Number(r.totalCargado) || ((Number(r.galonesCargado
 export const TarjetaSaldoDiesel: React.FC = () => {
   const [saldos, setSaldos] = useState<Fila[]>([]);
   const [refs, setRefs] = useState<Fila[]>([]);
+  // ✅ V00438 (Fase 2.7): escucha solo con Operaciones visible; oculta conserva las cifras.
+  //   Sin ventana de fechas: el saldo restante descuenta TODAS las cargas desde el 1er
+  //   saldo de cada proveedor y "Cargas hoy" sale de esas mismas referencias; acotar
+  //   cambiaría las cifras. Saldo corrido en un documento → Fase 5.6.
+  const moduloVisible = useModuloVivoActivo();
   useEffect(() => {
+    if (!moduloVisible) return;
     const u1 = onSnapshot(collection(db, 'saldos_diesel'), (s) => setSaldos(s.docs.map((d) => ({ id: d.id, ...(d.data() as Fila) }))), () => setSaldos([]));
     const u2 = onSnapshot(query(collection(db, 'referencias_diesel'), orderBy('createdAt', 'desc'), limit(3000)), (s) => setRefs(s.docs.map((d) => ({ id: d.id, ...(d.data() as Fila) }))), () => setRefs([]));
     return () => { u1(); u2(); };
-  }, []);
+  }, [moduloVisible]);
 
   const hoy = hoyISO();
   const cuentas = useMemo(() => {

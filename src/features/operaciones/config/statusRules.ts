@@ -1,5 +1,6 @@
 // src/features/operaciones/config/statusRules.ts
 import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
+import type { DocumentData } from 'firebase/firestore';
 
 // ✅ V00407: un id de documento de Firestore NO puede llevar "/" (p. ej. el servicio
 //   "Rentas (Patio / Equipo)" rompía al guardar). Se cambia por "／" (barra ancha),
@@ -297,19 +298,32 @@ const obtenerDocFlujo = async (operacionInfo: any) => {
 // SALTO AUTOMÁTICO (EVALUADO AL GUARDAR EL FORMULARIO)
 // ✅ FIX: usa buscarNodoPorNombre() para ser tolerante a diferencias menores
 // =========================================================================
-export const calcularStatusDinamico = async (configId: string, formData: any, statusActual?: string): Promise<string> => {
+/** Lee el documento de flujo FRESCO de Firestore (sin la caché de 6 h). */
+export const leerFlujoFresco = async (configId: string): Promise<DocumentData | null> => {
+  const snap = await getDoc(doc(db, 'config_flujos_operacion', idDocFlujo(configId)));
+  return snap.exists() ? snap.data() : null;
+};
+
+export const calcularStatusDinamico = async (
+  configId: string,
+  formData: any,
+  statusActual?: string,
+  opciones: { leerFlujo?: (configId: string) => Promise<DocumentData | null> } = {},
+): Promise<string> => {
   if (!configId || configId.includes('N/A') || configId === '__') {
     throw new Error("⛔ Faltan datos para determinar el flujo. Asegúrate de que el Convenio generó correctamente el Servicio, Tráfico y Carga.");
   }
 
-  const docRef = doc(db, 'config_flujos_operacion', idDocFlujo(configId));
-  const snap = await getDoc(docRef);
+  // ✅ V00438 (Fase 2.6): la vista previa pasa su propio lector (una lectura FRESCA por
+  //   formulario abierto, no una por tecla); el guardado lee el documento fresco.
+  const datosFlujo = opciones.leerFlujo ? await opciones.leerFlujo(configId) : await leerFlujoFresco(configId);
 
-  if (!snap.exists() || !snap.data().flujo || snap.data().flujo.length === 0) {
+  if (!datosFlujo || !datosFlujo.flujo || datosFlujo.flujo.length === 0) {
     throw new Error(`⛔ BLOQUEO: No existe un flujo configurado para la combinación:\n"${configId.replace(/_/g, ' ')}"\n\nPor favor, créalo primero en el menú "Reglas de Estatus".`);
   }
 
-  const reglas = snap.data().flujo as any[];
+  // ✅ V00438 (Fase 2.6): copia, porque abajo se ordena en sitio y el arreglo puede vivir en la caché.
+  const reglas = (datosFlujo.flujo as any[]).slice();
   let currentState = statusActual;
 
   if (!currentState) {

@@ -1076,6 +1076,10 @@ body {
 .app-x1 { flex-shrink: 0; }
 .app-x2 { display: flex; align-items: center; justify-content: center; gap: 12px; height: calc(100vh - 160px); color: #8b949e; }
 .app-x3 { width: 18px; height: 18px; border: 2px solid #30363d; border-top-color: #D84315; border-radius: 50%; display: inline-block; animation: spinRoelca 0.7s linear infinite; }
+/* ✅ V00438: antes iba en un <style> dentro del JSX de CargandoModulo */
+@keyframes spinRoelca { to { transform: rotate(360deg); } }
+/* ✅ V00438: indicador de navegación mientras carga el código de un módulo */
+.app-navegando { margin-left: 10px; }
 .app-x4 { padding: 20px 28px 0 28px; box-sizing: border-box; width: 100%; }
 .app-x5 { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .app-x6 { color: #8b949e; font-size: 0.82rem; }

@@ -18,6 +18,7 @@ import './EmpresasDashboard.css';
 import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 import { almacenSesion, obtenerCacheMemoria, guardarCacheMemoria } from '../../../utils/cacheMemoria';
 import { hoyLocalISO, fechaLocalISO } from '../../../utils/fechaHoraLocal';
+import { useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
 
 const opcionesFiltro = [
   'Todo', 'Proveedor (Servicios)', 'Empresa Inactiva', 'Baja', 'Cliente (Mercancía)', 
@@ -408,7 +409,11 @@ const EmpresasDashboard = () => {
   const [columnasTabla, setColumnasTabla] = useState(COLUMNAS_BASE.map(c => ({ ...c })));
   const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
 
+  // ✅ V00438 (Fase 2.7): empresas y "último uso" (1,500 operaciones) solo se
+  //   escuchan con el módulo VISIBLE; oculto conserva lo ya pintado.
+  const visible = useModuloVivoActivo();
   useEffect(() => {
+    if (!visible) return;
     const unsubscribeEmpresas = onSnapshot(collection(db, 'empresas'), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       data.sort((a: any, b: any) => {
@@ -449,6 +454,13 @@ const EmpresasDashboard = () => {
       setLastUsedMap(usageMap);
     });
 
+    return () => {
+      unsubscribeEmpresas();
+      unsubscribeOperaciones();
+    };
+  }, [visible]);
+
+  useEffect(() => {
     // ✅ OPTIMIZACIÓN DE LECTURAS Y DICCIONARIOS A PRUEBA DE FALLOS
     const fetchDiccionarios = async () => {
       const cacheKey = 'roelca_empresas_dict_v2'; // Cambiamos la llave para obligar a que se limpie la caché antigua
@@ -500,11 +512,6 @@ const EmpresasDashboard = () => {
     };
 
     fetchDiccionarios();
-    
-    return () => {
-      unsubscribeEmpresas();
-      unsubscribeOperaciones();
-    };
   }, []);
 
   useEffect(() => {
@@ -1037,11 +1044,18 @@ const EmpresasDashboard = () => {
     return '#ef4444'; 
   };
 
+  // ✅ V00438 (Fase 2.7): índice por id; antes empresas.find dentro de empresas.map (O(E²)).
+  const empresaPorId = useMemo(() => {
+    const m = new Map<unknown, (typeof empresas)[number]>();
+    empresas.forEach((e) => { if (!m.has(e.id)) m.set(e.id, e); });
+    return m;
+  }, [empresas]);
+
   const registrosListos = useMemo(() => {
     return empresas.map(emp => {
       let clienteRelName = emp.clienteRelacionadoNombre;
       if (!clienteRelName && emp.clienteRelacionadoId) {
-        const match = empresas.find(e => e.id === emp.clienteRelacionadoId);
+        const match = empresaPorId.get(emp.clienteRelacionadoId);
         clienteRelName = match ? match.nombre : emp.clienteRelacionadoId;
       }
       
@@ -1062,7 +1076,7 @@ const EmpresasDashboard = () => {
         _tiposServicioArray: getArrayLabels(emp.tiposServicio, 'tiposServicio')
       };
     });
-  }, [empresas, diccionarios, lastUsedMap, conteoOps]);
+  }, [empresas, empresaPorId, diccionarios, lastUsedMap, conteoOps]);
 
   // ✅ NUEVO (V00117): apartado de empresas obligadas a tener moneda/factura
   //   que aún no la tienen (Cliente Paga y Proveedor Transporte).

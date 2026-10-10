@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useEffectEvent, useMemo, useRef, useCallback } from 'react';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
+import { useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
+import { useHandlerEstable } from '../hooks/useHandlerEstable';
 import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
 import { sinPruebas, esOperacionPrueba } from '../../../utils/operacionPrueba';
 import { addDoc, collection, query, getDocs, onSnapshot, orderBy, limit, where, startAfter, documentId, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
@@ -481,8 +483,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const [pestañaDetalleActiva, setPestañaDetalleActiva] = useState<string>('general');
   const registrosPorPagina = 30; // ✅ V00312: menos filas de inicio
 
-  const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
-
   const [modalColumnas, setModalColumnas] = useState(false);
   const [columnasTabla, setColumnasTabla] = useState(cargarColumnasGuardadas);
 
@@ -848,10 +848,16 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   // Se conserva como no-op para no tocar los puntos donde se invocaba antes.
   const cargarCatalogosSiEsNecesario = async () => {};
 
+  // ✅ V00438 (Fase 2.7): los listeners de catálogos solo viven mientras el
+  //   módulo se ve; oculto conserva los catálogos ya cargados y al volver se
+  //   re-suscribe (Fase 3 los reemplaza por la capa compartida de catálogos).
+  const moduloVisible = useModuloVivoActivo();
+  const suscribirCatalogosEv = useEffectEvent(suscribirCatalogosEnVivo);
   useEffect(() => {
-    const unsubscribers = suscribirCatalogosEnVivo();
+    if (!moduloVisible) return;
+    const unsubscribers = suscribirCatalogosEv();
     return () => unsubscribers.forEach((unsub) => unsub());
-  }, []);
+  }, [moduloVisible]);
 
   // ✅ OPTIMIZACIÓN: el conjunto descargado (TODOS los completados) NO depende de
   //   los filtros — fecha, cliente, tipo y remolque se aplican en memoria. Por eso
@@ -1491,6 +1497,12 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     setEstadoFormulario('cerrado');
     setOperacionEditando(null);
   };
+
+  // ✅ V00438 (Fase 2.3b): props ESTABLES para memo(FormularioOperacion).
+  const onGuardarFormulario = useHandlerEstable(handleOperacionGuardada);
+  const onCerrarFormulario = useCallback(() => { setEstadoFormulario('cerrado'); setOperacionEditando(null); }, []);
+  const onMinimizarFormulario = useCallback(() => setEstadoFormulario('minimizado'), []);
+  const onRestaurarFormulario = useCallback(() => setEstadoFormulario('abierto'), []);
 
   const actualizarCampoEdicion = (campo: string, valor: any) => {
     setFormEdicion((prev: any) => {
@@ -2324,11 +2336,11 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         <FormularioOperacion
           estado={estadoFormulario}
           initialData={operacionEditando}
-          onClose={() => { setEstadoFormulario('cerrado'); setOperacionEditando(null); }}
-          onMinimize={() => setEstadoFormulario('minimizado')}
-          onRestore={() => setEstadoFormulario('abierto')}
+          onClose={onCerrarFormulario}
+          onMinimize={onMinimizarFormulario}
+          onRestore={onRestaurarFormulario}
           catalogosCacheados={catalogosGlobales}
-          onSave={handleOperacionGuardada}
+          onSave={onGuardarFormulario}
         />
       )}
 
@@ -2931,7 +2943,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                     </tr>
                   ) : (
                     operacionesEnPantalla.map((op: any) => (
-                      <tr key={op.id} style={{ borderBottom: '1px solid #21262d', backgroundColor: hoveredRowId === op.id ? '#21262d' : '#0d1117', transition: 'background-color 0.2s', cursor: 'pointer' }} onMouseEnter={() => setHoveredRowId(op.id)} onMouseLeave={() => setHoveredRowId(null)} onClick={() => { setOperacionViendo(op); setPestañaDetalleActiva('general'); }}>
+                      <tr key={op.id} className="scomp-fila-op" onClick={() => { setOperacionViendo(op); setPestañaDetalleActiva('general'); }}>
                         <td className="sc-x82" onClick={(e: any) => e.stopPropagation()}>
                           <div className="actions-cell sc-x83">
                             <button className="sc-x84" type="button" title="Ver Detalles"

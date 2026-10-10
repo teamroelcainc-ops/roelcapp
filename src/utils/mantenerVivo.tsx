@@ -7,8 +7,9 @@
 //   El contexto (moduloVivoContexto) expone si el módulo está visible, para
 //   que utilidades como el buscador global sepan cuál es el módulo ACTIVO.
 // ---------------------------------------------------------------------------
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import { ContextoModuloVivoActivo } from './moduloVivoContexto';
+import CargandoModulo from '../components/layout/CargandoModulo';
 
 export const MantenerVivo: React.FC<{ activo: boolean; children: React.ReactNode }> = ({ activo, children }) => {
   const [montado, setMontado] = useState(activo);
@@ -20,7 +21,11 @@ export const MantenerVivo: React.FC<{ activo: boolean; children: React.ReactNode
   if (!montado) return null; // nunca visitado: no cuesta nada
   return (
     <ContextoModuloVivoActivo.Provider value={activo}>
-      <div className={activo ? 'modulo-vivo' : 'modulo-vivo modulo-vivo--oculto'}>{children}</div>
+      {/* ✅ V00438 (Fase 2.10): Suspense propio — la primera carga de este módulo ya
+          no reemplaza por "Cargando…" a los demás módulos vivos. */}
+      <div className={activo ? 'modulo-vivo' : 'modulo-vivo modulo-vivo--oculto'}>
+        <Suspense fallback={<CargandoModulo />}>{children}</Suspense>
+      </div>
     </ContextoModuloVivoActivo.Provider>
   );
 };

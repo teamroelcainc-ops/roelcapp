@@ -44,6 +44,11 @@
 .od-x40 { background: transparent; border: 1px solid #3b82f6; border-radius: 4px; color: #3b82f6; cursor: pointer; padding: 6px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
 .od-x41 { background: transparent; border: 1px solid #ef4444; border-radius: 4px; color: #ef4444; cursor: pointer; padding: 6px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
 .od-x42 { padding: 16px; white-space: nowrap; }
+/* ✅ V00438 (Fase 2.3): hover de la fila por CSS (antes estado hoveredRowId →
+   2 renders del módulo por cada fila cruzada). `.data-table` sube la
+   especificidad sobre `.data-table tr:hover` global (App.css). */
+.data-table .od-fila-op { border-bottom: 1px solid #21262d; background-color: #0d1117; transition: background-color 0.2s; cursor: pointer; }
+.data-table .od-fila-op:hover { background-color: #21262d; }
 .od-x43 { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding: 0 8px; flex-wrap: wrap; gap: 10px; }
 .od-x44 { color: #8b949e; font-size: 0.9rem; }
 .od-x45 { color: #8b949e; margin-left: 8px; font-style: italic; }

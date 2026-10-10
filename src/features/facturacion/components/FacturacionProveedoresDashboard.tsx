@@ -15,8 +15,9 @@
 //    catálogo de empresas. Vacío ('') = el buscador muestra TODAS las empresas.
 // ═══════════════════════════════════════════════════════════════════════
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, useDeferredValue, useEffectEvent } from 'react';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
+import { useModuloVivoActivo } from '../../../utils/moduloVivoContexto'; // ✅ V00438 (Fase 2.7)
 import { EditorOperacionEmbebido } from '../../operaciones/components/EditorOperacionEmbebido';
 import { HiloModal } from '../../hilo/HiloModal';
 import { suscribirOperacionGuardada } from '../../../utils/operacionesBus';
@@ -51,7 +52,6 @@ import { getAuth } from 'firebase/auth';
 import { registrarLog } from '../../../utils/logger';
 import './FacturacionProveedoresDashboard.css';
 import { TarjetaDocumentoFactura } from './TarjetaDocumentoFactura';
-import { almacenSesion } from '../../../utils/cacheMemoria';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 import { esUSD as esMonedaUSD } from '../../../shared/dominio/moneda';
@@ -79,8 +79,6 @@ const ID_MXN = 'f95d8894';
 
 const LIMITE_OPS_TODAS = 20000;
 const PAG_OPS = 1000;
-const SS_OPS = 'roelca_ops_prov_completadas_v2';
-const SS_OPS_TTL = 30 * 60 * 1000;
 
 const CONFIG_COLUMNAS_COLLECTION = 'config_columnas';
 
@@ -220,9 +218,9 @@ const COLUMNAS_FACTURA_BASE = [
 
 const LIMITE_FACTURAS_TODAS = 12000;
 const PAG_FACTURAS = 1000;
-const SS_FACTURAS = 'roelca_facturas_proveedores_v1';
-const SS_FACTURAS_CLIENTES = 'roelca_facturas_clientes_xref_v1';
-const SS_FACTURAS_TTL = 30 * 60 * 1000;
+// ✅ V00438 (Fase 2.8): claves de la copia vieja de operaciones/facturas en
+//   localStorage (almacenSesion). Ya no se escriben; se borran una vez al montar.
+const CLAVES_CACHE_LEGADO = ['roelca_ops_prov_completadas_v2', 'roelca_facturas_proveedores_v1', 'roelca_facturas_clientes_xref_v1'];
 
 const parseFechaFactura = (val: any): string => {
   if (!val) return '';
@@ -454,13 +452,62 @@ const obtenerMontoOperacion = (op: any) => {
   return calculado;
 };
 
+// ✅ V00438 (Fase 2.4): helpers puros movidos fuera del componente para que las
+//   claves de orden se puedan memoizar con dependencias reales.
+const provDeOp = (op: any) => op?.[CAMPO_PROVEEDOR_OP] || op?.proveedorUnidadId;
+
+const valorGenericoOp = (op: any, col: any): any => {
+  if (!col?.sourceField) return '';
+  const fields: string[] = Array.isArray(col.sourceField) ? col.sourceField : [col.sourceField];
+  for (const f of fields) {
+    const v = (op as any)?.[f];
+    if (v !== undefined && v !== null && v !== '') return v;
+  }
+  return '';
+};
+
+const fechaOrdenKey = (val: any): string => {
+  const s = String(val || '').trim();
+  if (!s) return '00000000';
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return m[1] + m[2].padStart(2, '0') + m[3].padStart(2, '0');
+  m = s.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+  if (m) return m[1] + m[2].padStart(2, '0') + m[3].padStart(2, '0');
+  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if (m) return m[3] + m[2].padStart(2, '0') + m[1].padStart(2, '0');
+  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})(?!\d)/);
+  if (m) return '20' + m[3] + m[2].padStart(2, '0') + m[1].padStart(2, '0');
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+  return s;
+};
+
+const refNaturalKey = (op: any): string => {
+  const r = String(op.numReferencia || op.referencia || op.ref || op.id || '');
+  return r.toLowerCase().replace(/\d+/g, (n) => n.padStart(12, '0'));
+};
+
+// ✅ V00126: un id de Firestore como "d449e0e7…" empieza con letra+dígitos y el
+//   patrón anterior lo tomaba por referencia válida, por lo que la ficha
+//   mostraba el ID en lugar de la referencia real. Ahora los tokens que son
+//   puro hexadecimal (ids) se descartan explícitamente.
+const pareceReferencia = (s: unknown): boolean => {
+  const t = String(s || '').trim();
+  if (!t || /^[0-9a-f]{8,}$/i.test(t)) return false; // id de Firestore (hex), no referencia
+  return /^[A-Za-z]{1,6}[-\s]?\d{3,}/.test(t);
+};
+
 export const FacturacionProveedoresDashboard = () => {
   const [activeTab, setActiveTab] = useState<'operaciones' | 'historial' | 'pagadas'>('operaciones');
   // ✅ V00126: "Pagadas" reutiliza toda la vista de Historial filtrando facturas liquidadas
   const esHistorial = activeTab === 'historial' || activeTab === 'pagadas';
   // ✅ V00126: mapa facturaId → número(s) de pago (colección `pagos`, en vivo)
   const [pagosPorFactura, setPagosPorFactura] = useState<Record<string, string[]>>({});
+  // ✅ V00438 (Fase 2.7): el listener de pagos se cierra mientras el módulo está
+  //   oculto (MantenerVivo); al volver se re-suscribe sin limpiar lo ya pintado.
+  const moduloVisible = useModuloVivoActivo();
   useEffect(() => {
+    if (!moduloVisible) return;
     const q = query(collection(db, 'pagos'), where('tipo', '==', 'proveedor'));
     const unsub = onSnapshot(q, (snap) => {
       const mapa: Record<string, string[]> = {};
@@ -472,7 +519,7 @@ export const FacturacionProveedoresDashboard = () => {
       setPagosPorFactura(mapa);
     }, (e) => console.warn('[Facturación] pagos:', e));
     return () => unsub();
-  }, []);
+  }, [moduloVisible]);
   const numerosPagoDe = (f: any): string[] => {
     const ids: string[] = Array.isArray(f?.__groupIds) && f.__groupIds.length ? f.__groupIds.map(String) : [String(f?.id || '')];
     const out: string[] = [];
@@ -514,6 +561,10 @@ export const FacturacionProveedoresDashboard = () => {
 
   const [textoBuscarFactura, setTextoBuscarFactura] = useState('');
   useBusquedaGlobal((t) => setTextoBuscarFactura(t), 'facturas de proveedores'); // ✅ V00263: buscador global del topbar
+  // ✅ V00438 (Fase 2.4): las búsquedas filtran miles de filas; con el valor
+  //   diferido el input responde al teclear y la tabla se actualiza después.
+  const textoBuscarRemolqueOpsDiferido = useDeferredValue(textoBuscarRemolqueOps);
+  const textoBuscarFacturaDiferido = useDeferredValue(textoBuscarFactura);
   const [filtroStatusFactura, setFiltroStatusFactura] = useState<string>('Todos');
   const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
   // ✅ NUEVO: las tablas arrancan VACÍAS; cada pestaña muestra datos hasta que
@@ -714,10 +765,12 @@ export const FacturacionProveedoresDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [empresasList]);
 
-  const resolverNombre = (val: any): any => {
+  // ✅ V00438 (Fase 2.4): useCallback para que las claves de orden de operaciones
+  //   (memo) dependan de algo estable.
+  const resolverNombre = useCallback((val: any): any => {
     if (val === '' || val === null || val === undefined) return val;
     return mapaCatalogos[String(val)] || val;
-  };
+  }, [mapaCatalogos]);
 
   const STATUS_FACTURABLES = useMemo(() => {
     const ids = new Set<string>(STATUS_COMPLETADOS);
@@ -834,18 +887,14 @@ export const FacturacionProveedoresDashboard = () => {
     }
   };
 
-  // ✅ V00390: la caché de sesión del historial se mantiene al día con cada cambio
-  //   (facturas nuevas, documentos subidos, status…) — antes solo se guardaba al
-  //   descargar y al volver al módulo se veía la versión vieja (sin el documento).
+  // ✅ V00438 (Fase 2.8): operaciones y facturas ya NO se copian a localStorage
+  //   (antes: JSON.stringify de hasta 20k ops + 12k facturas en cada cambio, dos
+  //   veces). El módulo vive en MantenerVivo (los datos siguen en memoria al
+  //   navegar) y la caché persistente de Firestore es la única en disco. Se
+  //   borran una vez las copias viejas para devolver ese espacio.
   useEffect(() => {
-    if (facturasGlobales.length === 0) return;
-    const t = setTimeout(() => guardarCacheFacturas(facturasGlobales), 400);
-    return () => clearTimeout(t);
-  }, [facturasGlobales]);
-
-  const guardarCacheFacturas = (docs: any[]) => {
-    try { almacenSesion.setItem(SS_FACTURAS, JSON.stringify({ ts: Date.now(), data: docs })); } catch { /* cuota */ }
-  };
+    try { CLAVES_CACHE_LEGADO.forEach((k) => localStorage.removeItem(k)); } catch { /* sin localStorage */ }
+  }, []);
 
   // Descarga TODAS las facturas desde Firestore (reutilizable por el botón Refrescar).
   const descargarFacturas = async () => {
@@ -871,7 +920,6 @@ export const FacturacionProveedoresDashboard = () => {
         return fb.localeCompare(fa);
       });
       setFacturasGlobales(todas);
-      guardarCacheFacturas(todas);
     } catch (e: any) {
       console.error('[Facturación Proveedores] Error al recargar facturas:', e);
       alert('No se pudieron recargar las facturas. ' + String(e?.message || e?.code || e || ''));
@@ -879,27 +927,16 @@ export const FacturacionProveedoresDashboard = () => {
     setCargandoFacturas(false);
   };
 
-  // Fuerza el refresco de la colección de facturas: limpia la caché y vuelve a leer.
+  // Fuerza el refresco de la colección de facturas: vuelve a leer de Firestore.
   const recargarFacturas = () => {
-    try { almacenSesion.removeItem(SS_FACTURAS); } catch { /* noop */ }
     descargarFacturas();
   };
 
   // ── Cruce con Facturación de CLIENTES ────────────────────────────────────
-  // Carga (una vez, con caché) las facturas de clientes para saber si una
+  // Carga (una vez) las facturas de clientes para saber si una
   // operación ya fue facturada al cliente y con qué número de factura.
   useEffect(() => {
     if (facturasClientesGlobales.length > 0) return;
-    try {
-      const raw = almacenSesion.getItem(SS_FACTURAS_CLIENTES);
-      if (raw) {
-        const obj = JSON.parse(raw);
-        if (obj && Array.isArray(obj.data) && (Date.now() - (obj.ts || 0)) < SS_FACTURAS_TTL) {
-          setFacturasClientesGlobales(obj.data);
-          return;
-        }
-      }
-    } catch { /* noop */ }
 
     const descargarClientes = async () => {
       try {
@@ -928,7 +965,6 @@ export const FacturacionProveedoresDashboard = () => {
           if (snap.docs.length < PAG_FACTURAS) break;
         }
         setFacturasClientesGlobales(todas);
-        try { almacenSesion.setItem(SS_FACTURAS_CLIENTES, JSON.stringify({ ts: Date.now(), data: todas })); } catch { /* cuota */ }
       } catch (e) {
         console.error('[Proveedores] Error cargando facturas de clientes (cruce):', e);
       }
@@ -971,16 +1007,6 @@ export const FacturacionProveedoresDashboard = () => {
 
   useEffect(() => {
     if (facturasGlobales.length > 0) return;
-    try {
-      const raw = almacenSesion.getItem(SS_FACTURAS);
-      if (raw) {
-        const obj = JSON.parse(raw);
-        if (obj && Array.isArray(obj.data) && obj.data.length && (Date.now() - (obj.ts || 0)) < SS_FACTURAS_TTL) {
-          setFacturasGlobales(obj.data.map((f: any) => normalizarFactura(f)));
-          return;
-        }
-      }
-    } catch { /* noop */ }
 
     const descargar = async () => {
       setCargandoFacturas(true);
@@ -1005,7 +1031,6 @@ export const FacturacionProveedoresDashboard = () => {
           return fb.localeCompare(fa);
         });
         setFacturasGlobales(todas);
-        guardarCacheFacturas(todas);
       } catch (e: any) {
         const msg = String(e?.message || e?.code || e || '');
         console.error('[Facturación Historial] Error al cargar facturas:', e);
@@ -1017,30 +1042,8 @@ export const FacturacionProveedoresDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    if (facturasGlobales.length > 0) guardarCacheFacturas(facturasGlobales);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [facturasGlobales]);
-
-  const guardarCacheOps = (docs: any[]) => {
-    try { almacenSesion.setItem(SS_OPS, JSON.stringify({ ts: Date.now(), data: docs })); } catch { /* cuota */ }
-  };
-
   const descargarOpsCompletadas = async (forzar = false) => {
     if (!forzar && operacionesGlobales.length > 0) return;
-    if (!forzar) {
-      try {
-        const raw = almacenSesion.getItem(SS_OPS);
-        if (raw) {
-          const obj = JSON.parse(raw);
-          if (obj && Array.isArray(obj.data) && obj.data.length && (Date.now() - (obj.ts || 0)) < SS_OPS_TTL) {
-            setOperacionesGlobales(sinPruebas(obj.data)); // ✅ V00380
-            setTopeOpsAlcanzado(obj.data.length >= LIMITE_OPS_TODAS);
-            return;
-          }
-        }
-      } catch { /* noop */ }
-    }
     setCargandoOperaciones(true);
     try {
       let todas: any[] = [];
@@ -1085,7 +1088,6 @@ export const FacturacionProveedoresDashboard = () => {
       todas.sort((a: any, b: any) => String(b.fechaServicio || b.createdAt || '').localeCompare(String(a.fechaServicio || a.createdAt || '')));
       setOperacionesGlobales(todas);
       setTopeOpsAlcanzado(todas.length >= LIMITE_OPS_TODAS);
-      guardarCacheOps(todas);
     } catch (e: any) {
       const msg = String(e?.message || e?.code || e || '');
       console.error('[Facturación] Error al cargar operaciones completadas:', e);
@@ -1101,11 +1103,6 @@ export const FacturacionProveedoresDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, operacionesGlobales.length]);
 
-  useEffect(() => {
-    if (operacionesGlobales.length > 0) guardarCacheOps(operacionesGlobales);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [operacionesGlobales]);
-
   // ✅ V00126: cualquier guardado en `operaciones` se refleja aquí al instante.
   useEffect(() => {
     return suscribirOperacionGuardada(({ id, data }) => {
@@ -1118,7 +1115,6 @@ export const FacturacionProveedoresDashboard = () => {
   }, []);
 
   const recargarOperaciones = () => {
-    try { almacenSesion.removeItem(SS_OPS); } catch { /* noop */ }
     setSeleccionadas([]);
     descargarOpsCompletadas(true);
   };
@@ -1129,13 +1125,26 @@ export const FacturacionProveedoresDashboard = () => {
     recargarFacturas();
   };
 
-  const getNombreEmpresa = (idOrName: string) => {
+  // ✅ V00438 (Fase 2.4): índice de empresas por id / nombre / nombreCorto (gana
+  //   la primera de la lista, igual que el .find de antes). getNombreEmpresa se
+  //   llamaba por cada comparación del sort y por cada factura al buscar.
+  const empresaPorClave = useMemo(() => {
+    const m = new Map<unknown, { nombre?: string; nombreCorto?: string }>();
+    empresasList.forEach((e) => {
+      [e?.id, e?.nombre, e?.nombreCorto].forEach((k) => {
+        if (k !== undefined && k !== null && !m.has(k)) m.set(k, e);
+      });
+    });
+    return m;
+  }, [empresasList]);
+
+  const getNombreEmpresa = useCallback((idOrName: string) => {
     if (!idOrName) return '-';
-    const found = empresasList.find(e => e.id === idOrName || e.nombre === idOrName || e.nombreCorto === idOrName);
+    const found = empresaPorClave.get(idOrName);
     if (found) return found.nombre || found.nombreCorto || idOrName;
     const porCatalogo = mapaCatalogos[String(idOrName)];
     return porCatalogo || idOrName;
-  };
+  }, [empresaPorClave, mapaCatalogos]);
 
   const proveedoresFiltradosBuscador = useMemo(() => {
     if (!empresasList.length) return [];
@@ -1203,7 +1212,6 @@ export const FacturacionProveedoresDashboard = () => {
 
   const esFacturada = (op: any) => opIndex.has(String(op.id)) || !!op.facturaProveedorId || !!op.facturadoProveedor;
   const invoiceDeOp = (op: any): string => op.facturaProveedorFolio || opIndex.get(String(op.id))?.invoice || '';
-  const provDeOp = (op: any) => op?.[CAMPO_PROVEEDOR_OP] || op?.proveedorUnidadId;
 
   const proveedorFacturaId = useMemo(() => {
     if (filtroProveedor) return filtroProveedor;
@@ -1252,16 +1260,6 @@ export const FacturacionProveedoresDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proveedorFacturaId, empresasList, operacionesGlobales]);
 
-  const valorGenericoOp = (op: any, col: any): any => {
-    if (!col?.sourceField) return '';
-    const fields: string[] = Array.isArray(col.sourceField) ? col.sourceField : [col.sourceField];
-    for (const f of fields) {
-      const v = (op as any)?.[f];
-      if (v !== undefined && v !== null && v !== '') return v;
-    }
-    return '';
-  };
-
   const formatearValorGenericoOp = (val: any, tipo?: string): string => {
     if (val === '' || val === null || val === undefined) return '-';
     switch (tipo) {
@@ -1274,28 +1272,7 @@ export const FacturacionProveedoresDashboard = () => {
     }
   };
 
-  const fechaOrdenKey = (val: any): string => {
-    const s = String(val || '').trim();
-    if (!s) return '00000000';
-    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-    if (m) return m[1] + m[2].padStart(2, '0') + m[3].padStart(2, '0');
-    m = s.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
-    if (m) return m[1] + m[2].padStart(2, '0') + m[3].padStart(2, '0');
-    m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
-    if (m) return m[3] + m[2].padStart(2, '0') + m[1].padStart(2, '0');
-    m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})(?!\d)/);
-    if (m) return '20' + m[3] + m[2].padStart(2, '0') + m[1].padStart(2, '0');
-    const d = new Date(s);
-    if (!isNaN(d.getTime())) return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-    return s;
-  };
-
-  const refNaturalKey = (op: any): string => {
-    const r = String(op.numReferencia || op.referencia || op.ref || op.id || '');
-    return r.toLowerCase().replace(/\d+/g, (n) => n.padStart(12, '0'));
-  };
-
-  const valorOrdenOp = (op: any, campo: string): string | number => {
+  const valorOrdenOp = useCallback((op: any, campo: string): string | number => {
     switch (campo) {
       case 'factura': return String(op.facturaProveedorFolio || '').toLowerCase();
       case 'ref': return refNaturalKey(op);
@@ -1312,7 +1289,16 @@ export const FacturacionProveedoresDashboard = () => {
         return String(resolverNombre(raw) || '').toLowerCase();
       }
     }
-  };
+  }, [getNombreEmpresa, columnasOps, resolverNombre]);
+
+  // ✅ V00438 (Fase 2.4): claves de orden calculadas UNA vez por (datos, columna),
+  //   alineadas por índice con operacionesGlobales. Antes cada comparación del
+  //   sort (hasta 20k ops) recalculaba fechas, montos y nombres, y se repetía en
+  //   cada tecla del buscador.
+  const clavesOrdenOps = useMemo(
+    () => operacionesGlobales.map((op) => ({ clave: valorOrdenOp(op, ordenOps.campo), ref: refNaturalKey(op) })),
+    [operacionesGlobales, ordenOps.campo, valorOrdenOp],
+  );
 
   const dentroRangoFecha = (op: any) => {
     if (!fechaDesdeOps && !fechaHastaOps) return true;
@@ -1363,7 +1349,7 @@ export const FacturacionProveedoresDashboard = () => {
   }, [operacionesGlobales, fechaDesdeOps, fechaHastaOps, vistaOps, facturasGlobales]);
 
   const operacionesMostradas = useMemo(() => {
-    const q = textoBuscarRemolqueOps.trim().toLowerCase();
+    const q = textoBuscarRemolqueOpsDiferido.trim().toLowerCase();
     const coincide = (op: any) => {
       if (!q) return true;
       const campos = [
@@ -1380,20 +1366,24 @@ export const FacturacionProveedoresDashboard = () => {
       if (vistaOps === 'facturadas') return esFacturada(op);
       return !esFacturada(op);
     };
-    const lista = operacionesGlobales.filter(op =>
-      esFacturableProveedor(op) && dentroRangoFecha(op) && coincideProveedorOp(op) && coincideTipoOp(op) && coincideVista(op) && coincideMonedaVista(op) && coincide(op)
-    );
+    // ✅ V00438 (Fase 2.4): se filtran ÍNDICES y se ordenan con las claves ya
+    //   calculadas (mismo comparador y sort estable → mismo orden que antes).
+    const indices: number[] = [];
+    operacionesGlobales.forEach((op, i) => {
+      if (esFacturableProveedor(op) && dentroRangoFecha(op) && coincideProveedorOp(op) && coincideTipoOp(op) && coincideVista(op) && coincideMonedaVista(op) && coincide(op)) indices.push(i);
+    });
     const dir = ordenOps.dir === 'asc' ? 1 : -1;
-    return [...lista].sort((a, b) => {
-      const va = valorOrdenOp(a, ordenOps.campo);
-      const vb = valorOrdenOp(b, ordenOps.campo);
-      let cmp = (typeof va === 'number' && typeof vb === 'number') ? (va - vb) : String(va).localeCompare(String(vb));
+    indices.sort((ia, ib) => {
+      const a = clavesOrdenOps[ia];
+      const b = clavesOrdenOps[ib];
+      let cmp = (typeof a.clave === 'number' && typeof b.clave === 'number') ? (a.clave - b.clave) : String(a.clave).localeCompare(String(b.clave));
       cmp *= dir;
       if (cmp !== 0) return cmp;
-      return refNaturalKey(a).localeCompare(refNaturalKey(b));
+      return a.ref.localeCompare(b.ref);
     });
+    return indices.map((i) => operacionesGlobales[i]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [operacionesGlobales, ordenOps, empresasList, fechaDesdeOps, fechaHastaOps, columnasOps, mapaCatalogos, vistaOps, monedaVistaOps, textoBuscarRemolqueOps, facturasGlobales, filtroProveedor, filtroTipoOp]);
+  }, [operacionesGlobales, clavesOrdenOps, ordenOps.dir, fechaDesdeOps, fechaHastaOps, mapaCatalogos, vistaOps, monedaVistaOps, textoBuscarRemolqueOpsDiferido, facturasGlobales, filtroProveedor, filtroTipoOp]);
 
   const resumenOps = useMemo(() => {
     const enRango = operacionesGlobales.filter(op => esFacturableProveedor(op) && dentroRangoFecha(op) && coincideProveedorOp(op) && coincideTipoOp(op));
@@ -2898,7 +2888,7 @@ export const FacturacionProveedoresDashboard = () => {
 
   const historialOrdenado = useMemo(() => {
     const dir = ordenFac.dir === 'asc' ? 1 : -1;
-    const q = textoBuscarFactura.trim().toLowerCase();
+    const q = textoBuscarFacturaDiferido.trim().toLowerCase();
     const coincideTexto = (f: any) => {
       if (!q) return true;
       if (String(f.invoice || '').toLowerCase().includes(q)) return true;
@@ -2971,7 +2961,7 @@ export const FacturacionProveedoresDashboard = () => {
       return String(va).localeCompare(String(vb)) * dir;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [facturasGlobales, ordenFac, textoBuscarFactura, filtroProveedor, fechaDesdeHist, fechaHastaHist, opInfoMap, filtroStatusFactura, activeTab, pagosPorFactura]);
+  }, [facturasGlobales, ordenFac, textoBuscarFacturaDiferido, filtroProveedor, fechaDesdeHist, fechaHastaHist, opInfoMap, filtroStatusFactura, activeTab, pagosPorFactura]);
 
   const resumenHistorial = useMemo(() => {
     let totalUSD = 0, totalMXN = 0, totalSinMoneda = 0, totalOps = 0;
@@ -2993,7 +2983,7 @@ export const FacturacionProveedoresDashboard = () => {
   }, [historialOrdenado]);
 
   const conteoStatus = useMemo(() => {
-    const q = textoBuscarFactura.trim().toLowerCase();
+    const q = textoBuscarFacturaDiferido.trim().toLowerCase();
     const coincideTexto = (f: any) => {
       if (!q) return true;
       if (String(f.invoice || '').toLowerCase().includes(q)) return true;
@@ -3022,7 +3012,7 @@ export const FacturacionProveedoresDashboard = () => {
     });
     return c;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [facturasGlobales, textoBuscarFactura, filtroProveedor, fechaDesdeHist, fechaHastaHist]);
+  }, [facturasGlobales, textoBuscarFacturaDiferido, filtroProveedor, fechaDesdeHist, fechaHastaHist]);
 
   const statusBotones = useMemo(() => {
     const orden = ['Facturado', 'No Facturado', 'Cancelado'];
@@ -3042,23 +3032,16 @@ export const FacturacionProveedoresDashboard = () => {
   const totalPaginas = Math.ceil(historialOrdenado.length / registrosPorPagina);
   const indexLast = paginaActual * registrosPorPagina;
   const indexFirst = indexLast - registrosPorPagina;
-  const registrosVisibles = historialOrdenado.slice(indexFirst, indexLast);
+  // ✅ V00438 (Fase 2.2): memo — antes era un arreglo nuevo en cada render y el
+  //   efecto de abajo (getDocs de operaciones) corría en CADA render.
+  const registrosVisibles = useMemo(() => historialOrdenado.slice(indexFirst, indexLast), [historialOrdenado, indexFirst, indexLast]);
 
-  // ✅ V00126: un id de Firestore como "d449e0e7…" empieza con letra+dígitos y el
-  //   patrón anterior lo tomaba por referencia válida, por lo que la ficha
-  //   mostraba el ID en lugar de la referencia real. Ahora los tokens que son
-  //   puro hexadecimal (ids) se descartan explícitamente.
-  const pareceReferencia = (s: any): boolean => {
-    const t = String(s || '').trim();
-    if (!t || /^[0-9a-f]{8,}$/i.test(t)) return false; // id de Firestore (hex), no referencia
-    return /^[A-Za-z]{1,6}[-\s]?\d{3,}/.test(t);
-  };
-
-  useEffect(() => {
+  // ✅ V00438 (Fase 2.2): ids de operaciones por resolver como clave estable
+  //   (ordenados): el efecto solo corre cuando cambia ese conjunto.
+  const claveOpsPorResolver = useMemo(() => {
     const fuentes: any[] = esHistorial ? [...registrosVisibles] : [];
     if (facturaViendo) fuentes.push(facturaViendo);
     if (agregarRefFactura) fuentes.push(agregarRefFactura);
-    if (fuentes.length === 0) return;
     const faltantes = new Set<string>();
     const considerar = (id: string) => {
       const k = String(id || '').trim();
@@ -3067,39 +3050,48 @@ export const FacturacionProveedoresDashboard = () => {
       if (k.length < 6) return;
       faltantes.add(k);
     };
-    const considerarValor = (valor: any) => String(valor || '').split(/[,\s]+/).forEach(t => considerar(t));
+    const considerarValor = (valor: unknown) => String(valor || '').split(/[,\s]+/).forEach(t => considerar(t));
     fuentes.forEach((f: any) => {
       (Array.isArray(f.operacionesGuardadas) ? f.operacionesGuardadas : []).forEach((op: any) => {
         considerar(String(op?.id || ''));
         considerarValor(op?.ref);
       });
-      (Array.isArray(f.operacionesIds) ? f.operacionesIds : []).forEach((id: any) => considerar(String(id || '')));
+      (Array.isArray(f.operacionesIds) ? f.operacionesIds : []).forEach((id: unknown) => considerar(String(id || '')));
     });
-    if (faltantes.size === 0) return;
-    let activo = true;
-    (async () => {
-      const ids = Array.from(faltantes).slice(0, 150);
-      const nuevos: Record<string, any> = {};
-      for (let i = 0; i < ids.length; i += 30) {
-        const chunk = ids.slice(i, i + 30);
-        try {
-          const snap = await getDocs(query(collection(db, 'operaciones'), where(documentId(), 'in', chunk)));
-          snap.docs.forEach(d => {
-            const o: any = { id: d.id, ...(d.data() as any) };
-            nuevos[d.id] = {
-              ref: o.numReferencia || o.referencia || o.ref || d.id,
-              remolque: txt(o.remolqueNombre, o.remolquePlaca, o.numeroRemolque),
-              moneda: o.monedaUnidadNombre || mostrarMoneda(o.facturadoEnUnidad),
-              proveedorId: provDeOp(o) || '',
-            };
-          });
-        } catch (e) { console.warn('No se pudo resolver lote de operaciones del historial:', e); }
+    return JSON.stringify(Array.from(faltantes).sort());
+  }, [esHistorial, registrosVisibles, facturaViendo, agregarRefFactura, opInfoMap]);
+
+  // ✅ V00438 (Fase 2.2): ids ya pedidos (encontrados o no) — no se vuelven a
+  //   consultar; antes los que no existen se pedían otra vez en cada render.
+  const opsPedidasRef = useRef<Set<string>>(new Set());
+  const resolverOpsFaltantes = useEffectEvent(async (ids: string[]) => {
+    const nuevos: Record<string, any> = {};
+    for (let i = 0; i < ids.length; i += 30) {
+      const chunk = ids.slice(i, i + 30);
+      try {
+        const snap = await getDocs(query(collection(db, 'operaciones'), where(documentId(), 'in', chunk)));
+        snap.docs.forEach(d => {
+          const o: any = { id: d.id, ...(d.data() as any) };
+          nuevos[d.id] = {
+            ref: o.numReferencia || o.referencia || o.ref || d.id,
+            remolque: txt(o.remolqueNombre, o.remolquePlaca, o.numeroRemolque),
+            moneda: o.monedaUnidadNombre || mostrarMoneda(o.facturadoEnUnidad),
+            proveedorId: provDeOp(o) || '',
+          };
+        });
+      } catch (e) {
+        chunk.forEach((id) => opsPedidasRef.current.delete(id)); // si falló la red, se puede volver a pedir
+        console.warn('No se pudo resolver lote de operaciones del historial:', e);
       }
-      if (activo && Object.keys(nuevos).length) setOpInfoMap(prev => ({ ...prev, ...nuevos }));
-    })();
-    return () => { activo = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [registrosVisibles, facturaViendo, agregarRefFactura, activeTab]);
+    }
+    if (Object.keys(nuevos).length) setOpInfoMap(prev => ({ ...prev, ...nuevos }));
+  });
+  useEffect(() => {
+    const ids = (JSON.parse(claveOpsPorResolver) as string[]).filter((id) => !opsPedidasRef.current.has(id)).slice(0, 150);
+    if (ids.length === 0) return;
+    ids.forEach((id) => opsPedidasRef.current.add(id));
+    void resolverOpsFaltantes(ids);
+  }, [claveOpsPorResolver]);
 
   type OpLike = Record<string, unknown>; // ✅ V00260
   type InfoOp = { ref?: unknown; refCliente?: unknown; [k: string]: unknown }; // ✅ V00260
@@ -4247,7 +4239,7 @@ export const FacturacionProveedoresDashboard = () => {
               </div>
             </div>
             <div className="fpd-x218">
-              <button onClick={() => { try { almacenSesion.removeItem(SS_FACTURAS); } catch {} ; setFacturasGlobales([]); setOpInfoMap({}); setModalDiagnostico(false); }}
+              <button onClick={() => { opsPedidasRef.current.clear(); setFacturasGlobales([]); setOpInfoMap({}); setModalDiagnostico(false); }}
                 style={{ ...btnDirStyle }} title="Volver a leer todas las facturas desde la base de datos">↻ Recargar facturas</button>
               <button className="fpd-x219" onClick={() => setModalDiagnostico(false)}>Cerrar</button>
             </div>

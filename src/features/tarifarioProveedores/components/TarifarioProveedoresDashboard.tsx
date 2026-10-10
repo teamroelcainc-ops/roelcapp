@@ -82,6 +82,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
 import { db, auth, storage } from '../../../config/firebase'; // ✅ V00273: storage para el tarifario firmado
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'; // ✅ V00273
 import { registrarLog } from '../../../utils/logger';
@@ -301,7 +302,14 @@ export function TarifarioProveedoresDashboard() {
         if (activo) setCargandoCat(false);
       }
     })();
+    return () => { activo = false; };
+  }, []);
 
+  // ✅ V00438 (Fase 2.7): los listeners viven solo con el módulo visible (MantenerVivo);
+  //   oculto conserva lo cargado y al volver se re-suscribe sin vaciar la tabla.
+  const moduloVisible = useModuloVivoActivo();
+  useEffect(() => {
+    if (!moduloVisible) return;
     const unsub = onSnapshot(
       query(collection(db, 'tarifario_proveedores'), orderBy('createdAt', 'desc'), limit(200)),
       (snap) => setRegistros(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
@@ -313,8 +321,8 @@ export function TarifarioProveedoresDashboard() {
       (snap) => setDetallesConv(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
       () => setDetallesConv([])
     );
-    return () => { activo = false; unsub(); unsubDet(); };
-  }, []);
+    return () => { unsub(); unsubDet(); };
+  }, [moduloVisible]);
 
   /** Etiquetas de tipo de la empresa (tiposEmpresa guarda ids del catálogo). */
   const tiposDe = (emp: Doc): string[] => {

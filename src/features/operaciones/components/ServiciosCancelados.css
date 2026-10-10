@@ -68,6 +68,12 @@
 .sc-x64 { margin-left: 6px; color: #ef4444; font-size: 0.7rem; }
 .sc-x65 { text-align: center; padding: 40px; color: #8b949e; }
 .sc-x66 { padding: 16px; text-align: center; position: sticky; left: 0; background-color: inherit; z-index: 5; border-right: 1px solid #30363d; }
+/* ✅ V00438 (Fase 2.3): hover de la fila por CSS (antes estado hoveredRowId →
+   2 renders del módulo por cada fila cruzada). `.data-table` sube la
+   especificidad sobre `.data-table tr:hover` global (App.css). Prefijo propio:
+   las clases sc-x* de Completados y Cancelados ya chocan entre sí. */
+.data-table .scanc-fila-op { border-bottom: 1px solid #21262d; background-color: #0d1117; transition: background-color 0.2s; cursor: pointer; }
+.data-table .scanc-fila-op:hover { background-color: #21262d; }
 .sc-x67 { display: flex; gap: 8px; justify-content: center; }
 .sc-x68 { background: transparent; border: 1px solid #ef4444; border-radius: 4px; color: #ef4444; cursor: pointer; padding: 6px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
 .sc-x69 { background: transparent; border: 1px solid #58a6ff; border-radius: 4px; color: #58a6ff; cursor: pointer; padding: 6px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }

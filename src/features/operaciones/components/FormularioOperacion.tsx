@@ -1,6 +1,7 @@
-import { useState, useEffect, useMemo, useCallback, useRef, cloneElement, Fragment } from 'react';
+import { useState, useEffect, useEffectEvent, useMemo, useCallback, useRef, cloneElement, Fragment, memo } from 'react';
 import { createPortal } from 'react-dom'; // ✅ V00264: el formulario vive en document.body
 import { doc, getDoc, updateDoc, collection, getDocs, setDoc, addDoc, query, where, limit, onSnapshot } from 'firebase/firestore';
+import type { DocumentData } from 'firebase/firestore';
 import { prefijoTipoOperacion } from '../../../utils/generarReferencia';
 import { db, storage, auth } from '../../../config/firebase';
 import { DocumentosLista } from '../../documentos/DocumentosLista'; // ✅ V00341: consultar los documentos guardados
@@ -16,7 +17,8 @@ import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesC
 import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 // ✅ NUEVO: historial de actividad (colección historial_actividad)
 import { registrarLog } from '../../../utils/logger';
-import { statusDescuentaPuente, calcularStatusDinamico, idDocFlujo } from '../config/statusRules';
+import { statusDescuentaPuente, calcularStatusDinamico, idDocFlujo, leerFlujoFresco } from '../config/statusRules';
+import { obtenerFilaTipoCambioDeFecha } from '../services/tipoCambioPorFecha'; // ✅ V00438 (Fase 2.9)
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 
@@ -36,6 +38,7 @@ import { FormularioConfigurable } from '../../formularios/FormularioConfigurable
 import { validarFormularioConfigurable } from '../../formularios/configFormularios';
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
 import { aduanaDeConvenio, camposPisoColombia, casetaRespaldoColombia, esAduanaColombia, esGastoPisoColombia, nombresAduana, normPuente } from '../../../utils/puenteColombia';
+import { abrirEdicion, useEdicionAbierta } from '../../../shared/utils/edicionesAbiertas'; // ✅ V00438
 
 // ✅ NUEVO: utilidades para el Historial de Actividad (historial_actividad).
 //   Nunca deben romper el guardado: los llamados a registrarLog van con .catch.
@@ -292,31 +295,8 @@ const normalizarFechaISO = (valor: any): string => {
   return '';
 };
 
-// ✅ FIX TIPO DE CAMBIO: respaldo del catálogo de "Tipo de Cambio Oficial"
-//   cargado DIRECTAMENTE de Firestore por si no viene en catalogosCacheados
-//   (causa de "Sin Registro"). Se cachea a nivel de módulo y se prueban varios
-//   nombres posibles de la colección.
-let catalogoTCRespaldo: any[] | null = null;
-const COLECCIONES_TC_POSIBLES = [
-  'tipo_cambio', 'tipos_cambio', 'catalogo_tipo_cambio', 'catalogo_tipos_cambio',
-  'catalogo_tc', 'tipo_cambio_oficial', 'tipoCambio', 'tc', 'tc_dof', 'tipos_de_cambio',
-];
-
-const cargarCatalogoTCRespaldo = async (): Promise<any[]> => {
-  if (catalogoTCRespaldo) return catalogoTCRespaldo;
-  for (const nombre of COLECCIONES_TC_POSIBLES) {
-    try {
-      const snap = await getDocs(collection(db, nombre));
-      if (!snap.empty) {
-        catalogoTCRespaldo = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-        return catalogoTCRespaldo;
-      }
-    } catch { /* colección inexistente o sin acceso: se prueba la siguiente */ }
-  }
-  catalogoTCRespaldo = [];
-  return catalogoTCRespaldo;
-};
-
+// ✅ V00438 (Fase 2.9): el respaldo del T.C. cuando no viene en catalogosCacheados ya no
+//   descarga colecciones completas: ver obtenerFilaTipoCambioDeFecha (services/tipoCambioPorFecha).
 const extraerRateDeFilaTC = (row: any): number | null => {
   if (!row || typeof row !== 'object') return null;
   const keys = Object.keys(row);
@@ -570,7 +550,10 @@ type CatalogoCreable =
   | { tipo: 'unidad'; coleccion: 'unidades' }
   | { tipo: 'empleado'; coleccion: 'empleados' };
 
-export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, onRestore, catalogosCacheados, onSave }: FormProps) => {
+const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onRestore, catalogosCacheados, onSave }: FormProps) => {
+  // ✅ V00438 (Fase 2.10): mientras el formulario está abierto, una versión nueva
+  //   de la app no recarga la página (se recarga al cerrarlo).
+  useEdicionAbierta();
   const [pestañaActiva, setPestañaActiva] = useState<TabType>('general');
   const [cargando, setCargando] = useState(false);
   const [mostrarCostosAdic, setMostrarCostosAdic] = useState<false | 'cliente' | 'proveedor'>(false);
@@ -1307,42 +1290,70 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     }
   }, [pestanasVisibles, pestañaActiva]);
 
+  // ✅ V00438 (Fase 2.6): el estatus calculado solo depende de tipo/tráfico/carga (arman el
+  //   configId) y de QUÉ campos están llenos (los camposRequeridos del flujo son configurables,
+  //   cualquier campo puede contar). Antes se recalculaba en cada pausa al teclear.
+  const claveStatusPreview = useMemo(() => {
+    const llenos = Object.entries(formData as Record<string, unknown>)
+      .filter(([, valor]) => valor !== undefined && valor !== null && String(valor).trim() !== '')
+      .map(([campo]) => campo)
+      .sort();
+    return JSON.stringify([formData.tipoOperacionId, formData.trafico, formData.carga, llenos]);
+  }, [formData]);
+
+  // ✅ V00438 (Fase 2.6): el flujo se lee FRESCO una vez por formulario abierto (y por
+  //   combinación servicio/tráfico/carga) y se reutiliza en cada recálculo de la vista
+  //   previa. Así un cambio en "Reglas de Estatus" se ve al abrir el siguiente formulario
+  //   y teclear ya no lee Firestore.
+  const flujosDelFormularioRef = useRef(new Map<string, Promise<DocumentData | null>>());
+  const leerFlujoDelFormulario = useCallback((id: string): Promise<DocumentData | null> => {
+    const mapa = flujosDelFormularioRef.current;
+    let p = mapa.get(id);
+    if (!p) {
+      p = leerFlujoFresco(id).catch((e: unknown) => { mapa.delete(id); throw e; });
+      mapa.set(id, p);
+    }
+    return p;
+  }, []);
+
+  // ✅ V00438 (Fase 2.6): Effect Event — al disparar el debounce lee el formData más reciente.
+  const actualizarStatusPreview = useEffectEvent(async () => {
+    const configId = buildConfigId();
+
+    if (!configId || configId.includes('N/A') || configId === '__' || !formData.tipoOperacionId) {
+      setStatusPreview('');
+      setStatusError('Para conocer el Estatus de la operación, primero selecciona el Tipo de Operación, un Cliente y un Convenio válido.');
+      setCamposSiguienteStatus([]);
+      setNombreSiguienteAuto('');
+      return;
+    }
+
+    try {
+      const statusCalculado = await calcularStatusDinamico(configId, formData, statusPrevioParaCalculo(), { leerFlujo: leerFlujoDelFormulario });
+      const statusObj = statusServicio?.find((s:any) => s.id === statusCalculado);
+      setStatusPreview(statusObj?.nombre || statusObj?.descripcion || statusCalculado);
+      setStatusError(null);
+
+      await calcularCamposSiguienteAuto(configId, statusCalculado);
+    } catch (error: any) {
+      setStatusPreview('');
+      setCamposSiguienteStatus([]);
+      setNombreSiguienteAuto('');
+      const msjLimpio = error.message.replace('BLOQUEO: ', '').replace('', '');
+      setStatusError(msjLimpio);
+      // ✅ Aunque el cálculo dinámico falle, al EDITAR se arma el checklist
+      //    del siguiente status partiendo del status GUARDADO de la operación,
+      //    para que "qué falta para avanzar" siempre esté visible.
+      if (initialData && statusActualGuardado) {
+        try { await calcularCamposSiguienteAuto(configId, statusActualGuardado); } catch { /* sin flujo configurado */ }
+      }
+    }
+  });
+
   useEffect(() => {
-    const timerId = setTimeout(async () => {
-      const configId = buildConfigId();
-
-      if (!configId || configId.includes('N/A') || configId === '__' || !formData.tipoOperacionId) {
-        setStatusPreview('');
-        setStatusError('Para conocer el Estatus de la operación, primero selecciona el Tipo de Operación, un Cliente y un Convenio válido.');
-        setCamposSiguienteStatus([]);
-        setNombreSiguienteAuto('');
-        return;
-      }
-
-      try {
-        const statusCalculado = await calcularStatusDinamico(configId, formData, statusPrevioParaCalculo());
-        const statusObj = statusServicio?.find((s:any) => s.id === statusCalculado);
-        setStatusPreview(statusObj?.nombre || statusObj?.descripcion || statusCalculado);
-        setStatusError(null);
-
-        await calcularCamposSiguienteAuto(configId, statusCalculado);
-      } catch (error: any) {
-        setStatusPreview('');
-        setCamposSiguienteStatus([]);
-        setNombreSiguienteAuto('');
-        const msjLimpio = error.message.replace('BLOQUEO: ', '').replace('', '');
-        setStatusError(msjLimpio);
-        // ✅ Aunque el cálculo dinámico falle, al EDITAR se arma el checklist
-        //    del siguiente status partiendo del status GUARDADO de la operación,
-        //    para que "qué falta para avanzar" siempre esté visible.
-        if (initialData && statusActualGuardado) {
-          try { await calcularCamposSiguienteAuto(configId, statusActualGuardado); } catch { /* sin flujo configurado */ }
-        }
-      }
-    }, 800);
-
+    const timerId = setTimeout(() => { void actualizarStatusPreview(); }, 800);
     return () => clearTimeout(timerId);
-  }, [formData, initialData, tiposOperacion, statusServicio, flujosIndex]);
+  }, [claveStatusPreview, initialData, tiposOperacion, statusServicio, flujosIndex]);
 
   const etiquetaCampo = (campo: string): string => {
     const mapa: Record<string, string> = {
@@ -1392,9 +1403,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
   const calcularCamposSiguienteAuto = async (configId: string, statusActual: string) => {
     try {
-      const snap = await getDoc(doc(db, 'config_flujos_operacion', idDocFlujo(configId)));
-      if (!snap.exists() || !snap.data().flujo) { setCamposSiguienteStatus([]); setNombreSiguienteAuto(''); return; }
-      const reglas = snap.data().flujo as any[];
+      // ✅ V00438 (Fase 2.6): el mismo documento de flujo de este formulario.
+      const datosFlujo = await leerFlujoDelFormulario(configId);
+      if (!datosFlujo || !datosFlujo.flujo) { setCamposSiguienteStatus([]); setNombreSiguienteAuto(''); return; }
+      const reglas = datosFlujo.flujo as any[];
 
       const norm = (s: string) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase().replace(/\s+/g, ' ');
       const reglaActual = reglas.find(r => r.nombreStatus === statusActual) || reglas.find(r => norm(r.nombreStatus) === norm(statusActual));
@@ -1564,8 +1576,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
       if (tcEncontrado === null) {
         try {
-          const respaldo = await cargarCatalogoTCRespaldo();
-          if (!cancelado) tcEncontrado = buscarEn(respaldo);
+          // ✅ V00438 (Fase 2.9): una consulta por fecha (limit 1) en vez de la colección completa.
+          const fila = await obtenerFilaTipoCambioDeFecha(objetivoISO);
+          if (!cancelado && fila) tcEncontrado = buscarEn([fila]);
         } catch { /* noop */ }
       }
 
@@ -2693,7 +2706,19 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const ID_STATUS_CANCELADO = '7607f692';
   const usuarioActualCancel = useUsuarioStore((s) => s.usuario);
 
+  // ✅ V00438 (Fase 2.10): el guardado completo (incluidas las subidas de documentos que
+  //   siguen a onSave, cuando el formulario ya pudo cerrarse) cuenta como edición en
+  //   curso: una versión nueva de la app no recarga la página a la mitad.
   const handleSubmit = async (e: React.FormEvent) => {
+    const liberar = abrirEdicion();
+    try {
+      await guardarFormulario(e);
+    } finally {
+      liberar();
+    }
+  };
+
+  const guardarFormulario = async (e: React.FormEvent) => {
     if (!validarFormularioConfigurable('operaciones')) { e?.preventDefault?.(); return; } // ✅ V00385: campos obligatorios (Autorizaciones / editor)
     e.preventDefault();
 
@@ -4376,3 +4401,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     document.body,
   );
 };
+
+// ✅ V00438 (Fase 2.3): memo — no se vuelve a renderizar cuando el tablero padre se
+//   re-renderiza con las mismas props (los padres pasan props estables).
+export const FormularioOperacion = memo(FormularioOperacionBase);

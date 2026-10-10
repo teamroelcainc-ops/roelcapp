@@ -8,17 +8,20 @@ import App from './App.tsx'
 // ✅ TanStack Query: caché de datos de servidor compartido por toda la app.
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from './lib/queryClient'
+import { cuandoNoHayaEdiciones } from './shared/utils/edicionesAbiertas'
 
 // ✅ V00284: cuando el service worker nuevo toma control a mitad de sesión,
 //   la página quedaba MEZCLADA (HTML viejo + assets nuevos) y los módulos se
 //   veían desordenados hasta recargar a mano. Ahora la app se recarga SOLA
 //   (una única vez) en cuanto la versión nueva toma el control.
+// ✅ V00438 (Fase 2.10): la recarga ESPERA a que no haya formularios abiertos
+//   (antes una publicación a mitad de una captura borraba lo escrito).
 if ('serviceWorker' in navigator) {
   let yaRecargado = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (yaRecargado) return;
     yaRecargado = true;
-    window.location.reload();
+    cuandoNoHayaEdiciones(() => window.location.reload());
   });
 }
 
@@ -36,7 +39,7 @@ window.addEventListener('vite:preloadError', (event) => {
     if (sessionStorage.getItem('roelca_recarga_por_chunk') === '1') return;
     sessionStorage.setItem('roelca_recarga_por_chunk', '1');
   } catch { /* almacenamiento bloqueado: recargar de todos modos */ }
-  window.location.reload();
+  cuandoNoHayaEdiciones(() => window.location.reload()); // ✅ V00438
 });
 try { setTimeout(() => sessionStorage.removeItem('roelca_recarga_por_chunk'), 15000); } catch { /* noop */ }
 

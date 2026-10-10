@@ -34,7 +34,7 @@
 //   consecutivo, status, uso en operaciones [op.convenioProveedor], selección
 //   múltiple, edición en modal, Sin cotización) aplican también a proveedores.
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { createPortal } from 'react-dom'; // ✅ V00237
 import { collection, getDocs, getDoc, doc, updateDoc, writeBatch, setDoc, query, where, onSnapshot } from 'firebase/firestore';
@@ -43,6 +43,7 @@ import { urlVerEnPestana, filtrosDeUrl } from '../../../utils/verEnPestana'; // 
 import { reservarConsecutivosDetalle, reservarConsecutivosDetalleProveedor } from '../consecutivos'; // ✅ V00231
 import { db as dbFs, eliminarRegistro } from '../../../config/firebase';
 import { db } from '../../../config/firebase';
+import { useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
 import { obtenerCacheMemoria, guardarCacheMemoria } from '../../../utils/cacheMemoria';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos'; // ✅ V00198
 import { FormularioOperacion } from '../../operaciones/components/FormularioOperacion'; // ✅ V00236
@@ -905,9 +906,18 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   //   edición o eliminación en convenios_*_detalles o en los convenios
   //   maestros (desde este módulo, desde el TARIFARIO o desde el motor
   //   relacional del servidor) llega sola, sin presionar "Actualizar".
+  // ✅ V00438 (Fase 2.7): escucha solo con el módulo visible (MantenerVivo); oculto
+  //   conserva filas, filtros y selección. Se vacía solo si cambia el tipo, no al
+  //   volver: así no parpadea "cargando" mientras se re-suscribe.
+  const moduloVisible = useModuloVivoActivo();
+  const tipoEscuchado = useRef(tipo);
   useEffect(() => {
-    setDetallesDocs(null);
-    setConveniosMap(null);
+    if (tipoEscuchado.current !== tipo) {
+      tipoEscuchado.current = tipo;
+      setDetallesDocs(null);
+      setConveniosMap(null);
+    }
+    if (!moduloVisible) return;
     const offDet = onSnapshot(collection(db, COL_DETALLES), (snap) => {
       setDetallesDocs(snap.docs.map((d) => ({ id: d.id, data: d.data() as Record<string, unknown> })));
     }, (e) => console.error('Escucha de detalles del convenio:', e));
@@ -929,7 +939,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     }, (e) => console.error('Escucha de convenios:', e));
     return () => { offDet(); offConv(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tipo]);
+  }, [tipo, moduloVisible]);
 
   // ✅ V00302: las FILAS se reconstruyen solas con cada snapshot (misma
   //   lógica que antes vivía dentro de cargar()).

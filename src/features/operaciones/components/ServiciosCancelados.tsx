@@ -1,5 +1,6 @@
 // src/features/operaciones/components/ServiciosCancelados.tsx
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useHandlerEstable } from '../hooks/useHandlerEstable';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
 import { collection, query, getDocs, orderBy, limit, where, doc, writeBatch, startAfter } from 'firebase/firestore';
@@ -255,8 +256,6 @@ const ServiciosCancelados = () => {
   const [paginaActual, setPaginaActual] = useState(1);
   const [pestañaDetalleActiva, setPestañaDetalleActiva] = useState<string>('general');
   const registrosPorPagina = 30; // ✅ V00312: menos filas de inicio
-
-  const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
 
   // ✅ NUEVO: ordenamiento por columna al hacer clic en el encabezado.
   //   1er clic = ascendente (▲), 2do clic = descendente (▼), 3er clic = orden original.
@@ -1297,6 +1296,12 @@ const ServiciosCancelados = () => {
     if (filtrosAplicados) descargarOperaciones({ forzar: true });
   };
 
+  // ✅ V00438 (Fase 2.3b): props ESTABLES para memo(FormularioOperacion).
+  const onGuardarFormulario = useHandlerEstable(handleOperacionGuardada);
+  const onCerrarFormulario = useHandlerEstable(() => { resincronizarCatalogosDesdeCache(); setEstadoFormulario('cerrado'); setOperacionEditando(null); });
+  const onMinimizarFormulario = useCallback(() => setEstadoFormulario('minimizado'), []);
+  const onRestaurarFormulario = useCallback(() => setEstadoFormulario('abierto'), []);
+
   const tabsDetalle = [{ id: 'general', label: 'Información General' }, { id: 'pedimento', label: 'Pedimento y CT' }, { id: 'manifiestos', label: "Entry's y Manifiestos" }, { id: 'unidad', label: 'Unidad y Operador' }, { id: 'cobrar', label: 'Por Cobrar' }];
 
   const evalTipoOpText = String(operacionViendo?.tipoOperacionNombre || operacionViendo?.tipoOperacionId || '').toLowerCase();
@@ -1319,11 +1324,11 @@ const ServiciosCancelados = () => {
         <FormularioOperacion
           estado={estadoFormulario}
           initialData={operacionEditando}
-          onClose={() => { resincronizarCatalogosDesdeCache(); setEstadoFormulario('cerrado'); setOperacionEditando(null); }}
-          onMinimize={() => setEstadoFormulario('minimizado')}
-          onRestore={() => setEstadoFormulario('abierto')}
+          onClose={onCerrarFormulario}
+          onMinimize={onMinimizarFormulario}
+          onRestore={onRestaurarFormulario}
           catalogosCacheados={catalogosGlobales}
-          onSave={handleOperacionGuardada}
+          onSave={onGuardarFormulario}
         />
       )}
 
@@ -1676,7 +1681,7 @@ const ServiciosCancelados = () => {
                   <tbody>
                     {operacionesEnPantalla.length === 0 ? (<tr><td className="sc-x65" colSpan={11}>Sin resultados para tu búsqueda.</td></tr>) : (
                       operacionesEnPantalla.map((op: any) => (
-                        <tr key={op.id} style={{ borderBottom: '1px solid #21262d', backgroundColor: hoveredRowId === op.id ? '#21262d' : '#0d1117', transition: 'background-color 0.2s', cursor: 'pointer' }} onMouseEnter={() => setHoveredRowId(op.id)} onMouseLeave={() => setHoveredRowId(null)} onClick={() => { setOperacionViendo(op); setPestañaDetalleActiva('general'); }}>
+                        <tr key={op.id} className="scanc-fila-op" onClick={() => { setOperacionViendo(op); setPestañaDetalleActiva('general'); }}>
                           <td className="sc-x66" onClick={(e: any) => e.stopPropagation()}>
                             <div className="actions-cell sc-x67">
                               <button className="sc-x68"

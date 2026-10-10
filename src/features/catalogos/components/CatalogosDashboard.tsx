@@ -1,6 +1,7 @@
 // src/features/catalogos/components/CatalogosDashboard.tsx
 import React, { useState, useEffect, useMemo, useRef } from 'react'; // ✅ V00228: useRef
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
+import { useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
 import { createPortal } from 'react-dom'; // ✅ V00226
 import { collection, onSnapshot, getDocs, writeBatch, doc, query, where, setDoc, getDoc, deleteDoc, getCountFromServer, limit, startAfter } from 'firebase/firestore'; // ✅ V00259: limit/startAfter para el modal de operaciones por C/V
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos'; // ✅ V00332
@@ -564,27 +565,43 @@ const CatalogosDashboard = () => {
     return det.titulo || det.name || det.collection;
   };
 
-  // ✅ CARGA PRINCIPAL OPTIMIZADA CON CACHÉ (Reduce las lecturas)
+  // ✅ V00438 (Fase 2.7): el catálogo abierto y sus sub-colecciones solo se
+  //   escuchan con el módulo VISIBLE; al volver se re-suscribe sin limpiar
+  //   búsqueda, filtro, página ni selección (eso vive en el efecto de abajo).
+  const visible = useModuloVivoActivo();
+  const coleccionCatalogo = catalogoSeleccionado ? `catalogo_${catalogoSeleccionado.id}` : null;
   useEffect(() => {
-    if (!catalogoSeleccionado) return;
-    setViendoDetalles(false);
-    setRegistroActual(null);
-    setSubDocsSnapshot({});
-
-    const unsubscribe = onSnapshot(collection(db, `catalogo_${catalogoSeleccionado.id}`), (snapshot) => {
+    if (!visible || !coleccionCatalogo) return;
+    let primerSnapshot = true;
+    const unsubscribe = onSnapshot(collection(db, coleccionCatalogo), (snapshot) => {
       // ✅ NUEVO — al cambiar un catálogo se INVALIDAN los cachés locales
       //   (cat_v2__/cat_v1__) para que Operaciones y demás módulos muestren
       //   las opciones nuevas en su siguiente carga, sin datos viejos.
+      // ✅ V00438 (Fase 2.8): antes bastaba ABRIR un catálogo para borrar la
+      //   caché de toda la app (el 1er snapshot del servidor). Ahora se ignora
+      //   el primer snapshot y solo se purga si el servidor trae cambios reales.
+      //   Purga global: las claves usan alias (statusServicio, catalogoMoneda…),
+      //   no el nombre de la colección, así que no se puede acotar.
       try {
-        if (!snapshot.metadata.fromCache) {
+        if (!primerSnapshot && !snapshot.metadata.fromCache && snapshot.docChanges().length > 0) {
           Object.keys(localStorage)
             .filter((k) => k.startsWith('cat_v2__') || k.startsWith('cat_v1__'))
             .forEach((k) => localStorage.removeItem(k));
           localStorage.setItem('catalogos_invalidados_en', String(Date.now()));
         }
       } catch { /* almacenamiento no disponible */ }
+      primerSnapshot = false;
       setRegistrosGlobales(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
+    return () => unsubscribe();
+  }, [visible, coleccionCatalogo]);
+
+  // ✅ CARGA PRINCIPAL OPTIMIZADA CON CACHÉ (Reduce las lecturas)
+  useEffect(() => {
+    if (!catalogoSeleccionado) return;
+    setViendoDetalles(false);
+    setRegistroActual(null);
+    setSubDocsSnapshot({});
 
     const cargarOpcionesDinamicas = async () => {
       const nuevasOpciones: Record<string, any[]> = { ...CACHE_OPCIONES_DINAMICAS };
@@ -622,13 +639,11 @@ const CatalogosDashboard = () => {
     setBusqueda(''); 
     setFiltroFijo('');
     setPaginaActual(1);
-
-    return () => unsubscribe();
   }, [catalogoSeleccionado]);
 
   // 🔥 DESCARGA Y MANTENIMIENTO DE SUB-COLECCIONES (Sincronizado 1 sola vez)
   useEffect(() => {
-    if (!catalogoSeleccionado?.details) return;
+    if (!visible || !catalogoSeleccionado?.details) return;
 
     let isMounted = true;
     const currentUnsubs: (() => void)[] = [];
@@ -669,7 +684,7 @@ const CatalogosDashboard = () => {
       isMounted = false;
       currentUnsubs.forEach(unsub => unsub());
     };
-  }, [catalogoSeleccionado]);
+  }, [visible, catalogoSeleccionado]);
 
   // 🔥 SOLUCIÓN AL BUG DE DUPLICADOS: Conteo exacto por documento único
   const conteoDetallesGlobal = useMemo(() => {

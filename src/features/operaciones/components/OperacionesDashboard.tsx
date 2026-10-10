@@ -1,6 +1,8 @@
 // src/features/operaciones/components/OperacionesDashboard.tsx
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
+import { useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
+import { useHandlerEstable } from '../hooks/useHandlerEstable';
 import { esOperacionPrueba, sinPruebas } from '../../../utils/operacionPrueba';
 import { FormularioOperacion } from './FormularioOperacion';
 // ✅ NUEVO: Resúmenes Diarios (Transfer / Logística / Fletes) en PDF.
@@ -258,12 +260,18 @@ const OperacionesDashboard = () => {
         setPuedePersonalizarVista(permitido);
       } catch { setPuedePersonalizarVista(false); }
     }).catch(() => {});
+  }, []);
+  // ✅ V00438 (Fase 2.7): el listener de la vista solo vive mientras el módulo
+  //   se ve; oculto conserva los botones ya leídos y al volver se re-suscribe.
+  const moduloVisible = useModuloVivoActivo();
+  useEffect(() => {
+    if (!moduloVisible) return;
     const unsub = onSnapshot(doc(db, 'config_vista', 'operacionesActivas'), (d) => {
       const x = d.data() as Record<string, unknown> | undefined;
       setBotonesOcultos(Array.isArray(x?.botonesOcultos) ? (x!.botonesOcultos as string[]) : []);
     }, () => {});
     return () => unsub();
-  }, []);
+  }, [moduloVisible]);
   const btnOculto = (clave: string) => !editandoVista && botonesOcultos.includes(clave);
   const alternarBtnVista = async (clave: string) => {
     const lista = botonesOcultos.includes(clave) ? botonesOcultos.filter((x) => x !== clave) : [...botonesOcultos, clave];
@@ -332,8 +340,6 @@ const OperacionesDashboard = () => {
   const [paginaActual, setPaginaActual] = useState(1);
   const [pestañaDetalleActiva, setPestañaDetalleActiva] = useState<string>('general');
   const registrosPorPagina = 50;
-
-  const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
 
   const [modalColumnas, setModalColumnas] = useState(false);
   // ✅ NUEVO: controla el modal de Resúmenes Diarios (Transfer/Logística/Fletes).
@@ -767,17 +773,10 @@ const OperacionesDashboard = () => {
   };
 
   useEffect(() => {
-    try {
-      Object.keys(localStorage).forEach(k => {
-        if (k.startsWith('cat_v1__')) { localStorage.removeItem(k); return; }
-        if (k.startsWith('cat_v2__')) {
-          try {
-            const obj = JSON.parse(localStorage.getItem(k) || '{}');
-            if (!obj || !Array.isArray(obj.data) || obj.data.length === 0) localStorage.removeItem(k);
-          } catch { localStorage.removeItem(k); }
-        }
-      });
-    } catch {}
+    // ✅ V00438 (Fase 2.8): ya NO se purgan las claves cat_v1__/cat_v2__ al
+    //   montar: borraba la caché L2 de useCatalogoCache que usan otros módulos.
+    //   Una caché vacía o corrupta ya se ignora al leerla (leerCacheCatalogo /
+    //   cacheVigente) y se vuelve a descargar.
 
     // Hidrata TODO lo que ya esté en caché local (localStorage) sin costo de
     // lecturas, y desde Firestore SOLO baja el catálogo de status (necesario
@@ -1441,6 +1440,13 @@ const OperacionesDashboard = () => {
     setEstadoFormulario('cerrado');
     setOperacionEditando(null);
   };
+
+  // ✅ V00438 (Fase 2.3b): props ESTABLES para memo(FormularioOperacion): sin
+  //   esto, cada render del módulo (búsqueda, listeners…) re-renderizaba el formulario.
+  const onGuardarFormulario = useHandlerEstable(handleOperacionGuardada);
+  const onCerrarFormulario = useHandlerEstable(() => { hidratarCatalogosDesdeCache(); setEstadoFormulario('cerrado'); setOperacionEditando(null); });
+  const onMinimizarFormulario = useCallback(() => setEstadoFormulario('minimizado'), []);
+  const onRestaurarFormulario = useCallback(() => setEstadoFormulario('abierto'), []);
 
   const handleDescargarSolicitudRetiro = async () => {
     await cargarCatalogosSiEsNecesario();
@@ -2145,12 +2151,12 @@ const OperacionesDashboard = () => {
     <div className="module-container od-x13">
       
       {estadoFormulario !== 'cerrado' && (
-        <FormularioOperacion 
+        <FormularioOperacion
           estado={estadoFormulario} initialData={operacionEditando}
-          onClose={() => { hidratarCatalogosDesdeCache(); setEstadoFormulario('cerrado'); setOperacionEditando(null); }}
-          onMinimize={() => setEstadoFormulario('minimizado')} onRestore={() => setEstadoFormulario('abierto')}
-          catalogosCacheados={catalogosGlobales} 
-          onSave={handleOperacionGuardada}
+          onClose={onCerrarFormulario}
+          onMinimize={onMinimizarFormulario} onRestore={onRestaurarFormulario}
+          catalogosCacheados={catalogosGlobales}
+          onSave={onGuardarFormulario}
         />
       )}
 
@@ -2289,7 +2295,7 @@ const OperacionesDashboard = () => {
                     <tr><td className="od-x37" colSpan={columnasTabla.length + 1}>Sin resultados.</td></tr>
                   ) : (
                     operacionesEnPantalla.map((op: any) => (
-                      <tr key={op.id} style={{ borderBottom: '1px solid #21262d', backgroundColor: hoveredRowId === op.id ? '#21262d' : '#0d1117', transition: 'background-color 0.2s', cursor: 'pointer' }} onMouseEnter={() => setHoveredRowId(op.id)} onMouseLeave={() => setHoveredRowId(null)} onClick={() => { setOperacionViendo(op); setPestañaDetalleActiva('general'); }}>
+                      <tr key={op.id} className="od-fila-op" onClick={() => { setOperacionViendo(op); setPestañaDetalleActiva('general'); }}>
                         <td className="od-x38" onClick={(e: any) => e.stopPropagation()}>
                           <div className="actions-cell od-x39">
                             <button className="od-x40" type="button" title="Editar Operación"

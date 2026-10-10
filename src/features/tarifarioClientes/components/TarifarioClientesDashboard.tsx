@@ -81,7 +81,9 @@
 // ---------------------------------------------------------------------------
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
-import { collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, setDoc, snapshotEqual, updateDoc, where, writeBatch } from 'firebase/firestore';
+import type { QueryDocumentSnapshot } from 'firebase/firestore';
+import { useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
 import { db, auth, storage } from '../../../config/firebase'; // ✅ V00273: storage para el tarifario firmado
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'; // ✅ V00273
 import { registrarLog } from '../../../utils/logger';
@@ -121,6 +123,10 @@ const canonMoneda = (v: unknown): 'USD' | 'MXN' | '' => {
 
 const fmtMoney = (n: number): string =>
   `$${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** ✅ V00438 (Fase 2.7): ¿mismos documentos (id, versión y datos) que el snapshot anterior? */
+const mismosDocs = (a: readonly QueryDocumentSnapshot[], b: readonly QueryDocumentSnapshot[]): boolean =>
+  a.length === b.length && a.every((d, i) => snapshotEqual(d, b[i]));
 
 /** Costos sugeridos (> 0) de una tarifa de referencia. */
 const costosDe = (t: Doc): number[] =>
@@ -324,17 +330,36 @@ export function TarifarioClientesDashboard() {
         if (activo) setCargandoCat(false);
       }
     })();
+    return () => { activo = false; };
+  }, []);
 
+  // ✅ V00438 (Fase 2.7): los listeners viven solo con el módulo visible (MantenerVivo);
+  //   oculto conserva lo cargado y al volver se re-suscribe sin vaciar la tabla. Si la
+  //   re-suscripción trae los mismos documentos se conserva el arreglo (misma referencia)
+  //   para no re-disparar el conteo de operaciones del detalle abierto ("…" + lecturas).
+  const moduloVisible = useModuloVivoActivo();
+  const docsRegistros = useRef<readonly QueryDocumentSnapshot[]>([]);
+  const docsDetalles = useRef<readonly QueryDocumentSnapshot[]>([]);
+  useEffect(() => {
+    if (!moduloVisible) return;
     const unsub = onSnapshot(
       query(collection(db, 'tarifario_clientes'), orderBy('createdAt', 'desc'), limit(200)),
-      (snap) => setRegistros(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
-      () => setRegistros([])
+      (snap) => {
+        if (mismosDocs(docsRegistros.current, snap.docs)) return;
+        docsRegistros.current = snap.docs;
+        setRegistros(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      },
+      () => { docsRegistros.current = []; setRegistros([]); }
     );
     // ✅ V00201: consecutivos reales desde Detalles del Convenio, siempre al día.
     const unsubDet = onSnapshot(
       collection(db, 'convenios_clientes_detalles'),
-      (snap) => setDetallesConv(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
-      () => setDetallesConv([])
+      (snap) => {
+        if (mismosDocs(docsDetalles.current, snap.docs)) return;
+        docsDetalles.current = snap.docs;
+        setDetallesConv(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      },
+      () => { docsDetalles.current = []; setDetallesConv([]); }
     );
     // ✅ V00428: maestros en vivo
     const unsubMaestros = onSnapshot(
@@ -342,8 +367,8 @@ export function TarifarioClientesDashboard() {
       (snap) => setClientePorMaestro(new Map(snap.docs.map((d) => [d.id, clienteDeConvenio(d.data() as Doc)]))),
       () => setClientePorMaestro(new Map())
     );
-    return () => { activo = false; unsub(); unsubDet(); unsubMaestros(); };
-  }, []);
+    return () => { unsub(); unsubDet(); unsubMaestros(); };
+  }, [moduloVisible]);
 
   /** Etiquetas de tipo de la empresa (tiposEmpresa guarda ids del catálogo). */
   const tiposDe = (emp: Doc): string[] => {

@@ -28,3 +28,11 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - **Tres copias de "total nativo de factura"** (pagos/services/aplicarPagos.ts, facturacion/services/totalesFactura.ts, relacional.ts): idénticas a propósito por ahora; se unifican en `src/shared/dominio/dinero.ts` en la Fase 5.
 - **Nóminas**: listener ordenado por `fechaPago` + listener legado `limit(400)` solo para las que no tienen `fechaPago` (PENDIENTE Fase 4: quitarlo cuando la migración rellene el campo). Folio: contador por día `contadores/referencias_nomina_DDMMAAAA`. `saldoPrestamo` sigue como valor absoluto recalculado del historial completo (no `increment`: arrastraría desfases viejos).
 - **Facturación**: el recálculo del total al cambiar operaciones usa delta cuando las filas no reproducen el total guardado (facturas importadas con filas en 0 o total capturado a mano).
+
+## Fase 2 (V00438)
+- **Patrón para listeners en módulos de MantenerVivo**: `const visible = useModuloVivoActivo()` + `if (!visible) return;` en el efecto y `visible` en las dependencias (diff mínimo). `useSnapshotSoloVisible` es para código nuevo.
+- **memo**: `lazyWithRetry` devuelve `memo(lazy(...))` para TODOS los módulos (reciben props primitivas o ninguna). `FormularioOperacion` en memo + `useHandlerEstable` en los padres. Se justifica por el problema medido en el review (cada render de App re-renderizaba 12 módulos).
+- **Recarga por versión nueva**: `edicionesAbiertas.ts` (FormularioOperacion abierto + todo `handleSubmit`). Se conserva `skipWaiting` (V00311) en vez de `registerType: 'prompt'`: 'prompt' reintroduciría el ERR_FAILED intermitente.
+- **Flujos de estatus**: la vista previa del formulario ya no usa la caché de 6 h (`flujo_v1__`); lee fresco una vez por formulario. Los botones de estatus siguen con la caché de 6 h (preexistente). PENDIENTE Fase 3.5: versionar `config_flujos_operacion` en `meta/versionesCatalogos` para invalidar en todos los navegadores.
+- **Bug preexistente anotado (no corregido)**: `ServiciosCompletados.css` y `ServiciosCancelados.css` definen las mismas clases (`.sc-x1`…) con estilos distintos; el que carga después gana.
+- **`src/utils/operacionesBus.ts`** sigue borrando llaves viejas de caché de operaciones en cada evento (inofensivo; borrar al tocarlo).
