@@ -1,0 +1,31 @@
+rules_version = '2';
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  REGLAS DE STORAGE — PROPUESTA V00435
+//  Igual que en Firestore: los usuarios de CLIENTE no tocan Storage directo.
+//  (Las facturas y comprobantes que ve el cliente se abren con su enlace de
+//  descarga, que ya trae su token y no pasa por estas reglas.)
+//  ⚠ Compara con tus reglas actuales antes de publicar.
+//  ⚠ Estas reglas consultan Firestore desde Storage: al publicarlas, la consola
+//    pide permiso para que Storage lea Firestore. ACÉPTALO; si no, se niegan
+//    TODAS las subidas y descargas del sistema web.
+// ═══════════════════════════════════════════════════════════════════════════
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function perfil() {
+      return firestore.get(/databases/(default)/documents/usuarios/$(request.auth.uid)).data;
+    }
+
+    function esPersonal() {
+      return request.auth != null
+        && firestore.exists(/databases/(default)/documents/usuarios/$(request.auth.uid))
+        && !(perfil().get('tipoUsuario', '') is string && perfil().get('tipoUsuario', '').trim().lower() == 'cliente')
+        && perfil().get('activo', true) != false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if esPersonal();
+    }
+  }
+}

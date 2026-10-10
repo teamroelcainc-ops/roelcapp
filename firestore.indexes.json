@@ -1,0 +1,45 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "operaciones",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "operador", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "operaciones",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "clientePaga", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "operaciones",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "clienteMercancia", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "operaciones",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "clientePaga", "order": "ASCENDING" },
+        { "fieldPath": "fechaServicio", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "operaciones",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "clienteMercancia", "order": "ASCENDING" },
+        { "fieldPath": "fechaServicio", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

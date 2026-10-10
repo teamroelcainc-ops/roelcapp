@@ -7,7 +7,9 @@
     "shell": "npm run build && firebase functions:shell",
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
-    "logs": "firebase functions:log"
+    "logs": "firebase functions:log",
+    "test": "vitest run",
+    "prebuild": "node ../scripts/sincronizar-dominio.mjs"
   },
   "engines": {
     "node": "20"
@@ -15,11 +17,13 @@
   "main": "lib/index.js",
   "dependencies": {
     "firebase-admin": "^13.6.0",
-    "firebase-functions": "^7.0.0"
+    "firebase-functions": "^7.0.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
+    "firebase-functions-test": "^3.4.1",
     "typescript": "^6.0.0",
-    "firebase-functions-test": "^3.4.1"
+    "vitest": "^5.0.3"
   },
   "private": true
 }

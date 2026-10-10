@@ -1,9 +1,22 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { fileURLToPath } from 'node:url'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
+  // ✅ V00436 (Fase 0): `npm run dev:medir` (modo "medir") cambia firebase/firestore
+  //   por el medidor de lecturas (src/shared/data/medidor). Solo en ese modo.
+  resolve: mode === 'medir'
+    ? {
+        alias: [
+          {
+            find: /^firebase\/firestore$/,
+            replacement: fileURLToPath(new URL('./src/shared/data/medidor/firestoreMedido.ts', import.meta.url)),
+          },
+        ],
+      }
+    : undefined,
   build: {
     // ✅ Vendors en chunks separados: react/firebase casi nunca cambian entre
     //    deploys, así que el navegador (y el service worker) los conserva en
@@ -68,4 +81,4 @@ export default defineConfig({
       },
     }),
   ],
-})
+}))

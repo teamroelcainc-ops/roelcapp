@@ -22,3 +22,13 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# ✅ V00436 (Fase 0): variables de entorno y secretos NUNCA al repo
+.env
+.env.*
+!.env.example
+# Llaves de cuentas de servicio y respaldos de Firestore
+*-service-account*.json
+respaldos-firestore/
+# Reportes generados por los scripts de migración / reconciliación
+functions/reportes/
