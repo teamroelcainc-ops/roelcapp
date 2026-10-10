@@ -28,31 +28,6 @@ export const colorTipoOperacion = (nombre: unknown): string => {
 };
 
 /**
- * Ordena nombres de status por su número inicial (1, 3, 4.1, 5 … 10.1, 10.3 …) y, con el mismo
- * número, alfabéticamente. Los que no empiezan con número van al final, alfabéticamente.
- */
-export const compararStatusPorNumero = (a: string, b: string): number => {
-  const parse = (s: string): number[] | null => {
-    const m = String(s ?? '').trim().match(/^(\d+(?:\.\d+)*)/);
-    return m ? m[1].split('.').map((n) => parseInt(n, 10)) : null;
-  };
-  const na = parse(a);
-  const nb = parse(b);
-  if (na && nb) {
-    const len = Math.max(na.length, nb.length);
-    for (let i = 0; i < len; i++) {
-      const da = na[i] ?? 0;
-      const db = nb[i] ?? 0;
-      if (da !== db) return da - db;
-    }
-    return String(a).localeCompare(String(b), 'es', { numeric: true, sensitivity: 'base' });
-  }
-  if (na && !nb) return -1;
-  if (!na && nb) return 1;
-  return String(a).localeCompare(String(b), 'es', { numeric: true, sensitivity: 'base' });
-};
-
-/**
  * Quita las claves `undefined` antes de escribir en Firestore (las rechaza con "Unsupported field
  * value: undefined" y aborta el batch completo — causa típica de "Se revirtió el cambio").
  */

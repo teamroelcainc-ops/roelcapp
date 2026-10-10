@@ -111,3 +111,7 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - **Trinquete de exhaustive-deps**: cuenta `suppressedMessages` de ESLint (lo que de verdad se apaga), no el texto de los comentarios: un `eslint-disable` sin regla o de archivo completo también cuenta; los comentarios que no apagan nada ya salen como problema ("Unused eslint-disable directive").
 - **PENDIENTE**: meta de 800 líneas (plan en PLAN-REFACTOR.md, Fase 8.3), 8.2 (decisión), 8.4 (P1 + P2 + app móvil), íconos SVG propios del formulario → lucide-react.
 
+## V00445
+- **Prueba de humo de módulos** (`src/__pruebas__/`): Firebase falso con un `Proxy` (cualquier función desconocida devuelve un objeto encadenable; lecturas vacías; `configuracion/flags` según `estadoFalso.flags`). Monta cada módulo con banderas apagadas y encendidas y atrapa el error de render con un Error Boundary. Atrapa errores de inicialización (TDZ, imports rotos, hooks mal ordenados) que tsc/eslint no ven; no prueba datos reales. Un módulo nuevo se agrega a `MODULOS`.
+- **`VITE_BANXICO_TOKEN`**: quitado (nadie lo leía). Sigue en el historial de git: darlo de baja en Banxico.
+

@@ -58,7 +58,7 @@
     "src/features/operaciones/components/EditorDetalleConvenioModal.tsx": 7,
     "src/features/operaciones/components/EditorOperacionEmbebido.tsx": 7,
     "src/features/operaciones/components/FormularioOperacion.tsx": 294,
-    "src/features/operaciones/components/OperacionesDashboard.tsx": 85,
+    "src/features/operaciones/components/OperacionesDashboard.tsx": 81,
     "src/features/operaciones/components/ServiciosCancelados.tsx": 97,
     "src/features/operaciones/components/ServiciosCompletados.tsx": 143,
     "src/features/operaciones/config/statusRules.ts": 21,
@@ -89,6 +89,6 @@
     "src/utils/pdfGenerator.ts": 2,
     "functions/src/index.ts": 13
   },
-  "anyTotal": 2350,
+  "anyTotal": 2346,
   "desactivadosDeps": 91
 }

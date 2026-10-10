@@ -38,7 +38,7 @@ import { mostrarCartaPara, useConfigCarta } from '../../../utils/configCartaInst
 import { ConfigCartaModal } from './ConfigCartaModal';
 import { usePermisoFormularios } from '../../formularios/configFormularios';
 import { estadoGrupoDe } from '../../../shared/dominio/operacionCanonica';
-import { colorTipoOperacion, compararStatusPorNumero, fmtFechaAuditoria, limpiarUndefined } from '../services/formatosOperacion'; // ✅ V00444 (Fase 8.3)
+import { colorTipoOperacion, fmtFechaAuditoria, limpiarUndefined } from '../services/formatosOperacion'; // ✅ V00444 (Fase 8.3)
 
 // ✅ V00439 (Fase 3.x): catálogos del módulo (alias → colección) desde el
 //   listener compartido (useCatalogos): sin getDocs propios ni copia en
@@ -303,15 +303,9 @@ const OperacionesDashboard = () => {
     return { porId, porNombre, porDescripcion };
   }, [catalogosGlobales.statusServicio]);
 
-  // ✅ NUEVO: lista de status ORDENADA (numérico → alfabético, ascendente) para
-  //    el desplegable del modal "Registrar Movimiento".
-  const statusServicioOrdenado = useMemo(() => {
-    const lista = (catalogosGlobales.statusServicio || []) as any[];
-  void statusServicioOrdenado; // ✅ V00378: el modal ya solo usa los estatus del flujo
-    return [...lista]
-      .filter((s: any) => s && s.nombre)
-      .sort((a: any, b: any) => compararStatusPorNumero(String(a.nombre), String(b.nombre)));
-  }, [catalogosGlobales.statusServicio]);
+  // ✅ V00445: se quitó la lista ordenada de status del modal "Registrar Movimiento" (sin uso
+  //   desde V00378: el modal usa los status del flujo). Su `void` había quedado DENTRO de su
+  //   propio useMemo y en desarrollo tiraba "Cannot access 'statusServicioOrdenado' before initialization".
 
   const resolverStatus = (valor: string | null | undefined): { id: string; nombre: string } => {
     if (!valor) return { id: '', nombre: '' };

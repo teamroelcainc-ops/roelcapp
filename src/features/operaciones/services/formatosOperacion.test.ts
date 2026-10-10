@@ -1,17 +1,12 @@
 // ✅ V00444 (Fase 8.3) — piezas puras que salieron de los tableros de operaciones y del formulario.
 import { describe, expect, it } from 'vitest';
-import { colorTipoOperacion, compararStatusPorNumero, limpiarUndefined } from './formatosOperacion';
+import { colorTipoOperacion, limpiarUndefined } from './formatosOperacion';
 import { describirCambiosLog, describirCamposCapturadosLog, listaCambiosAuditoria, truncarValorLog } from './auditoriaLog';
 import { colorTipoOperacion as colorDelFormulario, formatearDireccionPorPais, paisDeDireccion } from '../components/formulario/direcciones';
 import { buscarTCDeFecha, extraerRateDeFilaTC, normalizarFechaISO } from '../components/formulario/tipoCambioFila';
 import { normalizarFechaServicioISO, normalizarMoneda } from '../components/completados/formatos';
 
 describe('formatosOperacion', () => {
-  it('status por número y luego alfabético; sin número al final', () => {
-    const l = ['Servicio Completado', '10.1 Cruce', '4.1 Salida', '4 Llegada', '1 Asignado'];
-    expect([...l].sort(compararStatusPorNumero)).toEqual(['1 Asignado', '4 Llegada', '4.1 Salida', '10.1 Cruce', 'Servicio Completado']);
-  });
-
   it('colores por tipo: "Logística Fletes" es verde en las tablas y azul en el formulario (diferencia anotada)', () => {
     expect(colorTipoOperacion('Transfer')).toBe('#fb923c');
     expect(colorTipoOperacion('Logística Fletes')).toBe('#3fb950');
