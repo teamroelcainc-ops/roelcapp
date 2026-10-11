@@ -8,7 +8,7 @@
 //   que utilidades como el buscador global sepan cuál es el módulo ACTIVO.
 // ---------------------------------------------------------------------------
 import React, { Suspense, useEffect, useState } from 'react';
-import { ContextoModuloVivoActivo } from './moduloVivoContexto';
+import { ContextoModuloEscuchando, ContextoModuloVivoActivo, MINUTOS_GRACIA_ESCUCHA } from './moduloVivoContexto';
 import CargandoModulo from '../components/layout/CargandoModulo';
 
 export const MantenerVivo: React.FC<{ activo: boolean; children: React.ReactNode }> = ({ activo, children }) => {
@@ -18,8 +18,17 @@ export const MantenerVivo: React.FC<{ activo: boolean; children: React.ReactNode
     // eslint-disable-next-line react-hooks/set-state-in-effect -- cerrojo intencional; corre una única vez al activarse
     if (activo) setMontado(true);
   }, [activo]);
+  // ✅ V00446: oculto, sus listeners siguen escuchando MINUTOS_GRACIA_ESCUCHA (ver contexto).
+  const [graciaVencida, setGraciaVencida] = useState(false);
+  useEffect(() => {
+    if (activo) return undefined;
+    const t = setTimeout(() => setGraciaVencida(true), MINUTOS_GRACIA_ESCUCHA * 60 * 1000);
+    return () => { clearTimeout(t); setGraciaVencida(false); };
+  }, [activo]);
+  const escuchando = activo || !graciaVencida;
   if (!montado) return null; // nunca visitado: no cuesta nada
   return (
+    <ContextoModuloEscuchando.Provider value={escuchando}>
     <ContextoModuloVivoActivo.Provider value={activo}>
       {/* ✅ V00438 (Fase 2.10): Suspense propio — la primera carga de este módulo ya
           no reemplaza por "Cargando…" a los demás módulos vivos. */}
@@ -27,5 +36,6 @@ export const MantenerVivo: React.FC<{ activo: boolean; children: React.ReactNode
         <Suspense fallback={<CargandoModulo />}>{children}</Suspense>
       </div>
     </ContextoModuloVivoActivo.Provider>
+    </ContextoModuloEscuchando.Provider>
   );
 };

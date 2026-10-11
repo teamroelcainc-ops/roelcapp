@@ -127,10 +127,10 @@ export const asegurarIntegridad = async (tipo: TipoRel, opciones?: { soloIds?: s
   // ✅ V00439 (Fase 3.x): desde los catálogos compartidos (en vivo). Antes, cada
   //   alta/aprobación releía las 4 colecciones completas.
   const [catTar, catMae, catDet, catTarifas] = await Promise.all([
-    obtenerCatalogo(cfg.tarifarios),
-    obtenerCatalogo(cfg.maestros),
-    obtenerCatalogo(cfg.detalles),
-    obtenerCatalogo('catalogo_tarifas_referencia'),
+    obtenerCatalogo(cfg.tarifarios, { fresco: true }),
+    obtenerCatalogo(cfg.maestros, { fresco: true }),
+    obtenerCatalogo(cfg.detalles, { fresco: true }),
+    obtenerCatalogo('catalogo_tarifas_referencia', { fresco: true }),
   ]);
 
   // ── Catálogo de tarifas: id → nombre, y nombre → id (solo si es único) ──

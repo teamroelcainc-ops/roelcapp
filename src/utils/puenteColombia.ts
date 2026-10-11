@@ -19,7 +19,7 @@ export type { CtxCobroPuente } from '../shared/dominio/cobroPuente';
 //   (obtenerCatalogo, siempre en vivo); sin getDocs por clic ni caché de 10 min.
 /** Mapa id → nombre del catálogo de aduanas. */
 export const nombresAduana = async (): Promise<Map<string, string>> => {
-  const aduanas = await obtenerCatalogo('catalogo_aduanas');
+  const aduanas = await obtenerCatalogo('catalogo_aduanas', { fresco: true });
   return new Map(aduanas.map((d) => [idReal(d), String(d.aduana ?? d.nombre ?? '')]));
 };
 
@@ -56,7 +56,7 @@ export const camposPisoColombia = async (
     if (Number(op?.saldoPuentePiso) > 0) return {};
     const aduana = await aduanaDeConvenio(op?.convenio);
     if (!esAduanaColombia(aduana)) return {};
-    const tipos = await obtenerCatalogo('catalogo_tipos_gastos');
+    const tipos = await obtenerCatalogo('catalogo_tipos_gastos', { fresco: true });
     const x = tipos.find((t) => esGastoPisoColombia(t.nombre_gasto));
     if (!x) return {};
     const monto = Number(x.importe) || 0;
@@ -74,7 +74,7 @@ export const camposPisoColombia = async (
 /** Caseta de respaldo para Colombia cuando la tarifa no trae caseta: trompo → Trompo Colombia; si no, Caseta Mx Colombia. */
 export const casetaRespaldoColombia = async (esTrompo: boolean): Promise<{ saldoPuente: number; saldoPuentePuente: string; saldoPuenteMoneda: string } | null> => {
   try {
-    const tipos = await obtenerCatalogo('catalogo_tipos_gastos');
+    const tipos = await obtenerCatalogo('catalogo_tipos_gastos', { fresco: true });
     const buscado = esTrompo ? 'trompo colombia' : 'caseta mx colombia';
     const x = tipos.find((t) => normPuente(t.nombre_gasto) === buscado);
     if (!x) return null;
@@ -89,11 +89,11 @@ export const casetaRespaldoColombia = async (esTrompo: boolean): Promise<{ saldo
 let ultimoCtx: { fuentes: readonly unknown[]; ctx: CtxCobroPuente } | null = null;
 export const cargarCtxCobroPuente = async (): Promise<CtxCobroPuente> => {
   const fuentes = await Promise.all([
-    obtenerCatalogo('convenios_clientes_detalles'),
-    obtenerCatalogo('catalogo_tarifas_referencia'),
-    obtenerCatalogo('tarifas_gastos_incluidos'),
-    obtenerCatalogo('catalogo_tipos_gastos'),
-    obtenerCatalogo('catalogo_aduanas'),
+    obtenerCatalogo('convenios_clientes_detalles', { fresco: true }),
+    obtenerCatalogo('catalogo_tarifas_referencia', { fresco: true }),
+    obtenerCatalogo('tarifas_gastos_incluidos', { fresco: true }),
+    obtenerCatalogo('catalogo_tipos_gastos', { fresco: true }),
+    obtenerCatalogo('catalogo_aduanas', { fresco: true }),
   ]);
   if (ultimoCtx && ultimoCtx.fuentes.every((f, i) => f === fuentes[i])) return ultimoCtx.ctx;
   const [det, tar, gi, tg, adu] = fuentes;

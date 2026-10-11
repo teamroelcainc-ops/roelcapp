@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
-// ✅ V00438 — el listener se cierra al ocultar el módulo y se reabre al volver.
+// ✅ V00438 — el listener se cierra cuando el módulo deja de escuchar y se reabre al volver.
+// ✅ V00446 — "escuchar" = ContextoModuloEscuchando (MantenerVivo lo deja encendido unos
+//   minutos después de ocultar el módulo; ver mantenerVivo.test.tsx).
 import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
-import { ContextoModuloVivoActivo } from '../../utils/moduloVivoContexto';
+import { ContextoModuloEscuchando } from '../../utils/moduloVivoContexto';
 
 const cancelaciones: string[] = [];
 const suscripciones: string[] = [];
@@ -22,12 +24,12 @@ function Prueba({ clave, alCambiar }: { clave: string | null; alCambiar: (s: unk
 }
 
 describe('useSnapshotSoloVisible', () => {
-  it('escucha solo mientras el módulo está visible', () => {
+  it('escucha solo mientras el módulo escucha', () => {
     const recibidos: unknown[] = [];
-    const ui = (visible: boolean, clave: string | null) => (
-      <ContextoModuloVivoActivo.Provider value={visible}>
+    const ui = (escuchando: boolean, clave: string | null) => (
+      <ContextoModuloEscuchando.Provider value={escuchando}>
         <Prueba clave={clave} alCambiar={(s) => recibidos.push(s)} />
-      </ContextoModuloVivoActivo.Provider>
+      </ContextoModuloEscuchando.Provider>
     );
     const { rerender, unmount } = render(ui(true, 'a'));
     expect(suscripciones).toEqual(['a']);

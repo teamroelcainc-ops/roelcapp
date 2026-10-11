@@ -13,6 +13,7 @@
     "version:bump": "node scripts/bump-version.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
+    "medir:render": "vitest run -c vitest.medicion.config.ts",
     "test:rules": "firebase emulators:exec --only firestore,storage \"vitest run -c vitest.rules.config.ts\"",
     "test:functions": "npm --prefix functions test",
     "verificar": "tsc -b && node scripts/verificar-lint.mjs && node scripts/verificar-consultas.mjs && vitest run"

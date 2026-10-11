@@ -20,7 +20,7 @@ import { idReal, obtenerCatalogo, useCatalogo } from '../../../shared/data/catal
 import { STATUS_FINALES } from '../../../shared/dominio/constantes';
 import { useUsuarioStore } from '../../../stores/useUsuarioStore';
 import { useEstadoConexion } from '../../../hooks/useEstadoConexion';
-import { useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
+import { useModuloEscuchando } from '../../../utils/moduloVivoContexto';
 import { registrarLog } from '../../../utils/logger';
 import { nombreDeEmpleado } from '../../../utils/nombreEmpleado';
 import type { EmpleadoNombreCampos } from '../../../utils/nombreEmpleado';
@@ -136,7 +136,7 @@ export function MisOperacionesDashboard() {
   // [3] Operaciones ACTIVAS asignadas al operador, en tiempo real.
   // ✅ V00438 (Fase 2.7): solo mientras el módulo se ve; oculto conserva la
   //   lista ya pintada y al volver se re-suscribe sin vaciarla.
-  const moduloVisible = useModuloVivoActivo();
+  const moduloVisible = useModuloEscuchando(); // ✅ V00446: sigue escuchando unos minutos oculto
   useEffect(() => {
     if (!idsOperador || idsOperador.length === 0) { setOperaciones([]); return; }
     if (!moduloVisible) return;

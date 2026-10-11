@@ -7,6 +7,12 @@
 //     vuelta no vuelve a leer) y luego se cierra.
 //   · Respeta MantenerVivo: un módulo oculto suelta su demanda y conserva los
 //     últimos datos.
+//   · ✅ V00446 (rendimiento): los avisos a React se AGRUPAN en una ventana corta
+//     (VENTANA_AVISO_MS): varios catálogos que llegan seguidos = un solo repintado
+//     (useSyncExternalStore repinta de forma síncrona por cada aviso). La
+//     confirmación del servidor sin cambios ya no repinta. Un módulo OCULTO no
+//     recibe avisos (se pone al día al volver a verse). Las claves `permanente`
+//     (catálogos) no se cierran por tiempo: solo al cerrar sesión.
 // La clave identifica la consulta: misma clave = misma consulta (p. ej.
 // `pagos:cliente`). Los catálogos (src/shared/data/catalogos.ts) usan esto con
 // la colección completa como clave.
@@ -36,8 +42,10 @@ export interface EstadoVivo {
 export const idReal = (d: { id: string; _docId?: string }): string => d._docId ?? d.id;
 
 export const ESTADO_VACIO: EstadoVivo = Object.freeze({ datos: [], listo: false, delServidor: false, error: null }) as EstadoVivo;
-/** Minutos que un listener sigue abierto después de que ninguna vista lo usa. */
+/** Minutos que un listener (no permanente) sigue abierto después de que ninguna vista lo usa. */
 export const MINUTOS_PERMANENCIA = 15;
+/** ✅ V00446: avisos a React agrupados en esta ventana (ms). */
+export const VENTANA_AVISO_MS = 50;
 
 interface Entrada {
   estado: EstadoVivo;
@@ -47,6 +55,12 @@ interface Entrada {
   temporizador: ReturnType<typeof setTimeout> | null;
   oyentes: Set<() => void>;
   esperandoServidor: Set<() => void>;
+  /** Esperando el PRIMER snapshot (de la caché local o del servidor). */
+  esperandoDatos: Set<() => void>;
+  /** Ya llegó un snapshot del servidor (fuera del estado publicado: no repinta). */
+  confirmado: boolean;
+  /** No se cierra por tiempo (catálogos): solo con reiniciarVivas. */
+  permanente: boolean;
 }
 
 const entradas = new Map<string, Entrada>();
@@ -54,20 +68,41 @@ const entradas = new Map<string, Entrada>();
 export const entradaViva = (clave: string): Entrada => {
   let e = entradas.get(clave);
   if (!e) {
-    e = { estado: ESTADO_VACIO, demanda: 0, crear: null, cancelar: null, temporizador: null, oyentes: new Set(), esperandoServidor: new Set() };
+    e = {
+      estado: ESTADO_VACIO, demanda: 0, crear: null, cancelar: null, temporizador: null, oyentes: new Set(),
+      esperandoServidor: new Set(), esperandoDatos: new Set(), confirmado: false, permanente: false,
+    };
     entradas.set(clave, e);
   }
   return e;
 };
 
+// Avisos agrupados: el estado se actualiza al instante (quien lo lea ve lo último);
+// solo el aviso a React espera la ventana, y cada oyente se avisa una vez por ventana.
+const avisosPendientes = new Set<() => void>();
+let temporizadorAvisos: ReturnType<typeof setTimeout> | null = null;
+const avisar = (oyentes: Set<() => void>): void => {
+  oyentes.forEach((f) => avisosPendientes.add(f));
+  if (temporizadorAvisos || avisosPendientes.size === 0) return;
+  temporizadorAvisos = setTimeout(() => {
+    temporizadorAvisos = null;
+    const lista = Array.from(avisosPendientes);
+    avisosPendientes.clear();
+    lista.forEach((f) => f());
+  }, VENTANA_AVISO_MS);
+};
+
+const resolverEspera = (conjunto: Set<() => void>): void => {
+  const lista = Array.from(conjunto);
+  conjunto.clear();
+  lista.forEach((f) => f());
+};
+
 const publicar = (e: Entrada, estado: EstadoVivo): void => {
   e.estado = estado;
-  e.oyentes.forEach((f) => f());
-  if (estado.delServidor || estado.error) {
-    const esperando = Array.from(e.esperandoServidor);
-    e.esperandoServidor.clear();
-    esperando.forEach((f) => f());
-  }
+  avisar(e.oyentes);
+  if (estado.listo) resolverEspera(e.esperandoDatos);
+  if (e.confirmado || estado.error) resolverEspera(e.esperandoServidor);
 };
 
 /** Arma el documento como lo usaban los módulos y agrega el id REAL del documento. */
@@ -86,6 +121,7 @@ const abrir = (clave: string, e: Entrada): void => {
   if (e.cancelar || !e.crear) return;
   // Al reabrir (tras un error o tras cerrarse por permanencia) el estado anterior
   // ya no está confirmado por el servidor.
+  e.confirmado = false;
   if (e.estado.error || e.estado.delServidor) e.estado = { ...e.estado, delServidor: false, error: null };
   e.cancelar = onSnapshot(
     e.crear(),
@@ -94,11 +130,13 @@ const abrir = (clave: string, e: Entrada): void => {
     // ella `delServidor` nunca llegaba y obtenerCatalogo esperaba los 6 s completos.
     { includeMetadataChanges: true },
     (snap) => {
-      const delServidor = e.estado.delServidor || !snap.metadata.fromCache;
+      if (!snap.metadata.fromCache) e.confirmado = true;
+      const delServidor = e.confirmado;
       // Cambio solo de metadatos (confirmación del servidor, escrituras pendientes):
-      // no hay datos nuevos; solo se avisa la confirmación una vez.
+      // no hay datos nuevos. ✅ V00446: no se repinta; solo se libera a quien espera
+      // al servidor (obtenerCatalogo fresco).
       if (e.estado.listo && snap.docChanges().length === 0) {
-        if (delServidor && !e.estado.delServidor) publicar(e, { ...e.estado, delServidor: true });
+        if (e.confirmado) resolverEspera(e.esperandoServidor);
         return;
       }
       const datos = snap.docs.map((d) => armarDoc(d.id, d.data() as Record<string, unknown>));
@@ -115,10 +153,11 @@ const abrir = (clave: string, e: Entrada): void => {
   );
 };
 
-/** Suma demanda a una clave (abre el listener si hace falta). */
-export const pedirVivo = (clave: string, crear: () => Query): void => {
+/** Suma demanda a una clave (abre el listener si hace falta). `permanente`: no se cierra por tiempo. */
+export const pedirVivo = (clave: string, crear: () => Query, opciones: { permanente?: boolean } = {}): void => {
   const e = entradaViva(clave);
   e.crear = crear;
+  if (opciones.permanente) e.permanente = true;
   e.demanda += 1;
   if (e.temporizador) { clearTimeout(e.temporizador); e.temporizador = null; }
   abrir(clave, e);
@@ -128,13 +167,14 @@ export const pedirVivo = (clave: string, crear: () => Query): void => {
 export const soltarVivo = (clave: string): void => {
   const e = entradaViva(clave);
   e.demanda = Math.max(0, e.demanda - 1);
-  if (e.demanda > 0 || !e.cancelar || e.temporizador) return;
+  if (e.demanda > 0 || !e.cancelar || e.temporizador || e.permanente) return;
   e.temporizador = setTimeout(() => {
     e.temporizador = null;
     if (e.demanda === 0 && e.cancelar) {
       e.cancelar();
       e.cancelar = null;
       // Sin listener los datos pueden envejecer: el próximo obtenerVivo espera al servidor.
+      e.confirmado = false;
       e.estado = { ...e.estado, delServidor: false };
     }
   }, MINUTOS_PERMANENCIA * 60 * 1000);
@@ -143,18 +183,25 @@ export const soltarVivo = (clave: string): void => {
 export const estadoVivo = (clave: string): EstadoVivo => entradas.get(clave)?.estado ?? ESTADO_VACIO;
 
 /**
- * Datos de una clave para servicios fuera de React: abre (o reutiliza) el
- * listener y espera el primer snapshot del SERVIDOR (máx. `esperaMs`; sin red,
- * devuelve lo que haya en la caché local).
+ * Datos de una clave para servicios fuera de React: abre (o reutiliza) el listener.
+ * · Por omisión (✅ V00446) devuelve en cuanto HAY datos (caché local o servidor): con el
+ *   listener ya abierto es inmediato. Antes siempre esperaba al servidor y una acción
+ *   (abrir un formulario, un reporte) podía tardar hasta 6 s.
+ * · `fresco: true` espera la confirmación del SERVIDOR (máx. `esperaMs`; sin red, lo que
+ *   haya en la caché): para servicios que ESCRIBEN decidiendo con esos datos.
  */
-export const obtenerVivo = (clave: string, crear: () => Query, esperaMs = 6000): Promise<DocVivo[]> => {
+export const obtenerVivo = (
+  clave: string, crear: () => Query, esperaMs = 6000, opciones: { fresco?: boolean; permanente?: boolean } = {},
+): Promise<DocVivo[]> => {
   const e = entradaViva(clave);
-  pedirVivo(clave, crear);
+  pedirVivo(clave, crear, { permanente: opciones.permanente });
+  const conjunto = opciones.fresco ? e.esperandoServidor : e.esperandoDatos;
+  const yaEsta = () => !!e.estado.error || (opciones.fresco ? e.confirmado : e.estado.listo);
   return new Promise<DocVivo[]>((resolver) => {
     const terminar = () => { clearTimeout(t); soltarVivo(clave); resolver(e.estado.datos); };
-    const t = setTimeout(() => { e.esperandoServidor.delete(terminar); terminar(); }, esperaMs);
-    if (e.estado.delServidor || e.estado.error) { clearTimeout(t); soltarVivo(clave); resolver(e.estado.datos); return; }
-    e.esperandoServidor.add(terminar);
+    const t = setTimeout(() => { conjunto.delete(terminar); terminar(); }, esperaMs);
+    if (yaEsta()) { clearTimeout(t); soltarVivo(clave); resolver(e.estado.datos); return; }
+    conjunto.add(terminar);
   });
 };
 
@@ -166,6 +213,8 @@ export const reiniciarVivas = (): void => {
     e.cancelar = null;
     e.temporizador = null;
     e.demanda = 0;
+    e.confirmado = false;
+    e.permanente = false;
     publicar(e, ESTADO_VACIO);
   });
 };
@@ -182,16 +231,19 @@ export function useColeccionViva(clave: string | null, crear: () => Query, opcio
   // consulta, así que se guarda la más reciente en una ref (no re-suscribe).
   const crearRef = useRef(crear);
   useEffect(() => { crearRef.current = crear; });
+  // ✅ V00446: oculto (MantenerVivo) no recibe avisos: no se repinta en segundo plano;
+  //   al volver a verse se vuelve a suscribir y React toma el estado más reciente.
+  const avisos = opciones.soloVisible === false || visible;
   const suscribir = useCallback((aviso: () => void) => {
     if (clave === null) return () => {};
     const e = entradaViva(clave);
-    e.oyentes.add(aviso);
+    if (avisos) e.oyentes.add(aviso);
     if (activo) pedirVivo(clave, () => crearRef.current());
     return () => {
       e.oyentes.delete(aviso);
       if (activo) soltarVivo(clave);
     };
-  }, [clave, activo]);
+  }, [clave, activo, avisos]);
   const leer = useCallback(() => (clave === null ? ESTADO_VACIO : estadoVivo(clave)), [clave]);
   return useSyncExternalStore(suscribir, leer, leer);
 }

@@ -25,6 +25,8 @@ const snap = (filas: Record<string, unknown>[], fromCache = false, cambios = fil
 });
 
 const mod = await import('./catalogos');
+const { VENTANA_AVISO_MS } = await import('./coleccionesVivas');
+const { ContextoModuloVivoActivo } = await import('../../utils/moduloVivoContexto');
 
 function UnCatalogo({ alRender }: { alRender: (n: number, listo: boolean) => void }) {
   const { datos, listo } = mod.useCatalogo('empresas');
@@ -52,12 +54,51 @@ describe('catálogos compartidos', () => {
     const vistos: number[] = [];
     const ui = render(<><UnCatalogo alRender={(n) => vistos.push(n)} /><UnCatalogo alRender={(n) => vistos.push(n)} /></>);
     expect(aperturas).toBe(1);
-    act(() => { abiertos.get('empresas')?.next(snap([{ id: 'a' }, { id: 'b' }], true)); });
+    act(() => { abiertos.get('empresas')?.next(snap([{ id: 'a' }, { id: 'b' }], true)); vi.advanceTimersByTime(VENTANA_AVISO_MS); });
     expect(vistos.at(-1)).toBe(2);
     ui.unmount();
-    expect(cierres).toBe(0); // permanece abierto
-    act(() => { vi.advanceTimersByTime(mod.MINUTOS_PERMANENCIA * 60 * 1000 + 1); });
+    // ✅ V00446: un catálogo queda abierto toda la sesión (no se cierra por tiempo)…
+    act(() => { vi.advanceTimersByTime(mod.MINUTOS_PERMANENCIA * 60 * 1000 * 4); });
+    expect(cierres).toBe(0);
+    // …y se cierra al cerrar sesión.
+    act(() => { mod.reiniciarCatalogos(); });
     expect(cierres).toBe(1);
+  });
+
+  it('los avisos se agrupan: dos catálogos seguidos = un solo repintado', () => {
+    let pintadas = 0;
+    render(<Varios alRender={() => { pintadas += 1; }} />);
+    const antes = pintadas;
+    act(() => {
+      abiertos.get('empresas')?.next(snap([{ id: 'a' }]));
+      abiertos.get('catalogo_moneda')?.next(snap([{ id: 'u' }, { id: 'm' }]));
+      vi.advanceTimersByTime(VENTANA_AVISO_MS);
+    });
+    expect(pintadas - antes).toBe(1);
+  });
+
+  it('la confirmación del servidor sin cambios no repinta', () => {
+    let pintadas = 0;
+    render(<UnCatalogo alRender={() => { pintadas += 1; }} />);
+    act(() => { abiertos.get('empresas')?.next(snap([{ id: 'a' }], true)); vi.advanceTimersByTime(VENTANA_AVISO_MS); });
+    const antes = pintadas;
+    act(() => { abiertos.get('empresas')?.next(snap([{ id: 'a' }], false, 0)); vi.advanceTimersByTime(VENTANA_AVISO_MS); });
+    expect(pintadas).toBe(antes);
+  });
+
+  it('un módulo oculto no se repinta; al volver a verse toma lo más reciente', () => {
+    const vistos: number[] = [];
+    const ui = (visible: boolean) => (
+      <ContextoModuloVivoActivo.Provider value={visible}><UnCatalogo alRender={(n) => vistos.push(n)} /></ContextoModuloVivoActivo.Provider>
+    );
+    const { rerender } = render(ui(true));
+    act(() => { abiertos.get('empresas')?.next(snap([{ id: 'a' }])); vi.advanceTimersByTime(VENTANA_AVISO_MS); });
+    rerender(ui(false));
+    const pintadasOculto = vistos.length;
+    act(() => { abiertos.get('empresas')?.next(snap([{ id: 'a' }, { id: 'b' }, { id: 'c' }])); vi.advanceTimersByTime(VENTANA_AVISO_MS); });
+    expect(vistos.length).toBe(pintadasOculto);
+    rerender(ui(true));
+    expect(vistos.at(-1)).toBe(3);
   });
 
   it('volver antes de la permanencia no reabre el listener', () => {
@@ -80,15 +121,24 @@ describe('catálogos compartidos', () => {
     expect(vistos.at(-1)).toBe(3);
   });
 
-  it('obtenerCatalogo espera al servidor y no se queda con la caché local', async () => {
+  it('obtenerCatalogo devuelve en cuanto hay datos (caché local) sin esperar al servidor', async () => {
     const p = mod.obtenerCatalogo('catalogo_tipos_gastos');
+    act(() => { abiertos.get('catalogo_tipos_gastos')?.next(snap([{ id: 'cache' }], true)); });
+    await expect(p).resolves.toHaveLength(1);
+    // Ya abierto: la siguiente llamada es inmediata.
+    await expect(mod.obtenerCatalogo('catalogo_tipos_gastos')).resolves.toHaveLength(1);
+    expect(aperturas).toBe(1);
+  });
+
+  it('obtenerCatalogo fresco espera al servidor y no se queda con la caché local', async () => {
+    const p = mod.obtenerCatalogo('catalogo_tipos_gastos', { fresco: true });
     act(() => { abiertos.get('catalogo_tipos_gastos')?.next(snap([{ id: 'viejo' }], true)); });
     act(() => { abiertos.get('catalogo_tipos_gastos')?.next(snap([{ id: 'x' }, { id: 'y' }], false)); });
     await expect(p).resolves.toHaveLength(2);
   });
 
-  it('la confirmación del servidor SIN cambios (solo metadatos) basta para obtenerCatalogo', async () => {
-    const p = mod.obtenerCatalogo('catalogo_moneda');
+  it('la confirmación del servidor SIN cambios (solo metadatos) basta para obtenerCatalogo fresco', async () => {
+    const p = mod.obtenerCatalogo('catalogo_moneda', { fresco: true });
     act(() => { abiertos.get('catalogo_moneda')?.next(snap([{ id: 'u' }], true)); });
     act(() => { abiertos.get('catalogo_moneda')?.next(snap([{ id: 'u' }], false, 0)); });
     await expect(p).resolves.toHaveLength(1);

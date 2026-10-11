@@ -6,6 +6,7 @@ import {
   persistentSingleTabManager,
   memoryLocalCache,
   collection, addDoc, updateDoc, doc, getDoc, writeBatch,
+  enablePersistentCacheIndexAutoCreation, getPersistentCacheIndexManager,
 } from "firebase/firestore";
 import type { Firestore } from "firebase/firestore";
 import type { DocumentData, DocumentReference, UpdateData } from "firebase/firestore";
@@ -112,6 +113,17 @@ try {
   dbInterno = initializeFirestore(app, { localCache: memoryLocalCache() });
 }
 export const db = dbInterno;
+
+// ✅ V00446 (rendimiento): índices de la caché LOCAL. Sin ellos, una consulta con filtro
+//   servida desde la caché (p. ej. `status not-in`, `tipo == 'cliente'`) recorre TODOS los
+//   documentos de esa colección guardados en el navegador. El SDK crea los índices locales
+//   solo para las consultas que lo necesitan. No toca el servidor ni cobra lecturas.
+try {
+  const indicesLocales = getPersistentCacheIndexManager(dbInterno);
+  if (indicesLocales) enablePersistentCacheIndexAutoCreation(indicesLocales);
+} catch (e) {
+  console.warn('[firestore] Índices de la caché local no disponibles.', e);
+}
 
 export const auth = getAuth(app);
 // ✅ Storage ligado explícitamente a la app principal (mismo proyecto/bucket que db/auth)

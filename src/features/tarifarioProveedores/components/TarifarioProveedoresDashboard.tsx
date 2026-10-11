@@ -82,7 +82,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore';
-import { useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
+import { useModuloEscuchando } from '../../../utils/moduloVivoContexto';
 import { db, auth, storage } from '../../../config/firebase'; // ✅ V00273: storage para el tarifario firmado
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'; // ✅ V00273
 import { registrarLog } from '../../../utils/logger';
@@ -283,7 +283,7 @@ export function TarifarioProveedoresDashboard() {
 
   // ✅ V00438 (Fase 2.7): los listeners viven solo con el módulo visible (MantenerVivo);
   //   oculto conserva lo cargado y al volver se re-suscribe sin vaciar la tabla.
-  const moduloVisible = useModuloVivoActivo();
+  const moduloVisible = useModuloEscuchando(); // ✅ V00446: sigue escuchando unos minutos oculto
   useEffect(() => {
     if (!moduloVisible) return;
     const unsub = onSnapshot(

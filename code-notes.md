@@ -115,3 +115,10 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - **Prueba de humo de módulos** (`src/__pruebas__/`): Firebase falso con un `Proxy` (cualquier función desconocida devuelve un objeto encadenable; lecturas vacías; `configuracion/flags` según `estadoFalso.flags`). Monta cada módulo con banderas apagadas y encendidas y atrapa el error de render con un Error Boundary. Atrapa errores de inicialización (TDZ, imports rotos, hooks mal ordenados) que tsc/eslint no ven; no prueba datos reales. Un módulo nuevo se agrega a `MODULOS`.
 - **`VITE_BANXICO_TOKEN`**: quitado (nadie lo leía). Sigue en el historial de git: darlo de baja en Banxico.
 
+## V00446 (rendimiento)
+- **Causa medida** (`npm run medir:render`, V00435 vs V00445): `useSyncExternalStore` repinta de forma SÍNCRONA por cada aviso; con un aviso por catálogo (y otro por la confirmación del servidor) un módulo con 8–17 catálogos se repintaba 11–16 veces al abrir. Ahora: avisos agrupados (50 ms), la confirmación del servidor va fuera del estado publicado (`confirmado` en la entrada), módulos ocultos sin oyentes.
+- **Catálogos permanentes en la sesión**: un listener abierto solo cobra cambios; cerrarlo a los 15 min obligaba a re-bajar la colección completa (más de 30 min sin escuchar = el servidor la manda toda). Se cierran en `reiniciarCatalogos` (cerrar sesión). `MINUTOS_PERMANENCIA` queda para claves no permanentes.
+- **`obtenerCatalogo` rápido por omisión**: la decisión de la V00439 (esperar al servidor) se conserva SOLO donde se escribe con el catálogo (`{ fresco: true }`); con los catálogos permanentes, esa espera ocurre una vez por sesión.
+- **Gracia de escucha (10 min)** separada de la visibilidad: `useModuloVivoActivo` = se ve ahora (buscador global, avisos); `useModuloEscuchando` = se ve o se ocultó hace poco (listeners). Costo: un módulo oculto sigue recibiendo cambios (y repintándose por sus propios listeners) hasta 10 min; antes de la V00438 era siempre.
+- **PENDIENTE**: `persistentMultipleTabManager` (la segunda pestaña hoy no tiene caché en disco) cuando se retire `almacenSesion` de Completados (P4).
+

@@ -44,10 +44,10 @@ export const quitarPrefijoConv = async (): Promise<string> => {
 
   // ✅ V00439 (Fase 3.x): convenios y detalles desde los catálogos compartidos.
   const [detCli, detProv, cli, prov, ops] = await Promise.all([
-    obtenerCatalogo('convenios_clientes_detalles'),
-    obtenerCatalogo('convenios_proveedores_detalles'),
-    obtenerCatalogo('convenios_clientes'),
-    obtenerCatalogo('convenios_proveedores'),
+    obtenerCatalogo('convenios_clientes_detalles', { fresco: true }),
+    obtenerCatalogo('convenios_proveedores_detalles', { fresco: true }),
+    obtenerCatalogo('convenios_clientes', { fresco: true }),
+    obtenerCatalogo('convenios_proveedores', { fresco: true }),
     getDocs(collection(db, 'operaciones')),
   ]);
   detCli.forEach((d) => { revisar('convenios_clientes_detalles', idReal(d), d, ['consecutivo']); revisarNombres('convenios_clientes_detalles', idReal(d), d, ['descripcionConvenio', 'tipoConvenioNombre']); });

@@ -1,7 +1,7 @@
 // src/features/catalogos/components/CatalogosDashboard.tsx
 import React, { useState, useEffect, useMemo, useRef } from 'react'; // ✅ V00228: useRef
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
-import { useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
+import { useModuloEscuchando } from '../../../utils/moduloVivoContexto';
 import { createPortal } from 'react-dom'; // ✅ V00226
 import { collection, onSnapshot, getDocs, writeBatch, doc, query, where, setDoc, getDoc, deleteDoc, getCountFromServer, limit, startAfter } from 'firebase/firestore'; // ✅ V00259: limit/startAfter para el modal de operaciones por C/V
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos'; // ✅ V00332
@@ -624,7 +624,7 @@ const CatalogosDashboard = () => {
   // ✅ V00439 (Fase 3.x): listener propio SOLO si el catálogo abierto no es un
   //   catálogo compartido (esos llegan por useCatalogos, siempre en vivo). Ya no
   //   se purgan cachés locales: los demás módulos también leen en vivo.
-  const visible = useModuloVivoActivo();
+  const visible = useModuloEscuchando(); // ✅ V00446: sigue escuchando unos minutos oculto
   useEffect(() => {
     if (!visible || !coleccionCatalogo || coleccionCompartida) return;
     const unsubscribe = onSnapshot(collection(db, coleccionCatalogo), (snapshot) => {
@@ -1028,8 +1028,8 @@ const CatalogosDashboard = () => {
       const claveCV = (seg: string) => ALIAS_CV[seg] || seg;
       // ✅ V00439 (Fase 3.x): C/V y aduanas desde los catálogos compartidos.
       const [catCV, catAdu, snapOps] = await Promise.all([
-        obtenerCatalogo('catalogo_carga_vacia'),
-        obtenerCatalogo('catalogo_aduanas'),
+        obtenerCatalogo('catalogo_carga_vacia', { fresco: true }), // ✅ V00446: escribe con ellos
+        obtenerCatalogo('catalogo_aduanas', { fresco: true }),
         getDocs(collection(db, 'operaciones')),
       ]);
       const cvPorId = new Map<string, string>();

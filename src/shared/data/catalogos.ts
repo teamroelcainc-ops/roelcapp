@@ -10,8 +10,11 @@
 //   · Con la caché persistente de Firestore (IndexedDB) los datos se pintan al
 //     instante desde el disco y el servidor solo cobra lo que cambió si el
 //     listener se reabre antes de 30 min.
-//   · Cuando ninguna vista lo usa, el listener sigue abierto 15 min (navegar de
-//     ida y vuelta no vuelve a leer) y luego se cierra.
+//   · ✅ V00446: el listener de un catálogo queda abierto TODA la sesión (se cierra al
+//     cerrar sesión). Abierto solo cobra lo que cambia; cerrarlo a los 15 min obligaba
+//     a volver a bajar la colección completa (y a esperarla) al reabrirlo.
+//   · Los avisos a React van agrupados y un módulo oculto no se repinta (ver
+//     coleccionesVivas.ts).
 //   · Siempre en vivo: no hay caché que invalidar después de escribir.
 // Por eso NO se usa el documento de versiones de catálogos del plan (3.5): con
 // listeners vivos no hay nada que invalidar (decisión en code-notes.md).
@@ -52,20 +55,22 @@ export { MINUTOS_PERMANENCIA, idReal };
 
 const claveDe = (col: ColeccionCatalogo): string => `catalogo:${col}`;
 const consultaDe = (col: ColeccionCatalogo) => () => collection(db, col);
-const pedir = (col: ColeccionCatalogo): void => pedirVivo(claveDe(col), consultaDe(col));
+const pedir = (col: ColeccionCatalogo): void => pedirVivo(claveDe(col), consultaDe(col), { permanente: true });
 const soltar = (col: ColeccionCatalogo): void => soltarVivo(claveDe(col));
 
 /** Estado actual de un catálogo (sin suscribirse). */
 export const estadoCatalogo = (col: ColeccionCatalogo): EstadoCatalogo => estadoVivo(claveDe(col));
 
 /**
- * Catálogo para servicios fuera de React. Abre (o reutiliza) el listener
- * compartido y espera el primer snapshot del SERVIDOR (máx. `esperaMs`; sin red,
- * devuelve lo que haya en la caché local). El listener queda abierto el tiempo de
- * permanencia, así que llamadas seguidas no vuelven a leer.
+ * Catálogo para servicios fuera de React. Abre (o reutiliza) el listener compartido
+ * (queda abierto toda la sesión: las llamadas siguientes son inmediatas).
+ * · Por omisión devuelve en cuanto hay datos (caché local o servidor).
+ * · `fresco: true` espera la confirmación del SERVIDOR (máx. `esperaMs`; sin red, la
+ *   caché): para los servicios que ESCRIBEN decidiendo con el catálogo (integridad de
+ *   convenios, sincronizar nombres, mantenimiento de Catálogos).
  */
-export const obtenerCatalogo = (col: ColeccionCatalogo, esperaMs = 6000): Promise<DocCatalogo[]> =>
-  obtenerVivo(claveDe(col), consultaDe(col), esperaMs);
+export const obtenerCatalogo = (col: ColeccionCatalogo, opciones: { fresco?: boolean; esperaMs?: number } = {}): Promise<DocCatalogo[]> =>
+  obtenerVivo(claveDe(col), consultaDe(col), opciones.esperaMs ?? 6000, { fresco: opciones.fresco, permanente: true });
 
 /** Cierra todos los listeners (catálogos y consultas en vivo) y borra los datos (al cerrar sesión). */
 export const reiniciarCatalogos = (): void => reiniciarVivas();
@@ -78,15 +83,17 @@ export const reiniciarCatalogos = (): void => reiniciarVivas();
 export function useCatalogo(col: ColeccionCatalogo, opciones: { activo?: boolean } = {}): EstadoCatalogo {
   const visible = useModuloVivoActivo();
   const activo = (opciones.activo ?? true) && visible;
+  // ✅ V00446: oculto no recibe avisos (no se repinta en segundo plano); al volver a
+  //   verse se vuelve a suscribir y React toma el estado más reciente.
   const suscribir = useCallback((aviso: () => void) => {
     const e = entradaViva(claveDe(col));
-    e.oyentes.add(aviso);
+    if (visible) e.oyentes.add(aviso);
     if (activo) pedir(col);
     return () => {
       e.oyentes.delete(aviso);
       if (activo) soltar(col);
     };
-  }, [col, activo]);
+  }, [col, activo, visible]);
   const leer = useCallback(() => estadoCatalogo(col), [col]);
   return useSyncExternalStore(suscribir, leer, leer);
 }
@@ -116,11 +123,11 @@ export function useCatalogos<M extends MapaCatalogos>(mapa: M, opciones: { activ
   const colecciones = useMemo(() => Array.from(new Set(Object.values(mapaEstable))) as ColeccionCatalogo[], [mapaEstable]);
 
   const suscribir = useCallback((aviso: () => void) => {
-    colecciones.forEach((c) => { entradaViva(claveDe(c)).oyentes.add(aviso); if (activo) pedir(c); });
+    colecciones.forEach((c) => { if (visible) entradaViva(claveDe(c)).oyentes.add(aviso); if (activo) pedir(c); });
     return () => {
       colecciones.forEach((c) => { entradaViva(claveDe(c)).oyentes.delete(aviso); if (activo) soltar(c); });
     };
-  }, [colecciones, activo]);
+  }, [colecciones, activo, visible]);
 
   // getSnapshot debe devolver el MISMO objeto mientras nada cambie: cada
   // actualización reemplaza el objeto de estado de su colección, así que basta

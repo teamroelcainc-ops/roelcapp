@@ -8,7 +8,7 @@ import { db, auth } from '../../../config/firebase';
 import { idReal, obtenerCatalogo, useCatalogos } from '../../../shared/data/catalogos';
 import type { DocCatalogo } from '../../../shared/data/catalogos';
 import { usePermisoRol } from '../../../shared/data/sesion';
-import { ContextoModuloVivoActivo, useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
+import { ContextoModuloEscuchando, ContextoModuloVivoActivo, useModuloEscuchando, useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
 import { ID_MXN, ID_USD, PUENTE_EXPORTACION_ID, PUENTE_IMPORTACION_ID, STATUS_CANCELADO, STATUS_COMPLETADOS, TIPO_EMPRESA } from '../../../shared/dominio/constantes';
 import { esUSD, monedaCanonica, nombreMoneda as nombreMonedaCanonica } from '../../../shared/dominio/moneda';
 import { DocumentosLista } from '../../documentos/DocumentosLista'; // ✅ V00341: consultar los documentos guardados
@@ -3887,10 +3887,14 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
 //   propios de antes); minimizado, siguen la visibilidad de su módulo.
 function FormularioOperacionVisible(props: FormProps) {
   const moduloVisible = useModuloVivoActivo();
+  const moduloEscuchando = useModuloEscuchando(); // ✅ V00446
+  const abierto = props.estado === 'abierto';
   return (
-    <ContextoModuloVivoActivo.Provider value={moduloVisible || props.estado === 'abierto'}>
-      <FormularioOperacionBase {...props} />
-    </ContextoModuloVivoActivo.Provider>
+    <ContextoModuloEscuchando.Provider value={moduloEscuchando || abierto}>
+      <ContextoModuloVivoActivo.Provider value={moduloVisible || abierto}>
+        <FormularioOperacionBase {...props} />
+      </ContextoModuloVivoActivo.Provider>
+    </ContextoModuloEscuchando.Provider>
   );
 }
 

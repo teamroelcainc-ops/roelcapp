@@ -140,8 +140,8 @@ export const MigracionStatusOperaciones = () => {
     try {
       // ✅ V00439 (Fase 3.x): status y flujos desde los catálogos compartidos.
       const [statusLista, flujosLista] = await Promise.all([
-        obtenerCatalogo('catalogo_status_servicio'),
-        obtenerCatalogo('config_flujos_operacion'),
+        obtenerCatalogo('catalogo_status_servicio', { fresco: true }),
+        obtenerCatalogo('config_flujos_operacion', { fresco: true }),
       ]);
       const mapa = construirMapaStatus(statusLista);
       pushA('info', `Catálogo: ${statusLista.length} · Flujos: ${flujosLista.length}.`);
@@ -189,10 +189,10 @@ export const MigracionStatusOperaciones = () => {
       // ✅ V00439 (Fase 3.x): status, flujos y tipos de operación (solo lectura)
       //   desde los catálogos compartidos.
       const [statusLista, horariosSnap, flujosLista, tiposOpLista, opsSnap] = await Promise.all([
-        obtenerCatalogo('catalogo_status_servicio'),
+        obtenerCatalogo('catalogo_status_servicio', { fresco: true }),
         getDocs(collection(db, 'horarios')),
-        obtenerCatalogo('config_flujos_operacion'),
-        obtenerCatalogo('catalogo_tipo_operacion'),
+        obtenerCatalogo('config_flujos_operacion', { fresco: true }),
+        obtenerCatalogo('catalogo_tipo_operacion', { fresco: true }),
         getDocs(collection(db, 'operaciones')),
       ]);
 

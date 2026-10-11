@@ -18,7 +18,7 @@ import './EmpresasDashboard.css';
 import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 import { almacenSesion, obtenerCacheMemoria, guardarCacheMemoria } from '../../../utils/cacheMemoria';
 import { hoyLocalISO, fechaLocalISO } from '../../../utils/fechaHoraLocal';
-import { useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
+import { useModuloEscuchando } from '../../../utils/moduloVivoContexto';
 import { idReal, useCatalogo, useCatalogos } from '../../../shared/data/catalogos';
 import type { DocCatalogo } from '../../../shared/data/catalogos';
 import { monedaCanonica } from '../../../shared/dominio/moneda';
@@ -464,7 +464,7 @@ const EmpresasDashboard = () => {
   // ✅ V00438 (Fase 2.7): "último uso" (1,500 operaciones) solo se escucha con
   //   el módulo VISIBLE; oculto conserva lo ya pintado. (Las empresas, V00439:
   //   useCatalogo, que ya se pausa solo con el módulo oculto.)
-  const visible = useModuloVivoActivo();
+  const visible = useModuloEscuchando(); // ✅ V00446: sigue escuchando unos minutos oculto
   useEffect(() => {
     if (!visible || !flagsCargadas) return;
     // ✅ V00443 (Fase 7.6): con `consultasCanonicas`, "último uso" sale de usos/empresa_* (ultimoUsoISO).

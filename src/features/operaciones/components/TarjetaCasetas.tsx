@@ -7,7 +7,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
-import { useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
+import { useModuloEscuchando } from '../../../utils/moduloVivoContexto';
 import { idReal, useCatalogo } from '../../../shared/data/catalogos';
 import { monedaCanonica, nombreMoneda as nombreMonedaCanonica } from '../../../shared/dominio/moneda';
 import './TarjetaCasetas.css';
@@ -73,7 +73,7 @@ export const TarjetaCasetas: React.FC = () => {
   //   Sin ventana de fechas a propósito: el saldo restante sale de TODO el historial
   //   (recargas − cruces desde la 1ª recarga) y lo de "hoy" sale de esos mismos datos;
   //   acotar cambiaría las cifras. Saldo corrido en un documento → Fase 5.6.
-  const moduloVisible = useModuloVivoActivo();
+  const moduloVisible = useModuloEscuchando(); // ✅ V00446: sigue escuchando unos minutos oculto
   useEffect(() => {
     if (!moduloVisible) return;
     const u2 = onSnapshot(collection(db, 'saldos_puentes'), (snap) => {

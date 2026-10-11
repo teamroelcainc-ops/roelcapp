@@ -8,7 +8,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { collection, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
-import { useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
+import { useModuloEscuchando } from '../../../utils/moduloVivoContexto';
 import { useFlags } from '../../../shared/data/flags';
 import { COL_SALDOS_CORRIENTES, cuentasDiesel, cuentasDieselDesdeReferencias } from '../../../shared/dominio/saldosCorrientes';
 import type { SaldoCorrienteDiesel } from '../../../shared/dominio/saldosCorrientes';
@@ -26,7 +26,7 @@ export const TarjetaSaldoDiesel: React.FC = () => {
   //   Sin ventana de fechas: el saldo restante descuenta TODAS las cargas desde el 1er
   //   saldo de cada proveedor y "Cargas hoy" sale de esas mismas referencias; acotar
   //   cambiaría las cifras. Saldo corrido en un documento → Fase 5.6.
-  const moduloVisible = useModuloVivoActivo();
+  const moduloVisible = useModuloEscuchando(); // ✅ V00446: sigue escuchando unos minutos oculto
   useEffect(() => {
     if (!moduloVisible) return;
     const u1 = onSnapshot(collection(db, 'saldos_diesel'), (s) => setSaldos(s.docs.map((d) => ({ id: d.id, ...(d.data() as Fila) }))), () => setSaldos([]));

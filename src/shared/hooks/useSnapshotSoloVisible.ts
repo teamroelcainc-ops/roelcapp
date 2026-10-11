@@ -18,7 +18,7 @@
 //   );
 // `crear` puede devolver null para no escuchar (p. ej. faltan filtros).
 // Para efectos existentes basta el patrón mínimo equivalente:
-//   const visible = useModuloVivoActivo();
+//   const visible = useModuloEscuchando(); // ✅ V00446: visible o ocultado hace poco
 //   useEffect(() => { if (!visible) return; const unsub = onSnapshot(...); return unsub; }, [visible, ...]);
 // ---------------------------------------------------------------------------
 import { useEffect, useEffectEvent } from 'react';
@@ -26,7 +26,7 @@ import { onSnapshot } from 'firebase/firestore';
 import type {
   DocumentData, DocumentReference, DocumentSnapshot, FirestoreError, Query, QuerySnapshot,
 } from 'firebase/firestore';
-import { useModuloVivoActivo } from '../../utils/moduloVivoContexto';
+import { useModuloEscuchando } from '../../utils/moduloVivoContexto';
 
 type Objetivo<A, D extends DocumentData> = Query<A, D> | DocumentReference<A, D>;
 type SnapDe<A, D extends DocumentData, O> = O extends DocumentReference<A, D> ? DocumentSnapshot<A, D> : QuerySnapshot<A, D>;
@@ -37,7 +37,7 @@ export function useSnapshotSoloVisible<A, D extends DocumentData, O extends Obje
   alCambiar: (snap: SnapDe<A, D, O>) => void,
   alError?: (error: FirestoreError) => void,
 ): void {
-  const visible = useModuloVivoActivo();
+  const visible = useModuloEscuchando(); // ✅ V00446: sigue escuchando unos minutos oculto
   const crearEv = useEffectEvent(crear);
   const cambioEv = useEffectEvent(alCambiar);
   const errorEv = useEffectEvent((e: FirestoreError) => {

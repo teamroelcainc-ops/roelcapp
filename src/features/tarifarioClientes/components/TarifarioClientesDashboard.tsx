@@ -83,7 +83,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, setDoc, snapshotEqual, updateDoc, where, writeBatch } from 'firebase/firestore';
 import type { QueryDocumentSnapshot } from 'firebase/firestore';
-import { useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
+import { useModuloEscuchando } from '../../../utils/moduloVivoContexto';
 import { db, auth, storage } from '../../../config/firebase'; // ✅ V00273: storage para el tarifario firmado
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'; // ✅ V00273
 import { registrarLog } from '../../../utils/logger';
@@ -314,7 +314,7 @@ export function TarifarioClientesDashboard() {
   //   oculto conserva lo cargado y al volver se re-suscribe sin vaciar la tabla. Si la
   //   re-suscripción trae los mismos documentos se conserva el arreglo (misma referencia)
   //   para no re-disparar el conteo de operaciones del detalle abierto ("…" + lecturas).
-  const moduloVisible = useModuloVivoActivo();
+  const moduloVisible = useModuloEscuchando(); // ✅ V00446: sigue escuchando unos minutos oculto
   const docsRegistros = useRef<readonly QueryDocumentSnapshot[]>([]);
   useEffect(() => {
     if (!moduloVisible) return;

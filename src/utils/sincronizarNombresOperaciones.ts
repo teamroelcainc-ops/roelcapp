@@ -53,10 +53,10 @@ export async function sincronizarNombresOperaciones(
   // ✅ V00439 (Fase 3.x): catálogos actuales desde el listener compartido
   //   (obtenerCatalogo espera el dato del servidor), sin getDocs propios.
   const [tiposOp, statusCat, empresas, cargaVacia] = await Promise.all([
-    obtenerCatalogo('catalogo_tipo_operacion'),
-    obtenerCatalogo('catalogo_status_servicio'),
-    obtenerCatalogo('empresas'),
-    obtenerCatalogo('catalogo_carga_vacia'),
+    obtenerCatalogo('catalogo_tipo_operacion', { fresco: true }),
+    obtenerCatalogo('catalogo_status_servicio', { fresco: true }),
+    obtenerCatalogo('empresas', { fresco: true }),
+    obtenerCatalogo('catalogo_carga_vacia', { fresco: true }),
   ]);
   const mapTipoOp: Record<string, string> = {};
   tiposOp.forEach((d) => { mapTipoOp[idReal(d)] = String(d.tipo_operacion || ''); });

@@ -1,7 +1,7 @@
 // src/features/operaciones/components/OperacionesDashboard.tsx
 import React, { useState, useEffect, useMemo, useCallback, useEffectEvent } from 'react';
 import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
-import { useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
+import { useModuloEscuchando } from '../../../utils/moduloVivoContexto';
 import { useHandlerEstable } from '../hooks/useHandlerEstable';
 import { esOperacionPrueba, sinPruebas } from '../../../utils/operacionPrueba';
 import { FormularioOperacion } from './FormularioOperacion';
@@ -192,7 +192,7 @@ const OperacionesDashboard = () => {
   const puedePersonalizarVista = permisoPersonalizarVista || rolesSesionOD.some((r) => String(r).toLowerCase().includes('personalizarvista'));
   // ✅ V00438 (Fase 2.7): el listener de la vista solo vive mientras el módulo
   //   se ve; oculto conserva los botones ya leídos y al volver se re-suscribe.
-  const moduloVisible = useModuloVivoActivo();
+  const moduloVisible = useModuloEscuchando(); // ✅ V00446: sigue escuchando unos minutos oculto
   useEffect(() => {
     if (!moduloVisible) return;
     const unsub = onSnapshot(doc(db, 'config_vista', 'operacionesActivas'), (d) => {

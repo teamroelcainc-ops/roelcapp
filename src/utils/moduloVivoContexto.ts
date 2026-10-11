@@ -6,3 +6,14 @@ import { createContext, useContext } from 'react';
 /** true = el módulo envuelto es el que se ve en pantalla ahora mismo. */
 export const ContextoModuloVivoActivo = createContext(true);
 export const useModuloVivoActivo = (): boolean => useContext(ContextoModuloVivoActivo);
+
+/**
+ * ✅ V00446: true mientras el módulo se ve y hasta MINUTOS_GRACIA_ESCUCHA después de
+ * ocultarse. Para los listeners de los módulos: ir a otro módulo y volver pronto ya no
+ * cierra y reabre la escucha (antes cada regreso volvía a cargar y repintar todo).
+ * Para "¿es el módulo que se ve?" (buscador global, avisos) usa useModuloVivoActivo.
+ */
+export const MINUTOS_GRACIA_ESCUCHA = 10;
+export const ContextoModuloEscuchando = createContext(true);
+export const useModuloEscuchando = (): boolean => useContext(ContextoModuloEscuchando);
+

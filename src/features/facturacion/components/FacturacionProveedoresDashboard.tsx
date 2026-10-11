@@ -17,7 +17,7 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback, useDeferredValue, useEffectEvent } from 'react';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
-import { useModuloVivoActivo } from '../../../utils/moduloVivoContexto'; // ✅ V00438 (Fase 2.7)
+import { useModuloEscuchando } from '../../../utils/moduloVivoContexto'; // ✅ V00438 (Fase 2.7)
 import { EditorOperacionEmbebido } from '../../operaciones/components/EditorOperacionEmbebido';
 import { HiloModal } from '../../hilo/HiloModal';
 import { suscribirOperacionGuardada } from '../../../utils/operacionesBus';
@@ -282,7 +282,7 @@ export const FacturacionProveedoresDashboard = () => {
   const [pagosPorFactura, setPagosPorFactura] = useState<Record<string, string[]>>({});
   // ✅ V00438 (Fase 2.7): el listener de pagos se cierra mientras el módulo está
   //   oculto (MantenerVivo); al volver se re-suscribe sin limpiar lo ya pintado.
-  const moduloVisible = useModuloVivoActivo();
+  const moduloVisible = useModuloEscuchando(); // ✅ V00446: sigue escuchando unos minutos oculto
   useEffect(() => {
     if (!moduloVisible) return;
     const q = query(collection(db, 'pagos'), where('tipo', '==', 'proveedor'));
