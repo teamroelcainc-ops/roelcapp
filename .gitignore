@@ -23,8 +23,9 @@ dist-ssr
 *.sln
 *.sw?
 
-# ✅ V00436 (Fase 0): variables de entorno y secretos NUNCA al repo
-.env
+# ✅ V00436 (Fase 0): secretos NUNCA al repo.
+# ✅ V00447: `.env` SÍ va en git (como antes del refactor): solo lleva la configuración web de
+#   Firebase, que es pública, y el build de producción la usa. Ninguna llave secreta ahí.
 .env.*
 !.env.example
 # Llaves de cuentas de servicio y respaldos de Firestore

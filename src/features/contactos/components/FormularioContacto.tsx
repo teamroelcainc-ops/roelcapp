@@ -94,37 +94,37 @@ export const FormularioContacto: React.FC<Props> = ({ estado, initialData, onClo
 
   if (estado === 'minimizado') {
     return (
-      <div className="fc-x1">
+      <div className="fct-x1">
       <ModalAccesoCampo aut={aut} />
-        <span className="fc-x2">{initialData ? 'Editando Contacto' : 'Nuevo Contacto'}</span>
-        <div className="fc-x3">
-          <button className="fc-x4" onClick={onRestore}>🗖 Restaurar</button>
-          <button className="fc-x5" onClick={onClose}>✕</button>
+        <span className="fct-x2">{initialData ? 'Editando Contacto' : 'Nuevo Contacto'}</span>
+        <div className="fct-x3">
+          <button className="fct-x4" onClick={onRestore}>🗖 Restaurar</button>
+          <button className="fct-x5" onClick={onClose}>✕</button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="modal-overlay fc-x6">
-      <div className="fc-x7">
+    <div className="modal-overlay fct-x6">
+      <div className="fct-x7">
         
-        <div className="fc-x8">
-          <h2 className="fc-x9">{initialData ? 'Editar Contacto' : 'Agregar Contacto'}</h2>
-          <div className="fc-x10">
-            <button className="fc-x11" onClick={onMinimize}>—</button>
-            <button className="fc-x11" onClick={onClose}>✕</button>
+        <div className="fct-x8">
+          <h2 className="fct-x9">{initialData ? 'Editar Contacto' : 'Agregar Contacto'}</h2>
+          <div className="fct-x10">
+            <button className="fct-x11" onClick={onMinimize}>—</button>
+            <button className="fct-x11" onClick={onClose}>✕</button>
           </div>
         </div>
 
         <FormularioConfigurable modulo="contactos">{/* ✅ V00385 */}
-        <form className="fc-x12" onSubmit={handleSubmit}>
-          <div className="fc-x13">
+        <form className="fct-x12" onSubmit={handleSubmit}>
+          <div className="fct-x13">
             
             {/* BUSCADOR DE EMPRESAS */}
-            <div className="fc-x14">
-              <label className="fc-x15">Empresa / Cliente *</label>
-              <input className="fc-x16" 
+            <div className="fct-x14">
+              <label className="fct-x15">Empresa / Cliente *</label>
+              <input className="fct-x16" 
                 type="text"
                 placeholder="Buscar empresa..."
                 value={busquedaEmpresa}
@@ -137,9 +137,9 @@ export const FormularioContacto: React.FC<Props> = ({ estado, initialData, onClo
                 required
               />
               {mostrarDropdown && empresasFiltradas.length > 0 && (
-                <ul className="fc-x17">
+                <ul className="fct-x17">
                   {empresasFiltradas.map(emp => (
-                    <li className="fc-x18" 
+                    <li className="fct-x18" 
                       key={emp.id} 
                       onClick={() => seleccionarEmpresa(emp)}
                       onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = '#21262d'}
@@ -153,31 +153,31 @@ export const FormularioContacto: React.FC<Props> = ({ estado, initialData, onClo
             </div>
 
             <div>
-              <label className="fc-x15">Persona Encargada *</label>
-              <input className="fc-x16" type="text" value={formData.persona_encargada} onChange={(e) => setFormData({ ...formData, persona_encargada: e.target.value })} required />
+              <label className="fct-x15">Persona Encargada *</label>
+              <input className="fct-x16" type="text" value={formData.persona_encargada} onChange={(e) => setFormData({ ...formData, persona_encargada: e.target.value })} required />
             </div>
 
             <div>
-              <label className="fc-x15">Puesto *</label>
-              <input className="fc-x16" type="text" value={formData.puesto} onChange={(e) => setFormData({ ...formData, puesto: e.target.value })} required />
+              <label className="fct-x15">Puesto *</label>
+              <input className="fct-x16" type="text" value={formData.puesto} onChange={(e) => setFormData({ ...formData, puesto: e.target.value })} required />
             </div>
 
-            <div className="fc-x19">
+            <div className="fct-x19">
               <div>
-                <label className="fc-x15">Teléfono</label>
-                <input className="fc-x16" type="tel" value={formData.telefono} onChange={(e) => setFormData({ ...formData, telefono: e.target.value })} />
+                <label className="fct-x15">Teléfono</label>
+                <input className="fct-x16" type="tel" value={formData.telefono} onChange={(e) => setFormData({ ...formData, telefono: e.target.value })} />
               </div>
               <div>
-                <label className="fc-x15">Correo Electrónico</label>
-                <input className="fc-x16" type="email" value={formData.correo} onChange={(e) => setFormData({ ...formData, correo: e.target.value })} />
+                <label className="fct-x15">Correo Electrónico</label>
+                <input className="fct-x16" type="email" value={formData.correo} onChange={(e) => setFormData({ ...formData, correo: e.target.value })} />
               </div>
             </div>
 
           </div>
 
-          <div className="fc-x20">
-            <button className="fc-x21" type="button" onClick={onClose}>Cancelar</button>
-            <button className="fc-x22" type="submit" disabled={guardando}>{guardando ? 'Guardando...' : 'Guardar Contacto'}</button>
+          <div className="fct-x20">
+            <button className="fct-x21" type="button" onClick={onClose}>Cancelar</button>
+            <button className="fct-x22" type="submit" disabled={guardando}>{guardando ? 'Guardando...' : 'Guardar Contacto'}</button>
           </div>
         </form>
         </FormularioConfigurable>

@@ -39,4 +39,12 @@ describe('MantenerVivo', () => {
     act(() => { vi.advanceTimersByTime(MINUTOS_GRACIA_ESCUCHA * 60 * 1000 * 2); });
     expect(vistos.every((v) => v.escuchando)).toBe(true);
   });
+
+  it('✅ V00447 siempreEscuchando: el módulo de inicio no deja de escuchar al ocultarse', () => {
+    const ui = (activo: boolean) => <MantenerVivo activo={activo} siempreEscuchando><Sonda /></MantenerVivo>;
+    const { rerender } = render(ui(true));
+    rerender(ui(false));
+    act(() => { vi.advanceTimersByTime(MINUTOS_GRACIA_ESCUCHA * 60 * 1000 * 3); });
+    expect(vistos.at(-1)).toEqual({ visible: false, escuchando: true });
+  });
 });

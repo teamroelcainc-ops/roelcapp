@@ -1234,7 +1234,7 @@ const ServiciosCancelados = () => {
   const refOperacionViendo = operacionViendo ? (operacionViendo.ref || operacionViendo.id?.substring(0, 6) || 'Operacion') : '';
 
   return (
-    <div className="module-container sc-x1">
+    <div className="module-container scc-x1">
 
       {/* NUEVO: FormularioOperacion COMPLETO para editar (igual que Activos/Completados) */}
       {estadoFormulario !== 'cerrado' && (
@@ -1249,43 +1249,43 @@ const ServiciosCancelados = () => {
         />
       )}
 
-      <div className="sc-x2">
-        <div className="sc-x3">
-          <h1 className="module-title sc-x4">Servicios Cancelados</h1>
+      <div className="scc-x2">
+        <div className="scc-x3">
+          <h1 className="module-title scc-x4">Servicios Cancelados</h1>
         </div>
 
         {/* NUEVO: sidebar FLOTANTE de filtros — anclado al lado DERECHO de la
               pantalla, con fondo oscurecido; se abre con el botón Filtros. */}
         {drawerFiltrosAbierto && (
           <>
-            <div className="sc-x5" onClick={() => setDrawerFiltrosAbierto(false)} />
-            <aside className="sc-x6">
-              <div className="sc-x7">
-                <div className="sc-x8">
+            <div className="scc-x5" onClick={() => setDrawerFiltrosAbierto(false)} />
+            <aside className="scc-x6">
+              <div className="scc-x7">
+                <div className="scc-x8">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-                  <span className="sc-x9">Filtros</span>
+                  <span className="scc-x9">Filtros</span>
                 </div>
-                <button className="sc-x10" onClick={() => setDrawerFiltrosAbierto(false)} title="Cerrar filtros">✕</button>
+                <button className="scc-x10" onClick={() => setDrawerFiltrosAbierto(false)} title="Cerrar filtros">✕</button>
               </div>
 
-              <div className="sc-x11">
+              <div className="scc-x11">
 
                 {/* Fecha Inicio (requerida para mostrar registros) */}
-                <div className="sc-x12">
-                  <label className="sc-x13">FECHA INICIO *</label>
-                  <input className="sc-x14" type="date" value={filterFechaInicio} onChange={(e) => setFilterFechaInicio(e.target.value)} />
+                <div className="scc-x12">
+                  <label className="scc-x13">FECHA INICIO *</label>
+                  <input className="scc-x14" type="date" value={filterFechaInicio} onChange={(e) => setFilterFechaInicio(e.target.value)} />
                 </div>
 
                 {/* Fecha Fin (requerida para mostrar registros) */}
-                <div className="sc-x12">
-                  <label className="sc-x13">FECHA FIN *</label>
-                  <input className="sc-x14" type="date" value={filterFechaFin} min={filterFechaInicio || undefined} onChange={(e) => setFilterFechaFin(e.target.value)} />
+                <div className="scc-x12">
+                  <label className="scc-x13">FECHA FIN *</label>
+                  <input className="scc-x14" type="date" value={filterFechaFin} min={filterFechaInicio || undefined} onChange={(e) => setFilterFechaFin(e.target.value)} />
                 </div>
 
                 {/* NUEVO: filtro por # DE REFERENCIA (busca en las referencias ya
               guardadas dentro del rango). Requiere rango de fechas. */}
-                <div className="sc-x12">
-                  <label className="sc-x15"># REFERENCIA (requiere rango de fechas)</label>
+                <div className="scc-x12">
+                  <label className="scc-x15"># REFERENCIA (requiere rango de fechas)</label>
                   <input
                     type="text"
                     placeholder={rangoFechasListo ? 'Ej. TR-220726-016 (acepta parcial)' : 'Coloca un rango de fechas primero'}
@@ -1296,20 +1296,20 @@ const ServiciosCancelados = () => {
                     style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box', opacity: rangoFechasListo ? 1 : 0.45, cursor: rangoFechasListo ? 'text' : 'not-allowed' }}
                   />
                   {!rangoFechasListo && (
-                    <div className="sc-x16">Requiere Fecha Inicio y Fecha Fin.</div>
+                    <div className="scc-x16">Requiere Fecha Inicio y Fecha Fin.</div>
                   )}
                 </div>
 
                 {/* Cliente que paga (buscador con autocompletado) */}
-                <div className="sc-x17">
-                  <label className="sc-x15">CLIENTE QUE PAGA (opcional)</label>
+                <div className="scc-x17">
+                  <label className="scc-x15">CLIENTE QUE PAGA (opcional)</label>
 
                   {filterCliente ? (
-                    <div className="sc-x18">
-                      <span className="sc-x19">
+                    <div className="scc-x18">
+                      <span className="scc-x19">
                         {nombreClienteSeleccionado}
                       </span>
-                      <button className="sc-x20"
+                      <button className="scc-x20"
                         onClick={() => { setFilterCliente(''); setTextoBuscarCliente(''); setMostrarSugerenciasCliente(false); }}
                         title="Cambiar cliente"
                       >
@@ -1317,7 +1317,7 @@ const ServiciosCancelados = () => {
                       </button>
                     </div>
                   ) : (
-                    <input className="sc-x21"
+                    <input className="scc-x21"
                       type="text"
                       placeholder="Buscar cliente por nombre o RFC..."
                       value={textoBuscarCliente}
@@ -1328,26 +1328,26 @@ const ServiciosCancelados = () => {
                   )}
 
                   {!filterCliente && mostrarSugerenciasCliente && (
-                    <div className="sc-x22">
+                    <div className="scc-x22">
                       {clientesFiltradosBuscador.length === 0 ? (
-                        <div className="sc-x23">
+                        <div className="scc-x23">
                           {textoBuscarCliente.trim() ? 'Sin coincidencias' : 'No hay clientes (tipo Cliente-Paga) cargados'}
                         </div>
                       ) : (
                         <>
-                          <div className="sc-x24">
+                          <div className="scc-x24">
                             {clientesFiltradosBuscador.length} {clientesFiltradosBuscador.length === 1 ? 'cliente' : 'clientes'}{textoBuscarCliente.trim() ? '' : ' (primeros 30)'}
                           </div>
                           {clientesFiltradosBuscador.map((cli: any) => (
-                            <div className="sc-x25"
+                            <div className="scc-x25"
                               key={cli.id}
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => { setFilterCliente(cli.id); setTextoBuscarCliente(''); setMostrarSugerenciasCliente(false); }}
                               onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = '#21262d'}
                               onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                             >
-                              <div className="sc-x26">{cli.nombre || cli.id}</div>
-                              {cli.rfc && <div className="sc-x27">{cli.rfc}</div>}
+                              <div className="scc-x26">{cli.nombre || cli.id}</div>
+                              {cli.rfc && <div className="scc-x27">{cli.rfc}</div>}
                             </div>
                           ))}
                         </>
@@ -1357,15 +1357,15 @@ const ServiciosCancelados = () => {
                 </div>
 
                 {/* Remolque (buscador con autocompletado) */}
-                <div className="sc-x17">
-                  <label className="sc-x15"># REMOLQUE (requiere rango de fechas)</label>
+                <div className="scc-x17">
+                  <label className="scc-x15"># REMOLQUE (requiere rango de fechas)</label>
 
                   {filterRemolque ? (
-                    <div className="sc-x18">
-                      <span className="sc-x19">
+                    <div className="scc-x18">
+                      <span className="scc-x19">
                         {nombreRemolqueSeleccionado}
                       </span>
-                      <button className="sc-x20"
+                      <button className="scc-x20"
                         onClick={() => { setFilterRemolque(''); setTextoBuscarRemolque(''); setMostrarSugerenciasRemolque(false); }}
                         title="Cambiar remolque"
                       >
@@ -1387,29 +1387,29 @@ const ServiciosCancelados = () => {
                   )}
 
                   {!rangoFechasListo && !filterRemolque && (
-                    <div className="sc-x16">Requiere Fecha Inicio y Fecha Fin.</div>
+                    <div className="scc-x16">Requiere Fecha Inicio y Fecha Fin.</div>
                   )}
 
                   {rangoFechasListo && !filterRemolque && mostrarSugerenciasRemolque && (
-                    <div className="sc-x22">
+                    <div className="scc-x22">
                       {remolquesFiltradosBuscador.length === 0 ? (
-                        <div className="sc-x23">
+                        <div className="scc-x23">
                           {textoBuscarRemolque.trim() ? 'Sin coincidencias' : 'No hay remolques cargados'}
                         </div>
                       ) : (
                         <>
-                          <div className="sc-x24">
+                          <div className="scc-x24">
                             {remolquesFiltradosBuscador.length} {remolquesFiltradosBuscador.length === 1 ? 'remolque' : 'remolques'}{textoBuscarRemolque.trim() ? '' : ' (primeros 30)'}
                           </div>
                           {remolquesFiltradosBuscador.map((rem: any) => (
-                            <div className="sc-x25"
+                            <div className="scc-x25"
                               key={rem.id}
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => { setFilterRemolque(rem.id); setTextoBuscarRemolque(''); setMostrarSugerenciasRemolque(false); }}
                               onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = '#21262d'}
                               onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                             >
-                              <div className="sc-x26">{etiquetaRemolque(rem) || rem.id}</div>
+                              <div className="scc-x26">{etiquetaRemolque(rem) || rem.id}</div>
                             </div>
                           ))}
                         </>
@@ -1419,14 +1419,14 @@ const ServiciosCancelados = () => {
                 </div>
 
                 {/* Filtro general (opcional) */}
-                <div className="sc-x12">
-                  <label className="sc-x15">FILTRO GENERAL (opcional)</label>
-                  <input className="sc-x21" type="text" placeholder="Buscar por Ref..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
+                <div className="scc-x12">
+                  <label className="scc-x15">FILTRO GENERAL (opcional)</label>
+                  <input className="scc-x21" type="text" placeholder="Buscar por Ref..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
                 </div>
               </div>
 
-              <div className="sc-x28">
-                <button className="sc-x29"
+              <div className="scc-x28">
+                <button className="scc-x29"
                   onClick={limpiarFiltrosPanel}
                 >
                   Limpiar
@@ -1450,24 +1450,24 @@ const ServiciosCancelados = () => {
             incluye/excluye la columna. Por defecto usa las columnas de la tabla. */}
         {modalExportar && (
           <>
-            <div className="sc-x30" onClick={() => setModalExportar(false)} />
-            <div className="sc-x31">
-              <div className="sc-x7">
-                <div className="sc-x8">
+            <div className="scc-x30" onClick={() => setModalExportar(false)} />
+            <div className="scc-x31">
+              <div className="scc-x7">
+                <div className="scc-x8">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                  <span className="sc-x9">Exportar a Excel</span>
-                  <span className="sc-x32">({columnasExport.filter(c => c.visible).length} columnas)</span>
+                  <span className="scc-x9">Exportar a Excel</span>
+                  <span className="scc-x32">({columnasExport.filter(c => c.visible).length} columnas)</span>
                 </div>
-                <button className="sc-x10" onClick={() => setModalExportar(false)} title="Cerrar">✕</button>
+                <button className="scc-x10" onClick={() => setModalExportar(false)} title="Cerrar">✕</button>
               </div>
 
-              <div className="sc-x33">
-                Arrastra <span className="sc-x34">⋮⋮</span> cualquier tarjeta para cambiar el orden. Marca las columnas que quieres incluir.
+              <div className="scc-x33">
+                Arrastra <span className="scc-x34">⋮⋮</span> cualquier tarjeta para cambiar el orden. Marca las columnas que quieres incluir.
               </div>
 
               {/* ✅ V00254: cuadrícula de 3 columnas y reordenado SOLO por Drag & Drop
                   (se retiraron las flechas ▲▼); la tarjeta destino se resalta. */}
-              <div className="sc-x35 sc-export-cuadricula">
+              <div className="scc-x35 sc-export-cuadricula">
                 {columnasExport.map((c, idx) => (
                   <div
                     key={c.id}
@@ -1479,8 +1479,8 @@ const ServiciosCancelados = () => {
                     onDrop={() => soltarColumnaExport(idx)}
                     className={`sc-export-tarjeta${c.visible ? '' : ' sc-export-tarjeta--apagada'}${dragOverExportIdx === idx ? ' sc-export-tarjeta--destino' : ''}`}
                   >
-                    <span className="sc-x36" title="Arrastrar para reordenar">⋮⋮</span>
-                    <input className="sc-x37"
+                    <span className="scc-x36" title="Arrastrar para reordenar">⋮⋮</span>
+                    <input className="scc-x37"
                       type="checkbox"
                       checked={c.visible}
                       onChange={() => setColumnasExport(prev => prev.map((x, i) => (i === idx ? { ...x, visible: !x.visible } : x)))}
@@ -1490,16 +1490,16 @@ const ServiciosCancelados = () => {
                 ))}
               </div>
 
-              <div className="sc-x38">
-                <button className="sc-x39"
+              <div className="scc-x38">
+                <button className="scc-x39"
                   onClick={() => setColumnasExport(columnasExportPorDefecto())}
                   title="Restablecer con las columnas visibles de la tabla, en su orden actual"
                 >
                   Columnas de la tabla
                 </button>
-                <div className="sc-x40" />
-                <button className="sc-x41" onClick={() => setModalExportar(false)}>Cancelar</button>
-                <button className="sc-x42"
+                <div className="scc-x40" />
+                <button className="scc-x41" onClick={() => setModalExportar(false)}>Cancelar</button>
+                <button className="scc-x42"
                   onClick={exportarExcel}
                 >
                   Exportar
@@ -1513,7 +1513,7 @@ const ServiciosCancelados = () => {
         {/* NUEVO: barra compacta — los filtros viven en un panel lateral
             izquierdo; aquí solo queda el botón Filtros y el resumen de la
             última búsqueda. */}
-        <div className="sc-x43">
+        <div className="scc-x43">
           <button
             onClick={() => setDrawerFiltrosAbierto(v => !v)}
             title={drawerFiltrosAbierto ? 'Ocultar el panel de filtros' : 'Mostrar el panel de filtros'}
@@ -1522,51 +1522,51 @@ const ServiciosCancelados = () => {
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
             Filtros
             {contadorFiltrosActivos > 0 && (
-              <span className="sc-x44">{contadorFiltrosActivos}</span>
+              <span className="scc-x44">{contadorFiltrosActivos}</span>
             )}
           </button>
 
           {filtrosAplicados ? (
-            <div className="sc-x45">
+            <div className="scc-x45">
               {resumenFiltrosChips.map((chip, i) => (
-                <span className="sc-x46" key={`chip_${i}`}>{chip}</span>
+                <span className="scc-x46" key={`chip_${i}`}>{chip}</span>
               ))}
               <a className="sc-btn-nueva-pestana" href={urlBusquedaActual()} target="_blank" rel="noopener noreferrer" title="Abrir ESTA búsqueda en una pestaña nueva">↗ Ver en nueva pestaña</a>{/* ✅ V00312 */}
             </div>
           ) : (
-            <span className="sc-x47">Presiona Filtros para definir el rango de fechas y buscar.</span>
+            <span className="scc-x47">Presiona Filtros para definir el rango de fechas y buscar.</span>
           )}
 
           {/* ✅ NUEVO (V00114): sincronizar nombres contra catálogos actuales */}
           {!flags.propagacionEnServidor && (
-          <button className="btn btn-outline sc-x48" onClick={sincronizarNombres} disabled={sincronizandoNombres || operacionesGlobales.length === 0} title="Sincronizar nombres: actualiza registro por registro los nombres que quedaron viejos tras renombrar en Catálogos (no toca montos)" style={{ cursor: sincronizandoNombres ? 'wait' : 'pointer', opacity: (sincronizandoNombres || operacionesGlobales.length === 0) ? 0.6 : 1 }}>
+          <button className="btn btn-outline scc-x48" onClick={sincronizarNombres} disabled={sincronizandoNombres || operacionesGlobales.length === 0} title="Sincronizar nombres: actualiza registro por registro los nombres que quedaron viejos tras renombrar en Catálogos (no toca montos)" style={{ cursor: sincronizandoNombres ? 'wait' : 'pointer', opacity: (sincronizandoNombres || operacionesGlobales.length === 0) ? 0.6 : 1 }}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
             {sincronizandoNombres ? 'Sincronizando…' : 'Sincronizar nombres'}
           </button>
           )}
-          <button className="btn btn-outline sc-x48" onClick={abrirModalExportar} title="Exportar a Excel (elegir y ordenar columnas)">
+          <button className="btn btn-outline scc-x48" onClick={abrirModalExportar} title="Exportar a Excel (elegir y ordenar columnas)">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
           </button>
         </div>
 
-        <div className="content-body sc-x49">
+        <div className="content-body scc-x49">
           {!filtrosAplicados ? (
-            <div className="sc-x50">
-              <div className="sc-x51">Realiza una búsqueda</div>
-              <div className="sc-x52">Define <span className="sc-x53">Fecha Inicio</span> y <span className="sc-x53">Fecha Fin</span> y presiona <span className="sc-x54">Buscar</span> para ver las operaciones canceladas.</div>
+            <div className="scc-x50">
+              <div className="scc-x51">Realiza una búsqueda</div>
+              <div className="scc-x52">Define <span className="scc-x53">Fecha Inicio</span> y <span className="scc-x53">Fecha Fin</span> y presiona <span className="scc-x54">Buscar</span> para ver las operaciones canceladas.</div>
             </div>
           ) : cargandoOperaciones ? (
-            <div className="sc-x55">Cargando operaciones canceladas...</div>
+            <div className="scc-x55">Cargando operaciones canceladas...</div>
           ) : errorCarga ? (
-            <div className="sc-x56">
-              <div className="sc-x57">No se pudieron cargar las operaciones</div>
-              <div className="sc-x58">{errorCarga}</div>
-              <button className="sc-x59" onClick={() => descargarOperaciones({ forzar: true, desde: filtrosAplicados?.fechaInicio, hasta: filtrosAplicados?.fechaFin })}>Reintentar</button>
+            <div className="scc-x56">
+              <div className="scc-x57">No se pudieron cargar las operaciones</div>
+              <div className="scc-x58">{errorCarga}</div>
+              <button className="scc-x59" onClick={() => descargarOperaciones({ forzar: true, desde: filtrosAplicados?.fechaInicio, hasta: filtrosAplicados?.fechaFin })}>Reintentar</button>
             </div>
           ) : operacionesFiltradas.length === 0 ? (
-            <div className="sc-x50">
-              <div className="sc-x51">Sin resultados</div>
-              <div className="sc-x52">
+            <div className="scc-x50">
+              <div className="scc-x51">Sin resultados</div>
+              <div className="scc-x52">
                 {operacionesGlobales.length === 0
                   ? 'No hay operaciones canceladas registradas.'
                   : 'No hay operaciones canceladas que coincidan con los filtros seleccionados.'}
@@ -1574,11 +1574,11 @@ const ServiciosCancelados = () => {
             </div>
           ) : (
             <>
-              <div className="table-container sc-x60">
-                <table className="data-table sc-x61">
-                  <thead className="sc-x62">
+              <div className="table-container scc-x60">
+                <table className="data-table scc-x61">
+                  <thead className="scc-x62">
                     <tr>
-                      <th className="sc-x63">Acciones</th>
+                      <th className="scc-x63">Acciones</th>
                       {/* NUEVO: encabezados clicables para ordenar (asc ▲ / desc ▼ / original) */}
                       {COLUMNAS_TABLA_CANCELADOS.map(col => (
                         <th
@@ -1589,7 +1589,7 @@ const ServiciosCancelados = () => {
                         >
                           {col.label}
                           {ordenColumna === col.id && (
-                            <span className="sc-x64">
+                            <span className="scc-x64">
                               {ordenDireccion === 'asc' ? '▲' : '▼'}
                             </span>
                           )}
@@ -1598,12 +1598,12 @@ const ServiciosCancelados = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {operacionesEnPantalla.length === 0 ? (<tr><td className="sc-x65" colSpan={11}>Sin resultados para tu búsqueda.</td></tr>) : (
+                    {operacionesEnPantalla.length === 0 ? (<tr><td className="scc-x65" colSpan={11}>Sin resultados para tu búsqueda.</td></tr>) : (
                       operacionesEnPantalla.map((op: any) => (
                         <tr key={op.id} className="scanc-fila-op" onClick={() => { setOperacionViendo(op); setPestañaDetalleActiva('general'); }}>
-                          <td className="sc-x66" onClick={(e: any) => e.stopPropagation()}>
-                            <div className="actions-cell sc-x67">
-                              <button className="sc-x68"
+                          <td className="scc-x66" onClick={(e: any) => e.stopPropagation()}>
+                            <div className="actions-cell scc-x67">
+                              <button className="scc-x68"
                                 type="button"
                                 title="Ver Detalles"
                                 onClick={(e) => { e.stopPropagation(); setOperacionViendo(op); setPestañaDetalleActiva('general'); }}
@@ -1612,7 +1612,7 @@ const ServiciosCancelados = () => {
                               >
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                               </button>
-                              <button className="sc-x69"
+                              <button className="scc-x69"
                                 type="button"
                                 title="Editar Operación"
                                 onClick={(e) => { e.stopPropagation(); abrirEdicion(op); }}
@@ -1621,7 +1621,7 @@ const ServiciosCancelados = () => {
                               >
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                               </button>
-                              <button className="sc-x70"
+                              <button className="scc-x70"
                                 type="button"
                                 title="Ver Documentos"
                                 onClick={(e) => { e.stopPropagation(); setOperacionViendo(op); setMostrarDocumentos(true); }}
@@ -1631,7 +1631,7 @@ const ServiciosCancelados = () => {
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
                               </button>
                               {/* ✅ NUEVO: subir documento directo desde la fila */}
-                              <button className="sc-x70"
+                              <button className="scc-x70"
                                 type="button"
                                 title="Subir documento"
                                 style={{ color: '#fb923c' }}
@@ -1644,15 +1644,15 @@ const ServiciosCancelados = () => {
                             </div>
                           </td>
                           <td style={{ padding: '16px', color: colorTipoOperacion(mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)), fontWeight: 'bold', fontFamily: 'monospace' }}>{op.ref || op.id?.substring(0, 6)}</td>
-                          <td className="sc-x71">{op.fechaServicio}</td>
+                          <td className="scc-x71">{op.fechaServicio}</td>
                           <td style={{ padding: '16px', color: colorTipoOperacion(mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)), fontWeight: 'bold' }}>{mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)}</td>
-                          <td className="sc-x72">{mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre)}</td>
-                          <td className="sc-x71">{obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}</td>
-                          <td className="sc-x71">{mostrarDatoMapeado(op.numeroRemolque, 'remolques', 'nombre', op.remolqueNombre)}</td>
-                          <td className="sc-x71">{mostrarDatoMapeado(op.proveedorUnidad, 'empresas', 'nombre', op.proveedorUnidadNombre)}</td>
-                          <td className="sc-x71">{mostrarDatoMapeado(op.unidad, 'unidades', 'unidad', op.unidadNombre)}</td>
-                          <td className="sc-x73">{mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente)}</td>
-                          <td className="sc-x71">{formatoMoneda(op.subtotalCliente)}</td>
+                          <td className="scc-x72">{mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre)}</td>
+                          <td className="scc-x71">{obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}</td>
+                          <td className="scc-x71">{mostrarDatoMapeado(op.numeroRemolque, 'remolques', 'nombre', op.remolqueNombre)}</td>
+                          <td className="scc-x71">{mostrarDatoMapeado(op.proveedorUnidad, 'empresas', 'nombre', op.proveedorUnidadNombre)}</td>
+                          <td className="scc-x71">{mostrarDatoMapeado(op.unidad, 'unidades', 'unidad', op.unidadNombre)}</td>
+                          <td className="scc-x73">{mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente)}</td>
+                          <td className="scc-x71">{formatoMoneda(op.subtotalCliente)}</td>
                         </tr>
                       ))
                     )}
@@ -1660,9 +1660,9 @@ const ServiciosCancelados = () => {
                 </table>
               </div>
               {operacionesOrdenadas.length > 0 && (
-                <div className="sc-x74">
-                  <div className="sc-x52">Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, operacionesOrdenadas.length)} de {operacionesOrdenadas.length} operaciones canceladas</div>
-                  <div className="sc-x75">
+                <div className="scc-x74">
+                  <div className="scc-x52">Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, operacionesOrdenadas.length)} de {operacionesOrdenadas.length} operaciones canceladas</div>
+                  <div className="scc-x75">
                     <button
                       title="Página Anterior"
                       onClick={irPaginaAnterior}
@@ -1671,7 +1671,7 @@ const ServiciosCancelados = () => {
                     >
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
                     </button>
-                    <span className="sc-x76">{paginaActual} / {totalPaginas || 1}</span>
+                    <span className="scc-x76">{paginaActual} / {totalPaginas || 1}</span>
                     <button
                       title="Página Siguiente"
                       onClick={irPaginaSiguiente}
@@ -1688,21 +1688,21 @@ const ServiciosCancelados = () => {
         </div>
       </div>
       {operacionViendo && (
-        <div className="modal-overlay sc-x77">
-          <div className="form-card detail-card sc-x78">
-            <div className="form-header sc-x79">
-              <h2 className="sc-x80">
+        <div className="modal-overlay scc-x77">
+          <div className="form-card detail-card scc-x78">
+            <div className="form-header scc-x79">
+              <h2 className="scc-x80">
                 <span>Detalle de Servicio Cancelado</span>
-                <span className="sc-x53">{operacionViendo.ref || operacionViendo.id?.substring(0, 6)}</span>
-                <span className="sc-x81">
+                <span className="scc-x53">{operacionViendo.ref || operacionViendo.id?.substring(0, 6)}</span>
+                <span className="scc-x81">
                   {mostrarDatoMapeado(operacionViendo.status, 'statusServicio', 'nombre', operacionViendo.statusNombre)}
                 </span>
               </h2>
-              <div className="sc-x82">
+              <div className="scc-x82">
 
                 {mostrarCartaPara(operacionViendo, cfgCarta) && (
                   <>
-                    <button className="sc-x83" onClick={handleDescargarCartaInstrucciones} title="Descargar Carta de Instrucciones">
+                    <button className="scc-x83" onClick={handleDescargarCartaInstrucciones} title="Descargar Carta de Instrucciones">
                       Carta Instrucciones
                     </button>
                   </>
@@ -1720,34 +1720,34 @@ const ServiciosCancelados = () => {
                 )}
                 {evalIsFletes && (
                   <>
-                    <button className="sc-x83" onClick={handleDescargarPruebaEntrega} title="Descargar Prueba de Entrega">
+                    <button className="scc-x83" onClick={handleDescargarPruebaEntrega} title="Descargar Prueba de Entrega">
                       Prueba Entrega
                     </button>
                   </>
                 )}
 
-                <button className="sc-x83" onClick={handleDescargarCheckList} title="Descargar Check List">
+                <button className="scc-x83" onClick={handleDescargarCheckList} title="Descargar Check List">
                   Check List
                 </button>
-                <button className="sc-x83" onClick={handleDescargarSolicitudRetiro} title="Descargar Solicitud de Retiro">
+                <button className="scc-x83" onClick={handleDescargarSolicitudRetiro} title="Descargar Solicitud de Retiro">
                   Solicitud
                 </button>
-                <button className="sc-x83" onClick={handleDescargarInstruccionesServicio} title="Descargar Instrucciones de Servicio">
+                <button className="scc-x83" onClick={handleDescargarInstruccionesServicio} title="Descargar Instrucciones de Servicio">
                   Instrucciones
                 </button>
 
-                <button className="sc-x84" onClick={() => abrirEdicion(operacionViendo)} title="Editar Operación">
+                <button className="scc-x84" onClick={() => abrirEdicion(operacionViendo)} title="Editar Operación">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                   Editar
                 </button>
-                <button className="sc-x85" onClick={() => setMostrarDocumentos(true)} title="Ver / Subir Documentos">Documentos</button>
-                <button className="sc-x83" onClick={verHistorial}>Bitácora</button>
-                <button onClick={() => setOperacionViendo(null)} className="btn-window close sc-x86">✕</button>
+                <button className="scc-x85" onClick={() => setMostrarDocumentos(true)} title="Ver / Subir Documentos">Documentos</button>
+                <button className="scc-x83" onClick={verHistorial}>Bitácora</button>
+                <button onClick={() => setOperacionViendo(null)} className="btn-window close scc-x86">✕</button>
               </div>
             </div>
             {/* NUEVO: SIGUIENTE PASO — editar status/horario igual que Operaciones Activas */}
-            <div className="sc-x87">
-              <span className="sc-x88">SIGUIENTE PASO</span>
+            <div className="scc-x87">
+              <span className="scc-x88">SIGUIENTE PASO</span>
               {botonesDisponibles.length > 0 ? (
                 <>
                   {botonesDisponibles.map((botonStr: string) => {
@@ -1763,9 +1763,9 @@ const ServiciosCancelados = () => {
                           opacity: guardandoStatusRapido && !esExitoso && guardandoStatusRapido !== botonStr ? 0.4 : 1, position: 'relative', overflow: 'hidden'
                         }}
                         title={`Marcar como: ${botonStr}`}>
-                        <span className="sc-x89">
+                        <span className="scc-x89">
                           {esExitoso ? (
-                            <svg className="sc-x90" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                            <svg className="scc-x90" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                               <polyline points="20 6 9 17 4 12"></polyline>
                             </svg>
                           ) : (
@@ -1774,11 +1774,11 @@ const ServiciosCancelados = () => {
                             </svg>
                           )}
                         </span>
-                        <span className="sc-x91">{botonStr}</span>
+                        <span className="scc-x91">{botonStr}</span>
                       </button>
                     );
                   })}
-                  <button onClick={abrirRegistroHorario} className="status-circle-btn sc-x92"
+                  <button onClick={abrirRegistroHorario} className="status-circle-btn scc-x92"
                     title="Registrar con fecha/hora distinta (retroactivo)">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
@@ -1790,12 +1790,12 @@ const ServiciosCancelados = () => {
                 </>
               ) : (
                 <>
-                  <span className="sc-x93">
+                  <span className="scc-x93">
                     No hay transiciones automáticas configuradas.
                   </span>
-                  <button onClick={abrirRegistroHorario} className="status-pill sc-x94"
+                  <button onClick={abrirRegistroHorario} className="status-pill scc-x94"
                     title="Registrar status manualmente">
-                    <span className="sc-x95">
+                    <span className="scc-x95">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                         <line x1="12" y1="5" x2="12" y2="19"></line>
                         <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -1806,173 +1806,173 @@ const ServiciosCancelados = () => {
                 </>
               )}
             </div>
-            <div className="sc-x96">
+            <div className="scc-x96">
               {tabsDetalle.map(tab => (<button key={tab.id} onClick={() => setPestañaDetalleActiva(tab.id)} style={{ padding: '12px 16px', background: 'none', border: 'none', borderBottom: pestañaDetalleActiva === tab.id ? '2px solid #D84315' : '2px solid transparent', color: pestañaDetalleActiva === tab.id ? '#f0f6fc' : '#8b949e', cursor: 'pointer' }}>{tab.label}</button>))}
             </div>
-            <div className="detail-content sc-x97">
+            <div className="detail-content scc-x97">
               {pestañaDetalleActiva === 'general' && (
-                <div className="sc-x98"><div><span className="sc-x99">Tipo</span><span>{mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', operacionViendo.tipoOperacionNombre)}</span></div>
-                  <div><span className="sc-x99">Fecha / Status</span><span>{mostrarDato(operacionViendo.fechaServicio)} | <span className="sc-x53">{mostrarDatoMapeado(operacionViendo.status, 'statusServicio', 'nombre', operacionViendo.statusNombre)}</span></span></div>
-                  {evalIsFletes && (<div><span className="sc-x99">Fecha de Cita</span><span>{formatearFechaHora(operacionViendo.fechaCita)}</span></div>)}
-                  <div className="sc-x100"><hr className="sc-x101" /></div>
-                  <div><span className="sc-x102">Cliente (Paga)</span><span>{mostrarDatoMapeado(operacionViendo.clientePaga || operacionViendo.clienteId, 'empresas', 'nombre', operacionViendo.clienteNombre || operacionViendo.nombreCliente)}</span></div>
-                  <div><span className="sc-x102">Convenio (Tarifa)</span><span>{obtenerNombreConvenioCliente(operacionViendo.convenio, operacionViendo.convenioNombre)}</span></div>
-                  <div><span className="sc-x102"># de Remolque</span><span>{mostrarDatoMapeado(operacionViendo.numeroRemolque, 'remolques', 'nombre', operacionViendo.remolqueNombre)}</span></div>
-                  <div><span className="sc-x102">Ref Cliente</span><span>{mostrarDato(operacionViendo.refCliente)}</span></div>
-                  <div><span className="sc-x103">Origen</span><span>{mostrarDatoMapeado(operacionViendo.origen, 'empresas', 'nombre', operacionViendo.origenNombre)}</span></div>
-                  <div><span className="sc-x103">Destino</span><span>{mostrarDatoMapeado(operacionViendo.destino, 'empresas', 'nombre', operacionViendo.destinoNombre)}</span></div>
-                  <div className="sc-x104"><span className="sc-x102">Observaciones Ejecutivo</span><div className="sc-x105">{mostrarDato(operacionViendo.observacionesEjecutivo)}</div></div>
+                <div className="scc-x98"><div><span className="scc-x99">Tipo</span><span>{mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', operacionViendo.tipoOperacionNombre)}</span></div>
+                  <div><span className="scc-x99">Fecha / Status</span><span>{mostrarDato(operacionViendo.fechaServicio)} | <span className="scc-x53">{mostrarDatoMapeado(operacionViendo.status, 'statusServicio', 'nombre', operacionViendo.statusNombre)}</span></span></div>
+                  {evalIsFletes && (<div><span className="scc-x99">Fecha de Cita</span><span>{formatearFechaHora(operacionViendo.fechaCita)}</span></div>)}
+                  <div className="scc-x100"><hr className="scc-x101" /></div>
+                  <div><span className="scc-x102">Cliente (Paga)</span><span>{mostrarDatoMapeado(operacionViendo.clientePaga || operacionViendo.clienteId, 'empresas', 'nombre', operacionViendo.clienteNombre || operacionViendo.nombreCliente)}</span></div>
+                  <div><span className="scc-x102">Convenio (Tarifa)</span><span>{obtenerNombreConvenioCliente(operacionViendo.convenio, operacionViendo.convenioNombre)}</span></div>
+                  <div><span className="scc-x102"># de Remolque</span><span>{mostrarDatoMapeado(operacionViendo.numeroRemolque, 'remolques', 'nombre', operacionViendo.remolqueNombre)}</span></div>
+                  <div><span className="scc-x102">Ref Cliente</span><span>{mostrarDato(operacionViendo.refCliente)}</span></div>
+                  <div><span className="scc-x103">Origen</span><span>{mostrarDatoMapeado(operacionViendo.origen, 'empresas', 'nombre', operacionViendo.origenNombre)}</span></div>
+                  <div><span className="scc-x103">Destino</span><span>{mostrarDatoMapeado(operacionViendo.destino, 'empresas', 'nombre', operacionViendo.destinoNombre)}</span></div>
+                  <div className="scc-x104"><span className="scc-x102">Observaciones Ejecutivo</span><div className="scc-x105">{mostrarDato(operacionViendo.observacionesEjecutivo)}</div></div>
                 </div>
               )}
               {pestañaDetalleActiva === 'pedimento' && (
-                <div className="sc-x98">
-                  <div className="sc-x106"><span className="sc-x102">Cliente (Mercancía)</span><span>{operacionViendo.clienteMercanciaNombre || operacionViendo.clienteMercancia || '-'}</span></div>
-                  <div><span className="sc-x102">Descripción de la Mercancía</span><span>{mostrarDato(operacionViendo.descripcionMercancia)}</span></div>
-                  <div className="sc-x100"><hr className="sc-x101" /></div>
-                  <div><span className="sc-x102">Cantidad</span><span>{mostrarDato(operacionViendo.cantidad)}</span></div>
-                  <div><span className="sc-x102">Embalaje</span><span>{operacionViendo.embalajeNombre || operacionViendo.embalaje || '-'}</span></div>
-                  <div><span className="sc-x102">Peso (Kg)</span><span>{mostrarDato(operacionViendo.pesoKg)}</span></div>
-                  <div className="sc-x100"><hr className="sc-x101" /></div>
-                  <div><span className="sc-x102"># DODA</span><span>{mostrarDato(operacionViendo.numDoda)}</span></div>
-                  <div><span className="sc-x102">Fecha DODA</span><span>{mostrarDato(operacionViendo.fechaEmisionDoda)}</span></div>
+                <div className="scc-x98">
+                  <div className="scc-x106"><span className="scc-x102">Cliente (Mercancía)</span><span>{operacionViendo.clienteMercanciaNombre || operacionViendo.clienteMercancia || '-'}</span></div>
+                  <div><span className="scc-x102">Descripción de la Mercancía</span><span>{mostrarDato(operacionViendo.descripcionMercancia)}</span></div>
+                  <div className="scc-x100"><hr className="scc-x101" /></div>
+                  <div><span className="scc-x102">Cantidad</span><span>{mostrarDato(operacionViendo.cantidad)}</span></div>
+                  <div><span className="scc-x102">Embalaje</span><span>{operacionViendo.embalajeNombre || operacionViendo.embalaje || '-'}</span></div>
+                  <div><span className="scc-x102">Peso (Kg)</span><span>{mostrarDato(operacionViendo.pesoKg)}</span></div>
+                  <div className="scc-x100"><hr className="scc-x101" /></div>
+                  <div><span className="scc-x102"># DODA</span><span>{mostrarDato(operacionViendo.numDoda)}</span></div>
+                  <div><span className="scc-x102">Fecha DODA</span><span>{mostrarDato(operacionViendo.fechaEmisionDoda)}</span></div>
                 </div>
               )}
               {pestañaDetalleActiva === 'manifiestos' && (
-                <div className="sc-x98">
-                  <div><span className="sc-x102"># de Entry's</span><span>{mostrarDato(operacionViendo.numeroEntrys)}</span></div>
-                  <div><span className="sc-x102">Cant. Entry's</span><span>{mostrarDato(operacionViendo.cantEntrys)}</span></div>
-                  <div className="sc-x100"><hr className="sc-x101" /></div>
-                  <div><span className="sc-x102"># Manifiesto</span><span>{mostrarDato(operacionViendo.numManifiesto)}</span></div>
-                  <div><span className="sc-x102">Prov. Servicios</span><span>{operacionViendo.provServiciosNombre || operacionViendo.provServicios || '-'}</span></div>
-                  <div><span className="sc-x102">Costo Manifiesto</span><span>{formatoMoneda(operacionViendo.montoManifiesto)}</span></div>
+                <div className="scc-x98">
+                  <div><span className="scc-x102"># de Entry's</span><span>{mostrarDato(operacionViendo.numeroEntrys)}</span></div>
+                  <div><span className="scc-x102">Cant. Entry's</span><span>{mostrarDato(operacionViendo.cantEntrys)}</span></div>
+                  <div className="scc-x100"><hr className="scc-x101" /></div>
+                  <div><span className="scc-x102"># Manifiesto</span><span>{mostrarDato(operacionViendo.numManifiesto)}</span></div>
+                  <div><span className="scc-x102">Prov. Servicios</span><span>{operacionViendo.provServiciosNombre || operacionViendo.provServicios || '-'}</span></div>
+                  <div><span className="scc-x102">Costo Manifiesto</span><span>{formatoMoneda(operacionViendo.montoManifiesto)}</span></div>
                 </div>
               )}
               {pestañaDetalleActiva === 'unidad' && (
-                <div className="sc-x98">
-                  <div className="sc-x100"><span className="sc-x102">Prov. Transporte</span><span className="sc-x107">{mostrarDatoMapeado(operacionViendo.proveedorUnidad, 'empresas', 'nombre', operacionViendo.proveedorUnidadNombre)}</span></div>
-                  <div className="sc-x108">
-                    <div className="sc-x109">
-                      <div><span className="sc-x102">Facturado En:</span><span>{mostrarMoneda(operacionViendo.facturadoEnUnidad)}</span></div>
-                      <div><span className="sc-x102">Convenio Proveedor</span><span>{obtenerNombreConvenioProv(operacionViendo.convenioProveedor, operacionViendo.convenioProveedorNombre)}</span></div>
-                      <div><span className="sc-x102">Moneda Base</span><span>{mostrarMoneda(operacionViendo.monedaConvenioProv)}</span></div>
+                <div className="scc-x98">
+                  <div className="scc-x100"><span className="scc-x102">Prov. Transporte</span><span className="scc-x107">{mostrarDatoMapeado(operacionViendo.proveedorUnidad, 'empresas', 'nombre', operacionViendo.proveedorUnidadNombre)}</span></div>
+                  <div className="scc-x108">
+                    <div className="scc-x109">
+                      <div><span className="scc-x102">Facturado En:</span><span>{mostrarMoneda(operacionViendo.facturadoEnUnidad)}</span></div>
+                      <div><span className="scc-x102">Convenio Proveedor</span><span>{obtenerNombreConvenioProv(operacionViendo.convenioProveedor, operacionViendo.convenioProveedorNombre)}</span></div>
+                      <div><span className="scc-x102">Moneda Base</span><span>{mostrarMoneda(operacionViendo.monedaConvenioProv)}</span></div>
                     </div>
-                    <div className="sc-x110">
-                      <div><span className="sc-x102">Monto (Base)</span><span>{formatoMoneda(operacionViendo.totalAPagarProv)}</span></div>
-                      <div><span className="sc-x102">Costos Adicionales</span><span>{formatoMoneda(operacionViendo.cargosAdicionalesProv)}</span></div>
-                      <div><span className="sc-x99">Subtotal</span><span className="sc-x111">{formatoMoneda(operacionViendo.subtotalProv)}</span></div>
+                    <div className="scc-x110">
+                      <div><span className="scc-x102">Monto (Base)</span><span>{formatoMoneda(operacionViendo.totalAPagarProv)}</span></div>
+                      <div><span className="scc-x102">Costos Adicionales</span><span>{formatoMoneda(operacionViendo.cargosAdicionalesProv)}</span></div>
+                      <div><span className="scc-x99">Subtotal</span><span className="scc-x111">{formatoMoneda(operacionViendo.subtotalProv)}</span></div>
                     </div>
-                    <div className="sc-x110">
-                      <div><span className="sc-x102">Dólares</span><span className="sc-x112">{formatoMoneda(operacionViendo.dolaresProv)}</span></div>
-                      <div><span className="sc-x102">Pesos</span><span className="sc-x112">{formatoMoneda(operacionViendo.pesosProv)}</span></div>
-                      <div><span className="sc-x113">Conversión Final</span><span className="sc-x114">{formatoMoneda(operacionViendo.conversionProv)}</span></div>
+                    <div className="scc-x110">
+                      <div><span className="scc-x102">Dólares</span><span className="scc-x112">{formatoMoneda(operacionViendo.dolaresProv)}</span></div>
+                      <div><span className="scc-x102">Pesos</span><span className="scc-x112">{formatoMoneda(operacionViendo.pesosProv)}</span></div>
+                      <div><span className="scc-x113">Conversión Final</span><span className="scc-x114">{formatoMoneda(operacionViendo.conversionProv)}</span></div>
                     </div>
                   </div>
                   {showDetailInternalFleet && (
-                    <div className="sc-x115">
-                      <div className="sc-x100"><h4 className="sc-x116">Flota Operativa (Roelca)</h4></div>
-                      <div><span className="sc-x102">Unidad Asignada</span><span>{mostrarDatoMapeado(operacionViendo.unidad, 'unidades', 'unidad', operacionViendo.unidadNombre)}</span></div>
-                      <div className="sc-x106"><span className="sc-x102">Operador Asignado</span><span>{mostrarDatoMapeado(operacionViendo.operador, 'empleados', 'nombre', operacionViendo.operadorNombre)}</span></div>
-                      <div className="sc-x100"><hr className="sc-x117" /></div>
-                      <div><span className="sc-x102">Sueldo Operador</span><span>{formatoMoneda(operacionViendo.sueldoOperador)}</span></div>
-                      <div><span className="sc-x102">Sueldo Extra</span><span>{formatoMoneda(operacionViendo.sueldoExtra)}</span></div>
-                      <div><span className="sc-x99">Sueldo Total</span><span className="sc-x118">{formatoMoneda(operacionViendo.sueldoTotal)}</span></div>
-                      <div className="sc-x100"><hr className="sc-x117" /></div>
-                      <div><span className="sc-x102">Combustible</span><span>{formatoMoneda(operacionViendo.combustible)}</span></div>
-                      <div><span className="sc-x102">Combustible Extra</span><span>{formatoMoneda(operacionViendo.combustibleExtra)}</span></div>
-                      <div><span className="sc-x99">Total Combustible</span><span className="sc-x111">{formatoMoneda(operacionViendo.combustibleTotal)}</span></div>
+                    <div className="scc-x115">
+                      <div className="scc-x100"><h4 className="scc-x116">Flota Operativa (Roelca)</h4></div>
+                      <div><span className="scc-x102">Unidad Asignada</span><span>{mostrarDatoMapeado(operacionViendo.unidad, 'unidades', 'unidad', operacionViendo.unidadNombre)}</span></div>
+                      <div className="scc-x106"><span className="scc-x102">Operador Asignado</span><span>{mostrarDatoMapeado(operacionViendo.operador, 'empleados', 'nombre', operacionViendo.operadorNombre)}</span></div>
+                      <div className="scc-x100"><hr className="scc-x117" /></div>
+                      <div><span className="scc-x102">Sueldo Operador</span><span>{formatoMoneda(operacionViendo.sueldoOperador)}</span></div>
+                      <div><span className="scc-x102">Sueldo Extra</span><span>{formatoMoneda(operacionViendo.sueldoExtra)}</span></div>
+                      <div><span className="scc-x99">Sueldo Total</span><span className="scc-x118">{formatoMoneda(operacionViendo.sueldoTotal)}</span></div>
+                      <div className="scc-x100"><hr className="scc-x117" /></div>
+                      <div><span className="scc-x102">Combustible</span><span>{formatoMoneda(operacionViendo.combustible)}</span></div>
+                      <div><span className="scc-x102">Combustible Extra</span><span>{formatoMoneda(operacionViendo.combustibleExtra)}</span></div>
+                      <div><span className="scc-x99">Total Combustible</span><span className="scc-x111">{formatoMoneda(operacionViendo.combustibleTotal)}</span></div>
                     </div>
                   )}
                   {showDetailExternalFleet && (
-                    <div className="sc-x115">
-                      <div className="sc-x100"><h4 className="sc-x119">Flota Externa (Proveedor)</h4></div>
-                      <div><span className="sc-x103">Unidad Externa</span><span>{mostrarDato(operacionViendo.unidadProveedor)}</span></div>
-                      <div className="sc-x106"><span className="sc-x103">Operador Externo</span><span>{mostrarDato(operacionViendo.operadorProveedor)}</span></div>
+                    <div className="scc-x115">
+                      <div className="scc-x100"><h4 className="scc-x119">Flota Externa (Proveedor)</h4></div>
+                      <div><span className="scc-x103">Unidad Externa</span><span>{mostrarDato(operacionViendo.unidadProveedor)}</span></div>
+                      <div className="scc-x106"><span className="scc-x103">Operador Externo</span><span>{mostrarDato(operacionViendo.operadorProveedor)}</span></div>
                     </div>
                   )}
                   {/* Observaciones ARRIBA del bloque de gastos (a petición) */}
-                  <div className="sc-x120">
-                    <span className="sc-x102">Observaciones (Unidad / Proveedor)</span>
-                    <div className="sc-x121">{mostrarDato(operacionViendo.observacionesUnidad)}</div>
+                  <div className="scc-x120">
+                    <span className="scc-x102">Observaciones (Unidad / Proveedor)</span>
+                    <div className="scc-x121">{mostrarDato(operacionViendo.observacionesUnidad)}</div>
                   </div>
-                  <div className="sc-x122">
-                    <div className="sc-x123">Total Gastos [Sueldos + Manifiesto]</div>
-                    <div className="sc-x124">{formatoMoneda(operacionViendo.totalGastos)}</div>
+                  <div className="scc-x122">
+                    <div className="scc-x123">Total Gastos [Sueldos + Manifiesto]</div>
+                    <div className="scc-x124">{formatoMoneda(operacionViendo.totalGastos)}</div>
                   </div>
                 </div>
               )}
               {pestañaDetalleActiva === 'cobrar' && (
-                <div className="sc-x98">
-                  <div><span className="sc-x102">Facturado En:</span><span>{mostrarMoneda(operacionViendo.facturadoEnCobrar)}</span></div>
-                  <div><span className="sc-x102">Moneda Convenio</span><span>{mostrarMoneda(operacionViendo.monedaConvenioCliente)}</span></div>
-                  <div><span className="sc-x102">Convenio (Base)</span><span>{formatoMoneda(operacionViendo.montoConvenioCliente)}</span></div>
-                  <div><span className="sc-x102">Cargos Adicionales</span><span>{formatoMoneda(operacionViendo.cargosAdicionales)}</span></div>
-                  <div><span className="sc-x99">Subtotal</span><span className="sc-x125">{formatoMoneda(operacionViendo.subtotalCliente)}</span></div>
-                  <div><span className="sc-x102">Tipo de Cambio del Día</span><span>{mostrarDato(operacionViendo.tipoCambioAprobado)}</span></div>
-                  <div className="sc-x100"><hr className="sc-x101" /></div>
-                  <div><span className="sc-x102">Dólares (Cliente)</span><span className="sc-x126">{formatoMoneda(operacionViendo.dolaresCliente)}</span></div>
-                  <div><span className="sc-x102">Pesos (Cliente)</span><span className="sc-x112">{formatoMoneda(operacionViendo.pesosCliente)}</span></div>
-                  <div><span className="sc-x99">Conversión Final</span><span className="sc-x127">{formatoMoneda(operacionViendo.conversionCliente)}</span></div>
-                  <div className="sc-x128">
-                    <span className="sc-x129">Utilidad Estimada de la Operación</span>
-                    <span className="sc-x130">{formatoMoneda(operacionViendo.utilidadEstimada)}</span>
+                <div className="scc-x98">
+                  <div><span className="scc-x102">Facturado En:</span><span>{mostrarMoneda(operacionViendo.facturadoEnCobrar)}</span></div>
+                  <div><span className="scc-x102">Moneda Convenio</span><span>{mostrarMoneda(operacionViendo.monedaConvenioCliente)}</span></div>
+                  <div><span className="scc-x102">Convenio (Base)</span><span>{formatoMoneda(operacionViendo.montoConvenioCliente)}</span></div>
+                  <div><span className="scc-x102">Cargos Adicionales</span><span>{formatoMoneda(operacionViendo.cargosAdicionales)}</span></div>
+                  <div><span className="scc-x99">Subtotal</span><span className="scc-x125">{formatoMoneda(operacionViendo.subtotalCliente)}</span></div>
+                  <div><span className="scc-x102">Tipo de Cambio del Día</span><span>{mostrarDato(operacionViendo.tipoCambioAprobado)}</span></div>
+                  <div className="scc-x100"><hr className="scc-x101" /></div>
+                  <div><span className="scc-x102">Dólares (Cliente)</span><span className="scc-x126">{formatoMoneda(operacionViendo.dolaresCliente)}</span></div>
+                  <div><span className="scc-x102">Pesos (Cliente)</span><span className="scc-x112">{formatoMoneda(operacionViendo.pesosCliente)}</span></div>
+                  <div><span className="scc-x99">Conversión Final</span><span className="scc-x127">{formatoMoneda(operacionViendo.conversionCliente)}</span></div>
+                  <div className="scc-x128">
+                    <span className="scc-x129">Utilidad Estimada de la Operación</span>
+                    <span className="scc-x130">{formatoMoneda(operacionViendo.utilidadEstimada)}</span>
                   </div>
-                  <div className="sc-x120">
-                    <span className="sc-x102">Observaciones (Cobro)</span>
-                    <div className="sc-x131">{mostrarDato(operacionViendo.observacionesCobrar)}</div>
+                  <div className="scc-x120">
+                    <span className="scc-x102">Observaciones (Cobro)</span>
+                    <div className="scc-x131">{mostrarDato(operacionViendo.observacionesCobrar)}</div>
                   </div>
                 </div>
               )}
 
               {/* Auditoría de la referencia: botón que abre el detalle en un modal */}
-              <div className="sc-x132">
-                <button className="sc-x133" onClick={() => { setMostrarAuditoria(true); cargarNombresAuditoria(); }} title="Ver quién creó la referencia, cuándo, y el detalle de cada edición">
+              <div className="scc-x132">
+                <button className="scc-x133" onClick={() => { setMostrarAuditoria(true); cargarNombresAuditoria(); }} title="Ver quién creó la referencia, cuándo, y el detalle de cada edición">
                   Ver auditoría
-                  <span className="sc-x134">{(operacionViendo.historialEdiciones || []).length}</span>
+                  <span className="scc-x134">{(operacionViendo.historialEdiciones || []).length}</span>
                 </button>
               </div>
 
               {/* Modal de auditoría (solo lectura) */}
               {mostrarAuditoria && (
-                <div className="sc-x135" onClick={() => setMostrarAuditoria(false)}>
-                  <div className="sc-x136" onClick={(e) => e.stopPropagation()}>
-                    <div className="sc-x137">
-                      <h3 className="sc-x138">Auditoría de la referencia <span className="sc-x139">{operacionViendo.ref || ''}</span></h3>
-                      <button className="sc-x140" onClick={() => setMostrarAuditoria(false)}>✕</button>
+                <div className="scc-x135" onClick={() => setMostrarAuditoria(false)}>
+                  <div className="scc-x136" onClick={(e) => e.stopPropagation()}>
+                    <div className="scc-x137">
+                      <h3 className="scc-x138">Auditoría de la referencia <span className="scc-x139">{operacionViendo.ref || ''}</span></h3>
+                      <button className="scc-x140" onClick={() => setMostrarAuditoria(false)}>✕</button>
                     </div>
-                    <div className="sc-x141">
-                      <div className="sc-x142">
-                        <span className="sc-x143">Creación</span>
-                        <span className="sc-x144">
-                          Creada por <b className="sc-x145">{nombreAuditor(operacionViendo.creadoPor, 'Sin registro')}</b>
-                          {operacionViendo.creadoEn ? <> el <b className="sc-x34">{fmtFechaAuditoria(operacionViendo.creadoEn)}</b></> : null}
+                    <div className="scc-x141">
+                      <div className="scc-x142">
+                        <span className="scc-x143">Creación</span>
+                        <span className="scc-x144">
+                          Creada por <b className="scc-x145">{nombreAuditor(operacionViendo.creadoPor, 'Sin registro')}</b>
+                          {operacionViendo.creadoEn ? <> el <b className="scc-x34">{fmtFechaAuditoria(operacionViendo.creadoEn)}</b></> : null}
                         </span>
                       </div>
-                      <div className="sc-x8">
-                        <span className="sc-x146">EDICIONES REGISTRADAS:</span>
-                        <span className="sc-x147">{(operacionViendo.historialEdiciones || []).length}</span>
+                      <div className="scc-x8">
+                        <span className="scc-x146">EDICIONES REGISTRADAS:</span>
+                        <span className="scc-x147">{(operacionViendo.historialEdiciones || []).length}</span>
                       </div>
                       {(operacionViendo.historialEdiciones || []).slice().reverse().map((h: any, i: number) => (
-                        <details className="sc-x148" key={i} open={i === 0}>
-                          <summary className="sc-x149">
-                            <b className="sc-x34">{nombreAuditor(h.usuario)}</b> · {fmtFechaAuditoria(h.fecha)} · <b className="sc-x150">{(h.cambios || []).length}</b> {(h.cambios || []).length === 1 ? 'cambio' : 'cambios'}
+                        <details className="scc-x148" key={i} open={i === 0}>
+                          <summary className="scc-x149">
+                            <b className="scc-x34">{nombreAuditor(h.usuario)}</b> · {fmtFechaAuditoria(h.fecha)} · <b className="scc-x150">{(h.cambios || []).length}</b> {(h.cambios || []).length === 1 ? 'cambio' : 'cambios'}
                           </summary>
-                          <ul className="sc-x151">
+                          <ul className="scc-x151">
                             {(h.cambios || []).map((c: any, j: number) => (<li key={j}>{String(c)}</li>))}
                           </ul>
                         </details>
                       ))}
                       {(operacionViendo.historialEdiciones || []).length === 0 && (
-                        <span className="sc-x152">Sin ediciones desde su creación.</span>
+                        <span className="scc-x152">Sin ediciones desde su creación.</span>
                       )}
                     </div>
-                    <div className="sc-x153">
-                      <button className="sc-x154" onClick={() => setMostrarAuditoria(false)}>Cerrar</button>
+                    <div className="scc-x153">
+                      <button className="scc-x154" onClick={() => setMostrarAuditoria(false)}>Cerrar</button>
                     </div>
                   </div>
                 </div>
               )}
             </div>
-            <div className="form-actions sc-x155">
+            <div className="form-actions scc-x155">
               <button onClick={() => setOperacionViendo(null)} className="btn btn-outline">Cerrar Ficha</button>
             </div>
           </div>
@@ -1981,31 +1981,31 @@ const ServiciosCancelados = () => {
 
       {/* Visor de documentos de la operación cancelada */}
       {mostrarDocumentos && operacionViendo && (
-        <div className="modal-overlay sc-x156">
-          <div className="form-card sc-x157">
-            <div className="form-header sc-x158">
+        <div className="modal-overlay scc-x156">
+          <div className="form-card scc-x157">
+            <div className="form-header scc-x158">
               <div>
-                <h2 className="sc-x159">Documentos de la Operación</h2>
-                <p className="sc-x160">
-                  Referencia: <span className="sc-x161">{refOperacionViendo}</span>
+                <h2 className="scc-x159">Documentos de la Operación</h2>
+                <p className="scc-x160">
+                  Referencia: <span className="scc-x161">{refOperacionViendo}</span>
                 </p>
               </div>
-              <div className="sc-x162">
-                <button className="sc-x163"
+              <div className="scc-x162">
+                <button className="scc-x163"
                   type="button"
                   onClick={() => setMostrarSubirDocOp(true)}
                 >
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                   Subir Documento
                 </button>
-                <button className="sc-x164" onClick={() => setMostrarDocumentos(false)} title="Cerrar">✕</button>
+                <button className="scc-x164" onClick={() => setMostrarDocumentos(false)} title="Cerrar">✕</button>
               </div>
             </div>
-            <div className="sc-x165">
+            <div className="scc-x165">
               <DocumentosLista coleccionOrigen="operaciones" registroId={operacionViendo.id} />
             </div>
-            <div className="sc-x166">
-              <button onClick={() => setMostrarDocumentos(false)} className="btn btn-outline sc-x167">Cerrar</button>
+            <div className="scc-x166">
+              <button onClick={() => setMostrarDocumentos(false)} className="btn btn-outline scc-x167">Cerrar</button>
             </div>
           </div>
         </div>
@@ -2038,22 +2038,22 @@ const ServiciosCancelados = () => {
         />
       )}
       {modalHorarios === 'registrar' && (
-        <div className="modal-overlay sc-x168">
-          <div className="form-card sc-x169">
-            <div className="form-header sc-x170">
-              <h2 className="sc-x171">Registrar Movimiento (Fecha Personalizada)</h2>
+        <div className="modal-overlay scc-x168">
+          <div className="form-card scc-x169">
+            <div className="form-header scc-x170">
+              <h2 className="scc-x171">Registrar Movimiento (Fecha Personalizada)</h2>
               <button onClick={() => setModalHorarios('cerrado')} className="btn-window close">✕</button>
             </div>
-            <div className="sc-x172">
-              <p className="sc-x173">
+            <div className="scc-x172">
+              <p className="scc-x173">
                 Usa este formulario solo si necesitas registrar un movimiento con una fecha y hora distinta a la actual.
               </p>
               <div className="form-group">
-                <label className="form-label sc-x174">Fecha y Hora</label>
+                <label className="form-label scc-x174">Fecha y Hora</label>
                 <input type="datetime-local" className="form-control" value={nuevaFechaHora} onChange={e => setNuevaFechaHora(e.target.value)} />
               </div>
               <div className="form-group">
-                <label className="form-label sc-x174">Estatus / Hito</label>
+                <label className="form-label scc-x174">Estatus / Hito</label>
                 <select className="form-control" value={nuevoStatus} onChange={e => setNuevoStatus(e.target.value)}>
                   <option value="">-- Selecciona un status --</option>
                   {botonesDisponibles.length > 0 ? (
@@ -2069,7 +2069,7 @@ const ServiciosCancelados = () => {
                   )}
                 </select>
               </div>
-              <button onClick={guardarHorario} disabled={cargandoHorarios} className="btn btn-primary sc-x175">
+              <button onClick={guardarHorario} disabled={cargandoHorarios} className="btn btn-primary scc-x175">
                 {cargandoHorarios ? 'Actualizando...' : 'Guardar y Actualizar Operación'}
               </button>
             </div>
@@ -2078,14 +2078,14 @@ const ServiciosCancelados = () => {
       )}
 
       {modalHorarios === 'historial' && (
-        <div className="modal-overlay sc-x168">
-          <div className="form-card sc-x176">
+        <div className="modal-overlay scc-x168">
+          <div className="form-card scc-x176">
             <div className="form-header"><h2>Bitácora de Movimientos</h2><button onClick={() => setModalHorarios('cerrado')} className="btn-window close">✕</button></div>
-            <div className="sc-x177">
+            <div className="scc-x177">
               {cargandoHorarios ? (<div>Descargando...</div>) : (
-                <table className="sc-x178">
-                  <thead><tr className="sc-x174"><th className="sc-x179">Fecha y Hora</th><th className="sc-x179">Estatus</th></tr></thead>
-                  <tbody>{historialList.map((h: any) => (<tr className="sc-x180" key={h.id}><td className="sc-x181">{new Date(h.fechaHora).toLocaleString('es-MX')}</td><td className="sc-x182">{mostrarDatoMapeado(h.status, 'statusServicio', 'nombre', h.statusNombre)}</td></tr>))}</tbody>
+                <table className="scc-x178">
+                  <thead><tr className="scc-x174"><th className="scc-x179">Fecha y Hora</th><th className="scc-x179">Estatus</th></tr></thead>
+                  <tbody>{historialList.map((h: any) => (<tr className="scc-x180" key={h.id}><td className="scc-x181">{new Date(h.fechaHora).toLocaleString('es-MX')}</td><td className="scc-x182">{mostrarDatoMapeado(h.status, 'statusServicio', 'nombre', h.statusNombre)}</td></tr>))}</tbody>
                 </table>
               )}
             </div>

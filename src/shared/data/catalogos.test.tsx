@@ -8,7 +8,7 @@ const abiertos = new Map<string, { next: (s: Snap) => void; error: (e: Error) =>
 let aperturas = 0;
 let cierres = 0;
 
-vi.mock('../../config/firebase', () => ({ db: {} }));
+vi.mock('../../config/firebase', () => ({ db: {}, auth: { currentUser: { uid: 'u1' } } }));
 vi.mock('firebase/firestore', () => ({
   collection: (_db: unknown, col: string) => ({ col }),
   onSnapshot: (ref: { col: string }, _opciones: unknown, next: (s: Snap) => void, error: (e: Error) => void) => {
@@ -161,5 +161,20 @@ describe('catálogos compartidos', () => {
     a.unmount();
     render(<UnCatalogo alRender={() => {}} />);
     expect(aperturas).toBe(2);
+  });
+
+  it('✅ V00447 precalentarCatalogos abre los catálogos de uno en uno y se salta los que ya están', async () => {
+    render(<UnCatalogo alRender={() => {}} />);
+    act(() => { abiertos.get('empresas')?.next(snap([{ id: 'a' }], true)); vi.advanceTimersByTime(VENTANA_AVISO_MS); });
+    const antes = aperturas;
+    mod.precalentarCatalogos(['empresas', 'catalogo_moneda', 'remolques']);
+    await act(async () => { vi.advanceTimersByTime(250); });
+    expect(aperturas - antes).toBe(1); // empresas ya estaba: solo abre monedas
+    expect(abiertos.has('catalogo_moneda')).toBe(true);
+    expect(abiertos.has('remolques')).toBe(false);
+    await act(async () => { abiertos.get('catalogo_moneda')?.next(snap([{ id: 'm' }], true)); vi.advanceTimersByTime(VENTANA_AVISO_MS); });
+    await act(async () => { vi.advanceTimersByTime(250); });
+    expect(abiertos.has('remolques')).toBe(true);
+    expect(aperturas - antes).toBe(2);
   });
 });

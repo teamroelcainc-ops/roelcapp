@@ -3,10 +3,10 @@ import { initializeApp } from "firebase/app";
 import {
   initializeFirestore,
   persistentLocalCache,
-  persistentSingleTabManager,
+  persistentMultipleTabManager,
+  deleteAllPersistentCacheIndexes, getPersistentCacheIndexManager,
   memoryLocalCache,
   collection, addDoc, updateDoc, doc, getDoc, writeBatch,
-  enablePersistentCacheIndexAutoCreation, getPersistentCacheIndexManager,
 } from "firebase/firestore";
 import type { Firestore } from "firebase/firestore";
 import type { DocumentData, DocumentReference, UpdateData } from "firebase/firestore";
@@ -67,7 +67,9 @@ limpiarCachesLegadas();
 //    Completados y el conteo de Empresas; se retiran en la Fase 7). Si el
 //    almacenamiento viene saturado (>~3.5MB de ~5MB), se liberan SOLO esas
 //    claves regenerables — nunca la sesión de Firebase ni las preferencias.
-const PREFIJOS_CACHE_REGENERABLE = ['roelca_completadas_', 'empresas_conteo_ops_', 'detalles_convenio__'];
+//    ✅ V00447: solo las COPIAS de datos de Completados (rango_/all_); antes el prefijo
+//    completo también borraba los filtros, columnas y la selección de Excel guardados.
+const PREFIJOS_CACHE_REGENERABLE = ['roelca_completadas_rango_', 'roelca_completadas_all_', 'empresas_conteo_ops_', 'detalles_convenio__'];
 const liberarEspacioSiEsNecesario = () => {
   try {
     let total = 0;
@@ -95,18 +97,19 @@ liberarEspacioSiEsNecesario();
 //      solo se facturan lecturas por los documentos que CAMBIARON.
 //    · La app funciona offline: consultas y escrituras se encolan y se
 //      sincronizan solas al volver la conexión.
-//    · persistentSingleTabManager: coordina SIN usar localStorage (el manager
-//      multi-pestaña escribía en localStorage y crasheaba con la cuota llena).
-//      Si hay varias pestañas, la primera usa persistencia y las demás operan
-//      normal contra el servidor. ✅ V00439: se queda así hasta que la Fase 7
-//      retire las copias de operaciones en localStorage (almacenSesion); entonces
-//      se cambia a persistentMultipleTabManager (todas las pestañas con caché).
+//    · ✅ V00447: persistentMultipleTabManager — TODAS las pestañas usan la caché
+//      (antes, con persistentSingleTabManager, la segunda pestaña y "Ver en nueva
+//      pestaña" iban siempre al servidor y bajaban todos los catálogos otra vez).
+//      Este manager anota su coordinación en localStorage; el riesgo era la cuota
+//      llena (QuotaExceededError → app congelada). Por eso almacenSesion ya no
+//      copia valores grandes a localStorage (src/utils/cacheMemoria.ts) y el
+//      guardián de arriba libera espacio al arrancar.
 //    · Si el navegador no permite IndexedDB (p. ej. modo privado estricto),
 //      se cae a caché EN MEMORIA y la app sigue funcionando.
 let dbInterno: Firestore;
 try {
   dbInterno = initializeFirestore(app, {
-    localCache: persistentLocalCache({ tabManager: persistentSingleTabManager(undefined) }),
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
   });
 } catch (e) {
   console.warn('[firestore] Persistencia no disponible; usando caché en memoria.', e);
@@ -114,15 +117,15 @@ try {
 }
 export const db = dbInterno;
 
-// ✅ V00446 (rendimiento): índices de la caché LOCAL. Sin ellos, una consulta con filtro
-//   servida desde la caché (p. ej. `status not-in`, `tipo == 'cliente'`) recorre TODOS los
-//   documentos de esa colección guardados en el navegador. El SDK crea los índices locales
-//   solo para las consultas que lo necesitan. No toca el servidor ni cobra lecturas.
+// ✅ V00447: se quitaron los índices automáticos de la caché local (V00446). No se midió
+//   que ayudaran y el SDK los llena en segundo plano (50 documentos por minuto, ocupando
+//   la cola de Firestore) mientras las colecciones grandes se reescriben a cada descarga.
+//   Los que la V00446 ya creó en el navegador se borran (sin índices no hay nada que llenar).
 try {
   const indicesLocales = getPersistentCacheIndexManager(dbInterno);
-  if (indicesLocales) enablePersistentCacheIndexAutoCreation(indicesLocales);
+  if (indicesLocales) deleteAllPersistentCacheIndexes(indicesLocales);
 } catch (e) {
-  console.warn('[firestore] Índices de la caché local no disponibles.', e);
+  console.warn('[firestore] No se pudieron borrar los índices de la caché local.', e);
 }
 
 export const auth = getAuth(app);

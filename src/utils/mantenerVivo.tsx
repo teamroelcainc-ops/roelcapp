@@ -11,7 +11,10 @@ import React, { Suspense, useEffect, useState } from 'react';
 import { ContextoModuloEscuchando, ContextoModuloVivoActivo, MINUTOS_GRACIA_ESCUCHA } from './moduloVivoContexto';
 import CargandoModulo from '../components/layout/CargandoModulo';
 
-export const MantenerVivo: React.FC<{ activo: boolean; children: React.ReactNode }> = ({ activo, children }) => {
+// ✅ V00447: `siempreEscuchando` — el módulo de inicio (Operaciones Activas) no cierra sus
+//   listeners al ocultarse, como antes de la V00438: es al que más se regresa y reabrirlos
+//   después de 30 min obligaba a bajar todo otra vez (tarjetas de casetas y diésel).
+export const MantenerVivo: React.FC<{ activo: boolean; siempreEscuchando?: boolean; children: React.ReactNode }> = ({ activo, siempreEscuchando = false, children }) => {
   const [montado, setMontado] = useState(activo);
   useEffect(() => {
     // Cerrojo de una sola vía: la PRIMERA activación monta y ya no se desmonta.
@@ -25,7 +28,7 @@ export const MantenerVivo: React.FC<{ activo: boolean; children: React.ReactNode
     const t = setTimeout(() => setGraciaVencida(true), MINUTOS_GRACIA_ESCUCHA * 60 * 1000);
     return () => { clearTimeout(t); setGraciaVencida(false); };
   }, [activo]);
-  const escuchando = activo || !graciaVencida;
+  const escuchando = activo || siempreEscuchando || !graciaVencida;
   if (!montado) return null; // nunca visitado: no cuesta nada
   return (
     <ContextoModuloEscuchando.Provider value={escuchando}>

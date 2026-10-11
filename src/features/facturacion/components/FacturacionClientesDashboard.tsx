@@ -47,6 +47,7 @@ import { esUSD as esMonedaUSD, monedaCanonica as monedaCanonicaComun, nombreMone
 import { ID_MXN, ID_USD, STATUS_COMPLETADOS, TIPO_EMPRESA } from '../../../shared/dominio/constantes'; // ✅ V00439 (Fase 3.x)
 import { useCatalogo, useCatalogos } from '../../../shared/data/catalogos'; // ✅ V00439 (Fase 3.x)
 import { CATALOGOS_NOMBRES_FACTURACION, construirMapaCatalogos } from '../services/mapaCatalogos';
+import { useMapaEstable } from '../../../shared/hooks/useMapaEstable'; // ✅ V00447
 import type { EmpresaFacturacion } from '../services/mapaCatalogos';
 import { r2 } from '../../../shared/dominio/numeros';
 import {
@@ -536,10 +537,12 @@ export const FacturacionClientesDashboard = () => {
   };
 
   // ✅ V00439 (Fase 3.x): derivado de los catálogos en vivo (mismo contenido).
-  const mapaCatalogos = useMemo(
+  // ✅ V00447: estable por CONTENIDO (useMapaEstable): un cambio de catálogo que no toca
+  //   nombres ya no vuelve a ordenar y filtrar todas las operaciones y facturas.
+  const mapaCatalogos = useMapaEstable(useMemo(
     () => construirMapaCatalogos(Object.values(catalogosNombres), empresasList),
     [catalogosNombres, empresasList],
-  );
+  ));
 
   // ✅ V00438 (Fase 2.4): useCallback para que las claves de orden de operaciones
   //   (memo) dependan de algo estable.
@@ -708,7 +711,14 @@ export const FacturacionClientesDashboard = () => {
   }, []);
 
   // Descarga TODAS las facturas desde Firestore (reutilizable por el botón Refrescar).
-  const descargarFacturas = async () => {
+  // ✅ V00447: una sola descarga a la vez (antes la carga al entrar tenía su propia copia de
+  //   este código y, si el efecto corría dos veces, bajaba todas las facturas dos veces).
+  //   Un Refrescar pedido mientras baja otra descarga se repite al terminar (no se pierde).
+  const facturasEnVueloRef = useRef(false);
+  const repetirFacturasRef = useRef(false);
+  const descargarFacturas = async (refrescar = true) => {
+    if (facturasEnVueloRef.current) { if (refrescar) repetirFacturasRef.current = true; return; }
+    facturasEnVueloRef.current = true;
     setCargandoFacturas(true);
     try {
       const todas: any[] = [];
@@ -733,9 +743,11 @@ export const FacturacionClientesDashboard = () => {
       setFacturasGlobales(todas);
     } catch (e: any) {
       console.error('[Facturación Historial] Error al recargar facturas:', e);
-      alert('No se pudieron recargar las facturas. ' + String(e?.message || e?.code || e || ''));
+      alert(`No se pudieron cargar las facturas.\n\nDetalle: ${String(e?.message || e?.code || e || '')}`);
     }
+    facturasEnVueloRef.current = false;
     setCargandoFacturas(false);
+    if (repetirFacturasRef.current) { repetirFacturasRef.current = false; void descargarFacturas(); }
   };
 
   // Fuerza el refresco de la colección de facturas: vuelve a leer de Firestore.
@@ -745,38 +757,7 @@ export const FacturacionClientesDashboard = () => {
 
   const cargarFacturasAlEntrar = useEffectEvent(() => {
     if (facturasGlobales.length > 0) return;
-
-    const descargar = async () => {
-      setCargandoFacturas(true);
-      try {
-        const todas: any[] = [];
-        let cursor: any = null;
-        for (let i = 0; i < Math.ceil(LIMITE_FACTURAS_TODAS / PAG_FACTURAS); i++) {
-          const cons: any[] = [orderBy(documentId()), limit(PAG_FACTURAS)];
-          if (cursor) cons.splice(1, 0, startAfter(cursor));
-          const snap = await getDocs(query(collection(db, 'facturas_clientes'), ...cons));
-          if (snap.empty) break;
-          snap.docs.forEach(d => todas.push(normalizarFactura({ id: d.id, ...(d.data() as any) })));
-          cursor = snap.docs[snap.docs.length - 1];
-          if (snap.docs.length < PAG_FACTURAS) break;
-        }
-        todas.sort((a: any, b: any) => {
-          const fa = String(a.fecha || '');
-          const fb = String(b.fecha || '');
-          if (!fa && !fb) return 0;
-          if (!fa) return 1;
-          if (!fb) return -1;
-          return fb.localeCompare(fa);
-        });
-        setFacturasGlobales(todas);
-      } catch (e: any) {
-        const msg = String(e?.message || e?.code || e || '');
-        console.error('[Facturación Historial] Error al cargar facturas:', e);
-        alert(`No se pudieron cargar las facturas.\n\nDetalle: ${msg}`);
-      }
-      setCargandoFacturas(false);
-    };
-    descargar();
+    void descargarFacturas(false);
   });
   useEffect(() => cargarFacturasAlEntrar(), []);
 

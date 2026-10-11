@@ -98,8 +98,9 @@
 .sc-x87 { padding: 16px; white-space: nowrap; }
 /* ✅ V00438 (Fase 2.3): hover de la fila por CSS (antes estado hoveredRowId →
    2 renders del módulo por cada fila cruzada). `.data-table` sube la
-   especificidad sobre `.data-table tr:hover` global (App.css). Prefijo propio:
-   las clases sc-x* de Completados y Cancelados ya chocan entre sí. */
+   especificidad sobre `.data-table tr:hover` global (App.css).
+   ✅ V00447: Cancelados usa su propio prefijo (scc-x*); antes compartía sc-x* con
+   Completados y las reglas de uno desacomodaban al otro (ver code-notes.md). */
 .data-table .scomp-fila-op { border-bottom: 1px solid #21262d; background-color: #0d1117; transition: background-color 0.2s; cursor: pointer; }
 .data-table .scomp-fila-op:hover { background-color: #21262d; }
 .sc-x88 { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding: 0 8px; flex-wrap: wrap; gap: 10px; }

@@ -28,6 +28,7 @@ import { statusDescuentaPuente, calcularStatusDinamico, idDocFlujo, leerFlujoFre
 import { obtenerFlags } from '../../../shared/data/flags';
 import { usosEnCache } from '../../../shared/data/consultas';
 import { obtenerFilaTipoCambioDeFecha } from '../services/tipoCambioPorFecha'; // ✅ V00438 (Fase 2.9)
+import { CATALOGOS_FORMULARIO_BASE, CATALOGOS_FORMULARIO_EXTRA } from '../services/catalogosFormulario'; // ✅ V00447
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 
 import { FormularioEmpresa } from '../../empresas/components/FormularioEmpresa';
@@ -244,33 +245,10 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
   //   catalogosCacheados como base. Ya no hay copias locales que parchar después de
   //   escribir (crear empresa, editar un detalle de convenio): el listener trae el cambio.
   //   `base` = lo que el formulario necesita para pintarse (antes lo entregaba el padre).
-  const { datos: base, listo: catalogosBaseListos } = useCatalogos({
-    empresas: 'empresas',
-    remolques: 'remolques',
-    unidades: 'unidades',
-    empleados: 'empleados',
-    unidadesProveedor: 'unidades_proveedor',
-    proveedoresUnidad: 'proveedores_unidad',
-    tiposOperacion: 'catalogo_tipo_operacion',
-    statusServicio: 'catalogo_status_servicio',
-    catalogoMoneda: 'catalogo_moneda',
-  });
-  const { datos: cat } = useCatalogos({
-    tarifas: 'catalogo_tarifas_referencia',
-    embalajes: 'catalogo_embalaje',
-    tarifasGastosIncluidos: 'tarifas_gastos_incluidos',
-    tarifasRendimiento: 'tarifas_rendimiento',
-    tiposGastos: 'catalogo_tipos_gastos',
-    catalogoConvClientes: 'convenios_clientes',
-    catalogoConvDetalles: 'convenios_clientes_detalles',
-    catalogoTarifarios: 'tarifario_clientes',
-    catalogoTarifariosProv: 'tarifario_proveedores',
-    conveniosProv: 'convenios_proveedores',
-    catalogoConvProvDetalles: 'convenios_proveedores_detalles',
-    catalogoTrafico: 'catalogo_trafico',
-    direcciones: 'direcciones',
-    flujos: 'config_flujos_operacion',
-  });
+  // ✅ V00447: las listas viven en services/catalogosFormulario.ts (Operaciones Activas las
+  //   abre en segundo plano al arrancar para que el formulario no espere).
+  const { datos: base, listo: catalogosBaseListos } = useCatalogos(CATALOGOS_FORMULARIO_BASE);
+  const { datos: cat } = useCatalogos(CATALOGOS_FORMULARIO_EXTRA);
   const empresasLocal: FilaCatalogo[] = base.empresas;
   const remolquesLocal: FilaCatalogo[] = base.remolques;
   const unidadesLocal: FilaCatalogo[] = base.unidades;

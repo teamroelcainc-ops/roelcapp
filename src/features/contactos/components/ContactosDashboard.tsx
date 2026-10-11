@@ -130,17 +130,17 @@ export const ContactosDashboard = () => {
   // Renderizador Dinámico de Celdas
   const renderCellContent = (c: any, colId: string) => {
     switch (colId) {
-      case 'empresa': return <span className="cd-x1">{c._empresaNombre}</span>;
-      case 'persona': return <span className="cd-x2">{c.persona_encargada}</span>;
-      case 'puesto': return <span className="cd-x3">{c.puesto || '-'}</span>;
-      case 'telefono': return <span className="cd-x3">{c.telefono || '-'}</span>;
-      case 'correo': return <span className="cd-x3">{c.correo || '-'}</span>;
-      default: return <span className="cd-x3">-</span>;
+      case 'empresa': return <span className="ctd-x1">{c._empresaNombre}</span>;
+      case 'persona': return <span className="ctd-x2">{c.persona_encargada}</span>;
+      case 'puesto': return <span className="ctd-x3">{c.puesto || '-'}</span>;
+      case 'telefono': return <span className="ctd-x3">{c.telefono || '-'}</span>;
+      case 'correo': return <span className="ctd-x3">{c.correo || '-'}</span>;
+      default: return <span className="ctd-x3">-</span>;
     }
   };
 
   return (
-    <div className="module-container cd-x4">
+    <div className="module-container ctd-x4">
       
       <FormularioContacto 
         estado={estadoFormulario} 
@@ -150,40 +150,40 @@ export const ContactosDashboard = () => {
         onRestore={() => setEstadoFormulario('abierto')}
       />
 
-      <div className="cd-x5">
-        <h1 className="module-title cd-x6">
+      <div className="ctd-x5">
+        <h1 className="module-title ctd-x6">
           Directorio de Contactos
         </h1>
 
-        <div className="cd-x7">
-          <div className="cd-x8">
+        <div className="ctd-x7">
+          <div className="ctd-x8">
             <button onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros"
               style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${busqueda ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
               Filtros
-              {busqueda && <span className="cd-x9">1</span>}
+              {busqueda && <span className="ctd-x9">1</span>}
             </button>
             {busqueda && (
-              <span className="cd-x10">
+              <span className="ctd-x10">
                 "{busqueda}"
-                <button className="cd-x11" onClick={() => setBusqueda('')}>✕</button>
+                <button className="ctd-x11" onClick={() => setBusqueda('')}>✕</button>
               </span>
             )}
-            <span className="cd-x12">
+            <span className="ctd-x12">
               {busquedaHecha ? `${registrosFiltrados.length} contactos` : 'Presiona Filtros y Buscar para ver los contactos.'}
             </span>
           </div>
           
-          <div className="cd-x13">
+          <div className="ctd-x13">
             <button 
-              className="btn btn-outline cd-x14" 
+              className="btn btn-outline ctd-x14" 
               title="Configurar Columnas"
               onClick={() => setModalColumnas(true)}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
             </button>
             <button 
-              className="btn btn-primary cd-x15" 
+              className="btn btn-primary ctd-x15" 
               title="Agregar Nuevo Contacto"
               onClick={handleNuevo}
             >
@@ -192,16 +192,16 @@ export const ContactosDashboard = () => {
           </div>
         </div>
 
-        <div className="content-body cd-x16">
-          <div className="table-container cd-x17">
-            <table className="data-table cd-x18">
-              <thead className="cd-x19">
+        <div className="content-body ctd-x16">
+          <div className="table-container ctd-x17">
+            <table className="data-table ctd-x18">
+              <thead className="ctd-x19">
                 <tr>
-                  <th className="cd-x20">
+                  <th className="ctd-x20">
                     Acciones
                   </th>
                   {columnasTabla.filter(c => c.visible).map(col => (
-                    <th className="cd-x21" key={`th_${col.id}`}>
+                    <th className="ctd-x21" key={`th_${col.id}`}>
                       {col.label}
                     </th>
                   ))}
@@ -209,16 +209,16 @@ export const ContactosDashboard = () => {
               </thead>
               <tbody>
                 {!busquedaHecha ? (
-                  <tr><td className="cd-x22" colSpan={columnasTabla.length + 1}>
-                    <div className="cd-x23">
+                  <tr><td className="ctd-x22" colSpan={columnasTabla.length + 1}>
+                    <div className="ctd-x23">
                       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.6"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-                      <span className="cd-x24">Define tus filtros y presiona <b className="cd-x25">Buscar</b> para ver los contactos.</span>
-                      <button className="cd-x26" onClick={() => setDrawerFiltrosAbierto(true)}>Abrir filtros</button>
+                      <span className="ctd-x24">Define tus filtros y presiona <b className="ctd-x25">Buscar</b> para ver los contactos.</span>
+                      <button className="ctd-x26" onClick={() => setDrawerFiltrosAbierto(true)}>Abrir filtros</button>
                     </div>
                   </td></tr>
                 ) : registrosEnPantalla.length === 0 ? (
                   <tr>
-                    <td className="cd-x27" colSpan={columnasTabla.length + 1}>No se encontraron contactos.</td>
+                    <td className="ctd-x27" colSpan={columnasTabla.length + 1}>No se encontraron contactos.</td>
                   </tr>
                 ) : (
                   registrosEnPantalla.map((c) => (
@@ -229,9 +229,9 @@ export const ContactosDashboard = () => {
                       onMouseEnter={() => setHoveredRowId(c.id)} 
                       onMouseLeave={() => setHoveredRowId(null)}
                     >
-                      <td className="cd-x28" onClick={(e: any) => e.stopPropagation()}>
-                        <div className="actions-cell cd-x29">
-                          <button className="cd-x30" 
+                      <td className="ctd-x28" onClick={(e: any) => e.stopPropagation()}>
+                        <div className="actions-cell ctd-x29">
+                          <button className="ctd-x30" 
                             title="Editar Contacto"
                             onClick={(e) => { e.stopPropagation(); editarContacto(c); }}
                             onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'} 
@@ -239,7 +239,7 @@ export const ContactosDashboard = () => {
                           >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                           </button>
-                          <button className="cd-x31" 
+                          <button className="ctd-x31" 
                             title="Eliminar Contacto"
                             onClick={(e) => { e.stopPropagation(); eliminarContacto(c.id); }}
                             onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'} 
@@ -250,7 +250,7 @@ export const ContactosDashboard = () => {
                         </div>
                       </td>
                       {columnasTabla.filter(col => col.visible).map(col => (
-                        <td className="cd-x32" key={`cell_${c.id}_${col.id}`}>
+                        <td className="ctd-x32" key={`cell_${c.id}_${col.id}`}>
                           {renderCellContent(c, col.id)}
                         </td>
                       ))}
@@ -263,11 +263,11 @@ export const ContactosDashboard = () => {
 
           {/* CONTROLES DE PAGINACIÓN */}
           {busquedaHecha && registrosFiltrados.length > 0 && (
-            <div className="cd-x33">
-              <div className="cd-x34">
+            <div className="ctd-x33">
+              <div className="ctd-x34">
                 Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, registrosFiltrados.length)} de {registrosFiltrados.length} registros
               </div>
-              <div className="cd-x35">
+              <div className="ctd-x35">
                 <button 
                   title="Página Anterior"
                   onClick={irPaginaAnterior} 
@@ -276,7 +276,7 @@ export const ContactosDashboard = () => {
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
                 </button>
-                <span className="cd-x36">{paginaActual} / {totalPaginas || 1}</span>
+                <span className="ctd-x36">{paginaActual} / {totalPaginas || 1}</span>
                 <button 
                   title="Página Siguiente"
                   onClick={irPaginaSiguiente} 
@@ -294,15 +294,15 @@ export const ContactosDashboard = () => {
 
       {/* MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
       {modalColumnas && (
-        <div className="modal-overlay cd-x37">
-          <div className="cd-x38">
-            <div className="cd-x39">
-              <h3 className="cd-x40">Configurar Columnas de la Tabla</h3>
-              <button className="cd-x41" onClick={() => setModalColumnas(false)}>✕</button>
+        <div className="modal-overlay ctd-x37">
+          <div className="ctd-x38">
+            <div className="ctd-x39">
+              <h3 className="ctd-x40">Configurar Columnas de la Tabla</h3>
+              <button className="ctd-x41" onClick={() => setModalColumnas(false)}>✕</button>
             </div>
-            <p className="cd-x42">Arrastra los elementos para reorganizar el orden de la tabla. Desmarca las casillas para ocultar columnas.</p>
+            <p className="ctd-x42">Arrastra los elementos para reorganizar el orden de la tabla. Desmarca las casillas para ocultar columnas.</p>
             
-            <ul className="cd-x43">
+            <ul className="ctd-x43">
               {columnasTabla.map((col, idx) => (
                 <li 
                   key={col.id}
@@ -314,13 +314,13 @@ export const ContactosDashboard = () => {
                   style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', backgroundColor: draggedColIndex === idx ? '#1f2937' : '#161b22', border: '1px solid #30363d', borderRadius: '6px', cursor: 'grab' }}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-                  <input className="cd-x44" type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} />
+                  <input className="ctd-x44" type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} />
                   <span style={{ color: col.visible ? '#c9d1d9' : '#484f58', fontSize: '0.85rem', fontWeight: col.visible ? 'bold' : 'normal' }}>{col.label}</span>
                 </li>
               ))}
             </ul>
-            <div className="cd-x45">
-              <button className="cd-x46" onClick={() => setModalColumnas(false)}>Aplicar Cambios</button>
+            <div className="ctd-x45">
+              <button className="ctd-x46" onClick={() => setModalColumnas(false)}>Aplicar Cambios</button>
             </div>
           </div>
         </div>
@@ -328,41 +328,41 @@ export const ContactosDashboard = () => {
 
       {/* MODAL DE DETALLES DEL CONTACTO */}
       {contactoViendo && (
-        <div className="modal-overlay cd-x47">
-          <div className="cd-x48">
+        <div className="modal-overlay ctd-x47">
+          <div className="ctd-x48">
             
-            <div className="cd-x49">
-              <h2 className="cd-x50">Detalles del Contacto</h2>
-              <button className="cd-x41" onClick={() => setContactoViendo(null)}>✕</button>
+            <div className="ctd-x49">
+              <h2 className="ctd-x50">Detalles del Contacto</h2>
+              <button className="ctd-x41" onClick={() => setContactoViendo(null)}>✕</button>
             </div>
             
-            <div className="cd-x51">
-              <div className="cd-x52">
-                <div className="cd-x53">
-                  <span className="cd-x54">Empresa / Cliente</span>
-                  <span className="cd-x55">{contactoViendo._empresaNombre}</span>
+            <div className="ctd-x51">
+              <div className="ctd-x52">
+                <div className="ctd-x53">
+                  <span className="ctd-x54">Empresa / Cliente</span>
+                  <span className="ctd-x55">{contactoViendo._empresaNombre}</span>
                 </div>
                 <div>
-                  <span className="cd-x54">Persona Encargada</span>
-                  <span className="cd-x56">{contactoViendo.persona_encargada}</span>
+                  <span className="ctd-x54">Persona Encargada</span>
+                  <span className="ctd-x56">{contactoViendo.persona_encargada}</span>
                 </div>
                 <div>
-                  <span className="cd-x54">Puesto</span>
-                  <span className="cd-x57">{contactoViendo.puesto}</span>
+                  <span className="ctd-x54">Puesto</span>
+                  <span className="ctd-x57">{contactoViendo.puesto}</span>
                 </div>
                 <div>
-                  <span className="cd-x54">Teléfono</span>
-                  <span className="cd-x57">{contactoViendo.telefono || '-'}</span>
+                  <span className="ctd-x54">Teléfono</span>
+                  <span className="ctd-x57">{contactoViendo.telefono || '-'}</span>
                 </div>
                 <div>
-                  <span className="cd-x54">Correo Electrónico</span>
-                  <span className="cd-x57">{contactoViendo.correo || '-'}</span>
+                  <span className="ctd-x54">Correo Electrónico</span>
+                  <span className="ctd-x57">{contactoViendo.correo || '-'}</span>
                 </div>
               </div>
             </div>
 
-            <div className="cd-x58">
-              <button className="cd-x59" onClick={() => setContactoViendo(null)}>Cerrar</button>
+            <div className="ctd-x58">
+              <button className="ctd-x59" onClick={() => setContactoViendo(null)}>Cerrar</button>
             </div>
           </div>
         </div>
@@ -371,31 +371,31 @@ export const ContactosDashboard = () => {
 
       {/* NUEVO: panel lateral DERECHO de filtros (Contactos) */}
       {drawerFiltrosAbierto && (
-        <div className="cd-x60" onClick={() => setDrawerFiltrosAbierto(false)}>
-          <div className="cd-x61" onClick={(e) => e.stopPropagation()}>
-            <div className="cd-x62">
-              <h3 className="cd-x63">Filtros · Contactos</h3>
-              <button className="cd-x41" onClick={() => setDrawerFiltrosAbierto(false)}>✕</button>
+        <div className="ctd-x60" onClick={() => setDrawerFiltrosAbierto(false)}>
+          <div className="ctd-x61" onClick={(e) => e.stopPropagation()}>
+            <div className="ctd-x62">
+              <h3 className="ctd-x63">Filtros · Contactos</h3>
+              <button className="ctd-x41" onClick={() => setDrawerFiltrosAbierto(false)}>✕</button>
             </div>
 
-            <div className="cd-x64">
-              <label className="cd-x65">BÚSQUEDA</label>
-              <div className="cd-x66">
-                <svg className="cd-x67" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                <input className="cd-x68" type="text" placeholder="Nombre, empresa, puesto o correo..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
+            <div className="ctd-x64">
+              <label className="ctd-x65">BÚSQUEDA</label>
+              <div className="ctd-x66">
+                <svg className="ctd-x67" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input className="ctd-x68" type="text" placeholder="Nombre, empresa, puesto o correo..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
                 {busqueda && (
-                  <button className="cd-x69" onClick={() => setBusqueda('')} title="Limpiar">✕</button>
+                  <button className="ctd-x69" onClick={() => setBusqueda('')} title="Limpiar">✕</button>
                 )}
               </div>
             </div>
 
-            <div className="cd-x70">
-              La búsqueda es <b className="cd-x71">opcional</b>. Presiona <b className="cd-x25">Buscar</b> para ver todos los contactos.
+            <div className="ctd-x70">
+              La búsqueda es <b className="ctd-x71">opcional</b>. Presiona <b className="ctd-x25">Buscar</b> para ver todos los contactos.
             </div>
 
-            <div className="cd-x72">
-              <button className="cd-x73" onClick={() => { setBusqueda(''); setBusquedaHecha(false); }}>Limpiar</button>
-              <button className="cd-x74" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>Buscar</button>
+            <div className="ctd-x72">
+              <button className="ctd-x73" onClick={() => { setBusqueda(''); setBusquedaHecha(false); }}>Limpiar</button>
+              <button className="ctd-x74" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>Buscar</button>
             </div>
           </div>
         </div>

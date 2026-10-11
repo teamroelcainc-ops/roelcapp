@@ -26,7 +26,7 @@
 // ---------------------------------------------------------------------------
 import { useCallback, useMemo, useRef, useSyncExternalStore } from 'react';
 import { collection } from 'firebase/firestore';
-import { db } from '../../config/firebase';
+import { auth, db } from '../../config/firebase';
 import { useModuloVivoActivo } from '../../utils/moduloVivoContexto';
 import {
   entradaViva, estadoVivo, idReal, obtenerVivo, pedirVivo, reiniciarVivas, soltarVivo, MINUTOS_PERMANENCIA,
@@ -71,6 +71,31 @@ export const estadoCatalogo = (col: ColeccionCatalogo): EstadoCatalogo => estado
  */
 export const obtenerCatalogo = (col: ColeccionCatalogo, opciones: { fresco?: boolean; esperaMs?: number } = {}): Promise<DocCatalogo[]> =>
   obtenerVivo(claveDe(col), consultaDe(col), opciones.esperaMs ?? 6000, { fresco: opciones.fresco, permanente: true });
+
+/**
+ * ✅ V00447: abre en SEGUNDO PLANO, de uno en uno y cuando el navegador está libre, catálogos
+ * que se van a necesitar pronto (los del formulario de operación), para que la primera vez
+ * que se abra esa pantalla ya estén listos y no espere "Cargando catálogos…". Quedan abiertos
+ * toda la sesión, como cualquier catálogo: son las mismas lecturas que haría abrir la pantalla.
+ */
+const enPrecalentado = new Set<ColeccionCatalogo>();
+export const precalentarCatalogos = (cols: readonly ColeccionCatalogo[]): void => {
+  const pendientes = Array.from(new Set(cols)).filter((c) => !estadoCatalogo(c).listo && !enPrecalentado.has(c));
+  pendientes.forEach((c) => enPrecalentado.add(c));
+  const cuandoLibre = (f: () => void) => {
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') window.requestIdleCallback(() => f(), { timeout: 4000 });
+    else setTimeout(f, 200);
+  };
+  const siguiente = (i: number): void => {
+    if (i >= pendientes.length) return;
+    cuandoLibre(() => {
+      const c = pendientes[i];
+      if (!auth.currentUser) { pendientes.slice(i).forEach((x) => enPrecalentado.delete(x)); return; } // cerró sesión
+      void obtenerCatalogo(c).finally(() => { enPrecalentado.delete(c); siguiente(i + 1); });
+    });
+  };
+  siguiente(0);
+};
 
 /** Cierra todos los listeners (catálogos y consultas en vivo) y borra los datos (al cerrar sesión). */
 export const reiniciarCatalogos = (): void => reiniciarVivas();

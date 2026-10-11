@@ -27,6 +27,7 @@ import { aduanaDeConvenio, camposPisoColombia, casetaRespaldoColombia, esAduanaC
 import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
 import { obtenerFlags, useFlags } from '../../../shared/data/flags';
 import { useOperacionesActivas } from '../hooks/useOperacionesActivas'; // ✅ V00444 (Fase 8.1)
+import { precalentarCatalogosFormulario } from '../services/catalogosFormulario'; // ✅ V00447
 import { docPorId, nombreEmpresaPdf } from '../../../utils/docPorId';
 import type { DocLibre } from '../../../utils/docPorId';
 import { idReal, obtenerCatalogo, useCatalogo, useCatalogos } from '../../../shared/data/catalogos';
@@ -172,6 +173,13 @@ const OperacionesDashboard = () => {
     cargando: cargandoOperaciones, cargandoMas, hayMas: hayMasOperaciones,
     descargar: descargarOperaciones, actualizar: actualizarLista, cargarMas: cargarMasOperaciones,
   } = useOperacionesActivas<any>((op) => esOperacionActiva(op)); // eslint-disable-line @typescript-eslint/no-explicit-any -- operaciones sin tipo canónico en el tablero (antes useState<any[]>).
+  // ✅ V00447: cuando ya se pintó la lista, los catálogos del formulario se abren en segundo
+  //   plano (uno por uno, con el navegador libre): "Nueva operación" y "Ver" abren sin esperar.
+  useEffect(() => {
+    if (cargandoOperaciones) return undefined;
+    const t = setTimeout(precalentarCatalogosFormulario, 3000);
+    return () => clearTimeout(t);
+  }, [cargandoOperaciones]);
   const [operacionViendo, setOperacionViendo] = useState<any | null>(null);
   // ✅ V00421: cuándo se muestra la Carta de Instrucciones (configurable)
   const cfgCarta = useConfigCarta();

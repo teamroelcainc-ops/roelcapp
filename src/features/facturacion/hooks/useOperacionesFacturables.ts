@@ -54,6 +54,11 @@ export function useOperacionesFacturables<T extends Datos = Datos>(
   const [topeAlcanzado, setTopeAlcanzado] = useState(false);
   const [facturadasCargadas, setFacturadasCargadas] = useState(false);
   const peticionCanonRef = useRef({ id: 0, conFacturadas: false, enVuelo: false });
+  // ✅ V00447: descarga vieja en curso. Sin esto, si el efecto del tablero corría otra vez
+  //   antes de que terminara (cambio de pestaña, React en modo desarrollo), se bajaban las
+  //   hasta 20,000 operaciones DOS veces en paralelo.
+  const legadoEnVueloRef = useRef<Promise<void> | null>(null);
+  const idLegadoRef = useRef(0); // la ÚLTIMA descarga vieja manda (un Refrescar no lo pisa otra anterior)
 
   const cargarCanonico = async (conFacturadas: boolean): Promise<void> => {
     const id = peticionCanonRef.current.id + 1;
@@ -92,6 +97,7 @@ export function useOperacionesFacturables<T extends Datos = Datos>(
 
   /** Camino viejo: páginas de 1,000 por status facturable; sin índice, toda la colección filtrada aquí. */
   const descargarLegado = async (): Promise<void> => {
+    const id = ++idLegadoRef.current;
     setCargando(true);
     try {
       let todas: Datos[] = [];
@@ -127,9 +133,11 @@ export function useOperacionesFacturables<T extends Datos = Datos>(
       }
       todas = sinPruebas(todas); // ✅ V00380: las operaciones de prueba no se facturan
       todas.sort(masReciente);
+      if (id !== idLegadoRef.current) return; // llegó una descarga más nueva
       setOperaciones(todas as T[]);
       setTopeAlcanzado(todas.length >= LIMITE_OPS_TODAS);
     } catch (e: unknown) {
+      if (id !== idLegadoRef.current) return;
       const msg = String((e as { message?: unknown })?.message || (e as { code?: unknown })?.code || e || '');
       console.error('[Facturación] Error al cargar operaciones completadas:', e);
       alert(`No se pudieron cargar las operaciones.\n\nDetalle: ${msg}`);
@@ -144,7 +152,10 @@ export function useOperacionesFacturables<T extends Datos = Datos>(
       await cargarCanonico(facturadasCargadas || vistaOps !== 'pendientes');
       return;
     }
-    await descargarLegado();
+    if (!forzar && legadoEnVueloRef.current) return legadoEnVueloRef.current;
+    const p = descargarLegado().finally(() => { if (legadoEnVueloRef.current === p) legadoEnVueloRef.current = null; });
+    legadoEnVueloRef.current = p;
+    await p;
   };
 
   // Con la bandera, "Facturadas"/"Todas" piden las ya facturadas (una vez).

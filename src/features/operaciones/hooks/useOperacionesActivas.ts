@@ -164,9 +164,15 @@ export function useOperacionesActivas<T extends OperacionActivaBase>(esActiva: (
     setCargandoMas(false);
   };
 
-  // Primera carga al montar (como antes: una vez).
+  // Primera carga al montar (como antes: una vez). ✅ V00447: también en modo desarrollo
+  //   (React monta dos veces los efectos y se pedían las operaciones dos veces).
   const descargarAlMontar = useRef(descargar);
-  useEffect(() => { void descargarAlMontar.current(); }, []);
+  const yaMontadoRef = useRef(false);
+  useEffect(() => {
+    if (yaMontadoRef.current) return;
+    yaMontadoRef.current = true;
+    void descargarAlMontar.current();
+  }, []);
 
   return { operaciones, setOperaciones, cargando, cargandoMas, hayMas, descargar, actualizar, cargarMas };
 }

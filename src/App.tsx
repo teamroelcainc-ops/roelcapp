@@ -10,7 +10,7 @@ import { MantenerVivo } from './utils/mantenerVivo'; // ✅ V00264: módulos que
 import { Bell } from 'lucide-react';
 import type { CSSProperties } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, updateDoc, getDoc, setDoc, collection, onSnapshot, query, where, getDocs, orderBy, limit, addDoc } from 'firebase/firestore'; 
+import { doc, updateDoc, getDoc, getDocFromCache, setDoc, collection, onSnapshot, query, where, getDocs, orderBy, limit, addDoc } from 'firebase/firestore'; 
 import { auth, db } from './config/firebase';
 import { publicarClavesPermitidas } from './utils/permisos'; // ✅ V00224 
 import { registrarLog } from './utils/logger';
@@ -19,7 +19,7 @@ import { AvisoChecador } from './components/AvisoChecador';
 import { BarraNavMovil } from './components/BarraNavMovil';
 import { EditorNavMovil } from './components/EditorNavMovil';
 import { useUsuarioStore } from './stores/useUsuarioStore';
-import { evaluarPerfil, MENSAJE_ACCESO, esAdminPorRoles, verificarRedOficina } from './features/auth/services/acceso'; // ✅ V00437
+import { claveRevisionRed, evaluarPerfil, MENSAJE_ACCESO, esAdminPorRoles, redLibreSegunCache, verificarRedOficina } from './features/auth/services/acceso'; // ✅ V00437
 import { iniciarFlags, detenerFlags } from './shared/data/flags'; // ✅ V00437
 import { idReal, useCatalogo, reiniciarCatalogos, obtenerCatalogo } from './shared/data/catalogos'; // ✅ V00439
 import { EtiquetasProvider, useEtiquetas } from './contexts/EtiquetasContext'; 
@@ -1128,10 +1128,15 @@ function AppContenido() {
   // ✅ V00437 (Fase 1.1): aviso que ve el login cuando la app cierra la sesión
   //   (perfil inexistente, desactivado, de cliente o fuera de la red de la oficina).
   const [avisoAcceso, setAvisoAcceso] = useState('');
-  // Red de la oficina ya verificada para esta sesión (uid) y verificación en curso.
+  // Red de la oficina ya verificada para esta sesión y verificación en curso.
+  // ✅ V00447: por usuario Y roles (claveRevisionRed): si el perfil del servidor trae roles
+  //   distintos a los de la caché, se revisa otra vez. null en la promesa = no se pudo revisar.
   const redVerificadaRef = useRef<string | null>(null);
-  const verificacionRedRef = useRef<{ uid: string; promesa: ReturnType<typeof verificarRedOficina> } | null>(null);
+  const verificacionRedRef = useRef<{ clave: string; promesa: Promise<Awaited<ReturnType<typeof verificarRedOficina>> | null> } | null>(null);
+  // ✅ V00447: mientras se cierra una sesión negada, nada la vuelve a abrir (registrarLog va antes de signOut).
+  const denegandoRef = useRef(false);
   const negarAcceso = useCallback(async (mensaje: string, bitacora?: string) => {
+    denegandoRef.current = true;
     redVerificadaRef.current = null;
     verificacionRedRef.current = null;
     setAvisoAcceso(mensaje);
@@ -1148,23 +1153,46 @@ function AppContenido() {
   //     restauradas (antes solo en el login interactivo).
   //   · Cada paso revisa que la sesión siga siendo la misma: un cierre de sesión a
   //     mitad del arranque no debe reabrirla.
+  //   · ✅ V00447 (arranque): la revisión de la red ya NO detiene la app cuando la
+  //     caché local sabe que ningún rol del usuario la exige: corre en segundo plano
+  //     y, si el servidor dice lo contrario, cierra la sesión. Los usuarios cuyo rol
+  //     sí la exige (o con roles desconocidos en este navegador) esperan como antes.
   const abrirSesion = useCallback(async (uid: string, email: string, datos: Record<string, unknown> | null): Promise<void> => {
-    const vigente = () => auth.currentUser?.uid === uid;
+    const vigente = () => auth.currentUser?.uid === uid && !denegandoRef.current;
+    if (!vigente()) return;
     const veredicto = evaluarPerfil(datos);
     if (veredicto !== 'ok' || !datos) {
       await negarAcceso(MENSAJE_ACCESO[veredicto === 'ok' ? 'sin-perfil' : veredicto]);
       return;
     }
-    if (redVerificadaRef.current !== uid) {
-      if (verificacionRedRef.current?.uid !== uid) verificacionRedRef.current = { uid, promesa: verificarRedOficina(datos) };
-      const red = await verificacionRedRef.current.promesa;
-      if (!vigente()) return;
-      if (!red.permitido) {
-        await negarAcceso(red.motivo, `Sesión cerrada para ${email || uid}: fuera de la red de la oficina${red.ipDetectada ? ` (IP ${red.ipDetectada})` : ''}.`);
-        return;
+    const clave = claveRevisionRed(uid, datos);
+    if (redVerificadaRef.current !== clave) {
+      if (verificacionRedRef.current?.clave !== clave) {
+        // Una sola revisión por usuario y roles; su resultado se aplica aquí (también si corre en segundo plano).
+        const promesa = verificarRedOficina(datos)
+          .catch((e: unknown) => { console.warn('[sesión] No se pudo revisar la red de la oficina.', e); return null; })
+          .then(async (red) => {
+            if (red === null) {
+              if (verificacionRedRef.current?.clave === clave) verificacionRedRef.current = null; // se reintenta con el próximo perfil
+              return null;
+            }
+            if (auth.currentUser?.uid !== uid || denegandoRef.current || verificacionRedRef.current?.clave !== clave) return red;
+            if (red.permitido) redVerificadaRef.current = clave;
+            else await negarAcceso(red.motivo, `Sesión cerrada para ${email || uid}: fuera de la red de la oficina${red.ipDetectada ? ` (IP ${red.ipDetectada})` : ''}.`);
+            return red;
+          });
+        verificacionRedRef.current = { clave, promesa };
       }
-      redVerificadaRef.current = uid;
-      iniciarFlags();
+      const promesa = verificacionRedRef.current.promesa;
+      if (!(await redLibreSegunCache(datos))) {
+        const red = await promesa;
+        if (!vigente()) return;
+        if (red === null) {
+          await negarAcceso('No pudimos verificar la seguridad de tu red. Revisa tu conexión e intenta de nuevo.');
+          return;
+        }
+        if (!red.permitido) return;
+      }
     }
     if (!vigente()) return;
     setUsuarioActualDB((prev: Record<string, unknown> | null) => {
@@ -1183,6 +1211,23 @@ function AppContenido() {
       //   de abrir la sesión cuando llegue el documento.
       try {
         if (user) {
+          denegandoRef.current = false;
+          // ✅ V00447 (arranque): las banderas empiezan a leerse YA (antes esperaban a la
+          //   revisión del perfil y de la red: 3-4 consultas en fila antes de pedir datos).
+          iniciarFlags();
+          // ✅ V00447: perfil desde la caché local (IndexedDB) → la app abre sin esperar a la red.
+          //   El listener del perfil propio (abajo) lo confirma con el servidor y cierra la
+          //   sesión si el administrador lo desactivó o lo borró. Si sus roles (según la caché)
+          //   exigen la red de la oficina, se lee primero el perfil del servidor (roles al día).
+          try {
+            const enCache = await getDocFromCache(doc(db, 'usuarios', user.uid));
+            if (auth.currentUser?.uid !== user.uid) return;
+            const datosCache = enCache.exists() ? enCache.data() : null;
+            if (datosCache && evaluarPerfil(datosCache) === 'ok' && await redLibreSegunCache(datosCache)) {
+              await abrirSesion(user.uid, user.email ?? '', datosCache);
+              return;
+            }
+          } catch { /* el perfil no está en la caché de este navegador: se lee del servidor */ }
           try {
             const userDoc = await getDoc(doc(db, 'usuarios', user.uid));
             if (auth.currentUser?.uid !== user.uid) return;
@@ -1195,6 +1240,7 @@ function AppContenido() {
         } else {
           redVerificadaRef.current = null;
           verificacionRedRef.current = null;
+          denegandoRef.current = false;
           setEstaAutenticado(false);
           setUsuarioActualDB(null);
           detenerFlags();
@@ -2018,7 +2064,7 @@ function AppContenido() {
             {moduloActivo === 'etiquetas' && puede('etiquetas') && (
               <EtiquetasDashboard />
             )}
-            <MantenerVivo activo={moduloActivo === 'operaciones' && puede('operaciones')}>{/* ✅ V00264 */}
+            <MantenerVivo activo={moduloActivo === 'operaciones' && puede('operaciones')} siempreEscuchando>{/* ✅ V00264 · V00447 */}
               <>
                 <ResumenDelDia />
                 <OperacionesDashboard />

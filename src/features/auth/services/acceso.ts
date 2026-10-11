@@ -13,7 +13,8 @@
 //    `catalogo_roles`, la vieja). Se revisa al iniciar sesión Y al restaurar una
 //    sesión guardada (antes solo en el login interactivo).
 // ---------------------------------------------------------------------------
-import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, getDocsFromCache, query, where } from 'firebase/firestore';
+import type { Query, QuerySnapshot } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { COL } from '../../../shared/dominio/constantes';
 import type { VeredictoPerfil } from './reglasAcceso';
@@ -26,17 +27,43 @@ const rolesDe = (perfil: Record<string, unknown>): string[] => {
   return roles.map((r) => String(r ?? '').trim()).filter(Boolean);
 };
 
-/** ¿Alguno de los roles del usuario exige estar en la red de la oficina? */
-const rolesExigenOficina = async (roles: string[]): Promise<boolean> => {
-  if (roles.length === 0) return false;
+/** ✅ V00447: identifica la revisión de red por usuario Y roles: si cambian los roles, se revisa otra vez. */
+export const claveRevisionRed = (uid: string, perfil: Record<string, unknown>): string =>
+  `${uid}|${[...rolesDe(perfil)].sort().join(',')}`;
+
+/** Documentos de los roles del usuario en las dos colecciones de roles (todas las consultas a la vez). */
+const leerRoles = async (roles: string[], leer: (q: Query) => Promise<QuerySnapshot>): Promise<QuerySnapshot[]> => {
+  const consultas: Promise<QuerySnapshot>[] = [];
   for (const coleccion of [COL.roles, 'catalogo_roles']) {
     for (let i = 0; i < roles.length; i += 30) {
-      const tanda = roles.slice(i, i + 30);
-      const snap = await getDocs(query(collection(db, coleccion), where('nombre', 'in', tanda)));
-      if (snap.docs.some((d) => d.get('requiereIPOficina') === true)) return true;
+      consultas.push(leer(query(collection(db, coleccion), where('nombre', 'in', roles.slice(i, i + 30)))));
     }
   }
-  return false;
+  return Promise.all(consultas);
+};
+const exigeOficina = (snaps: QuerySnapshot[]): boolean => snaps.some((s) => s.docs.some((d) => d.get('requiereIPOficina') === true));
+
+/** ¿Alguno de los roles del usuario exige estar en la red de la oficina? (servidor) */
+const rolesExigenOficina = async (roles: string[]): Promise<boolean> =>
+  roles.length > 0 && exigeOficina(await leerRoles(roles, getDocs));
+
+/**
+ * ✅ V00447 (arranque): lo mismo, pero con la caché local (IndexedDB), sin esperar a la red.
+ * true = la caché dice que NINGÚN rol exige la red de la oficina → la app puede abrir ya y el
+ * veredicto definitivo (servidor) llega en segundo plano. false = algún rol la exige, o la caché
+ * no conoce TODOS los roles (primera vez en este navegador, rol nuevo): hay que esperar la revisión completa.
+ */
+export const redLibreSegunCache = async (perfil: Record<string, unknown>): Promise<boolean> => {
+  const roles = rolesDe(perfil);
+  if (roles.length === 0) return true;
+  try {
+    const snaps = await leerRoles(roles, getDocsFromCache);
+    const conocidos = new Set(snaps.flatMap((s) => s.docs.map((d) => String(d.get('nombre') ?? '').trim())));
+    if (roles.some((r) => !conocidos.has(r))) return false; // algún rol no está guardado en este navegador
+    return !exigeOficina(snaps);
+  } catch {
+    return false;
+  }
 };
 
 /** IP de la oficina configurada (un solo valor aunque esté guardado con el nombre viejo). */

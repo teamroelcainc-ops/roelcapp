@@ -191,79 +191,79 @@ export const RolesDashboard: React.FC = () => {
   const todosSeleccionados = TODOS_LOS_MODULOS.every(m => modulos.includes(m));
 
   return (
-    <div className="module-container rd-x1">
+    <div className="module-container rld-x1">
       
       {/* SECCIÓN 1: CONFIGURACIÓN IP (EXCLUSIVO PARA EL RELOJ) */}
-      <div className="rd-x2">
-        <h3 className="rd-x3">
+      <div className="rld-x2">
+        <h3 className="rld-x3">
           Configuración de Red para Reloj Checador
         </h3>
-        <p className="rd-x4">
+        <p className="rld-x4">
           Define aquí la Dirección IP pública del internet de tu oficina. Los colaboradores operativos <strong>solo podrán registrar su asistencia</strong> si se encuentran conectados a esta red.
         </p>
-        <div className="rd-x5">
+        <div className="rld-x5">
           <input 
             type="text" 
             value={ipOficial} 
             onChange={(e) => setIpOficial(e.target.value)} 
             placeholder="Ej. 192.168.1.1" 
-            className="form-control rd-x6" 
+            className="form-control rld-x6" 
           />
-          <button onClick={detectarIp} className="btn btn-outline rd-x7">
+          <button onClick={detectarIp} className="btn btn-outline rld-x7">
             Detectar mi IP actual
           </button>
-          <button onClick={guardarIp} className="btn btn-primary rd-x8" disabled={guardandoIp}>
+          <button onClick={guardarIp} className="btn btn-primary rld-x8" disabled={guardandoIp}>
             {guardandoIp ? 'Guardando...' : 'Guardar IP Oficial'}
           </button>
         </div>
       </div>
 
       {/* SECCIÓN 2: LISTA DE ROLES */}
-      <div className="module-header rd-x9">
-        <h2 className="rd-x10">
-          Configuración {'>'} <span className="rd-x11">Roles y Permisos ({roles.length})</span>
+      <div className="module-header rld-x9">
+        <h2 className="rld-x10">
+          Configuración {'>'} <span className="rld-x11">Roles y Permisos ({roles.length})</span>
         </h2>
         <button className="btn btn-primary" onClick={abrirModalNuevo}>+ Nuevo Rol</button>
       </div>
 
-      <div className="table-container rd-x12">
-        <table className="data-table rd-x13">
-          <thead className="rd-x14">
+      <div className="table-container rld-x12">
+        <table className="data-table rld-x13">
+          <thead className="rld-x14">
             <tr>
-              <th className="rd-x15">ACCIONES</th>
-              <th className="rd-x16">NOMBRE DEL ROL</th>
-              <th className="rd-x16">MÓDULOS PERMITIDOS</th>
+              <th className="rld-x15">ACCIONES</th>
+              <th className="rld-x16">NOMBRE DEL ROL</th>
+              <th className="rld-x16">MÓDULOS PERMITIDOS</th>
             </tr>
           </thead>
           <tbody>
             {roles.map(rol => (
-              <tr className="rd-x17" key={rol.id}>
-                <td className="rd-x18">
-                  <div className="rd-x19">
+              <tr className="rld-x17" key={rol.id}>
+                <td className="rld-x18">
+                  <div className="rld-x19">
                     <button 
                       onClick={() => abrirModalEditar(rol)} 
-                      className="btn-small btn-edit rd-x20"
+                      className="btn-small btn-edit rld-x20"
                     >
                       Editar
                     </button>
                     <button 
                       onClick={() => eliminarRol(rol.id, rol.nombre)} 
-                      className="btn-small btn-danger rd-x21"
+                      className="btn-small btn-danger rld-x21"
                     >
                       Eliminar
                     </button>
                   </div>
                 </td>
-                <td className="rd-x22">
+                <td className="rld-x22">
                   {rol.nombre}
                   {rol.requiereIPOficina === true && (
                     <span className="rd-ip-badge" title="Solo puede iniciar sesión desde la red de la oficina">Red de oficina</span>
                   )}
                 </td>
-                <td className="rd-x23">
-                  <div className="rd-x24">
+                <td className="rld-x23">
+                  <div className="rld-x24">
                     {rol.modulosPermitidos?.map((mod: string) => (
-                      <span className="rd-x25" key={mod}>
+                      <span className="rld-x25" key={mod}>
                         {etiquetaPermiso(mod)}
                       </span>
                     ))}
@@ -338,21 +338,21 @@ export const RolesDashboard: React.FC = () => {
       })()}
 
       {modalAbierto && (
-        <div className="modal-overlay rd-x26">
-          <div className="form-card rd-x27">
-            <div className="form-header rd-x28">
-              <h2 className="rd-x29">
+        <div className="modal-overlay rld-x26">
+          <div className="form-card rld-x27">
+            <div className="form-header rld-x28">
+              <h2 className="rld-x29">
                 {rolEditando ? 'Editar Rol' : 'Nuevo Rol'}
               </h2>
-              <button className="rd-x30" onClick={() => setModalAbierto(false)}>✕</button>
+              <button className="rld-x30" onClick={() => setModalAbierto(false)}>✕</button>
             </div>
 
-            <form className="rd-x31" onSubmit={guardarRol}>
-              <div className="form-group rd-x32">
-                <label className="form-label rd-x33">Nombre del Rol (Ej. VENTAS, ADMIN) *</label>
+            <form className="rld-x31" onSubmit={guardarRol}>
+              <div className="form-group rld-x32">
+                <label className="form-label rld-x33">Nombre del Rol (Ej. VENTAS, ADMIN) *</label>
                 <input 
                   type="text" 
-                  className="form-control rd-x34" 
+                  className="form-control rld-x34" 
                   value={nombreRol} 
                   onChange={(e) => setNombreRol(e.target.value)} 
                   required
@@ -360,9 +360,9 @@ export const RolesDashboard: React.FC = () => {
               </div>
 
               {/* ✅ V00437 (Fase 1.7): restricción de red por rol (la revisa el login). */}
-              <div className="form-group rd-x32">
-                <label className="rd-x45" title="Los usuarios con este rol solo podrán iniciar sesión desde la red de la oficina (la IP configurada arriba).">
-                  <input className="rd-x39"
+              <div className="form-group rld-x32">
+                <label className="rld-x45" title="Los usuarios con este rol solo podrán iniciar sesión desde la red de la oficina (la IP configurada arriba).">
+                  <input className="rld-x39"
                     type="checkbox"
                     checked={requiereIPOficina}
                     onChange={(e) => setRequiereIPOficina(e.target.checked)}
@@ -371,11 +371,11 @@ export const RolesDashboard: React.FC = () => {
                 </label>
               </div>
 
-              <div className="form-group rd-x35">
-                <div className="rd-x36">
-                  <label className="form-label rd-x37">Selecciona los módulos a los que tendrá acceso:</label>
-                  <label className="rd-x38">
-                    <input className="rd-x39"
+              <div className="form-group rld-x35">
+                <div className="rld-x36">
+                  <label className="form-label rld-x37">Selecciona los módulos a los que tendrá acceso:</label>
+                  <label className="rld-x38">
+                    <input className="rld-x39"
                       type="checkbox"
                       checked={todosSeleccionados}
                       onChange={toggleTodos}
@@ -384,28 +384,28 @@ export const RolesDashboard: React.FC = () => {
                   </label>
                 </div>
 
-                <div className="rd-x40">
+                <div className="rld-x40">
                   {GRUPOS_MODULOS.map(g => {
                     const todosGrupo = g.modulos.every(m => modulos.includes(m));
                     const algunosGrupo = g.modulos.some(m => modulos.includes(m));
                     return (
-                      <div className="rd-x41" key={g.grupo}>
+                      <div className="rld-x41" key={g.grupo}>
                         {/* Encabezado del grupo (equivale al item del MENÚ) */}
-                        <label className="rd-x42">
-                          <input className="rd-x39"
+                        <label className="rld-x42">
+                          <input className="rld-x39"
                             type="checkbox"
                             checked={todosGrupo}
                             ref={el => { if (el) el.indeterminate = !todosGrupo && algunosGrupo; }}
                             onChange={() => toggleGrupoModulos(g.modulos)}
                           />
-                          <span className="rd-x43">{g.grupo}</span>
+                          <span className="rld-x43">{g.grupo}</span>
                         </label>
 
                         {/* Módulos del grupo (equivalen a los items del SUBMENÚ) */}
-                        <div className="rd-x44">
+                        <div className="rld-x44">
                           {g.modulos.map(mod => (
-                            <label className="rd-x45" key={mod}>
-                              <input className="rd-x39" 
+                            <label className="rld-x45" key={mod}>
+                              <input className="rld-x39" 
                                 type="checkbox" 
                                 checked={modulos.includes(mod)} 
                                 onChange={() => toggleModulo(mod)}
@@ -420,9 +420,9 @@ export const RolesDashboard: React.FC = () => {
                 </div>
               </div>
 
-              <div className="rd-x46">
-                <button type="button" onClick={() => setModalAbierto(false)} className="btn btn-outline rd-x47">Cancelar</button>
-                <button type="submit" className="btn btn-primary rd-x48" disabled={cargandoRol}>
+              <div className="rld-x46">
+                <button type="button" onClick={() => setModalAbierto(false)} className="btn btn-outline rld-x47">Cancelar</button>
+                <button type="submit" className="btn btn-primary rld-x48" disabled={cargandoRol}>
                   {cargandoRol ? 'Guardando...' : 'Guardar Rol'}
                 </button>
               </div>

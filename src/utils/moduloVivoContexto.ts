@@ -13,7 +13,10 @@ export const useModuloVivoActivo = (): boolean => useContext(ContextoModuloVivoA
  * cierra y reabre la escucha (antes cada regreso volvía a cargar y repintar todo).
  * Para "¿es el módulo que se ve?" (buscador global, avisos) usa useModuloVivoActivo.
  */
-export const MINUTOS_GRACIA_ESCUCHA = 10;
+// ✅ V00447: 10 → 30 min. Un listener cerrado y reabierto antes de 30 min más solo cobra
+//   los cambios (token de reanudación de Firestore); así ir y volver en la misma hora no
+//   vuelve a bajar el módulo completo.
+export const MINUTOS_GRACIA_ESCUCHA = 30;
 export const ContextoModuloEscuchando = createContext(true);
 export const useModuloEscuchando = (): boolean => useContext(ContextoModuloEscuchando);
 

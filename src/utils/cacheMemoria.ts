@@ -48,6 +48,20 @@ export const limpiarCachesPorPrefijo = (prefijo: string): void => {
 // ---------------------------------------------------------------------------
 const espejo = new Map<string, string>();
 
+// ✅ V00447: tope de lo que se copia a localStorage. La caché de Firestore ahora coordina
+//   las pestañas por localStorage (persistentMultipleTabManager) y con la cuota llena se
+//   congela; los valores grandes (miles de operaciones) se quedan solo en memoria.
+const MAX_VALOR_LOCAL = 200_000; // caracteres por clave
+const MAX_TOTAL_LOCAL = 2_000_000; // caracteres en todo localStorage
+const totalLocal = (): number => {
+  let t = 0;
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i) || '';
+    t += k.length + (localStorage.getItem(k)?.length || 0);
+  }
+  return t;
+};
+
 export const almacenSesion = {
   // ✅ V00295: el respaldo pasa de sessionStorage a LOCALSTORAGE — el session
   //   NO se comparte entre pestañas, y por eso "Ver en nueva pestaña" volvía a
@@ -60,7 +74,14 @@ export const almacenSesion = {
   },
   setItem(clave: string, valor: string): void {
     espejo.set(clave, valor);
-    try { localStorage.setItem(clave, valor); } catch { /* cuota agotada: la memoria ya lo tiene */ }
+    try {
+      const previo = localStorage.getItem(clave)?.length || 0;
+      if (valor.length > MAX_VALOR_LOCAL || totalLocal() - previo + valor.length > MAX_TOTAL_LOCAL) {
+        localStorage.removeItem(clave); // grande: solo en memoria (sin copia vieja que confunda)
+        return;
+      }
+      localStorage.setItem(clave, valor);
+    } catch { /* cuota agotada: la memoria ya lo tiene */ }
   },
   removeItem(clave: string): void {
     espejo.delete(clave);

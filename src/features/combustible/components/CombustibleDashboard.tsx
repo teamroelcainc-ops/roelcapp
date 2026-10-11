@@ -160,15 +160,15 @@ export const CombustibleDashboard: React.FC = () => {
   // ✅ RENDERIZADOR DINÁMICO DE CELDAS
   const renderCellContent = (r: CombustibleRecord, colId: string) => {
     switch (colId) {
-      case 'fecha': return <span className="cd-x1">{formatearFechaEsp(r.fecha)}</span>;
-      case 'proveedor': return <span className="cd-x2">{r.proveedor}</span>;
-      case 'tipoCombustible': return <span className="cd-x2">{r.tipoCombustible}</span>;
-      case 'tipoMedida': return <span className="cd-x2">{r.tipoMedida}</span>;
-      case 'monedaNombre': return <span className="cd-x2">{r.monedaNombre}</span>;
-      case 'costo': return <span className="font-mono cd-x3">${r.costo.toFixed(2)}</span>;
-      case 'tipoCambio': return <span className="font-mono cd-x2">{r.tipoCambio ? `$${r.tipoCambio.toFixed(4)}` : '-'}</span>;
-      case 'totalPesos': return <span className="font-mono cd-x4">{r.totalPesos ? `$${r.totalPesos.toFixed(2)}` : '-'}</span>;
-      default: return <span className="cd-x5">-</span>;
+      case 'fecha': return <span className="cbd-x1">{formatearFechaEsp(r.fecha)}</span>;
+      case 'proveedor': return <span className="cbd-x2">{r.proveedor}</span>;
+      case 'tipoCombustible': return <span className="cbd-x2">{r.tipoCombustible}</span>;
+      case 'tipoMedida': return <span className="cbd-x2">{r.tipoMedida}</span>;
+      case 'monedaNombre': return <span className="cbd-x2">{r.monedaNombre}</span>;
+      case 'costo': return <span className="font-mono cbd-x3">${r.costo.toFixed(2)}</span>;
+      case 'tipoCambio': return <span className="font-mono cbd-x2">{r.tipoCambio ? `$${r.tipoCambio.toFixed(4)}` : '-'}</span>;
+      case 'totalPesos': return <span className="font-mono cbd-x4">{r.totalPesos ? `$${r.totalPesos.toFixed(2)}` : '-'}</span>;
+      default: return <span className="cbd-x5">-</span>;
     }
   };
 
@@ -204,63 +204,63 @@ export const CombustibleDashboard: React.FC = () => {
   };
 
   return (
-    <div className="module-container cd-x6">
+    <div className="module-container cbd-x6">
       
       {/* CONTENEDOR MAESTRO */}
-      <div className="cd-x7">
+      <div className="cbd-x7">
         
         {/* TÍTULO LIMPIO */}
-        <h1 className="module-title cd-x8">
+        <h1 className="module-title cbd-x8">
           Costo del Combustible
         </h1>
 
         {/* BARRA DE CONTROLES */}
-        <div className="cd-x9">
+        <div className="cbd-x9">
           
           {/* Izquierda: Filtro Estático */}
-          <div className="cd-x10">
-            <select className="form-control cd-x11">
+          <div className="cbd-x10">
+            <select className="form-control cbd-x11">
               <option>Filtro: Todo</option>
             </select>
           </div>
 
           {/* Centro: Buscador Inteligente */}
-          <div className="cd-x12">
+          <div className="cbd-x12">
             <button onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros"
               style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${busqueda ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
               Filtros
-              {busqueda && <span className="cd-x13">1</span>}
+              {busqueda && <span className="cbd-x13">1</span>}
             </button>
             {busqueda && (
-              <span className="cd-x14">
+              <span className="cbd-x14">
                 "{busqueda}"
-                <button className="cd-x15" onClick={() => setBusqueda('')}>✕</button>
+                <button className="cbd-x15" onClick={() => setBusqueda('')}>✕</button>
               </span>
             )}
-            <span className="cd-x16">
+            <span className="cbd-x16">
               {busquedaHecha ? `${registrosFiltrados.length} registros` : 'Presiona Filtros y Buscar para ver el catálogo.'}
             </span>
           </div>
 
           {/* Derecha: Botones */}
-          <div className="cd-x17">
+          <div className="cbd-x17">
             <button 
-              className="btn btn-outline cd-x18" 
+              className="btn btn-outline cbd-x18" 
               title="Configurar Columnas"
               onClick={() => setModalColumnas(true)}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
             </button>
             <button 
-              className="btn btn-outline cd-x18" 
+              className="btn btn-outline cbd-x18" 
               title="Exportar a Excel"
               onClick={exportarExcel}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             </button>
             <button 
-              className="btn btn-primary cd-x19" 
+              className="btn btn-primary cbd-x19" 
               title="Agregar Registro de Combustible"
               onClick={handleNuevo}
             >
@@ -270,16 +270,16 @@ export const CombustibleDashboard: React.FC = () => {
         </div>
 
         {/* TABLA RESPONSIVE */}
-        <div className="content-body cd-x20">
-          <div className="table-container cd-x21">
-            <table className="data-table cd-x22">
-              <thead className="cd-x23">
+        <div className="content-body cbd-x20">
+          <div className="table-container cbd-x21">
+            <table className="data-table cbd-x22">
+              <thead className="cbd-x23">
                 <tr>
-                  <th className="cd-x24">
+                  <th className="cbd-x24">
                     Acciones
                   </th>
                   {columnasTabla.filter(c => c.visible).map(col => (
-                    <th className="cd-x25" key={`th_${col.id}`}>
+                    <th className="cbd-x25" key={`th_${col.id}`}>
                       {col.label}
                     </th>
                   ))}
@@ -287,16 +287,16 @@ export const CombustibleDashboard: React.FC = () => {
               </thead>
               <tbody>
                 {!busquedaHecha ? (
-                  <tr><td className="cd-x26" colSpan={columnasTabla.length + 1}>
-                    <div className="cd-x27">
+                  <tr><td className="cbd-x26" colSpan={columnasTabla.length + 1}>
+                    <div className="cbd-x27">
                       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.6"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-                      <span className="cd-x28">Define tus filtros y presiona <b className="cd-x29">Buscar</b> para ver los costos de combustible.</span>
-                      <button className="cd-x30" onClick={() => setDrawerFiltrosAbierto(true)}>Abrir filtros</button>
+                      <span className="cbd-x28">Define tus filtros y presiona <b className="cbd-x29">Buscar</b> para ver los costos de combustible.</span>
+                      <button className="cbd-x30" onClick={() => setDrawerFiltrosAbierto(true)}>Abrir filtros</button>
                     </div>
                   </td></tr>
                 ) : registrosEnPantalla.length === 0 ? (
                   <tr>
-                    <td className="cd-x31" colSpan={columnasTabla.length + 1}>
+                    <td className="cbd-x31" colSpan={columnasTabla.length + 1}>
                       {busqueda ? 'No se encontraron registros para tu búsqueda.' : 'Aún no hay registros. Haz clic en el botón de agregar (+) para crear el primero.'}
                     </td>
                   </tr>
@@ -311,10 +311,10 @@ export const CombustibleDashboard: React.FC = () => {
                         onMouseLeave={() => setHoveredRowId(null)}
                       >
                         {/* CELDA ACCIONES FIJA */}
-                        <td className="cd-x32">
-                          <div className="actions-cell cd-x33">
+                        <td className="cbd-x32">
+                          <div className="actions-cell cbd-x33">
                             <button 
-                              className="btn-small btn-edit cd-x34" 
+                              className="btn-small btn-edit cbd-x34" 
                               title="Editar Registro"
                               onClick={(e) => { e.stopPropagation(); handleEditar(r); }}
                               onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'}
@@ -323,7 +323,7 @@ export const CombustibleDashboard: React.FC = () => {
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                             </button>
                             <button 
-                              className="btn-small btn-danger cd-x35" 
+                              className="btn-small btn-danger cbd-x35" 
                               title="Eliminar Registro"
                               onClick={(e) => handleEliminar(e, docId)}
                               onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
@@ -335,7 +335,7 @@ export const CombustibleDashboard: React.FC = () => {
                         </td>
 
                         {columnasTabla.filter(col => col.visible).map(col => (
-                          <td className="cd-x36" key={`cell_${docId}_${col.id}`}>
+                          <td className="cbd-x36" key={`cell_${docId}_${col.id}`}>
                             {renderCellContent(r, col.id)}
                           </td>
                         ))}
@@ -349,11 +349,11 @@ export const CombustibleDashboard: React.FC = () => {
 
           {/* CONTROLES DE PAGINACIÓN */}
           {busquedaHecha && registrosFiltrados.length > 0 && (
-            <div className="cd-x37">
-              <div className="cd-x38">
+            <div className="cbd-x37">
+              <div className="cbd-x38">
                 Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, registrosFiltrados.length)} de {registrosFiltrados.length} registros
               </div>
-              <div className="cd-x39">
+              <div className="cbd-x39">
                 <button 
                   onClick={irPaginaAnterior} 
                   disabled={paginaActual === 1}
@@ -362,7 +362,7 @@ export const CombustibleDashboard: React.FC = () => {
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
                 </button>
-                <span className="cd-x40">{paginaActual} / {totalPaginas || 1}</span>
+                <span className="cbd-x40">{paginaActual} / {totalPaginas || 1}</span>
                 <button 
                   onClick={irPaginaSiguiente} 
                   disabled={paginaActual === totalPaginas || totalPaginas === 0}
@@ -380,15 +380,15 @@ export const CombustibleDashboard: React.FC = () => {
 
       {/* MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
       {modalColumnas && (
-        <div className="modal-overlay cd-x41">
-          <div className="cd-x42">
-            <div className="cd-x43">
-              <h3 className="cd-x44">Configurar Columnas de la Tabla</h3>
-              <button className="cd-x45" onClick={() => setModalColumnas(false)}>✕</button>
+        <div className="modal-overlay cbd-x41">
+          <div className="cbd-x42">
+            <div className="cbd-x43">
+              <h3 className="cbd-x44">Configurar Columnas de la Tabla</h3>
+              <button className="cbd-x45" onClick={() => setModalColumnas(false)}>✕</button>
             </div>
-            <p className="cd-x46">Arrastra los elementos para reorganizar el orden de la tabla. Desmarca las casillas para ocultar columnas.</p>
+            <p className="cbd-x46">Arrastra los elementos para reorganizar el orden de la tabla. Desmarca las casillas para ocultar columnas.</p>
             
-            <ul className="cd-x47">
+            <ul className="cbd-x47">
               {columnasTabla.map((col, idx) => (
                 <li 
                   key={col.id}
@@ -400,13 +400,13 @@ export const CombustibleDashboard: React.FC = () => {
                   style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', backgroundColor: draggedColIndex === idx ? '#1f2937' : '#161b22', border: '1px solid #30363d', borderRadius: '6px', cursor: 'grab', transition: 'background-color 0.2s' }}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-                  <input className="cd-x48" type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} />
+                  <input className="cbd-x48" type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} />
                   <span style={{ color: col.visible ? '#c9d1d9' : '#484f58', fontSize: '0.85rem', fontWeight: col.visible ? 'bold' : 'normal' }}>{col.label}</span>
                 </li>
               ))}
             </ul>
-            <div className="cd-x49">
-              <button className="cd-x50" onClick={() => setModalColumnas(false)}>Aplicar Cambios</button>
+            <div className="cbd-x49">
+              <button className="cbd-x50" onClick={() => setModalColumnas(false)}>Aplicar Cambios</button>
             </div>
           </div>
         </div>
@@ -423,20 +423,20 @@ export const CombustibleDashboard: React.FC = () => {
 
       {/* NUEVO: panel lateral DERECHO de filtros (Combustible) */}
       {drawerFiltrosAbierto && (
-        <div className="cd-x51" onClick={() => setDrawerFiltrosAbierto(false)}>
-          <div className="cd-x52" onClick={(e) => e.stopPropagation()}>
-            <div className="cd-x53">
-              <h3 className="cd-x54">Filtros · Combustible</h3>
-              <button className="cd-x45" onClick={() => setDrawerFiltrosAbierto(false)}>✕</button>
+        <div className="cbd-x51" onClick={() => setDrawerFiltrosAbierto(false)}>
+          <div className="cbd-x52" onClick={(e) => e.stopPropagation()}>
+            <div className="cbd-x53">
+              <h3 className="cbd-x54">Filtros · Combustible</h3>
+              <button className="cbd-x45" onClick={() => setDrawerFiltrosAbierto(false)}>✕</button>
             </div>
 
-            <div className="cd-x55">
-              <label className="cd-x56">BÚSQUEDA</label>
-              <div className="cd-x57">
-                <svg className="cd-x58" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                <input className="cd-x59" type="text" placeholder="Proveedor, fecha, monto..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
+            <div className="cbd-x55">
+              <label className="cbd-x56">BÚSQUEDA</label>
+              <div className="cbd-x57">
+                <svg className="cbd-x58" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input className="cbd-x59" type="text" placeholder="Proveedor, fecha, monto..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
                 {busqueda && (
-                  <button className="cd-x60" onClick={() => setBusqueda('')} title="Limpiar">✕</button>
+                  <button className="cbd-x60" onClick={() => setBusqueda('')} title="Limpiar">✕</button>
                 )}
               </div>
             </div>
@@ -444,22 +444,22 @@ export const CombustibleDashboard: React.FC = () => {
             {/* ✅ NUEVO: rango de fechas */}
             <div className="cd-fechas">
               <div className="cd-fecha-campo">
-                <label className="cd-x56">FECHA DESDE</label>
+                <label className="cbd-x56">FECHA DESDE</label>
                 <input type="date" value={fechaDesde} onChange={(e) => setFechaDesde(e.target.value)} className="cd-fecha-input" />
               </div>
               <div className="cd-fecha-campo">
-                <label className="cd-x56">FECHA HASTA</label>
+                <label className="cbd-x56">FECHA HASTA</label>
                 <input type="date" value={fechaHasta} min={fechaDesde || undefined} onChange={(e) => setFechaHasta(e.target.value)} className="cd-fecha-input" />
               </div>
             </div>
 
-            <div className="cd-x61">
-              La búsqueda y las fechas son <b className="cd-x62">opcionales</b>. Presiona <b className="cd-x29">Buscar</b> para ver todo el catálogo.
+            <div className="cbd-x61">
+              La búsqueda y las fechas son <b className="cbd-x62">opcionales</b>. Presiona <b className="cbd-x29">Buscar</b> para ver todo el catálogo.
             </div>
 
-            <div className="cd-x63">
-              <button className="cd-x64" onClick={() => { setBusqueda(''); setFechaDesde(''); setFechaHasta(''); setBusquedaHecha(false); }}>Limpiar</button>
-              <button className="cd-x65" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>Buscar</button>
+            <div className="cbd-x63">
+              <button className="cbd-x64" onClick={() => { setBusqueda(''); setFechaDesde(''); setFechaHasta(''); setBusquedaHecha(false); }}>Limpiar</button>
+              <button className="cbd-x65" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>Buscar</button>
             </div>
           </div>
         </div>
