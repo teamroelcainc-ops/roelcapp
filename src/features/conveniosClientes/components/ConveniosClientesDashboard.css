@@ -84,7 +84,6 @@
 .ccd-x80 { padding: 12px 16px; white-space: nowrap; }
 .ccd-x81 { background: transparent; border: 1px solid #3b82f6; border-radius: 4px; color: #3b82f6; cursor: pointer; padding: 6px; display: flex; align-items: center; justify-content: center; }
 .ccd-x82 { background: transparent; border: 1px solid #ef4444; border-radius: 4px; color: #ef4444; cursor: pointer; padding: 6px; display: flex; align-items: center; justify-content: center; }
-.ccd-x83 { padding: 40px; text-align: center; color: #8b949e; }
 .ccd-x84 { width: 100%; border-collapse: collapse; text-align: left; background-color: #161b22; border-radius: 8px; overflow: hidden; }
 .ccd-x85 { padding: 12px 16px; color: #58a6ff; font-family: monospace; font-weight: bold; }
 .ccd-x86 { padding: 12px 16px; color: #c9d1d9; white-space: nowrap; }
@@ -164,7 +163,6 @@
   .ccd-x79 { flex-wrap: wrap; }
   .ccd-x81 { flex-wrap: wrap; }
   .ccd-x82 { flex-wrap: wrap; }
-  .ccd-x83 { padding: 14px 12px; }
   .ccd-x88 { flex-wrap: wrap; }
   .ccd-x90 { flex-wrap: wrap; }
   .ccd-x91 { padding: 14px 12px; }

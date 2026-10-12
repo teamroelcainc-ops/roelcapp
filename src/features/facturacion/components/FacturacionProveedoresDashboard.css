@@ -211,7 +211,6 @@
 .fpd-x207 { color: #f0f6fc; font-size: 1.15rem; font-weight: bold; }
 .fpd-x208 { background: transparent; border: none; color: #8b949e; font-size: 1.4rem; cursor: pointer; }
 .fpd-x209 { padding: 24px; display: flex; flex-direction: column; gap: 18px; }
-.fpd-x210 { color: #f59e0b; font-size: 0.85rem; }
 .fpd-x211 { color: #8b949e; font-size: 0.78rem; font-weight: bold; text-transform: uppercase; margin-bottom: 10px; }
 .fpd-x212 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .fpd-x213 { background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 14px; }

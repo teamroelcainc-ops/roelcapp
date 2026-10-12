@@ -17,6 +17,9 @@
 .rdo-x13 { background: #0d1117; padding: 10px 14px; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; }
 .rdo-x14 { color: #8b949e; font-size: 0.8rem; }
 .rdo-x15 { width: 100%; height: 520px; border: none; background: #fff; }
+/* ✅ V00449: en lugar de la vista previa mientras llegan las operaciones (fondo oscuro: la
+   animación está hecha para él; misma altura que el iframe para que no brinque). */
+.rdo-cargando { background: #0d1117; min-height: 520px; display: flex; align-items: center; }
 
 /* MOBILE-DENSITY-AUTO */
 /* Reglas de densidad móvil generadas automáticamente. */

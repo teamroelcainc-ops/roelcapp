@@ -97,6 +97,7 @@ import { reservarConsecutivosDetalleProveedor, reservarConsecutivosTarifarioProv
 import { urlVerEnPestana, filtrosDeUrl } from '../../../utils/verEnPestana'; // ✅ V00312
 import { cargarObligatoriosTarifa, guardarObligatoriosTarifa, ETIQUETAS_CAMPOS_TARIFA, OBLIGATORIOS_TARIFA_DEFAULT, type CamposObligatoriosTarifa } from '../../../utils/camposObligatoriosTarifa'; // ✅ V00286
 import '../../tarifarioClientes/components/TarifarioClientesDashboard.css'; // ✅ V00211: mismo estilo
+import CargandoDatos from '../../../shared/components/CargandoDatos';
 import { idReal, obtenerCatalogo, useCatalogos } from '../../../shared/data/catalogos';
 import { ID_MXN, ID_USD } from '../../../shared/dominio/constantes';
 import { monedaCanonica } from '../../../shared/dominio/moneda';
@@ -210,6 +211,9 @@ export function TarifarioProveedoresDashboard() {
 
   // ── Pre convenios guardados ──
   const [registros, setRegistros] = useState<Doc[]>([]);
+  // ✅ V00449: ya llegó el primer snapshot de tarifario_proveedores; antes la lista decía
+  //   "Aún no hay pre convenios capturados" mientras seguía en camino.
+  const [registrosListos, setRegistrosListos] = useState(false);
   // ✅ V00195: el detalle es un modal — aquí vive el id del registro abierto.
   const [detalleId, setDetalleId] = useState('');
 
@@ -288,8 +292,8 @@ export function TarifarioProveedoresDashboard() {
     if (!moduloVisible) return;
     const unsub = onSnapshot(
       query(collection(db, 'tarifario_proveedores'), orderBy('createdAt', 'desc'), limit(200)),
-      (snap) => setRegistros(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
-      () => setRegistros([])
+      (snap) => { setRegistros(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); setRegistrosListos(true); },
+      () => { setRegistros([]); setRegistrosListos(true); }
     );
     // (✅ V00439: los Detalles del Convenio llegan por useCatalogos, arriba.)
     return () => { unsub(); };
@@ -1750,7 +1754,9 @@ export function TarifarioProveedoresDashboard() {
           <a className="tc-btn-pestana" href={urlVerEnPestana('tarifarioProveedores', { busquedaLista, filtroEntidad, filtroStatus, filtroMoneda, ordenCol })} target="_blank" rel="noopener noreferrer" title="Abrir esta vista en una pestaña nueva">↗</a>
           <span className="tc-filtros-conteo">{registrosVisibles.length} de {registros.length}</span>
         </div>
-        {registros.length === 0 ? (
+        {!registrosListos && registros.length === 0 ? (
+          <CargandoDatos texto="Cargando pre convenios…" />
+        ) : registros.length === 0 ? (
           <p className="tc-vacio">Aún no hay pre convenios capturados. Usa "+ Nuevo Tarifario" para crear el primero.</p>
         ) : (
           <div className="tc-marco tc-marco--lista">{/* ✅ V00309: scroll interno — encabezado fijo y barra horizontal siempre visible */}

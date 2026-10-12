@@ -19,6 +19,7 @@ import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarChec
 import * as XLSX from 'xlsx';
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
 import './OperacionesDashboard.css';
+import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
 import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
 import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 import { ModalFechaStatus } from './ModalFechaStatus';
@@ -2035,7 +2036,7 @@ const OperacionesDashboard = () => {
         <div className="content-body od-x30">
           <div className="table-container od-x31">
             {cargandoOperaciones ? (
-              <div className="od-x32">Cargando operaciones activas...</div>
+              <CargandoDatos texto="Cargando operaciones activas..." />
             ) : (
               <table className="data-table od-x33">
                 <thead className="od-x34">
@@ -2094,6 +2095,9 @@ const OperacionesDashboard = () => {
               </table>
             )}
           </div>
+
+          {/* ✅ V00449: "Cargar más" descarga 50 más del servidor: animación debajo de la tabla (lo ya visible se queda). */}
+          {cargandoMas && <CargandoDatos compacto texto="Cargando más…" />}
 
           {operacionesFiltradas.length > 0 && !cargandoOperaciones && (
             <div className="od-x43">

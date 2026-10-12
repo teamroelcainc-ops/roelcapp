@@ -80,6 +80,7 @@ import {
   moverIdAlInicio, PAG_FACTURAS, pareceReferencia, parseFechaFactura, refNaturalKey, STATUS_FACTURA_OPCIONES, valorGenericoOp,
 } from '../selectores'; // ✅ V00444 (Fase 8.1): una sola copia (antes idéntica en Clientes y Proveedores)
 import { useOperacionesFacturables } from '../hooks/useOperacionesFacturables'; // ✅ V00444 (Fase 8.1)
+import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
 import { conversionOperacion, montoOperacion } from '../../../shared/dominio/dinero';
 import { leerParaDocumento } from '../../../utils/direccionPdf'; // ✅ V00448
 
@@ -319,7 +320,10 @@ export const FacturacionProveedoresDashboard = () => {
   };
 
   const [facturasGlobales, setFacturasGlobales] = useState<any[]>([]);
-  const [cargandoFacturas, setCargandoFacturas] = useState(false);
+  // ✅ V00449: arranca en true porque la descarga de facturas empieza SIEMPRE al montar
+  //   (cargarFacturasAlEntrar). Con false, el primer pintado mostraba "Aún no hay facturas
+  //   registradas" y las tarjetas en $0 antes de que el efecto encendiera la bandera.
+  const [cargandoFacturas, setCargandoFacturas] = useState(true);
 
   // ✅ V00439 (Fase 3.x): empresas y catálogos de nombres desde los listeners
   //   compartidos (antes: getDocs + copias en localStorage).
@@ -789,7 +793,7 @@ export const FacturacionProveedoresDashboard = () => {
   };
 
   const cargarFacturasAlEntrar = useEffectEvent(() => {
-    if (facturasGlobales.length > 0) return;
+    if (facturasGlobales.length > 0) { setCargandoFacturas(false); return; } // ✅ V00449: la bandera arranca en true
     void descargarFacturas(false);
   });
   useEffect(() => cargarFacturasAlEntrar(), []);
@@ -800,6 +804,7 @@ export const FacturacionProveedoresDashboard = () => {
   const {
     operaciones: operacionesGlobales, setOperaciones: setOperacionesGlobales, cargando: cargandoOperaciones,
     topeAlcanzado: topeOpsAlcanzado, facturadasCargadas, descargar: descargarOpsCompletadas,
+    descargaTerminada: opsDescargaTerminada,
   } = useOperacionesFacturables<any>('proveedor', STATUS_FACTURABLES, vistaOps); // eslint-disable-line @typescript-eslint/no-explicit-any -- operaciones sin tipo canónico en el tablero (antes useState<any[]>).
 
   const cargarOperacionesAlEntrar = useEffectEvent(() => {
@@ -811,6 +816,10 @@ export const FacturacionProveedoresDashboard = () => {
     descargarOpsCompletadas();
   });
   useEffect(() => cargarOperacionesAlEntrar(), [activeTab, operacionesGlobales.length, statusListos, flagsCargadas]);
+  // ✅ V00449: la tabla y las tarjetas de operaciones muestran la animación mientras baja la
+  //   lista Y antes de la primera descarga (espera el catálogo de status y las banderas, y el
+  //   primer pintado antes del efecto): antes se veía "No hay operaciones pendientes…" y 0.
+  const mostrarCargandoOps = cargandoOperaciones || (!opsDescargaTerminada && operacionesGlobales.length === 0);
 
   // ✅ V00126: cualquier guardado en `operaciones` se refleja aquí al instante.
   useEffect(() => {
@@ -3395,15 +3404,15 @@ export const FacturacionProveedoresDashboard = () => {
           <div className="fpd-x60">
             <div className="fpd-x61">
               <span className="fpd-x62">Operaciones en espera por facturar</span>
-              <span className="fpd-x63">{resumenOps.porFacturar}</span>
+              {mostrarCargandoOps ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fpd-x63">{resumenOps.porFacturar}</span>}
             </div>
             <div className="fpd-x61">
               <span className="fpd-x62">Operaciones ya facturadas (en historial)</span>
-              <span className="fpd-x64">{resumenOps.facturadas}</span>
+              {mostrarCargandoOps ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fpd-x64">{resumenOps.facturadas}</span>}
             </div>
             <div className="fpd-x61">
               <span className="fpd-x62">Total completadas cargadas</span>
-              <span className="fpd-x65">{resumenOps.total}</span>
+              {mostrarCargandoOps ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fpd-x65">{resumenOps.total}</span>}
             </div>
           </div>
 
@@ -3510,8 +3519,8 @@ export const FacturacionProveedoresDashboard = () => {
                       <button className="fpd-x87" onClick={() => setFiltrosAbiertos(true)}>Abrir filtros</button>
                     </div>
                   </td></tr>
-                ) : cargandoOperaciones ? (
-                  <tr><td className="fpd-x88" colSpan={columnasOps.filter(c => c.visible).length + 2}>Cargando todas las operaciones completadas...</td></tr>
+                ) : mostrarCargandoOps ? (
+                  <tr><td className="fpd-x88" colSpan={columnasOps.filter(c => c.visible).length + 2}><CargandoDatos texto="Cargando todas las operaciones completadas..." /></td></tr>
                 ) : operacionesMostradas.length === 0 ? (
                   <tr><td className="fpd-x88" colSpan={columnasOps.filter(c => c.visible).length + 2}>No hay operaciones {vistaOps === 'facturadas' ? 'facturadas' : vistaOps === 'pendientes' ? 'pendientes' : 'completadas'} con los filtros actuales{filtroProveedor ? ' para el proveedor seleccionado' : ''}.</td></tr>
                 ) : (
@@ -3571,19 +3580,19 @@ export const FacturacionProveedoresDashboard = () => {
           <div className="fpd-x100">
             <div className="fpd-x101">
               <span className="fpd-x102">Facturas Listadas</span>
-              <span className="fpd-x103">{resumenHistorial.cuenta}</span>
+              {cargandoFacturas ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fpd-x103">{resumenHistorial.cuenta}</span>}{/* ✅ V00449 */}
             </div>
             <div className="fpd-x101">
               <span className="fpd-x102">Ops. Facturadas</span>
-              <span className="fpd-x104">{resumenHistorial.totalOps}</span>
+              {cargandoFacturas ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fpd-x104">{resumenHistorial.totalOps}</span>}
             </div>
             <div className="fpd-x101">
               <span className="fpd-x105">Total Facturado (USD)</span>
-              <span className="fpd-x106">{formatoMoneda(resumenHistorial.totalUSD)}</span>
+              {cargandoFacturas ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fpd-x106">{formatoMoneda(resumenHistorial.totalUSD)}</span>}
             </div>
             <div className="fpd-x101">
               <span className="fpd-x105">Total Facturado (MXN)</span>
-              <span className="fpd-x107">{formatoMoneda(resumenHistorial.totalMXN)}</span>
+              {cargandoFacturas ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fpd-x107">{formatoMoneda(resumenHistorial.totalMXN)}</span>}
             </div>
           </div>
 
@@ -3620,7 +3629,7 @@ export const FacturacionProveedoresDashboard = () => {
                     </div>
                   </td></tr>
                 ) : cargandoFacturas ? (
-                  <tr><td className="fpd-x110" colSpan={columnasFactura.filter(c => c.visible).length + 1}>Cargando facturas...</td></tr>
+                  <tr><td className="fpd-x110" colSpan={columnasFactura.filter(c => c.visible).length + 1}><CargandoDatos texto="Cargando facturas..." /></td></tr>
                 ) : registrosVisibles.length === 0 ? (
                   <tr><td className="fpd-x110" colSpan={columnasFactura.filter(c => c.visible).length + 1}>
                     {facturasGlobales.length === 0
@@ -4003,7 +4012,7 @@ export const FacturacionProveedoresDashboard = () => {
             </div>
             <div className="fpd-x209">
               {cargandoFacturas && (
-                <div className="fpd-x210">Cargando facturas… los números pueden cambiar al terminar.</div>
+                <CargandoDatos compacto texto="Cargando facturas… los números pueden cambiar al terminar." />
               )}
               <div>
                 <div className="fpd-x211">Resumen global (facturas cargadas)</div>

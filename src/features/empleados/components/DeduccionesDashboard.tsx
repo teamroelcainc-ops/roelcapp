@@ -27,6 +27,7 @@ import {
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
 import './DeduccionesDashboard.css';
+import CargandoDatos from '../../../shared/components/CargandoDatos';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 import { useCatalogo } from '../../../shared/data/catalogos';
 import type { DocCatalogo } from '../../../shared/data/catalogos';
@@ -386,8 +387,8 @@ export const DeduccionesDashboard = () => {
                   </td></tr>
               ) : cargando ? (
                 <tr>
-                  <td className="ded-x29" colSpan={columnasTabla.length + 1}>
-                    Cargando deducciones...
+                  <td colSpan={columnasTabla.length + 1}>
+                    <CargandoDatos texto="Cargando deducciones..." />
                   </td>
                 </tr>
               ) : registrosVisibles.length === 0 ? (

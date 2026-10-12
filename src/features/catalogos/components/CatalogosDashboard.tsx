@@ -13,6 +13,7 @@ import { listaCatalogos, catalogosConfig } from '../config/catalogSchemas';
 import type { CatalogSchema, CatalogField } from '../config/catalogSchemas';
 import { SelectBuscable } from './SelectBuscable';
 import './CatalogosDashboard.css';
+import CargandoDatos from '../../../shared/components/CargandoDatos';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 import { esAduanaColombia, esGastoPisoColombia } from '../../../utils/puenteColombia';
 import { COLECCIONES_CATALOGO, idReal, obtenerCatalogo, useCatalogos } from '../../../shared/data/catalogos';
@@ -133,10 +134,13 @@ const CatalogosDashboard = () => {
   //   si es catálogo de la app; si no, de un listener propio (ver más abajo).
   const coleccionCatalogo = catalogoSeleccionado ? `catalogo_${catalogoSeleccionado.id}` : null;
   const coleccionCompartida = esColeccionCatalogo(coleccionCatalogo) ? coleccionCatalogo : null;
-  const { datos: catalogoCompartido } = useCatalogos(
+  const { datos: catalogoCompartido, listo: compartidoListo } = useCatalogos(
     (coleccionCompartida ? { registros: coleccionCompartida } : {}) as Record<string, ColeccionCatalogo>,
   );
   const [registrosPropios, setRegistrosPropios] = useState<{ col: string; datos: any[] } | null>(null);
+  // ✅ V00449: ya llegaron los registros del catálogo abierto. Al elegir otro catálogo, la
+  //   tabla decía "No hay registros." mientras su listener seguía en camino.
+  const registrosListos = coleccionCompartida ? compartidoListo : registrosPropios?.col === coleccionCatalogo;
   const registrosGlobales: any[] = coleccionCompartida
     ? (catalogoCompartido.registros ?? SIN_REGISTROS)
     : (registrosPropios && registrosPropios.col === coleccionCatalogo ? registrosPropios.datos : SIN_REGISTROS);
@@ -448,7 +452,7 @@ const CatalogosDashboard = () => {
   // ✅ V00221: secciones "dónde se usa" reutilizables (modal de uso y de detalles).
   const bloqueUsoTarifa = () => (
     usoDetallado === null ? (
-      <div className="cd-uso-vacio">Cargando dónde se usa…</div>
+      <CargandoDatos texto="Cargando dónde se usa…" compacto />
     ) : (usoDetallado.tarifarios.length === 0 && usoDetallado.convenios.length === 0 && usoDetallado.operaciones.length === 0) ? (
       <div className="cd-uso-vacio">Esta tarifa aún no se usa en ningún tarifario, convenio u operación.</div>
     ) : (<>
@@ -629,6 +633,10 @@ const CatalogosDashboard = () => {
     if (!visible || !coleccionCatalogo || coleccionCompartida) return;
     const unsubscribe = onSnapshot(collection(db, coleccionCatalogo), (snapshot) => {
       setRegistrosPropios({ col: coleccionCatalogo, datos: snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) });
+    }, (err) => {
+      // ✅ V00449: con error, la tabla dice "No hay registros." (como antes) en lugar de girar sin fin.
+      console.error(`Error escuchando ${coleccionCatalogo}:`, err);
+      setRegistrosPropios({ col: coleccionCatalogo, datos: [] });
     });
     return () => unsubscribe();
   }, [visible, coleccionCatalogo, coleccionCompartida]);
@@ -1951,7 +1959,7 @@ const CatalogosDashboard = () => {
 
         <div style={{ overflowY: 'auto', flex: 1 }}>
           {papeleraItems === null ? (
-            <div style={{ color: '#8b949e', padding: '30px', textAlign: 'center' }}>Cargando papelera…</div>
+            <CargandoDatos texto="Cargando papelera…" />
           ) : papeleraFiltrada.length === 0 ? (
             <div style={{ color: '#8b949e', padding: '30px', textAlign: 'center', lineHeight: 1.6 }}>
               La papelera está vacía{papeleraFiltroCat ? ' para este catálogo' : ''}.<br />
@@ -2247,7 +2255,9 @@ const CatalogosDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {registrosEnPantalla.length === 0 ? (
+                {!registrosListos ? (
+                  <tr><td colSpan={catalogoSeleccionado.fields.length + 3}><CargandoDatos texto="Cargando registros…" /></td></tr>
+                ) : registrosEnPantalla.length === 0 ? (
                   <tr><td className="cd-x24" colSpan={catalogoSeleccionado.fields.length + 3}>No hay registros.</td></tr>
                 ) : (
                   registrosEnPantalla.map((reg: any) => (
@@ -2623,7 +2633,7 @@ const CatalogosDashboard = () => {
             </p>
             {/* ✅ V00220: tarifarios · convenios · operaciones, con cliente y referencia clicable */}
             {usoDetallado === null ? (
-              <div style={{ color: '#8b949e', fontSize: '0.82rem', padding: '10px 0' }}>Cargando dónde se usa…</div>
+              <CargandoDatos texto="Cargando dónde se usa…" compacto />
             ) : (<>
               {([
                 { titulo: 'TARIFARIOS', color: '#58a6ff', filas: usoDetallado.tarifarios },
@@ -2682,7 +2692,7 @@ const CatalogosDashboard = () => {
             </div>
 
             {refAbierta.datos === null ? (
-              <div className="cd-uso-vacio">Cargando…</div>
+              <CargandoDatos texto="Cargando…" compacto />
             ) : (() => {
               const d = refAbierta.datos as Record<string, unknown>;
               // ✅ V00227: en OPERACIONES se muestra la ficha completa por
@@ -2825,6 +2835,8 @@ const CatalogosDashboard = () => {
                   <span className="cd-modal-ops-cv__cliente">{o.cliente || '—'}</span>
                 </div>
               ))}
+              {/* ✅ V00449: animación mientras llega la primera página o "Cargar más" (antes: lista en blanco). */}
+              {cargandoOpsCV && <CargandoDatos texto="Cargando operaciones…" compacto />}
               {!cargandoOpsCV && opsCVRefs.length === 0 && (
                 <div className="cd-modal-ops-cv__vacio">Sin operaciones para mostrar.</div>
               )}

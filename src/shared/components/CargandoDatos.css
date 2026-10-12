@@ -1,0 +1,18 @@
+/* ✅ V00449: animación de espera compartida (src/shared/components/CargandoDatos.tsx). */
+.cgd-caja { display: flex; flex-direction: column; align-items: stretch; gap: 14px; width: 100%; box-sizing: border-box; padding: 28px 24px; }
+.cgd-caja--compacta { gap: 0; padding: 16px; }
+.cgd-encabezado { display: flex; align-items: center; justify-content: center; gap: 12px; color: #8b949e; font-size: 0.9rem; }
+.cgd-giro { flex-shrink: 0; width: 18px; height: 18px; border: 2px solid #30363d; border-top-color: #D84315; border-radius: 50%; animation: cgdGiro 0.7s linear infinite; }
+.cgd-giro--en-linea { display: inline-block; width: 14px; height: 14px; vertical-align: middle; }
+.cgd-texto { animation: cgdLatido 1.6s ease-in-out infinite; }
+.cgd-filas { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+.cgd-fila { display: block; height: 14px; border-radius: 4px; background: linear-gradient(90deg, #161b22 0%, #21262d 40%, #2d333b 50%, #21262d 60%, #161b22 100%); background-size: 200% 100%; animation: cgdBrillo 1.4s ease-in-out infinite; }
+.cgd-fila:nth-child(2) { width: 92%; animation-delay: 0.1s; }
+.cgd-fila:nth-child(3) { width: 96%; animation-delay: 0.2s; }
+.cgd-fila:nth-child(4) { width: 88%; animation-delay: 0.3s; }
+@keyframes cgdGiro { to { transform: rotate(360deg); } }
+@keyframes cgdLatido { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+@keyframes cgdBrillo { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .cgd-giro, .cgd-texto, .cgd-fila { animation-duration: 3s; }
+}

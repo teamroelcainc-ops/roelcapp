@@ -9,6 +9,7 @@ import { addDoc, collection, deleteDoc, doc, getDocs, onSnapshot, query, where, 
 import * as XLSX from 'xlsx';
 import { db } from '../../../config/firebase';
 import './SaldosPuentesDashboard.css';
+import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
 import { docsSinPruebas, sinPruebas } from '../../../utils/operacionPrueba';
 import { useFlags } from '../../../shared/data/flags';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
@@ -39,7 +40,7 @@ interface CruceOp { puenteNombre: string; fecha: string; monto: number; ref: str
 
 export const SaldosPuentesDashboard: React.FC = () => {
   // ✅ V00439 (Fase 3.4): tipos de gasto del listener compartido (antes onSnapshot propio).
-  const { datos: catTiposGastos } = useCatalogo('catalogo_tipos_gastos');
+  const { datos: catTiposGastos, listo: catalogoListo } = useCatalogo('catalogo_tipos_gastos');
   const puentes = useMemo(() => {
     const lista: Puente[] = [];
     catTiposGastos.forEach((x) => {
@@ -66,6 +67,12 @@ export const SaldosPuentesDashboard: React.FC = () => {
   const [crucesOtros, setCrucesOtros] = useState<CruceOp[]>([]);
   const cruces = useMemo(() => [...crucesOps, ...crucesOtros], [crucesOps, crucesOtros]);
   const [cargando, setCargando] = useState(true);
+  // ✅ V00449: los saldos salen de TRES listeners + el catálogo de puentes, pero solo las recargas
+  //   tenían bandera: al entrar, el "Disponible" salía igual a lo recargado (sin descontar los
+  //   cruces, que llegan aparte) y, sin catálogo, "No hay puentes…". Hasta tener todo, animación.
+  const [crucesListos, setCrucesListos] = useState(false);
+  const [otrosCrucesListos, setOtrosCrucesListos] = useState(false);
+  const cargandoSaldos = cargando || !crucesListos || !otrosCrucesListos || !catalogoListo;
   // ✅ V00361: modal de recarga ÚNICO con el puente en DESPLEGABLE
   const [modalRecarga, setModalRecarga] = useState(false);
   const [recPuenteId, setRecPuenteId] = useState('');
@@ -103,13 +110,15 @@ export const SaldosPuentesDashboard: React.FC = () => {
         if (!(Number(x.saldoPuentePiso) > 0)) return [caseta];
         return [caseta, { puenteNombre: String(x.saldoPuentePisoPuente || 'Puente Mx Colombia'), fecha: String(x.saldoPuentePisoFecha || x.saldoPuenteFecha || ''), monto: Number(x.saldoPuentePiso) || 0, ref: String(x.ref || d.id) }];
       }));
-    }, (e) => console.warn('Cruces con saldo:', e));
+      setCrucesListos(true);
+    }, (e) => { console.warn('Cruces con saldo:', e); setCrucesListos(true); });
     const u4 = onSnapshot(query(collection(db, 'referencias_puentes'), where('tipo', '==', 'otroCruce')), (snap) => {
       setCrucesOtros(snap.docs.map((d) => {
         const x = d.data() as Record<string, unknown>;
         return { puenteNombre: String(x.puenteNombre || ''), fecha: String(x.fechaCruce || x.fechaGeneracion || ''), monto: Number(x.monto ?? x.subtotalPuentes) || 0, ref: `${String(x.consecutivo || d.id)} (otro cruce)` };
       }));
-    }, () => setCrucesOtros([]));
+      setOtrosCrucesListos(true);
+    }, () => { setCrucesOtros([]); setOtrosCrucesListos(true); });
     return () => { u2(); u3(); u4(); };
   }, []);
 
@@ -145,6 +154,9 @@ export const SaldosPuentesDashboard: React.FC = () => {
   const [repFilas, setRepFilas] = useState<FilaRep[]>([]);
   const [repDe, setRepDe] = useState('');
   const [repHasta, setRepHasta] = useState('');
+  // ✅ V00449: hay una consulta del rango programada (espera de 400 ms). Durante esa espera la tabla
+  //   filtraba las filas del rango ANTERIOR con las fechas nuevas ("Sin operaciones en el rango").
+  const [repEsperando, setRepEsperando] = useState(false);
   // ✅ V00443 (Fase 7.5): con `consultasCanonicas`, el reporte pide al servidor SOLO el rango
   //   De–Hasta (por `fechaServicioISO`; por omisión, del inicio del mes a hoy) y se vuelve a pedir
   //   al cambiar las fechas — en lugar de descargar TODAS las operaciones y filtrar aquí.
@@ -219,9 +231,11 @@ export const SaldosPuentesDashboard: React.FC = () => {
     if (!flags.consultasCanonicas) return;
     if (temporizadorRepRef.current) clearTimeout(temporizadorRepRef.current);
     const valida = (f: string) => /^\d{4}-\d{2}-\d{2}$/.test(f) && f >= '2000-01-01';
-    if (!valida(de) || !valida(hasta) || de > hasta) return;
-    temporizadorRepRef.current = setTimeout(() => { void cargarReporte(de, hasta); }, 400);
+    if (!valida(de) || !valida(hasta) || de > hasta) { setRepEsperando(false); return; }
+    setRepEsperando(true);
+    temporizadorRepRef.current = setTimeout(() => { setRepEsperando(false); void cargarReporte(de, hasta); }, 400);
   };
+  const repMostrarCarga = repCargando || repEsperando; // ✅ V00449
   const repVisibles = repFilas.filter((f) => (!repDe || f.fecha >= repDe) && (!repHasta || f.fecha <= repHasta));
   const repExcel = () => {
     const hoja = repVisibles.map((f) => ({
@@ -388,17 +402,21 @@ export const SaldosPuentesDashboard: React.FC = () => {
         {(['Dólares', 'Pesos'] as const).map((m) => {
           const r = resumenMoneda(m);
           return (
-            <div key={m} className={`sp-resumen${r.disponible < 0 ? ' sp-resumen--neg' : ''}`}>
+            <div key={m} className={`sp-resumen${!cargandoSaldos && r.disponible < 0 ? ' sp-resumen--neg' : ''}`}>
               <div className="sp-resumen-enc">
                 <span className="sp-resumen-etq">Disponible en {m}</span>
                 <span className={`sp-moneda ${m === 'Dólares' ? 'sp-moneda--usd' : 'sp-moneda--mxn'}`}>{m === 'Dólares' ? 'USD' : 'MXN'}</span>
               </div>
-              <b className="sp-resumen-monto">{fmtMonto(r.disponible)}</b>
-              <div className="sp-resumen-datos">
-                <div><span>Recargado</span><b>{fmtMonto(r.recargado)}</b></div>
-                <div><span>Consumido</span><b>{fmtMonto(r.consumido)}</b></div>
-                <div><span>Hoy</span><b>{r.crucesHoy} {r.crucesHoy === 1 ? 'cruce' : 'cruces'} · {fmtMonto(r.consumoHoy)}</b></div>
-              </div>
+              {cargandoSaldos ? <CargandoDatos compacto texto="Cargando saldos…" /> : (
+                <>
+                  <b className="sp-resumen-monto">{fmtMonto(r.disponible)}</b>
+                  <div className="sp-resumen-datos">
+                    <div><span>Recargado</span><b>{fmtMonto(r.recargado)}</b></div>
+                    <div><span>Consumido</span><b>{fmtMonto(r.consumido)}</b></div>
+                    <div><span>Hoy</span><b>{r.crucesHoy} {r.crucesHoy === 1 ? 'cruce' : 'cruces'} · {fmtMonto(r.consumoHoy)}</b></div>
+                  </div>
+                </>
+              )}
               <button type="button" className="sp-link" onClick={() => abrirHistorialMoneda(m)}>Ver movimientos de {m.toLowerCase()}</button>
             </div>
           );
@@ -421,8 +439,9 @@ export const SaldosPuentesDashboard: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {cuentas.length === 0 && <tr><td colSpan={9} className="sp-vacio">No hay puentes (categoría "Puente") en el catálogo Tipos de Gastos.</td></tr>}
-              {cuentas.map(({ p, c }) => {
+              {cargandoSaldos && <tr><td colSpan={9}><CargandoDatos texto="Cargando saldos…" /></td></tr>}
+              {!cargandoSaldos && cuentas.length === 0 && <tr><td colSpan={9} className="sp-vacio">No hay puentes (categoría "Puente") en el catálogo Tipos de Gastos.</td></tr>}
+              {!cargandoSaldos && cuentas.map(({ p, c }) => {
                 const e = estadoDe(c);
                 return (
                   <tr key={p.id} className={`sp-fila-clic${idLibro === p.id ? ' sp-fila--activa' : ''}`} onClick={() => setLibroPuenteId(p.id)}>
@@ -461,16 +480,17 @@ export const SaldosPuentesDashboard: React.FC = () => {
                 <h3 className="sp-seccion-titulo">Libro de {p.nombre} <span className={`sp-moneda ${p.moneda.includes('Dólar') ? 'sp-moneda--usd' : 'sp-moneda--mxn'}`}>{p.moneda}</span></h3>
                 <span className="sp-conteo">Tarifa por cruce {fmtMonto(p.tarifa)} · alerta ámbar debajo de {fmtMonto(p.umbralAmarillo)} · roja debajo de {fmtMonto(p.umbralRojo)}</span>
               </div>
-              <span className={`sp-estado sp-estado--${e.clase} sp-estado--grande`}>{e.txt}</span>
+              {!cargandoSaldos && <span className={`sp-estado sp-estado--${e.clase} sp-estado--grande`}>{e.txt}</span>}
             </div>
 
-            <div className="sp-kpis">
+            {/* ✅ V00449: sin cifras ni avisos hasta tener recargas y cruces (antes: saldo a medias) */}
+            {cargandoSaldos ? <CargandoDatos compacto texto="Cargando saldos…" /> : <div className="sp-kpis">
               <div className="sp-kpi"><span>Recargado</span><b className="sp-kpi--abono">{fmtMonto(c.saldoInicial)}</b></div>
               <div className="sp-kpi"><span>Consumido · {c.misCruces.length} cruces</span><b className="sp-kpi--cargo">{fmtMonto(c.consumo)}</b></div>
               <div className="sp-kpi"><span>Cruces de hoy</span><b>{c.crucesHoy.length} · {fmtMonto(c.consumoHoy)}</b></div>
               <div className={`sp-kpi sp-kpi--disp sp-kpi--${e.clase}`}><span>Disponible</span><b>{fmtMonto(c.saldoActual)}</b><em>Alcanza para {alcanzaPara(p, c)}</em></div>
-            </div>
-            {e.clase !== 'ok' && (
+            </div>}
+            {!cargandoSaldos && e.clase !== 'ok' && (
               <div className={`sp-aviso sp-aviso--${e.clase}`}>
                 {e.clase === 'neg' ? 'La cuenta está sobregirada: los cruces ya superan lo recargado. Registra una recarga para regularizarla.'
                   : e.clase === 'rojo' ? 'Saldo crítico: agrega saldo cuanto antes para no quedarte sin cruces.'
@@ -495,9 +515,9 @@ export const SaldosPuentesDashboard: React.FC = () => {
               <table className="sp-tabla sp-tabla--libro">
                 <thead><tr><th>Fecha</th><th>Tipo</th><th>Movimiento</th><th className="sp-num">Cargo (−)</th><th className="sp-num">Abono (+)</th><th className="sp-num">Saldo</th><th></th></tr></thead>
                 <tbody>
-                  {cargando && <tr><td colSpan={7} className="sp-vacio">Cargando…</td></tr>}
-                  {!cargando && movs.length === 0 && <tr><td colSpan={7} className="sp-vacio">{todos.length === 0 ? 'Sin movimientos. Usa "Agregar saldo" para abonar la cuenta.' : 'Ningún movimiento coincide con los filtros.'}</td></tr>}
-                  {movs.map((m, i) => {
+                  {cargandoSaldos && <tr><td colSpan={7}><CargandoDatos texto="Cargando…" /></td></tr>}
+                  {!cargandoSaldos && movs.length === 0 && <tr><td colSpan={7} className="sp-vacio">{todos.length === 0 ? 'Sin movimientos. Usa "Agregar saldo" para abonar la cuenta.' : 'Ningún movimiento coincide con los filtros.'}</td></tr>}
+                  {!cargandoSaldos && movs.map((m, i) => {
                     const saldo = (m as { saldo?: number }).saldo ?? 0;
                     return (
                       <tr key={i}>
@@ -512,7 +532,7 @@ export const SaldosPuentesDashboard: React.FC = () => {
                     );
                   })}
                 </tbody>
-                {movs.length > 0 && (
+                {!cargandoSaldos && movs.length > 0 && (
                   <tfoot>
                     <tr><td colSpan={3}>Totales {hayFiltro ? 'del filtro' : ''}</td><td className="sp-num sp-cargo">−{fmtMonto(totCargos)}</td><td className="sp-num sp-abono">+{fmtMonto(totAbonos)}</td><td className="sp-num">{fmtMonto(totAbonos - totCargos)}</td><td></td></tr>
                   </tfoot>
@@ -537,16 +557,16 @@ export const SaldosPuentesDashboard: React.FC = () => {
               <div className="sp-rep-barra">
                 <label>De <input type="date" className="form-control" value={repDe} onChange={(e) => cambiarRangoReporte(e.target.value, repHasta)} /></label>
                 <label>Hasta <input type="date" className="form-control" value={repHasta} onChange={(e) => cambiarRangoReporte(repDe, e.target.value)} /></label>
-                <span className="sp-conteo">{repVisibles.length} operación(es) · sin descuento: {sinSaldo}</span>
+                {!repMostrarCarga && <span className="sp-conteo">{repVisibles.length} operación(es) · sin descuento: {sinSaldo}</span>}
                 <button type="button" className="sp-btn" onClick={repExcel} disabled={repVisibles.length === 0}>Exportar Excel</button>
               </div>
               <div className="sp-rep-marco">
                 <table className="sp-tabla sp-tabla--libro">
                   <thead><tr><th>Fecha de Servicio</th><th># Referencia</th><th>Tipo de Operación</th><th>Tráfico</th><th>Puente</th><th className="sp-num">Saldo del Puente</th></tr></thead>
                   <tbody>
-                    {repCargando && <tr><td colSpan={6} className="sp-vacio">Cargando…</td></tr>}
-                    {!repCargando && repVisibles.length === 0 && <tr><td colSpan={6} className="sp-vacio">Sin operaciones en el rango.</td></tr>}
-                    {!repCargando && repVisibles.map((f, i) => (
+                    {repMostrarCarga && <tr><td colSpan={6}><CargandoDatos texto="Cargando…" /></td></tr>}
+                    {!repMostrarCarga && repVisibles.length === 0 && <tr><td colSpan={6} className="sp-vacio">Sin operaciones en el rango.</td></tr>}
+                    {!repMostrarCarga && repVisibles.map((f, i) => (
                       <tr key={i} className={f.saldo === null ? 'sp-rep-fila--falta' : ''}>
                         <td className="sp-fecha">{fmtDia(f.fecha)}</td>
                         <td className="sp-rep-ref">{f.ref}</td>
@@ -557,7 +577,7 @@ export const SaldosPuentesDashboard: React.FC = () => {
                       </tr>
                     ))}
                   </tbody>
-                  {!repCargando && cobradas.length > 0 && (
+                  {!repMostrarCarga && cobradas.length > 0 && (
                     <tfoot>
                       <tr><td colSpan={5}>Total descontado — Dólares</td><td className="sp-num sp-cargo">−{fmtMonto(totUSD)}</td></tr>
                       <tr><td colSpan={5}>Total descontado — Pesos</td><td className="sp-num sp-cargo">−{fmtMonto(totMXN)}</td></tr>
@@ -613,8 +633,9 @@ export const SaldosPuentesDashboard: React.FC = () => {
                 <table className="sp-tabla sp-tabla--libro">
                   <thead><tr><th>Fecha</th><th>Tipo</th><th>Movimiento</th><th>Puente</th><th className="sp-num">Monto</th></tr></thead>
                   <tbody>
-                    {movs.length === 0 && <tr><td colSpan={5} className="sp-vacio">Sin movimientos todavía.</td></tr>}
-                    {movs.map((m, i) => (
+                    {cargandoSaldos && <tr><td colSpan={5}><CargandoDatos texto="Cargando movimientos…" /></td></tr>}{/* ✅ V00449 */}
+                    {!cargandoSaldos && movs.length === 0 && <tr><td colSpan={5} className="sp-vacio">Sin movimientos todavía.</td></tr>}
+                    {!cargandoSaldos && movs.map((m, i) => (
                       <tr key={i}>
                         <td className="sp-fecha">{fmtDia(m.fecha)}</td>
                         <td><span className={`sp-tipo sp-tipo--${m.tipo}`}>{m.tipo === 'recarga' ? 'Recarga' : 'Cruce'}</span></td>

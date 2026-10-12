@@ -37,6 +37,7 @@ import { escaparHTML, LOGO_DEFAULT } from '../../../utils/pdfGenerator';
 // ✅ NUEVO: Resúmenes Diarios (Transfer / Logística / Fletes) en PDF.
 import { ResumenDiarioOperaciones } from './ResumenDiarioOperaciones';
 import './ReportesDashboard.css';
+import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
 import { docsSinPruebas, sinPruebas } from '../../../utils/operacionPrueba';
 import { obtenerFlags } from '../../../shared/data/flags';
 import { operacionesDelRango } from '../../../shared/data/consultas';
@@ -1321,6 +1322,14 @@ export const ReportesDashboard = () => {
       </div>
 
       {error && <div className="rd-x11">{error}</div>}
+
+      {/* ✅ V00449: mientras se genera el reporte el área quedaba EN BLANCO (el resultado se
+          borra al pulsar Generar y el aviso de abajo se oculta con `!cargando`). */}
+      {cargando && (
+        <div className="rd-x12">
+          <CargandoDatos texto="Generando reporte…" />
+        </div>
+      )}
 
       {resultado && vista && (
         <div className="rd-x12">

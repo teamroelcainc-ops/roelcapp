@@ -15,6 +15,7 @@ import { db, COL_PAPELERA_GLOBAL } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger';
 import { useFlags } from '../../../shared/data/flags';
 import './PapeleraDashboard.css';
+import CargandoDatos from '../../../shared/components/CargandoDatos';
 
 const COL_LEGADA = 'papelera_catalogos';
 
@@ -205,8 +206,9 @@ const PapeleraDashboard: React.FC = () => {
         </button>
       </div>
 
-      {items === null ? (
-        <div className="pr-x7">Cargando papelera…</div>
+      {/* ✅ V00449: "Actualizar" con la lista vacía decía "La papelera está vacía." mientras releía. */}
+      {items === null || (cargando && visibles.length === 0) ? (
+        <div className="pr-x7"><CargandoDatos texto="Cargando papelera…" /></div>
       ) : visibles.length === 0 ? (
         <div className="pr-x7">
           {busqueda || filtroColeccion ? 'Sin resultados con los filtros actuales.' : 'La papelera está vacía.'}

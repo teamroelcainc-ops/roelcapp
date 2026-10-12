@@ -8,6 +8,7 @@ import { nombreDeEmpleado } from '../../utils/nombreEmpleado';
 import type { EmpleadoNombreCampos } from '../../utils/nombreEmpleado';
 import { DIAS_SEMANA, HORARIO_VACIO, horarioDeHoy, type HorarioTrabajo } from '../../utils/horarioTrabajo';
 import './UsuariosDashboard.css'; 
+import CargandoDatos from '../../shared/components/CargandoDatos';
 import { FormularioConfigurable } from '../../features/formularios/FormularioConfigurable';
 import { useFlags } from '../../shared/data/flags';
 import { gestionarUsuarioServidor, sincronizarClaimsServidor } from '../../features/auth/services/usuariosServidor';
@@ -46,6 +47,9 @@ const procesarImagen = (file: File, maxLado = 256): Promise<string> =>
 
 export const UsuariosDashboard = () => {
   const [usuarios, setUsuarios] = useState<any[]>([]);
+  // ✅ V00449: ya llegó el primer snapshot de `usuarios` (antes: "No hay usuarios registrados."
+  //   mientras seguía en camino).
+  const [usuariosListos, setUsuariosListos] = useState(false);
   // ✅ V00439 (Fase 3.x): roles desde el catálogo compartido (el mismo listener que App).
   const { datos: datosRoles } = useCatalogo('roles');
   const rolesDisponibles: any[] = datosRoles;
@@ -146,7 +150,8 @@ export const UsuariosDashboard = () => {
   useEffect(() => {
     const unsubUsuarios = onSnapshot(collection(db, 'usuarios'), (snapshot) => {
       setUsuarios(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
+      setUsuariosListos(true);
+    }, (err) => { console.error('Error escuchando usuarios:', err); setUsuariosListos(true); }); // ✅ V00449
 
     // (✅ V00439: empleados y roles llegan por useCatalogo, arriba.)
     return () => {
@@ -218,6 +223,9 @@ export const UsuariosDashboard = () => {
   };
 
   const handleAbrirHistorial = (user: any) => {
+    // ✅ V00449: la bandera sube en el mismo clic; el efecto la subía un pintado después y se
+    //   alcanzaban a ver los registros del usuario anterior o "aún no tiene registros".
+    setCargandoHistorial(true);
     setUsuarioHistorial(user);
     setHistorialAbierto(true);
   };
@@ -459,7 +467,9 @@ export const UsuariosDashboard = () => {
             </tr>
           </thead>
           <tbody>
-            {usuarios.length === 0 ? (
+            {!usuariosListos && usuarios.length === 0 ? (
+              <tr><td colSpan={6}><CargandoDatos texto="Cargando usuarios…" /></td></tr>
+            ) : usuarios.length === 0 ? (
               <tr><td className="usd-x10" colSpan={6}>No hay usuarios registrados.</td></tr>
             ) : (
               usuarios.map(user => (
@@ -797,7 +807,7 @@ export const UsuariosDashboard = () => {
             
             <div className="usd-x56">
               {cargandoHistorial ? (
-                <div className="usd-x57">Consultando registros encriptados...</div>
+                <CargandoDatos texto="Consultando registros encriptados..." />
               ) : logsSesion.length === 0 ? (
                 <div className="usd-x57">Este usuario aún no tiene registros de inicio o cierre de sesión.</div>
               ) : (

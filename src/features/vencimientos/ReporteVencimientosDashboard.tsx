@@ -17,6 +17,7 @@ import { db } from '../../config/firebase';
 import { EditorEncabezados } from '../../components/EditorEncabezados';
 import { useEtiquetas } from '../../contexts/EtiquetasContext';
 import './ReporteVencimientosDashboard.css';
+import CargandoDatos from '../../shared/components/CargandoDatos';
 import { idReal, useCatalogos } from '../../shared/data/catalogos';
 
 interface DocVenc {
@@ -376,7 +377,7 @@ export const ReporteVencimientosDashboard = () => {
         )}
       </div>
 
-      {cargando ? <p className="rv-cargando">⏳ Cargando documentos…</p> : (
+      {cargando ? <CargandoDatos texto="Cargando documentos…" /> : (
         <div className="rv-tabla-wrap">
           {pestana === 'sinClasificar' ? (
             <table className="rv-tabla">

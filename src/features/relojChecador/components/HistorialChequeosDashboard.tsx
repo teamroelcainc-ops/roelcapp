@@ -11,6 +11,7 @@ import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
 import { Download } from 'lucide-react';
 import './HistorialChequeosDashboard.css';
+import CargandoDatos from '../../../shared/components/CargandoDatos';
 
 // ⭐ Tipo local: la colección reloj_checador solo se lee aquí y se escribe en
 //    RelojChecadorModal; estos campos aún no viven en src/types.
@@ -42,6 +43,9 @@ interface Props {
 
 export function HistorialChequeosDashboard({ usuarioActual, puedeVerTodos }: Props) {
   const [registros, setRegistros] = useState<ChequeoRegistro[]>([]);
+  // ✅ V00449: ya llegó el primer snapshot (antes: "Aún no hay registros de asistencia."
+  //   mientras seguía en camino).
+  const [registrosListos, setRegistrosListos] = useState(false);
   const [busqueda, setBusqueda] = useState('');
 
   // ✅ El acceso total ya NO depende de roles quemados en el código: lo decide
@@ -65,7 +69,8 @@ export function HistorialChequeosDashboard({ usuarioActual, puedeVerTodos }: Pro
       }
 
       setRegistros(data);
-    });
+      setRegistrosListos(true);
+    }, (err) => { console.error('Error escuchando reloj_checador:', err); setRegistrosListos(true); }); // ✅ V00449
 
     return () => unsubscribe();
   }, [usuarioActual, tieneFullAccess]);
@@ -138,7 +143,9 @@ export function HistorialChequeosDashboard({ usuarioActual, puedeVerTodos }: Pro
                 </tr>
               </thead>
               <tbody>
-                {registrosFiltrados.length === 0 ? (
+                {usuarioActual && !registrosListos ? (
+                  <tr><td colSpan={5}><CargandoDatos texto="Cargando registros de asistencia…" /></td></tr>
+                ) : registrosFiltrados.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="hcheq-vacio">
                       {busqueda ? 'No se encontraron registros.' : 'Aún no hay registros de asistencia.'}

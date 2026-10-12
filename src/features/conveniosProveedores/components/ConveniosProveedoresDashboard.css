@@ -77,7 +77,6 @@
 .cpd-x73 { padding: 12px 16px; white-space: nowrap; }
 .cpd-x74 { background: transparent; border: 1px solid #3b82f6; border-radius: 4px; color: #3b82f6; cursor: pointer; padding: 6px; display: flex; align-items: center; justify-content: center; }
 .cpd-x75 { background: transparent; border: 1px solid #ef4444; border-radius: 4px; color: #ef4444; cursor: pointer; padding: 6px; display: flex; align-items: center; justify-content: center; }
-.cpd-x76 { padding: 40px; text-align: center; color: #8b949e; }
 .cpd-x77 { width: 100%; border-collapse: collapse; text-align: left; background-color: #161b22; border-radius: 8px; overflow: hidden; }
 .cpd-x78 { padding: 12px 16px; color: #58a6ff; font-family: monospace; font-weight: bold; }
 .cpd-x79 { padding: 12px 16px; color: #c9d1d9; white-space: nowrap; }
@@ -143,7 +142,6 @@
   .cpd-x72 { flex-wrap: wrap; }
   .cpd-x74 { flex-wrap: wrap; }
   .cpd-x75 { flex-wrap: wrap; }
-  .cpd-x76 { padding: 14px 12px; }
   .cpd-x82 { flex-wrap: wrap; }
   .cpd-x84 { flex-wrap: wrap; }
   .cpd-x85 { padding: 14px 12px; }

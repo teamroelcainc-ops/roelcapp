@@ -33,7 +33,6 @@
 .od-x29 { color: #8b949e; font-size: 0.82rem; margin-left: auto; align-self: center; }
 .od-x30 { display: block; width: 100%; }
 .od-x31 { border: 1px solid #30363d; border-radius: 8px; overflow-x: auto; overflow-y: auto; max-height: calc(100vh - 280px); width: 100%; }
-.od-x32 { padding: 40px; text-align: center; color: #8b949e; }
 .od-x33 { width: 100%; min-width: 1300px; border-collapse: collapse; text-align: left; }
 .od-x34 { background-color: #161b22; position: sticky; top: 0; z-index: 10; }
 .od-x35 { padding: 16px; width: 100px; text-align: center; color: #8b949e; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; position: sticky; left: 0; background-color: #161b22; z-index: 12; border-right: 1px solid #30363d; border-bottom: 1px solid #30363d; }
@@ -193,7 +192,6 @@
   .od-x23 { flex-wrap: wrap; }
   .od-x24 { flex-wrap: wrap; }
   .od-x25 { flex-wrap: wrap; }
-  .od-x32 { padding: 14px 12px; }
   .od-x33 { min-width: 0; }
   .od-x37 { padding: 14px 12px; }
   .od-x39 { flex-wrap: wrap; }

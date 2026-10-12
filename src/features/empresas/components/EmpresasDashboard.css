@@ -95,7 +95,6 @@
 .ed-x91 { grid-column: span 2; background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 12px 16px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 .ed-x92 { color: #58a6ff; text-decoration: none; }
 .ed-x93 { animation: fadeIn 0.3s ease; }
-.ed-x94 { padding: 40px; text-align: center; color: #8b949e; }
 .ed-x95 { padding: 40px; text-align: center; color: #8b949e; background-color: #161b22; border-radius: 8px; }
 .ed-x96 { color: #8b949e; font-size: 0.85rem; margin-bottom: 16px; }
 .ed-x97 { width: 100%; border-collapse: collapse; text-align: left; background-color: #161b22; border-radius: 8px; overflow: hidden; }
@@ -172,7 +171,6 @@
   .ed-x84 { grid-template-columns: 1fr; }
   .ed-x89 { grid-template-columns: 1fr; }
   .ed-x91 { grid-template-columns: 1fr; }
-  .ed-x94 { padding: 14px 12px; }
   .ed-x95 { padding: 14px 12px; }
   .ed-x113 { flex-wrap: wrap; }
   .ed-x118 { flex-wrap: wrap; }

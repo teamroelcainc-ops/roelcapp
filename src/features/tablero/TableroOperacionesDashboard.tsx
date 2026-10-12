@@ -10,6 +10,7 @@ import { collection, doc, limit, onSnapshot, orderBy, query, updateDoc } from 'f
 import { db } from '../../config/firebase';
 import { idReal, useCatalogo } from '../../shared/data/catalogos';
 import './TableroOperacionesDashboard.css';
+import CargandoDatos from '../../shared/components/CargandoDatos';
 
 const norm = (s: string) => String(s || '').trim();
 // ✅ V00171: paleta de prueba por status (se asigna por orden de columna)
@@ -73,7 +74,7 @@ export const TableroOperacionesDashboard = () => {
         <h2 className="tb-titulo">Tablero (CRM) <span className="tb-beta">módulo de prueba</span></h2>
         <p className="tb-sub">Arrastra una operación a otra columna para cambiarle el status (se guarda al instante). Muestra las últimas 200 operaciones.</p>
       </div>
-      {cargando ? <p className="tb-cargando">⏳ Cargando operaciones…</p> : (
+      {cargando ? <CargandoDatos texto="Cargando operaciones…" /> : (
         <div className="tb-tablero">
           {columnas.map(([status, lista], idxCol) => (
             <div key={status} className="tb-columna" style={{ '--tb-color': PALETA[idxCol % PALETA.length] } as React.CSSProperties} onDragOver={(e) => e.preventDefault()} onDrop={(e) => soltarEn(status, e)}>

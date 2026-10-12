@@ -83,3 +83,8 @@
   .fm-x57 { grid-template-columns: 1fr; }
   .fm-x58 { flex-wrap: wrap; }
 }
+
+/* ✅ V00449: opción "Varios" (primera de la lista de Unidad y de Operador). */
+.fm-varios { border-bottom: 1px solid #30363d; }
+.fm-varios .fm-x22 { color: #f0883e; }
+.fm-varios-nota { margin-top: 2px; font-size: 0.75rem; color: #8b949e; }

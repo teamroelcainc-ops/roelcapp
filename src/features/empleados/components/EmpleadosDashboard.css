@@ -20,7 +20,6 @@
 .emd-x16 { background-color: #D84315; color: #fff; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-weight: 500; }
 .emd-x17 { display: block; width: 100%; }
 .emd-x18 { border: 1px solid #30363d; border-radius: 8px; overflow-x: auto; max-height: calc(100vh - 280px); width: 100%; }
-.emd-x19 { padding: 40px; text-align: center; color: #8b949e; }
 .emd-x20 { width: 100%; min-width: 1300px; border-collapse: collapse; text-align: left; }
 .emd-x21 { background-color: #161b22; position: sticky; top: 0; z-index: 10; }
 .emd-x22 { padding: 16px; width: 120px; text-align: center; color: #8b949e; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; position: sticky; left: 0; background-color: #161b22; z-index: 12; border-right: 1px solid #30363d; border-bottom: 1px solid #30363d; }
@@ -86,7 +85,6 @@
   .emd-x7 { font-size: 1.3rem; }
   .emd-x14 { flex-wrap: wrap; }
   .emd-x15 { flex-wrap: wrap; }
-  .emd-x19 { padding: 14px 12px; }
   .emd-x20 { min-width: 0; }
   .emd-x24 { padding: 14px 12px; }
   .emd-x29 { padding: 14px 12px; }

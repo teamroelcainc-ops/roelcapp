@@ -9,6 +9,7 @@ import * as XLSX from 'xlsx';
 // ✅ Logo de los PDF (mismas exportaciones que ya usa el historial de Invoice).
 import { escaparHTML, getLogoPdf, LOGO_DEFAULT } from '../../../../utils/pdfGenerator';
 import './MttoDashboard.css';
+import CargandoDatos from '../../../../shared/components/CargandoDatos';
 import { useCatalogos } from '../../../../shared/data/catalogos';
 import type { DocCatalogo } from '../../../../shared/data/catalogos';
 import { queryClient } from '../../../../lib/queryClient';
@@ -784,6 +785,9 @@ const MttoDashboard = () => {
 
       {/* ✅ NUEVO — VISTA DE REFACCIONES Y GARANTÍAS */}
       {vistaActiva === 'refacciones' && (() => {
+        // ✅ V00449: con los gastos aún en camino, la pestaña decía "0 refacción(es)" y
+        //   "Sin garantías pendientes"; ahora muestra la animación hasta que llegan.
+        if (cargando) return <div className="md-x12"><CargandoDatos texto="Cargando refacciones…" /></div>;
         // Se aplanan las refacciones de TODOS los gastos cargados.
         const todas = mttoGlobales.flatMap((m: any) =>
           (Array.isArray(m.refacciones) ? m.refacciones : []).map((r: any) => ({ ...r, __gasto: m }))
@@ -995,7 +999,7 @@ const MttoDashboard = () => {
                   <button className="md-x45" onClick={() => setDrawerFiltrosAbierto(true)}>Abrir filtros</button>
                 </div>
               </div>
-            ) : cargando ? <div className="md-x46">Cargando datos...</div> : (
+            ) : cargando ? <CargandoDatos texto="Cargando datos..." /> : (
               <table className="data-table md-x47">
                 <thead className="md-x48">
                   <tr>

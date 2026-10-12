@@ -19,6 +19,7 @@ import * as XLSX from 'xlsx';
 import { generarInstruccionesDieselPDF } from '../../../utils/pdfInstruccionesDiesel';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import './ReferenciasDieselDashboard.css';
+import CargandoDatos from '../../../shared/components/CargandoDatos';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { SelectBuscable } from '../../catalogos/components/SelectBuscable';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
@@ -178,6 +179,9 @@ export const ReferenciasDieselDashboard = () => {
   
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
   const [referenciasGlobales, setReferenciasGlobales] = useState<any[]>([]);
+  // ✅ V00449: ya llegó el primer snapshot de referencias_diesel. Sin esta bandera, "Buscar"
+  //   en el Historial con el listener aún en camino decía "No hay referencias registradas."
+  const [referenciasListas, setReferenciasListas] = useState(false);
   
   // Catálogos
   // ✅ V00439 (Fase 3.4): unidades, empleados y empresas del listener compartido
@@ -216,7 +220,7 @@ export const ReferenciasDieselDashboard = () => {
 
   // Servicios (operaciones) de la unidad desde la fecha de la última recarga.
   useEffect(() => {
-    if (activeTab !== 'dashboard' || !dashUnidadId || !dashUltimaRecarga) { setDashOps([]); return; }
+    if (activeTab !== 'dashboard' || !dashUnidadId || !dashUltimaRecarga) { setDashOps([]); setCargandoDashOps(false); return; } // ✅ V00449: sin recargas no hay nada que cargar
     let cancelado = false;
     (async () => {
       setCargandoDashOps(true);
@@ -560,6 +564,11 @@ export const ReferenciasDieselDashboard = () => {
         return seqB - seqA; 
       });
       setReferenciasGlobales(refs);
+      setReferenciasListas(true); // ✅ V00449
+    }, (err) => {
+      // ✅ V00449: con error, la animación no se queda girando (antes no había manejador).
+      console.error('Error escuchando referencias_diesel:', err);
+      setReferenciasListas(true);
     });
 
     const unSubLugares = onSnapshot(collection(db, COLECCION_LUGARES), (snap) => {
@@ -1073,13 +1082,17 @@ export const ReferenciasDieselDashboard = () => {
   const [refDAbierta, setRefDAbierta] = useState('');
   const [diaDAbierto, setDiaDAbierto] = useState(''); // ✅ V00422
   const [opsRefD, setOpsRefD] = useState<Record<string, Record<string, unknown>[]>>({});
+  // ✅ V00449: la primera vez que se abre la pestaña Saldos, la tabla decía "Aún no hay saldos
+  //   registrados" mientras llegaba el listener; ahora muestra la animación hasta el primer snapshot.
+  const [saldosDListos, setSaldosDListos] = useState(false);
   useEffect(() => {
     if (activeTab !== 'saldos') return;
     const u = onSnapshot(collection(db, 'saldos_diesel'), (snap) => {
       const l: Record<string, unknown>[] = snap.docs.map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) }));
       l.sort((a, b) => `${String(b.fecha || '')} ${String(b.hora || '')}`.localeCompare(`${String(a.fecha || '')} ${String(a.hora || '')}`));
       setSaldosDiesel(l);
-    }, () => setSaldosDiesel([]));
+      setSaldosDListos(true);
+    }, () => { setSaldosDiesel([]); setSaldosDListos(true); });
     return () => u();
   }, [activeTab]);
   const horaAhoraD = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
@@ -1553,7 +1566,12 @@ export const ReferenciasDieselDashboard = () => {
               <SelectBuscable
                 opciones={unidadesList.map((u: any) => ({ value: u.id, label: String(u.unidad || u.nombre || u.id) }))}
                 value={dashUnidadId}
-                onChange={setDashUnidadId}
+                onChange={(v: string) => {
+                  // ✅ V00449: la bandera sube junto con la unidad (el efecto la subía un pintado
+                  //   después y se alcanzaba a ver "Sin servicios desde la última recarga.").
+                  if (v && v !== dashUnidadId) setCargandoDashOps(true);
+                  setDashUnidadId(v);
+                }}
                 placeholder="Buscar unidad..."
               />
               {dashUnidadId && (
@@ -1596,6 +1614,9 @@ export const ReferenciasDieselDashboard = () => {
                 <h3 style={{ margin: '0 0 12px 0', color: '#f0f6fc', fontSize: '1rem' }}>Galones autorizados en las últimas 5 recargas</h3>
                 {!dashUnidadId ? (
                   <p style={{ color: '#8b949e', textAlign: 'center', padding: '18px 0' }}>Selecciona una unidad para ver sus recargas.</p>
+                ) : !referenciasListas ? (
+                  /* ✅ V00449: con las referencias aún en camino decía "no tiene recargas registradas". */
+                  <CargandoDatos texto="Cargando recargas…" compacto />
                 ) : dashUltimas5.length === 0 ? (
                   <p style={{ color: '#8b949e', textAlign: 'center', padding: '18px 0' }}>Esta unidad no tiene recargas registradas.</p>
                 ) : (
@@ -1632,10 +1653,12 @@ export const ReferenciasDieselDashboard = () => {
                 </h3>
                 {!dashUnidadId ? (
                   <p style={{ color: '#8b949e', textAlign: 'center', padding: '18px 0' }}>Selecciona una unidad.</p>
+                ) : !referenciasListas ? (
+                  <CargandoDatos texto="Cargando servicios…" compacto />
                 ) : !dashUltimaRecarga ? (
                   <p style={{ color: '#8b949e', textAlign: 'center', padding: '18px 0' }}>Sin recargas: no hay punto de partida para listar servicios.</p>
                 ) : cargandoDashOps ? (
-                  <p style={{ color: '#8b949e', textAlign: 'center', padding: '18px 0' }}>Cargando servicios…</p>
+                  <CargandoDatos texto="Cargando servicios…" compacto />
                 ) : dashOps.length === 0 ? (
                   <p style={{ color: '#8b949e', textAlign: 'center', padding: '18px 0' }}>Sin servicios desde la última recarga.</p>
                 ) : (
@@ -1809,7 +1832,7 @@ export const ReferenciasDieselDashboard = () => {
                     </div>
                   </td></tr>
                 ) : cargandoOps ? (
-                  <tr><td className="rdd-x50" colSpan={colsOpsVisibles}>Cargando operaciones de la unidad...</td></tr>
+                  <tr><td colSpan={colsOpsVisibles}><CargandoDatos texto="Cargando operaciones de la unidad..." /></td></tr>
                 ) : operacionesMostradas.length === 0 ? (
                   <tr><td className="rdd-x50" colSpan={colsOpsVisibles}>
                     {filtroEstadoOps === 'pendientes'
@@ -1855,7 +1878,9 @@ export const ReferenciasDieselDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {saldosDiesel.length === 0 ? (
+                {!saldosDListos ? (
+                  <tr><td colSpan={9}><CargandoDatos texto="Cargando saldos…" /></td></tr>
+                ) : saldosDiesel.length === 0 ? (
                   <tr><td colSpan={9} className="rdd-saldos-vacio">Aún no hay saldos registrados. Usa "+ Agregar saldo".</td></tr>
                 ) : saldosDiesel.map(r => {
                   const a = asignacionDiesel[String(r.id)] || { refs: [], consumido: 0, balance: Number(r.saldo) || 0, galones: 0 };
@@ -1946,7 +1971,7 @@ export const ReferenciasDieselDashboard = () => {
                                       {abierta && (
                                         <tr className="rdd-asiento__sub">
                                           <td colSpan={7}>
-                                            {!ops ? <span className="rdd-moneda">Cargando operaciones…</span> : ops.length === 0 ? <span className="rdd-moneda">Esta referencia no tiene operaciones.</span> : (
+                                            {!ops ? <CargandoDatos texto="Cargando operaciones…" compacto /> : ops.length === 0 ? <span className="rdd-moneda">Esta referencia no tiene operaciones.</span> : (
                                               <table>
                                                 <thead><tr><th>Ref. Operación</th><th>Fecha servicio</th><th>Tipo</th><th>Convenio</th><th className="rdd-num">Diesel</th></tr></thead>
                                                 <tbody>
@@ -2102,6 +2127,9 @@ export const ReferenciasDieselDashboard = () => {
                       <button className="rdd-x49" onClick={() => setDrawerFiltrosAbierto(true)}>Abrir filtros</button>
                     </div>
                   </td></tr>
+                ) : !referenciasListas ? (
+                  /* ✅ V00449: animación mientras llega el listener de referencias (antes: estado vacío). */
+                  <tr><td colSpan={11}><CargandoDatos texto="Cargando referencias…" /></td></tr>
                 ) : registrosVisibles.length === 0 ? (
                   <tr><td className="rdd-x66" colSpan={11}>No hay referencias registradas.</td></tr>
                 ) : (
@@ -2828,7 +2856,7 @@ export const ReferenciasDieselDashboard = () => {
               <>
                 <div className="rdd-x204">
                   <label className="rdd-x205">UNIDAD <span className="rdd-x206">*</span></label>
-                  <select value={filtroUnidad} onChange={e => { setFiltroUnidad(e.target.value); setSeleccionadas([]); }} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#c9d1d9', border: `1px solid ${filtroUnidad ? '#58a6ff' : '#30363d'}`, borderRadius: '6px', boxSizing: 'border-box' }}>
+                  <select value={filtroUnidad} onChange={e => { if (e.target.value && e.target.value !== filtroUnidad) setCargandoOps(true); /* ✅ V00449: sube con el filtro, no un pintado después */ setFiltroUnidad(e.target.value); setSeleccionadas([]); }} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#c9d1d9', border: `1px solid ${filtroUnidad ? '#58a6ff' : '#30363d'}`, borderRadius: '6px', boxSizing: 'border-box' }}>
                     <option value="">Seleccionar Unidad...</option>
                     {unidadesOptions.map((name, i) => <option key={i} value={name}>{name}</option>)}
                   </select>

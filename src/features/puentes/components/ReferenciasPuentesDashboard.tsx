@@ -15,6 +15,7 @@ import {
 import { db, auth } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
 import './ReferenciasPuentesDashboard.css';
+import CargandoDatos from '../../../shared/components/CargandoDatos';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 import { esOperacionPrueba } from '../../../utils/operacionPrueba';
@@ -195,12 +196,20 @@ export const ReferenciasPuentesDashboard = () => {
   // ✅ V00402: HISTORIAL CALCULADO (referencias automáticas al marcar Verde)
   type RefAuto = { id: string; consecutivo?: string; puenteNombre?: string; fechaGeneracion?: string; horaGeneracion?: string; operaciones?: string[]; operacionesIds?: string[]; totalesPorMoneda?: Record<string, number>; subtotalPuentes?: number; statusPagado?: boolean };
   const [refsAuto, setRefsAuto] = useState<RefAuto[]>([]);
+  // ✅ V00449: banderas "ya llegó el primer snapshot" de cada listener del módulo. Sin ellas,
+  //   al entrar (o al cambiar de pestaña / presionar Buscar) las tablas decían "Aún no hay…" /
+  //   "No hay…" mientras la información seguía en camino; ahora muestran la animación.
+  const [refsAutoListas, setRefsAutoListas] = useState(false);
+  const [referenciasListas, setReferenciasListas] = useState(false);
+  const [opsPuentesListas, setOpsPuentesListas] = useState(false);
+  const [saldosListos, setSaldosListos] = useState(false);
   // ✅ V00403: se escucha SIEMPRE — las operaciones que ya están en el Historial
   //   calculado no se muestran en Asignar Operaciones (si se borra, regresan).
   useEffect(() => {
     const u = onSnapshot(query(collection(db, COL_REF_AUTO), orderBy('fechaGeneracion', 'desc'), limit(1000)), (snap) => {
       setRefsAuto(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<RefAuto, 'id'>) })));
-    }, () => setRefsAuto([]));
+      setRefsAutoListas(true);
+    }, () => { setRefsAuto([]); setRefsAutoListas(true); });
     return () => u();
   }, []);
   const idsEnHistorialCalculado = useMemo(() => {
@@ -261,7 +270,8 @@ export const ReferenciasPuentesDashboard = () => {
       const l: Record<string, unknown>[] = snap.docs.map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) }));
       l.sort((a, b) => `${String(b.fecha || '')} ${String(b.hora || '')}`.localeCompare(`${String(a.fecha || '')} ${String(a.hora || '')}`));
       setSaldosLista(l);
-    });
+      setSaldosListos(true);
+    }, (err) => { console.error('Error escuchando saldos_puentes:', err); setSaldosListos(true); }); // ✅ V00449
     return () => u();
   }, [activeTab]);
   // ✅ V00393: hora en que se marcó Verde MX / Verde USA (bitácora "horarios")
@@ -307,7 +317,8 @@ export const ReferenciasPuentesDashboard = () => {
     const qRefs = query(collection(db, 'referencias_puentes'), orderBy('createdAt', 'desc'), limit(3000));
     const unSubRefs = onSnapshot(qRefs, (snap) => {
       setReferenciasGlobales(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-    });
+      setReferenciasListas(true);
+    }, (err) => { console.error('Error escuchando referencias_puentes:', err); setReferenciasListas(true); }); // ✅ V00449
     return () => unSubRefs();
   }, []);
 
@@ -320,7 +331,8 @@ export const ReferenciasPuentesDashboard = () => {
       const ops = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
       ops.sort((a: any, b: any) => new Date(b.fechaServicio || b.createdAt || 0).getTime() - new Date(a.fechaServicio || a.createdAt || 0).getTime());
       setOperacionesGlobales(ops);
-    }));
+      setOpsPuentesListas(true);
+    }, (err) => { console.error('Error escuchando operaciones (puentes):', err); setOpsPuentesListas(true); })); // ✅ V00449
     return () => subs.forEach(u => u());
   }, [activeTab]);
 
@@ -1186,7 +1198,9 @@ export const ReferenciasPuentesDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {refsAuto.length === 0 ? (
+                {!refsAutoListas ? (
+                  <tr><td colSpan={7}><CargandoDatos texto="Cargando referencias…" /></td></tr>
+                ) : refsAuto.length === 0 ? (
                   <tr><td className="rpd-x45" colSpan={7}>Aún no hay referencias automáticas. Se crean al marcar Verde una operación.</td></tr>
                 ) : refsAuto.map(r => (
                   <tr key={r.id} className="rpd-x46 rpd-fila-clic" title="Ver detalle" onClick={() => setReferenciaViendo(r)}>
@@ -1269,7 +1283,9 @@ export const ReferenciasPuentesDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {saldosLista.length === 0 ? (
+                {!saldosListos ? (
+                  <tr><td colSpan={9}><CargandoDatos texto="Cargando saldos…" /></td></tr>
+                ) : saldosLista.length === 0 ? (
                   <tr><td className="rpd-x45" colSpan={9}>Aún no hay saldos registrados. Usa "+ Agregar saldo".</td></tr>
                 ) : saldosLista.map(r => {
                   const a = asignacionSaldos[String(r.id)] || { refs: [], consumido: 0, balance: Number(r.saldo) || 0, cruces: 0 };
@@ -1455,7 +1471,9 @@ export const ReferenciasPuentesDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {otrosCruces.length === 0 ? (
+                {!refsAutoListas || !referenciasListas ? (
+                  <tr><td colSpan={7}><CargandoDatos texto="Cargando otros cruces…" /></td></tr>
+                ) : otrosCruces.length === 0 ? (
                   <tr><td className="rpd-x45" colSpan={7}>Aún no hay otros cruces registrados. Usa "+ Agregar cruce".</td></tr>
                 ) : otrosCruces.map(r => (
                   <tr className="rpd-x46 rpd-fila-clic" key={r.id} title="Ver detalle" onClick={() => setReferenciaViendo(r)}>
@@ -1633,7 +1651,9 @@ export const ReferenciasPuentesDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {operacionesMostradas.length === 0 ? (
+                {!opsPuentesListas ? (
+                  <tr><td colSpan={colsOpsVisibles}><CargandoDatos texto="Cargando operaciones…" /></td></tr>
+                ) : operacionesMostradas.length === 0 ? (
                   <tr><td className="rpd-x30" colSpan={colsOpsVisibles}>
                     {filtroEstadoOps === 'pendientes' ? 'No hay operaciones pendientes con estos filtros.' : 'No hay operaciones asignadas a referencias con estos filtros.'}
                   </td></tr>
@@ -1716,6 +1736,8 @@ export const ReferenciasPuentesDashboard = () => {
                       <button className="rpd-x39" onClick={() => setDrawerFiltrosAbierto(true)}>Abrir filtros</button>
                     </div>
                   </td></tr>
+                ) : !referenciasListas ? (
+                  <tr><td colSpan={8}><CargandoDatos texto="Cargando referencias…" /></td></tr>
                 ) : registrosVisibles.length === 0 ? (
                   <tr><td className="rpd-x45" colSpan={8}>
                     {filtroEstadoHist === 'pendientes' ? 'No hay referencias pendientes de pago.' : 'No hay referencias pagadas.'}

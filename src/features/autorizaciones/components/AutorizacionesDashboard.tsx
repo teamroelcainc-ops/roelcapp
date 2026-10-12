@@ -21,6 +21,7 @@ import type { ConfigModuloAut, ReglaAut, SolicitudAut } from '../autorizaciones'
 import { guardarOperacionSegura } from '../../operaciones/services/operacionesService';
 import { registrarLog } from '../../../utils/logger';
 import './AutorizacionesDashboard.css';
+import CargandoDatos from '../../../shared/components/CargandoDatos';
 import { useConfigsFormularios, guardarCamposFormulario, type CampoFormCfg } from '../../formularios/configFormularios';
 import { useCatalogo } from '../../../shared/data/catalogos';
 import { rolesTienenPermiso } from '../../../shared/data/sesion';
@@ -87,6 +88,11 @@ export const AutorizacionesDashboard = () => {
   // ── Solicitudes ──
   const [pendientes, setPendientes] = useState<SolicitudAut[]>([]);
   const [historial, setHistorial] = useState<SolicitudAut[]>([]);
+  // ✅ V00449: banderas de primera carga. Sin ellas, "Pendientes" decía "No hay solicitudes
+  //   pendientes" mientras llegaba el listener y "Historial" (se lee al abrir la pestaña) decía
+  //   "Sin solicitudes resueltas todavía." mientras seguía la lectura.
+  const [pendientesListas, setPendientesListas] = useState(false);
+  const [historialListo, setHistorialListo] = useState(false);
   const [procesando, setProcesando] = useState<string>('');
   const [solicitudDetalle, setSolicitudDetalle] = useState<SolicitudAut | null>(null);
 
@@ -120,7 +126,8 @@ export const AutorizacionesDashboard = () => {
       const lista = snap.docs.map((d: any) => ({ id: d.id, ...d.data() })) as SolicitudAut[];
       lista.sort((a, b) => String(a.creadaEn).localeCompare(String(b.creadaEn)));
       setPendientes(lista);
-    }, (e: any) => console.error('Error escuchando solicitudes:', e));
+      setPendientesListas(true);
+    }, (e: any) => { console.error('Error escuchando solicitudes:', e); setPendientesListas(true); });
     return () => unsub();
   }, []);
 
@@ -134,6 +141,7 @@ export const AutorizacionesDashboard = () => {
           .filter(s => s.estado !== 'pendiente').slice(0, 100);
         setHistorial(lista);
       } catch (e) { console.error('Error cargando historial:', e); }
+      setHistorialListo(true);
     })();
   }, [pestana, pendientes.length]);
 
@@ -385,7 +393,8 @@ export const AutorizacionesDashboard = () => {
       {/* ══ PENDIENTES ══ */}
       {pestana === 'pendientes' && (
         <div className="ad-x17">
-          {pendientes.length === 0 && (
+          {!pendientesListas && <CargandoDatos texto="Cargando solicitudes…" />}
+          {pendientesListas && pendientes.length === 0 && (
             <div style={{ ...card, padding: '40px', textAlign: 'center', color: '#8b949e' }}>
               No hay solicitudes pendientes de autorización.
             </div>
@@ -425,7 +434,7 @@ export const AutorizacionesDashboard = () => {
           <div style={{ ...card, padding: '14px 18px', color: '#8b949e', fontSize: '0.85rem' }}>
             Marca con su casilla las <b className="ad-x23">acciones</b> y <b className="ad-x23">campos</b> que requieren autorización. Por defecto cada regla aplica a <b className="ad-x26">todos los roles</b>; si quieres limitarla, pulsa la píldora de roles y elige. Con <b className="ad-x27">"Aplicar a todo el módulo"</b> copias una selección de roles a todas las reglas marcadas de un clic. Los usuarios <b className="ad-x27">Admin siempre están exentos</b>. La configuración se comparte con todos los usuarios.
           </div>
-          {cargandoConfig && <div className="ad-x28">Cargando configuración...</div>}
+          {cargandoConfig && <CargandoDatos texto="Cargando configuración..." />}
           {!cargandoConfig && MODULOS_AUTORIZABLES.map(m => {
             const abierto = moduloAbierto === m.clave;
             const cfg = configs[m.clave] || { acciones: {}, campos: {} };
@@ -547,7 +556,8 @@ export const AutorizacionesDashboard = () => {
       {/* ══ HISTORIAL ══ */}
       {pestana === 'historial' && (
         <div className="ad-x45">
-          {historial.length === 0 && <div style={{ ...card, padding: '30px', textAlign: 'center', color: '#8b949e' }}>Sin solicitudes resueltas todavía.</div>}
+          {!historialListo && <CargandoDatos texto="Cargando historial…" />}
+          {historialListo && historial.length === 0 && <div style={{ ...card, padding: '30px', textAlign: 'center', color: '#8b949e' }}>Sin solicitudes resueltas todavía.</div>}
           {historial.map(s => (
             <div key={s.id} style={{ ...card, padding: '12px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', borderLeft: `4px solid ${s.estado === 'aprobada' ? '#238636' : '#da3633'}` }}>
               <div>

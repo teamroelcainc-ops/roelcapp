@@ -56,7 +56,8 @@
 .scc-x52 { color: #8b949e; font-size: 0.9rem; }
 .scc-x53 { color: #ef4444; }
 .scc-x54 { color: #ef4444; font-weight: bold; }
-.scc-x55 { border: 1px solid #30363d; border-radius: 8px; padding: 60px 24px; text-align: center; color: #8b949e; }
+/* ✅ V00449: marco de la animación de espera (CargandoDatos ya trae su propio relleno). */
+.scc-x55 { border: 1px solid #30363d; border-radius: 8px; padding: 24px 12px; }
 .scc-x56 { border: 1px solid rgba(248,81,73,0.4); background-color: rgba(248,81,73,0.06); border-radius: 8px; padding: 40px 24px; text-align: center; }
 .scc-x57 { color: #f85149; font-weight: bold; font-size: 1.05rem; margin-bottom: 8px; }
 .scc-x58 { color: #8b949e; font-size: 0.9rem; max-width: 520px; margin: 0 auto 16px; }

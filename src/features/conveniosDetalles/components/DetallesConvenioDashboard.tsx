@@ -57,6 +57,7 @@ import { cargarNombresStatus, nombreStatusOp, familiaStatus, type OpConStatus } 
 import { useFlags, useFlagsCargadas } from '../../../shared/data/flags';
 import { sinPruebas } from '../../../utils/operacionPrueba';
 import { paginaOperacionesDeConvenio, usosPorTipo } from '../../../shared/data/consultas';
+import CargandoDatos from '../../../shared/components/CargandoDatos';
 
 /** Una operación en la lista de uso de un detalle de convenio. */
 interface UsoOp { ref: string; fecha: string; status: string; tipo: string; entidad: string; monto: string; docId: string }
@@ -1417,7 +1418,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       </div>
 
       {filas === null ? (
-        <div className="dcv-x5">Cargando detalles del convenio…</div>
+        <div className="dcv-x5"><CargandoDatos texto="Cargando detalles del convenio…" /></div>
       ) : filasVisibles.length === 0 ? (
         <div className="dcv-x5">
           {busqueda ? 'Sin resultados para la búsqueda.' : 'Aún no hay detalles de convenio capturados.'}
@@ -1771,7 +1772,9 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                 <span className="dcv-x1lbl">Último uso en operaciones</span>
                 {(() => {
                   const ult = [...usosDe(usoAbierto.id)].filter((o) => o.fecha).sort((a, b) => a.fecha.localeCompare(b.fecha)).slice(-1)[0];
-                  if (!ult) return <b>{canon && usoFicha?.cargando ? 'Cargando…' : 'Sin uso registrado'}</b>;
+                  // ✅ V00449: sin la bandera canónica, los usos llegan con cargar() (`cargando`); antes
+                  //   decía "Sin uso registrado" mientras seguían en camino.
+                  if (!ult) return <b>{(canon ? usoFicha?.cargando : cargando) ? 'Cargando…' : 'Sin uso registrado'}</b>;
                   return (
                     <b>
                       {ult.fecha} · <button type="button" className="dcv-ref-link" onClick={() => editarOperacion(ult)}>{ult.ref}</button>
@@ -1782,6 +1785,11 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
               </div>
             </div>
 
+            {/* ✅ V00449: mientras se piden las operaciones que usan este detalle, animación en lugar
+                del hueco (la tabla no se pinta hasta que hay al menos una). */}
+            {usosDe(usoAbierto.id).length === 0 && (canon ? (usoFicha?.id === usoAbierto.id && usoFicha.cargando) : cargando) && (
+              <div className="dcv-ficha-ops"><CargandoDatos texto="Cargando operaciones que lo usaron…" compacto /></div>
+            )}
             {usosDe(usoAbierto.id).length > 0 && (
               <div className="dcv-ficha-ops">
                 <div className="dcv-ficha-ops-tit">Operaciones que lo usaron{canon && usoFicha?.hayMas ? ` (las ${TAMANO_USO} más recientes)` : ''}</div>

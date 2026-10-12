@@ -36,6 +36,7 @@ import { idReal, obtenerCatalogo } from '../../../shared/data/catalogos';
 // Mismo logo base64 que usan los demás PDF del proyecto.
 import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
 import './ResumenDiarioOperaciones.css';
+import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
 import { docsSinPruebas, sinPruebas } from '../../../utils/operacionPrueba';
 import { obtenerFlags } from '../../../shared/data/flags';
 import { operacionesDelDia } from '../../../shared/data/consultas';
@@ -135,6 +136,9 @@ export const ResumenDiarioOperaciones = () => {
   const [refsDieselAll, setRefsDieselAll] = useState<any[]>([]);
   const [maps, setMaps] = useState<Maps>({ emp: {}, tipo: {}, status: {}, conv: {}, uni: {}, ope: {} });
   const [cargando, setCargando] = useState(false);
+  // ✅ V00449: día cuyos datos están en opsAll ('*' = todos los días, camino sin la bandera;
+  //   null = todavía nada). Ver `esperandoDatos` abajo.
+  const [diaCargado, setDiaCargado] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const cargadoRef = useRef(false);
   const enCaminoRef = useRef(false); // ✅ V00443
@@ -218,6 +222,7 @@ export const ResumenDiarioOperaciones = () => {
 
       setMaps({ emp, tipo, status, conv, uni, ope });
       setOpsAll(ops);
+      setDiaCargado(canon ? diaPedido : '*'); // ✅ V00449
       // ✅ V00191: referencias del diésel con fecha normalizada a ISO.
       setRefsDieselAll(dzSnap.docs.map(d => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc de referencia de diésel sin tipo canónico.
@@ -585,6 +590,11 @@ export const ResumenDiarioOperaciones = () => {
   const btnOutline: React.CSSProperties = { padding: '9px 16px', borderRadius: 8, border: '1px solid #30363d', background: 'transparent', color: '#c9d1d9', fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8 };
 
   const totalDia = opsDia.length;
+  // ✅ V00449: `cargando` se enciende hasta que el efecto corre y llega `await obtenerFlags()`;
+  //   mientras, al abrir el módulo o al cambiar la Fecha (con la bandera se lee día por día) la
+  //   pantalla ya decía "No hay operaciones registradas el …" y la vista previa salía vacía.
+  //   Ahora espera desde el mismo render en que cambia la fecha, sin tocar cuándo se consulta.
+  const esperandoDatos = cargando || (!error && (diaCargado === null || (diaCargado !== '*' && diaCargado !== fecha)));
   const previewSrc = useMemo(() => construirHTML(tipoActivo, false), [tipoActivo, opsDia, maps, realizadoPor, fecha]);
 
   return (
@@ -636,7 +646,7 @@ export const ResumenDiarioOperaciones = () => {
 
       {error && <div className="rdo-x9">{error}</div>}
 
-      {!cargando && totalDia === 0 && !error && (
+      {!esperandoDatos && totalDia === 0 && !error && (
         <div className="rdo-x10">
           No hay operaciones registradas el <b className="rdo-x11">{fmtFechaLatina(fecha)}</b>. Cambia la fecha o pulsa <b className="rdo-x11">Recargar</b>.
         </div>
@@ -646,9 +656,13 @@ export const ResumenDiarioOperaciones = () => {
       <div className="rdo-x12">
         <div className="rdo-x13">
           <span className="rdo-x14">Vista previa · {tipoActivo} · {fmtFechaLatina(fecha)}</span>
-          <span className="rdo-x14">{cargando ? 'Cargando…' : `${opsDia.filter(o => clasificar(o) === tipoActivo).length} operación(es)`}</span>
+          <span className="rdo-x14">{esperandoDatos ? 'Cargando…' : `${opsDia.filter(o => clasificar(o) === tipoActivo).length} operación(es)`}</span>
         </div>
-        <iframe className="rdo-x15" title="preview-resumen" srcDoc={previewSrc} />
+        {esperandoDatos ? (
+          <div className="rdo-cargando"><CargandoDatos texto="Cargando operaciones del día…" /></div>
+        ) : (
+          <iframe className="rdo-x15" title="preview-resumen" srcDoc={previewSrc} />
+        )}
       </div>
     </div>
   );

@@ -19,6 +19,11 @@ import { validarFormularioConfigurable } from '../../../formularios/configFormul
 //   compró, a qué unidad propia se instaló y en qué parte del camión.
 export const TIPO_GASTO_REFACCION = 'Gastos de Refacción y Mantenimiento';
 
+// ✅ V00449: "Varios" en Unidad y en Operador, para insumos que se reparten entre varias
+//   unidades (aceite, anticongelante, desengrasante). Se guarda como valor fijo, igual
+//   que 'Oficina': la tabla, el detalle y la Relación de Compras lo muestran tal cual.
+export const MTTO_VARIOS = 'Varios';
+
 export interface Refaccion {
   id: string;
   descripcion: string;      // ¿Qué compré? (ej. "Caucho 295/75 R22.5")
@@ -251,7 +256,9 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
       };
       setFormData(prev => ({ ...prev, ...safeInitialData }));
 
-      if (initialData.unidadId && listaUnidadesLocal.length > 0) {
+      if (initialData.unidadId === MTTO_VARIOS) {
+        setSearchUnidad(MTTO_VARIOS); // ✅ V00449
+      } else if (initialData.unidadId && listaUnidadesLocal.length > 0) {
         const uni = listaUnidadesLocal.find((u:any) => u.id === initialData.unidadId);
         setSearchUnidad(uni ? ((uni.unidad || uni.numeroEconomico || uni.nombre) as string) : '');
       } else if (initialData.unidadId === 'Oficina') {
@@ -272,6 +279,8 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
         const op = listaEmpleadosLocal.find((e:any) => e.id === initialData.operadorId);
         if(op){
           setSearchOperador(`${op.firstName || ''} ${op.lastNamePaternal || ''}`.trim());
+        } else if (initialData.operadorNombre) {
+          setSearchOperador(initialData.operadorNombre); // ✅ V00449: "Varios" (u operador dado de baja)
         }
       } else if (initialData.operadorNombre) {
         setSearchOperador(initialData.operadorNombre);
@@ -455,6 +464,20 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
     };
   });
 
+  // ✅ V00449: elegir de la lista (unidad, operador o "Varios").
+  const elegirUnidad = (id: string, nombre: string) => {
+    setFormData(prev => ({ ...prev, unidadId: id }));
+    setSearchUnidad(nombre);
+    setShowUnidad(false);
+  };
+  const elegirOperador = (id: string, nombre: string) => {
+    setFormData(prev => ({ ...prev, operadorId: id, operadorNombre: nombre, operador: nombre }));
+    setSearchOperador(nombre);
+    setShowOperador(false);
+  };
+  // La lista no le quita el foco al campo: así se cierra al salir del campo (onBlur) sin perder el clic.
+  const mantenerFoco = (ev: React.MouseEvent) => ev.preventDefault();
+
   const operacionesFiltro = catalogos?.operaciones?.filter((o:any) => (o.ref || '').toLowerCase().includes(searchOperacion.toLowerCase())) || [];
 
   // ✅ Folio que se muestra: al editar se normaliza a MTTO-DDMMYY-NNN (solo visual,
@@ -552,31 +575,39 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
               
               <div className="form-group fm-x18">
                 <label className="fm-x14">Unidad {configuracion.requeridos.unidad && <RequeridoMark />}</label>
-                <input type="text" required={configuracion.requeridos.unidad && !formData.unidadId} value={searchUnidad} onChange={(e) => { setSearchUnidad(e.target.value); setShowUnidad(true); if (formData.unidadId) setFormData(prev => ({ ...prev, unidadId: '' })); }} onFocus={() => setShowUnidad(true)} readOnly={formData.tipoGasto === 'Gastos de Oficina'} style={{ width: '100%', padding: '10px', backgroundColor: formData.tipoGasto === 'Gastos de Oficina' ? '#161b22' : '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }} placeholder={formData.tipoGasto === 'Gastos de Oficina' ? '' : 'Buscar unidad...'} />
-                {showUnidad && formData.tipoGasto !== 'Gastos de Oficina' && searchUnidad && (
-                  <div className="fm-x19">
-                    {unidadesFiltro.length === 0 ? <div className="fm-x20">Sin resultados</div> : unidadesFiltro.map((u:any) => (
-                      <div className="fm-x21" key={u.id} onClick={() => { setFormData(prev => ({...prev, unidadId: u.id})); setSearchUnidad(u.unidad || u.numeroEconomico || u.nombre); setShowUnidad(false); }}>
+                <input type="text" required={configuracion.requeridos.unidad && !formData.unidadId} value={searchUnidad} onChange={(e) => { setSearchUnidad(e.target.value); setShowUnidad(true); if (formData.unidadId) setFormData(prev => ({ ...prev, unidadId: '' })); }} onFocus={() => setShowUnidad(true)} onBlur={() => setShowUnidad(false)} readOnly={formData.tipoGasto === 'Gastos de Oficina'} style={{ width: '100%', padding: '10px', backgroundColor: formData.tipoGasto === 'Gastos de Oficina' ? '#161b22' : '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }} placeholder={formData.tipoGasto === 'Gastos de Oficina' ? '' : 'Buscar unidad...'} />
+                {showUnidad && formData.tipoGasto !== 'Gastos de Oficina' && (
+                  <div className="fm-x19" onMouseDown={mantenerFoco}>
+                    <div className="fm-x21 fm-varios" onClick={() => elegirUnidad(MTTO_VARIOS, MTTO_VARIOS)}>
+                      <div className="fm-x22">Varios</div>
+                      <div className="fm-varios-nota">Gasto para varias unidades</div>
+                    </div>
+                    {searchUnidad && (unidadesFiltro.length === 0 ? <div className="fm-x20">Sin resultados</div> : unidadesFiltro.map((u:any) => (
+                      <div className="fm-x21" key={u.id} onClick={() => elegirUnidad(u.id, u.unidad || u.numeroEconomico || u.nombre)}>
                         <div className="fm-x22">{u.unidad || u.numeroEconomico || u.nombre}</div>
                       </div>
-                    ))}
+                    )))}
                   </div>
                 )}
               </div>
 
               <div className="form-group fm-x18">
                 <label className="fm-x14">Operador {configuracion.requeridos.operador && <RequeridoMark />}</label>
-                <input type="text" required={configuracion.requeridos.operador && !formData.operadorId} value={searchOperador} onChange={(e) => { setSearchOperador(e.target.value); setShowOperador(true); if (formData.operadorId) setFormData(prev => ({ ...prev, operadorId: '', operadorNombre: '' })); }} onFocus={() => setShowOperador(true)} readOnly={formData.tipoGasto === 'Gastos de Oficina'} style={{ width: '100%', padding: '10px', backgroundColor: formData.tipoGasto === 'Gastos de Oficina' ? '#161b22' : '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }} placeholder={formData.tipoGasto === 'Gastos de Oficina' ? '' : 'Buscar empleado...'} />
-                {showOperador && formData.tipoGasto !== 'Gastos de Oficina' && searchOperador && (
-                  <div className="fm-x19">
-                    {operadoresFiltro.length === 0 ? <div className="fm-x20">Sin resultados</div> : operadoresFiltro.map((e:any) => {
+                <input type="text" required={configuracion.requeridos.operador && !formData.operadorId} value={searchOperador} onChange={(e) => { setSearchOperador(e.target.value); setShowOperador(true); if (formData.operadorId) setFormData(prev => ({ ...prev, operadorId: '', operadorNombre: '' })); }} onFocus={() => setShowOperador(true)} onBlur={() => setShowOperador(false)} readOnly={formData.tipoGasto === 'Gastos de Oficina'} style={{ width: '100%', padding: '10px', backgroundColor: formData.tipoGasto === 'Gastos de Oficina' ? '#161b22' : '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }} placeholder={formData.tipoGasto === 'Gastos de Oficina' ? '' : 'Buscar empleado...'} />
+                {showOperador && formData.tipoGasto !== 'Gastos de Oficina' && (
+                  <div className="fm-x19" onMouseDown={mantenerFoco}>
+                    <div className="fm-x21 fm-varios" onClick={() => elegirOperador(MTTO_VARIOS, MTTO_VARIOS)}>
+                      <div className="fm-x22">Varios</div>
+                      <div className="fm-varios-nota">Gasto para varios operadores</div>
+                    </div>
+                    {searchOperador && (operadoresFiltro.length === 0 ? <div className="fm-x20">Sin resultados</div> : operadoresFiltro.map((e:any) => {
                       const fullName = `${e.firstName || ''} ${e.lastNamePaternal || ''}`.trim();
                       return (
-                        <div className="fm-x21" key={e.id} onClick={() => { setFormData(prev => ({...prev, operadorId: e.id, operadorNombre: fullName, operador: fullName})); setSearchOperador(fullName); setShowOperador(false); }}>
+                        <div className="fm-x21" key={e.id} onClick={() => elegirOperador(e.id, fullName)}>
                           <div className="fm-x22">{fullName}</div>
                         </div>
                       )
-                    })}
+                    }))}
                   </div>
                 )}
               </div>

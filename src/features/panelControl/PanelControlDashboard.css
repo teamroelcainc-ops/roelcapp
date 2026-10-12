@@ -13,7 +13,6 @@
 .pc-alerta-mal b { color: #f85149; }
 .pc-alerta-medio { border-color: #f59e0b; color: #fbbf24; }
 .pc-alerta-medio b { color: #fbbf24; }
-.pc-cargando { color: #8b949e; }
 .pc-seccion { color: #f0f6fc; margin: 8px 0 0; font-size: 0.95rem; }
 .pc-tarjetas { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
 .pc-tarjeta { background: #0d1117; border: 1px solid #30363d; border-radius: 14px; padding: 14px 16px; }

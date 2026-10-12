@@ -6,6 +6,7 @@ import { db } from '../../../../config/firebase';
 //    dinámico registrado con setLogoPdf() y respaldo al logo por defecto.
 import { getLogoPdf, LOGO_DEFAULT } from '../../../../utils/pdfGenerator';
 import './MttoAgrupadosInvoice.css';
+import CargandoDatos from '../../../../shared/components/CargandoDatos';
 import { useCatalogo } from '../../../../shared/data/catalogos';
 
 interface GastoMtto {
@@ -442,7 +443,7 @@ const MttoAgrupadosInvoice = () => {
         </div>
       ) : cargando ? (
         <div className="mai-x14">
-          Procesando consolidación de Invoices...
+          <CargandoDatos texto="Procesando consolidación de Invoices..." />
         </div>
       ) : gruposFacturados.length === 0 ? (
         <div className="mai-x15">

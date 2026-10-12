@@ -22,6 +22,7 @@ import { DocumentosLista } from '../../documentos/DocumentosLista';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 import { FormularioOperacion, TIPOS_DOCUMENTO_OPERACION } from './FormularioOperacion';
 import './ServiciosCompletados.css';
+import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
 import { almacenSesion } from '../../../utils/cacheMemoria';
 import { obtenerFlags, useFlags } from '../../../shared/data/flags';
 import { paginaOperaciones, todasLasPaginas } from '../../../shared/data/consultas';
@@ -433,7 +434,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   //   Por qué: los registros migrados guardan fechaServicio en formatos que la
   //   consulta por rango de Firestore no reconoce (devolvía 0). Al traer todos
   //   los completados y filtrar la fecha en memoria, siempre aparecen.
-  const descargarOperaciones = async (
+  const descargarOperacionesSinBandera = async (
     fechaInicio: string,
     fechaFin: string,
     _clienteId: string,
@@ -639,6 +640,20 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     }
 
     setCargandoOperaciones(false);
+  };
+
+  // ✅ V00449: la animación de espera se enciende EN EL MISMO clic de Buscar / Actualizar
+  //   (antes solo después de `await obtenerFlags()`, que al abrir en pestaña nueva tarda
+  //   hasta 3 s): mientras tanto la tabla ya mostraba "Sin resultados…" con el rango nuevo
+  //   o los datos del rango anterior. El finally la apaga en TODOS los caminos (caché,
+  //   error, ruta rápida), así nunca se queda pegada.
+  const descargarOperaciones = async (...args: Parameters<typeof descargarOperacionesSinBandera>) => {
+    setCargandoOperaciones(true);
+    try {
+      await descargarOperacionesSinBandera(...args);
+    } finally {
+      setCargandoOperaciones(false);
+    }
   };
 
   // ✅ MODIFICADO: ya no se usa (se descargan todos por status). Se deja como
@@ -2637,47 +2652,48 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         </div>
 
 
+        {/* ✅ V00449: mientras llega el rango, los números giran (antes decían 0). */}
         {filtrosAplicados && (
           <div className="sc-x70">
             <div className="sc-x71">
               <a href={urlTarjeta('total')} className={`sc-tarjeta-filtro${filtroTarjeta === 'total' ? ' sc-tarjeta-filtro--activa' : ''}`} style={cardResumenStyle} title="Clic: filtrar aquí · Ctrl+clic o botón central: abrir el resultado en otra pestaña" onClick={(e) => { if (e.ctrlKey || e.metaKey || e.shiftKey) return; e.preventDefault(); setFiltroTarjeta((f) => (f === 'total' ? '' : 'total')); }}>
                 <span style={cardLabelStyle}>Servicios (rango)</span>
-                <span style={{ ...cardValueStyle, color: '#f0f6fc' }}>{resumenServicios.total}</span>
+                <span style={{ ...cardValueStyle, color: '#f0f6fc' }}>{cargandoOperaciones ? <CargandoDatos enLinea texto="Cargando" /> : resumenServicios.total}</span>
               </a>
               <a href={urlTarjeta('completados')} className={`sc-tarjeta-filtro${filtroTarjeta === 'completados' ? ' sc-tarjeta-filtro--activa' : ''}`} style={cardResumenStyle} title="Clic: filtrar aquí · Ctrl+clic o botón central: abrir el resultado en otra pestaña" onClick={(e) => { if (e.ctrlKey || e.metaKey || e.shiftKey) return; e.preventDefault(); setFiltroTarjeta((f) => (f === 'completados' ? '' : 'completados')); }}>
                 <span style={cardLabelStyle}>Completados</span>
-                <span style={{ ...cardValueStyle, color: '#10b981' }}>{resumenServicios.completados}</span>
+                <span style={{ ...cardValueStyle, color: '#10b981' }}>{cargandoOperaciones ? <CargandoDatos enLinea texto="Cargando" /> : resumenServicios.completados}</span>
               </a>
               <a href={urlTarjeta('falsos')} className={`sc-tarjeta-filtro${filtroTarjeta === 'falsos' ? ' sc-tarjeta-filtro--activa' : ''}`} style={cardResumenStyle} title="Clic: filtrar aquí · Ctrl+clic o botón central: abrir el resultado en otra pestaña" onClick={(e) => { if (e.ctrlKey || e.metaKey || e.shiftKey) return; e.preventDefault(); setFiltroTarjeta((f) => (f === 'falsos' ? '' : 'falsos')); }}>
                 <span style={cardLabelStyle}>Falsos</span>
-                <span style={{ ...cardValueStyle, color: '#f85149' }}>{resumenServicios.falsos}</span>
+                <span style={{ ...cardValueStyle, color: '#f85149' }}>{cargandoOperaciones ? <CargandoDatos enLinea texto="Cargando" /> : resumenServicios.falsos}</span>
               </a>
               <a href={urlTarjeta('diesel')} className={`sc-tarjeta-filtro${filtroTarjeta === 'diesel' ? ' sc-tarjeta-filtro--activa' : ''}`} style={cardResumenStyle} title="Clic: filtrar aquí · Ctrl+clic o botón central: abrir el resultado en otra pestaña" onClick={(e) => { if (e.ctrlKey || e.metaKey || e.shiftKey) return; e.preventDefault(); setFiltroTarjeta((f) => (f === 'diesel' ? '' : 'diesel')); }}>
                 <span style={cardLabelStyle}>Cargaron Diésel</span>
-                <span style={{ ...cardValueStyle, color: '#f59e0b' }}>{resumenServicios.conDiesel}</span>
+                <span style={{ ...cardValueStyle, color: '#f59e0b' }}>{cargandoOperaciones ? <CargandoDatos enLinea texto="Cargando" /> : resumenServicios.conDiesel}</span>
               </a>
               <a href={urlTarjeta('nomina')} className={`sc-tarjeta-filtro${filtroTarjeta === 'nomina' ? ' sc-tarjeta-filtro--activa' : ''}`} style={cardResumenStyle} title="Clic: filtrar aquí · Ctrl+clic o botón central: abrir el resultado en otra pestaña" onClick={(e) => { if (e.ctrlKey || e.metaKey || e.shiftKey) return; e.preventDefault(); setFiltroTarjeta((f) => (f === 'nomina' ? '' : 'nomina')); }}>
                 <span style={cardLabelStyle}>Pagados Nómina</span>
-                <span style={{ ...cardValueStyle, color: '#a371f7' }}>{resumenServicios.conNomina}</span>
+                <span style={{ ...cardValueStyle, color: '#a371f7' }}>{cargandoOperaciones ? <CargandoDatos enLinea texto="Cargando" /> : resumenServicios.conNomina}</span>
               </a>
             </div>
 
             <div className="sc-x72">
               <a href={urlTarjeta('factCliente')} className={`sc-tarjeta-filtro${filtroTarjeta === 'factCliente' ? ' sc-tarjeta-filtro--activa' : ''}`} style={cardResumenStyle} title="Clic: filtrar aquí · Ctrl+clic o botón central: abrir el resultado en otra pestaña" onClick={(e) => { if (e.ctrlKey || e.metaKey || e.shiftKey) return; e.preventDefault(); setFiltroTarjeta((f) => (f === 'factCliente' ? '' : 'factCliente')); }}>
                 <span style={cardLabelStyle}>Facturados Cliente</span>
-                <span style={{ ...cardValueStyle, color: '#10b981' }}>{resumenServicios.factCliente}</span>
+                <span style={{ ...cardValueStyle, color: '#10b981' }}>{cargandoOperaciones ? <CargandoDatos enLinea texto="Cargando" /> : resumenServicios.factCliente}</span>
               </a>
               <a href={urlTarjeta('pendCliente')} className={`sc-tarjeta-filtro${filtroTarjeta === 'pendCliente' ? ' sc-tarjeta-filtro--activa' : ''}`} style={cardResumenStyle} title="Clic: filtrar aquí · Ctrl+clic o botón central: abrir el resultado en otra pestaña" onClick={(e) => { if (e.ctrlKey || e.metaKey || e.shiftKey) return; e.preventDefault(); setFiltroTarjeta((f) => (f === 'pendCliente' ? '' : 'pendCliente')); }}>
                 <span style={cardLabelStyle}>Pendientes Cliente</span>
-                <span style={{ ...cardValueStyle, color: '#f59e0b' }}>{resumenServicios.pendCliente}</span>
+                <span style={{ ...cardValueStyle, color: '#f59e0b' }}>{cargandoOperaciones ? <CargandoDatos enLinea texto="Cargando" /> : resumenServicios.pendCliente}</span>
               </a>
               <a href={urlTarjeta('factProveedor')} className={`sc-tarjeta-filtro${filtroTarjeta === 'factProveedor' ? ' sc-tarjeta-filtro--activa' : ''}`} style={cardResumenStyle} title="Clic: filtrar aquí · Ctrl+clic o botón central: abrir el resultado en otra pestaña" onClick={(e) => { if (e.ctrlKey || e.metaKey || e.shiftKey) return; e.preventDefault(); setFiltroTarjeta((f) => (f === 'factProveedor' ? '' : 'factProveedor')); }}>
                 <span style={cardLabelStyle}>Facturados Proveedor</span>
-                <span style={{ ...cardValueStyle, color: '#58a6ff' }}>{resumenServicios.factProveedor}</span>
+                <span style={{ ...cardValueStyle, color: '#58a6ff' }}>{cargandoOperaciones ? <CargandoDatos enLinea texto="Cargando" /> : resumenServicios.factProveedor}</span>
               </a>
               <a href={urlTarjeta('pendProveedor')} className={`sc-tarjeta-filtro${filtroTarjeta === 'pendProveedor' ? ' sc-tarjeta-filtro--activa' : ''}`} style={cardResumenStyle} title="Clic: filtrar aquí · Ctrl+clic o botón central: abrir el resultado en otra pestaña" onClick={(e) => { if (e.ctrlKey || e.metaKey || e.shiftKey) return; e.preventDefault(); setFiltroTarjeta((f) => (f === 'pendProveedor' ? '' : 'pendProveedor')); }}>
                 <span style={cardLabelStyle}>Pendientes Proveedor</span>
-                <span style={{ ...cardValueStyle, color: '#f59e0b' }}>{resumenServicios.pendProveedor}</span>
+                <span style={{ ...cardValueStyle, color: '#f59e0b' }}>{cargandoOperaciones ? <CargandoDatos enLinea texto="Cargando" /> : resumenServicios.pendProveedor}</span>
               </a>
             </div>
 
@@ -2693,9 +2709,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         <div className="content-body sc-x73">
           <div className="table-container sc-x74">
             {cargandoOperaciones ? (
-              <div className="sc-x75">
-                Cargando operaciones completadas...
-              </div>
+              <CargandoDatos texto="Cargando operaciones completadas..." />
             ) : (
               <table className="data-table sc-x76">
                 <thead className="sc-x77">

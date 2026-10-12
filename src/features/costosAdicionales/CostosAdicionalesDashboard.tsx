@@ -23,6 +23,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import './CostosAdicionalesDashboard.css';
+import CargandoDatos from '../../shared/components/CargandoDatos'; // ✅ V00449
 import { FormularioConfigurable } from '../formularios/FormularioConfigurable';
 import { useCatalogos } from '../../shared/data/catalogos';
 import { esMXN, esUSD } from '../../shared/dominio/moneda';
@@ -74,7 +75,9 @@ export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosAc
   // Los catálogos solo se usan con una operación seleccionada (convenios y monedas).
   const { datos: catalogos } = useCatalogos(CATS, { activo: opSeleccionada !== null });
   const [costos, setCostos] = useState<any[]>([]);
-  const [cargandoCostos, setCargandoCostos] = useState(false);
+  // ✅ V00449: en modo modal arranca en true (los costos se piden al montar); con false, el primer
+  //   pintado decía "Sin costos adicionales registrados" y el total en $0.00.
+  const [cargandoCostos, setCargandoCostos] = useState(comoModal);
 
   // Modal "Agregar Costos Adicionales"
   const [modal, setModal] = useState<{ tipo: 'cliente' | 'proveedor' } | null>(null);
@@ -320,7 +323,7 @@ export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosAc
           <button className="cad-x4" onClick={() => abrirModal(tipo)}>+ Agregar</button>
         </div>
         {cargandoCostos ? (
-          <div className="cad-x5">Cargando...</div>
+          <CargandoDatos compacto texto="Cargando..." />
         ) : lista.length === 0 ? (
           <div className="cad-x6">Sin costos adicionales registrados.</div>
         ) : (
@@ -343,7 +346,8 @@ export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosAc
         )}
         <div className="cad-x14">
           <span className="cad-x15">Total Costo Adicionales</span>
-          <span style={{ color, fontSize: '1.3rem', fontWeight: 'bold' }}>{formatoMoneda(total)}</span>
+          {/* ✅ V00449: el total esperaba en $0.00 mientras llegaban los costos */}
+          {cargandoCostos ? <CargandoDatos compacto texto="Cargando…" /> : <span style={{ color, fontSize: '1.3rem', fontWeight: 'bold' }}>{formatoMoneda(total)}</span>}
         </div>
       </div>
     );
@@ -371,7 +375,7 @@ export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosAc
               </thead>
               <tbody>
                 {cargandoOps ? (
-                  <tr><td className="cad-x22" colSpan={5}>Cargando operaciones...</td></tr>
+                  <tr><td className="cad-x22" colSpan={5}><CargandoDatos texto="Cargando operaciones..." /></td></tr>
                 ) : opsFiltradas.length === 0 ? (
                   <tr><td className="cad-x22" colSpan={5}>Sin operaciones.</td></tr>
                 ) : (
@@ -390,6 +394,7 @@ export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosAc
               </tbody>
             </table>
           </div>
+          {cargandoMas && <CargandoDatos compacto texto="Cargando más…" />}{/* ✅ V00449 */}
           {hayMas && !cargandoOps && (
             <div className="cad-x29">
               <button onClick={cargarMas} disabled={cargandoMas} style={{ padding: '8px 16px', backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: cargandoMas ? 'wait' : 'pointer' }}>

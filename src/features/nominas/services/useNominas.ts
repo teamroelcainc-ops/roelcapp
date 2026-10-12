@@ -31,6 +31,8 @@ const unirFilas = (a: readonly FilaAnterior[], b: readonly FilaAnterior[]): Fila
 export interface NominasPaginadas {
   /** Ventana en vivo + páginas de "Cargar más" + heredadas sin fechaPago AAAA-MM-DD; sin repetidos, más recientes primero. */
   nominas: DocNomina[];
+  /** ✅ V00449: ya llegó la primera respuesta del listener (o falló): antes de eso, una lista vacía no es "no hay nóminas". */
+  listo: boolean;
   /** Puede haber nóminas más antiguas que las cargadas. */
   hayMas: boolean;
   cargandoMas: boolean;
@@ -48,6 +50,7 @@ export function useNominasPaginadas(tamPagina: number = TAM_PAGINA_NOMINAS): Nom
   // null = todavía no se pidió ninguna página anterior.
   const [hayMasAnteriores, setHayMasAnteriores] = useState<boolean | null>(null);
   const [cargandoMas, setCargandoMas] = useState(false);
+  const [listo, setListo] = useState(false); // ✅ V00449
   // PENDIENTE Fase 4: quitar cuando migrarEsquemaV2 rellene fechaPago
   const [legado, setLegado] = useState<DocNomina[]>([]);
   // Copias para los callbacks de Firestore (se actualizan junto con el estado).
@@ -63,6 +66,7 @@ export function useNominasPaginadas(tamPagina: number = TAM_PAGINA_NOMINAS): Nom
   useEffect(() => {
     const bajaPrincipal = onSnapshot(consultaNominasRecientes(tamPagina), (snap) => {
       setRecientes(snap.docs);
+      setListo(true);
       const ultimo = snap.docs[snap.docs.length - 1];
       const cambioUltimo = (ultimo?.id ?? null) !== ultimoVivoIdRef.current;
       ultimoVivoIdRef.current = ultimo?.id ?? null;
@@ -75,7 +79,7 @@ export function useNominasPaginadas(tamPagina: number = TAM_PAGINA_NOMINAS): Nom
       leerHuecoNominas(ultimo, ant[0].snap)
         .then(r => { if (!r.empty) cambiarAnteriores(prev => unirFilas(r.docs.map(aFila), prev)); })
         .catch((err: unknown) => console.warn('[Nómina] No se pudo completar el historial entre páginas:', err));
-    }, (err) => console.error('[Nómina] Error escuchando referencias_nomina:', err));
+    }, (err) => { console.error('[Nómina] Error escuchando referencias_nomina:', err); setListo(true); });
     // PENDIENTE Fase 4: quitar cuando migrarEsquemaV2 rellene fechaPago
     //   Segundo listener = la consulta ORIGINAL (limit sin orderBy). Solo aporta
     //   las nóminas migradas sin fechaPago AAAA-MM-DD, que la consulta ordenada
@@ -118,6 +122,7 @@ export function useNominasPaginadas(tamPagina: number = TAM_PAGINA_NOMINAS): Nom
 
   return {
     nominas,
+    listo,
     hayMas: hayMasAnteriores ?? recientes.length >= tamPagina,
     cargandoMas,
     cargarMas,

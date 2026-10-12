@@ -9,6 +9,7 @@ import { db, eliminarRegistro, actualizarRegistro } from '../../../config/fireba
 import { FormularioConvenioProveedor } from './FormularioConvenioProveedor';
 import type { ConvenioProveedorRecord } from '../../../types/convenioProveedor';
 import './ConveniosProveedoresDashboard.css';
+import CargandoDatos from '../../../shared/components/CargandoDatos';
 import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 import { idReal, obtenerCatalogo, useCatalogos } from '../../../shared/data/catalogos';
 
@@ -41,7 +42,9 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
   // ✅ V00439 (Fase 3.x): convenios, sus detalles y las tarifas de referencia
   //   desde los listeners compartidos (antes 2 onSnapshot propios + 1 getDocs).
-  const { datos: cat } = useCatalogos({
+  // ✅ V00449: `listo` = ya llegaron los catálogos; antes, "Buscar" con ellos en camino decía
+  //   "Aún no hay convenios registrados".
+  const { datos: cat, listo: catListo } = useCatalogos({
     convenios: 'convenios_proveedores', detalles: 'convenios_proveedores_detalles', tarifas: 'catalogo_tarifas_referencia',
   });
   const detallesGlobales: any[] = cat.detalles;
@@ -561,6 +564,8 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
                       <button className="cpd-x24" onClick={() => setDrawerFiltrosAbierto(true)}>Abrir filtros</button>
                     </div>
                   </td></tr>
+                ) : !catListo ? (
+                  <tr><td colSpan={10}><CargandoDatos texto="Cargando convenios…" /></td></tr>
                 ) : registrosEnPantalla.length === 0 ? (
                   <tr>
                     <td className="cpd-x25" colSpan={10}>
@@ -774,7 +779,11 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
                   <p className="cpd-x60">
                     Mostrando los detalles/tarifas del convenio y su último uso en base a las operaciones registradas. Usa los botones para editar o eliminar cada tarifa.
                   </p>
-                  {(!convenioViendo.detalles || convenioViendo.detalles.length === 0) ? (
+                  {/* ✅ V00449: verDetalle() lee los detalles con getDocs; mientras tanto la pestaña decía
+                      "no tiene detalles". `cargandoUso` cubre esa lectura (sube en el mismo clic). */}
+                  {cargandoUso && (!convenioViendo.detalles || convenioViendo.detalles.length === 0) ? (
+                    <CargandoDatos texto="Cargando detalles y tarifas…" />
+                  ) : (!convenioViendo.detalles || convenioViendo.detalles.length === 0) ? (
                     <div className="cpd-x61">
                       Este convenio no tiene detalles o tarifas registradas.
                     </div>
@@ -865,7 +874,7 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
               {activeTabDetalle === 'uso' && (
                 <div className="cpd-x59">
                   {cargandoUso ? (
-                    <div className="cpd-x76">Cargando el historial de detalles y rutas usadas...</div>
+                    <CargandoDatos texto="Cargando el historial de detalles y rutas usadas..." />
                   ) : operacionesUso.length === 0 ? (
                     <div className="cpd-x61">
                       Este convenio aún no ha sido asociado a ninguna operación registrada.

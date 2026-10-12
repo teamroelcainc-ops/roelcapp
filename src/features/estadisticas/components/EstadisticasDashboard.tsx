@@ -38,6 +38,7 @@ import { EstadisticasOperativas } from './EstadisticasOperativas';
 import { DesgloseJerarquico, capitalizar, type Dimension } from './DesgloseJerarquico';
 // ✅ V00191: facturas del cliente con su moneda (clic en el monto del desglose).
 import { FacturasClienteMoneda } from './FacturasClienteMoneda';
+import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
 import './EstadisticasDashboard.css';
 import { esOperacionPrueba } from '../../../utils/operacionPrueba';
 
@@ -881,6 +882,7 @@ export function EstadisticasDashboard() {
   const [joinFacturasProv, setJoinFacturasProv] = useState<Record<string, any>>({});
   const [joinPagosProv, setJoinPagosProv] = useState<Record<string, PagoJoin> | null>(null);
   const [cargandoJoin, setCargandoJoin] = useState(false);
+  const [cargandoJoinProv, setCargandoJoinProv] = useState(false); // ✅ V00449
 
   // ✅ V00339: el join de FACTURAS y PAGOS ahora es EN VIVO — se suscribe a
   //   las colecciones mientras el formato Transfer/Cruces/Fletes está activo:
@@ -892,6 +894,16 @@ export function EstadisticasDashboard() {
     || (detalleSel !== null ? formatoDeLinea(tabLineaDet) : undefined);
   const necesitaJoin = !!fmtJoin;
   const necesitaJoinProv = fmtJoin === 'cruces' || fmtJoin === 'fletes';
+  // ✅ V00449: "cargandoJoin" ya nadie lo encendía (solo lo apagaba el listener) y el join de
+  //   proveedores no tenía bandera: al elegir un formato (Transfer/Cruces/Fletes) las columnas de
+  //   facturación y cobranza se veían vacías mientras llegaban. Se encienden en el MISMO render en
+  //   que se pide el join y las apaga su listener (no cambia qué se lee ni cuándo).
+  const [joinPedido, setJoinPedido] = useState({ cli: false, prov: false });
+  if (joinPedido.cli !== necesitaJoin || joinPedido.prov !== necesitaJoinProv) {
+    if (joinPedido.cli !== necesitaJoin) setCargandoJoin(necesitaJoin);
+    if (joinPedido.prov !== necesitaJoinProv) setCargandoJoinProv(necesitaJoinProv);
+    setJoinPedido({ cli: necesitaJoin, prov: necesitaJoinProv });
+  }
 
   useEffect(() => {
     if (!necesitaJoin) return;
@@ -916,7 +928,8 @@ export function EstadisticasDashboard() {
         const m: Record<string, unknown> = {};
         snap.docs.forEach((d) => { m[d.id] = { id: d.id, ...(d.data() as Record<string, unknown>) }; });
         setJoinFacturasProv(m as Record<string, any>);
-      }, (e) => console.warn('Join de facturas proveedor:', e)),
+        setCargandoJoinProv(false);
+      }, (e) => { console.warn('Join de facturas proveedor:', e); setCargandoJoinProv(false); }),
       onSnapshot(query(collection(db, 'pagos'), where('tipo', '==', 'proveedor')), (snap) => {
         setJoinPagosProv(mapaPagosPorFactura(snap.docs));
       }, (e) => console.warn('Join de pagos proveedor:', e)),
@@ -1484,7 +1497,8 @@ export function EstadisticasDashboard() {
         </div>
       </div>
 
-      {busquedaHecha && (
+      {/* ✅ V00449: sin el conteo mientras se busca otro rango (era el del rango anterior) */}
+      {busquedaHecha && !cargando && (
         <p className="est-subtitulo">{ops.length} operaciones del {etiquetaRango} (excluye canceladas) · montos con el mismo criterio de Facturación{busquedaHecha && <span className="est-vivo" title="Las estadísticas están SUSCRITAS a la base: cualquier cambio en Operaciones, Facturación o Pagos se refleja aquí al momento, sin volver a presionar Buscar">🟢 EN VIVO</span>}</p>
       )}
 
@@ -1525,7 +1539,7 @@ export function EstadisticasDashboard() {
         <div className="est-vacio-inicial">
           Define tu rango de fechas y presiona <b>Buscar</b> para generar las estadísticas.
         </div>
-      ) : cargando ? <p className="est-vacio">Buscando operaciones del {etiquetaRango}…</p> : (
+      ) : cargando ? <CargandoDatos texto={`Buscando operaciones del ${etiquetaRango}…`} /> : (
         <div className="est-tabla-marco">
           {(pestana === 'desgloseOps' || pestana === 'desgloseFact') && (
             <DesgloseJerarquico
@@ -2054,6 +2068,9 @@ export function EstadisticasDashboard() {
                     const columnas = columnasFormatoTabla || columnasActivas;
                     const hayFiltros = Object.values(filtrosCols).some(v => v.trim());
                     const visibles = refsVisibles;
+                    // ✅ V00449: en formato Transfer/Cruces/Fletes, animación hasta que llegan
+                    //   facturas y pagos (antes: filas con esas columnas vacías y TOTAL incompleto).
+                    const esperandoJoin = esModoTransfer && (cargandoJoin || (necesitaJoinProv && cargandoJoinProv));
                     return (
                       <>
                         <span className="est-refs-conteo">
@@ -2085,7 +2102,9 @@ export function EstadisticasDashboard() {
                               </tr>
                             </thead>
                             <tbody>
-                              {visibles.length === 0 ? (
+                              {esperandoJoin ? (
+                                <tr><td colSpan={columnas.length + 1}><CargandoDatos texto="Cargando facturación y pagos…" /></td></tr>
+                              ) : visibles.length === 0 ? (
                                 <tr><td colSpan={columnas.length} className="est-vacio">Sin operaciones con esos filtros.</td></tr>
                               ) : visibles.slice(0, limiteRefs).map((op) => {
                                 const linea = lineaDeOp(op);
@@ -2108,7 +2127,7 @@ export function EstadisticasDashboard() {
                                 );
                               })}
                               {/* ✅ Fila TOTAL del formato Transfer (como los SUBTOTAL del Excel) */}
-                              {columnasFormatoTabla && totalesTransfer && visibles.length > 0 && (
+                              {!esperandoJoin && columnasFormatoTabla && totalesTransfer && visibles.length > 0 && (
                                 <tr className="est-fila-general">
                                   <td className="est-refs-acciones-celda" />
                                   {columnasFormatoTabla.map((c, ci) => (
@@ -2122,7 +2141,7 @@ export function EstadisticasDashboard() {
                           </table>
                         </div>
                         {/* ✅ V00438 (Fase 2.4): tope de filas pintadas; la fila TOTAL y los exportes cubren todas. */}
-                        {visibles.length > limiteRefs && (
+                        {!esperandoJoin && visibles.length > limiteRefs && (
                           <span className="est-refs-conteo">
                             Mostrando <b>{limiteRefs}</b> de {visibles.length}
                             <button type="button" className="est-btn-liga" onClick={() => setLimiteRefs((n) => n + PAGINA_REFS)}>Mostrar {Math.min(PAGINA_REFS, visibles.length - limiteRefs)} más</button>

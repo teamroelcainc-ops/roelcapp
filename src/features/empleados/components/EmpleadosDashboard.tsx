@@ -10,6 +10,7 @@ import { HerramientasEmpleado } from './HerramientasEmpleado';
 import type { Employee } from '../../../types/empleado';
 import * as XLSX from 'xlsx';
 import './EmpleadosDashboard.css';
+import CargandoDatos from '../../../shared/components/CargandoDatos';
 import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 import { useCatalogo } from '../../../shared/data/catalogos';
 
@@ -334,7 +335,7 @@ export const EmpleadosDashboard = () => {
         <div className="content-body emd-x17">
           <div className="table-container emd-x18">
             {cargando ? (
-              <div className="emd-x19">Cargando empleados...</div>
+              <CargandoDatos texto="Cargando empleados..." />
             ) : (
               <table className="data-table emd-x20">
                 <thead className="emd-x21">

@@ -15,6 +15,7 @@ import { DocumentosLista } from '../../documentos/DocumentosLista';
 import { registrarLog } from '../../../utils/logger';
 import * as XLSX from 'xlsx';
 import './EmpresasDashboard.css';
+import CargandoDatos from '../../../shared/components/CargandoDatos';
 import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 import { almacenSesion, obtenerCacheMemoria, guardarCacheMemoria } from '../../../utils/cacheMemoria';
 import { hoyLocalISO, fechaLocalISO } from '../../../utils/fechaHoraLocal';
@@ -357,7 +358,9 @@ const EmpresasDashboard = () => {
 
   // ✅ V00439 (Fase 3.x): empresas desde el listener compartido (useCatalogo),
   //   mismo orden que antes (# de cliente descendente).
-  const { datos: datosEmpresas } = useCatalogo('empresas');
+  // ✅ V00449: `listo` = ya llegó el primer snapshot; antes, "Buscar" con el catálogo aún en
+  //   camino pintaba "Aún no hay empresas registradas." mientras llegaban.
+  const { datos: datosEmpresas, listo: empresasListas } = useCatalogo('empresas');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docs de empresa sin tipo canónico (criterio del módulo).
   const empresas = useMemo<any[]>(() => [...datosEmpresas].sort((a, b) => {
     if (a.numCliente && b.numCliente) {
@@ -1533,6 +1536,9 @@ const EmpresasDashboard = () => {
                       <button className="ed-x30" onClick={() => setDrawerFiltrosAbierto(true)}>Abrir filtros</button>
                     </div>
                   </td></tr>
+                ) : !empresasListas ? (
+                  /* ✅ V00449: animación mientras llega el catálogo de empresas (antes: estado vacío). */
+                  <tr><td colSpan={columnasTabla.length + 2}><CargandoDatos texto="Cargando empresas…" /></td></tr>
                 ) : registrosEnPantalla.length === 0 ? (
                   <tr>
                     <td className="ed-x31" colSpan={columnasTabla.length + 2}>
@@ -1868,7 +1874,7 @@ const EmpresasDashboard = () => {
               {activeTabDetalle === 'uso' && (
                 <div className="ed-x93">
                   {cargandoUso ? (
-                    <div className="ed-x94">Cargando historial detallado...</div>
+                    <CargandoDatos texto="Cargando historial detallado..." />
                   ) : operacionesUso.length === 0 ? (
                     <div className="ed-x95">
                       Esta empresa aún no ha sido utilizada en ninguna operación bajo los roles verificados.
@@ -1929,8 +1935,10 @@ const EmpresasDashboard = () => {
                   referencia de una operación abre su detalle. */}
               {activeTabDetalle === 'referencias' && (
                 <div className="ed-refs">
-                  {cargandoRefs ? (
-                    <p className="ed-refs-vacio">Cargando referencias…</p>
+                  {/* ✅ V00449: `refsCliente === null` = la pestaña se acaba de abrir y el efecto aún no
+                      empieza a leer; antes ese primer pintado decía "no participa en ninguna operación". */}
+                  {cargandoRefs || refsCliente === null ? (
+                    <CargandoDatos texto="Cargando referencias…" />
                   ) : (
                     <>
                       <div className="ed-refs-secciones">
@@ -2141,7 +2149,7 @@ const EmpresasDashboard = () => {
               <div className="ed-opdet-seccion">
                 <h4 className="ed-opdet-subtitulo">Facturas que incluyen esta operación ({facturasOp.length})</h4>
                 {!refsFacturas ? (
-                  <p className="ed-refs-vacio">Cargando facturas…</p>
+                  <CargandoDatos texto="Cargando facturas…" compacto />
                 ) : facturasOp.length === 0 ? (
                   <p className="ed-refs-vacio">Esta operación no aparece en ninguna factura de la empresa.</p>
                 ) : (
@@ -2168,7 +2176,7 @@ const EmpresasDashboard = () => {
               <div className="ed-opdet-seccion">
                 <h4 className="ed-opdet-subtitulo">Pagos aplicados a esas facturas ({pagosOp.length})</h4>
                 {!refsPagos ? (
-                  <p className="ed-refs-vacio">Cargando pagos…</p>
+                  <CargandoDatos texto="Cargando pagos…" compacto />
                 ) : pagosOp.length === 0 ? (
                   <p className="ed-refs-vacio">No hay pagos aplicados a las facturas de esta operación.</p>
                 ) : (
@@ -2391,7 +2399,7 @@ const EmpresasDashboard = () => {
 
             <div className="ed-dup-cuerpo">
               {cargandoDuplicadas ? (
-                <p className="ed-refs-vacio">Analizando las empresas…</p>
+                <CargandoDatos texto="Analizando las empresas…" />
               ) : !gruposDuplicadas || gruposDuplicadas.length === 0 ? (
                 <p className="ed-refs-vacio">No se encontraron empresas duplicadas (mismo nombre o mismo RFC). 🎉</p>
               ) : (
@@ -2419,6 +2427,8 @@ const EmpresasDashboard = () => {
                               {usoPorEmpresa[m.id] === 'cargando' ? 'Analizando…' : usoPorEmpresa[m.id] ? 'Actualizar' : 'Ver uso'}
                             </button>
                           </div>
+                          {/* ✅ V00449: mientras se analiza "Ver uso", animación en lugar del hueco vacío. */}
+                          {usoPorEmpresa[m.id] === 'cargando' && <CargandoDatos texto="Analizando dónde se usa…" compacto />}
                           {Array.isArray(usoPorEmpresa[m.id]) && (
                             <div className="ed-dup-uso">
                               {(usoPorEmpresa[m.id] as { etiqueta: string; cuantos: number; refs?: string[] }[]).every(u => u.cuantos === 0) ? (

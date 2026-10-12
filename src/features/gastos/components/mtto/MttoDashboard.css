@@ -47,7 +47,6 @@
 .md-x43 { color: #8b949e; font-size: 0.95rem; }
 .md-x44 { color: #D84315; }
 .md-x45 { padding: 10px 20px; background-color: #D84315; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.9rem; }
-.md-x46 { padding: 40px; text-align: center; color: #8b949e; }
 .md-x47 { width: 100%; min-width: 1500px; border-collapse: collapse; text-align: left; }
 .md-x48 { background-color: #161b22; position: sticky; top: 0; z-index: 10; }
 .md-x49 { padding: 16px 8px; width: 40px; position: sticky; left: 0; background-color: #161b22; z-index: 12; border-right: 1px solid #30363d; border-bottom: 1px solid #30363d; }
@@ -134,7 +133,6 @@
   .md-x33 { font-size: 1.3rem; }
   .md-x35 { font-size: 1.3rem; }
   .md-x41 { padding: 14px 12px; }
-  .md-x46 { padding: 14px 12px; }
   .md-x47 { min-width: 0; }
   .md-x52 { padding: 14px 12px; }
   .md-x54 { flex-wrap: wrap; }

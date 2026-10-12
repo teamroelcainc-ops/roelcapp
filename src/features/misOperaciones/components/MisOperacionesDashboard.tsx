@@ -27,6 +27,7 @@ import type { EmpleadoNombreCampos } from '../../../utils/nombreEmpleado';
 import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
 import { ChevronLeft, MapPin, Truck, CheckCircle2, Clock } from 'lucide-react';
 import './MisOperacionesDashboard.css';
+import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
 import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
 
@@ -91,6 +92,10 @@ export function MisOperacionesDashboard() {
 
   const [idsOperador, setIdsOperador] = useState<string[] | null>(null); // null = cargando
   const [operaciones, setOperaciones] = useState<OperacionAsignada[]>([]);
+  // ✅ V00449: ids de operador cuya PRIMERA respuesta del listener ya llegó. Mientras no
+  //   coincida con los actuales, la lista muestra la animación de espera (antes: "0
+  //   operaciones activas asignadas · No tienes operaciones activas" mientras cargaba).
+  const [idsRecibidos, setIdsRecibidos] = useState<string | null>(null);
   const [opAbierta, setOpAbierta] = useState<OperacionAsignada | null>(null);
   const [horariosOp, setHorariosOp] = useState<HorarioMarcado[]>([]);
   const [marcando, setMarcando] = useState(false);
@@ -143,6 +148,7 @@ export function MisOperacionesDashboard() {
     // ✅ V00443 (Fase 7.10): `in` acepta 30 valores (antes se cortaba en 10 sin avisar).
     if (idsOperador.length > 30) console.error(`[MisOperaciones] ${idsOperador.length} ids de operador: solo se consultan 30.`);
     const q = query(collection(db, 'operaciones'), where('operador', 'in', idsOperador.slice(0, 30)));
+    const clave = idsOperador.slice(0, 30).join('|'); // ✅ V00449
     const unsubscribe = onSnapshot(q, (snap) => {
       const lista: OperacionAsignada[] = snap.docs
         .map((d) => {
@@ -152,8 +158,13 @@ export function MisOperacionesDashboard() {
         .filter((op) => !IDS_STATUS_EXCLUIDOS.includes(String(op.status || '')))
         .sort((a, b) => String(a.fechaServicio || '').localeCompare(String(b.fechaServicio || '')));
       setOperaciones(lista);
+      setIdsRecibidos(clave); // ✅ V00449
       // Mantener sincronizada la operación abierta (o cerrarla si ya no está activa).
       setOpAbierta((prev) => (prev ? lista.find((o) => o.id === prev.id) || null : prev));
+    }, (e) => {
+      // ✅ V00449: si el listener falla, se quita la animación (no se queda girando para siempre).
+      console.error('[MisOperaciones] No se pudieron escuchar las operaciones:', e);
+      setIdsRecibidos(clave);
     });
     return () => unsubscribe();
   }, [idsOperador, moduloVisible]);
@@ -297,7 +308,7 @@ export function MisOperacionesDashboard() {
   // ────────────────────────────── RENDER ──────────────────────────────
 
   if (idsOperador === null) {
-    return <div className="mo-contenedor"><p className="mo-estado">Cargando tus operaciones…</p></div>;
+    return <div className="mo-contenedor"><CargandoDatos texto="Cargando tus operaciones…" /></div>;
   }
 
   if (idsOperador.length === 0) {
@@ -371,14 +382,17 @@ export function MisOperacionesDashboard() {
   }
 
   // Vista LISTA de operaciones asignadas
+  const esperandoLista = idsRecibidos !== idsOperador.slice(0, 30).join('|'); // ✅ V00449
   return (
     <div className="mo-contenedor">
       <h1 className="mo-titulo">Mis Operaciones</h1>
-      <p className="mo-subtitulo">{operaciones.length} {operaciones.length === 1 ? 'operación activa asignada' : 'operaciones activas asignadas'}</p>
+      {!esperandoLista && <p className="mo-subtitulo">{operaciones.length} {operaciones.length === 1 ? 'operación activa asignada' : 'operaciones activas asignadas'}</p>}
 
       {aviso && <div className="mo-toast">{aviso}</div>}
 
-      {operaciones.length === 0 ? (
+      {esperandoLista ? (
+        <CargandoDatos texto="Cargando tus operaciones…" />
+      ) : operaciones.length === 0 ? (
         <div className="mo-vacio">No tienes operaciones activas asignadas por ahora.</div>
       ) : (
         <div className="mo-lista">

@@ -39,6 +39,7 @@ import { registrarLog } from '../../../utils/logger';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { Plus, FileText, Trash2, X, Search, Download, Pencil, RefreshCw } from 'lucide-react';
 import { SelectBuscable } from '../../catalogos/components/SelectBuscable';
+import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
 import './PagosDashboard.css';
 
 type TipoPago = 'cliente' | 'proveedor' | 'mtto';
@@ -896,6 +897,11 @@ export function PagosDashboard() {
   const [guardando, setGuardando] = useState(false);
 
   // ── Lista de pagos del tab activo, en vivo ──
+  // ✅ V00449: de qué pestaña son los pagos que hay en memoria. Al entrar, la tabla decía "Aún no
+  //   hay pagos registrados" hasta que llegaba el primer snapshot, y al cambiar de pestaña seguía
+  //   mostrando los pagos (y totales) de la pestaña anterior: mientras no coincidan, animación.
+  const [pagosDeTab, setPagosDeTab] = useState<TipoPago | null>(null);
+  const cargandoPagos = pagosDeTab !== tab;
   useEffect(() => {
     const q = query(collection(db, 'pagos'), where('tipo', '==', tab));
     const unsubscribe = onSnapshot(q, (snap) => {
@@ -903,6 +909,11 @@ export function PagosDashboard() {
         .map((d) => ({ ...(d.data() as Omit<PagoDoc, 'id'>), id: d.id }))
         .sort((a, b) => claveFecha(b.fecha).localeCompare(claveFecha(a.fecha)));
       setPagos(lista);
+      setPagosDeTab(tab);
+    }, (e) => {
+      // ✅ V00449: si el listener falla, se apaga la animación (antes el error no se atendía).
+      console.error('[Pagos] Error al escuchar los pagos:', e);
+      setPagosDeTab(tab);
     });
     return () => unsubscribe();
   }, [tab]);
@@ -1690,7 +1701,8 @@ export function PagosDashboard() {
       </div>
 
       {/* ✅ Resumen del listado (conteo y total por moneda) */}
-      {pagosFiltrados.length > 0 && (
+      {/* ✅ V00449: oculto mientras llegan los pagos de la pestaña (eran los totales de la anterior) */}
+      {!cargandoPagos && pagosFiltrados.length > 0 && (
         <div className="pg-resumen">
           <span className="pg-resumen-item"><strong>{pagosFiltrados.length}</strong> pago(s)</span>
           {Object.entries(pagosFiltrados.reduce((acc: Record<string, number>, p) => {
@@ -1718,7 +1730,9 @@ export function PagosDashboard() {
             </tr>
           </thead>
           <tbody>
-            {pagosFiltrados.length === 0 ? (
+            {cargandoPagos ? (
+              <tr><td colSpan={8}><CargandoDatos texto="Cargando pagos…" /></td></tr>
+            ) : pagosFiltrados.length === 0 ? (
               <tr><td colSpan={8} className="pg-vacio">{busqueda ? 'Sin resultados.' : 'Aún no hay pagos registrados.'}</td></tr>
             ) : pagosFiltrados.slice((paginaPagos - 1) * PAGOS_POR_PAGINA, paginaPagos * PAGOS_POR_PAGINA).map((p) => (
               <tr key={p.id} className="pg-fila" onClick={() => setPagoViendo(p)} title="Ver detalle del pago">
@@ -1763,7 +1777,7 @@ export function PagosDashboard() {
           </tbody>
         </table>
           {/* ✅ V00170: paginación de pagos */}
-          {pagosFiltrados.length > PAGOS_POR_PAGINA && (
+          {!cargandoPagos && pagosFiltrados.length > PAGOS_POR_PAGINA && (
             <div className="pd-paginacion">
               <span className="pd-pag-info">Mostrando {(paginaPagos - 1) * PAGOS_POR_PAGINA + 1}–{Math.min(paginaPagos * PAGOS_POR_PAGINA, pagosFiltrados.length)} de {pagosFiltrados.length} pago(s)</span>
               <button type="button" className="btn btn-outline" disabled={paginaPagos <= 1} onClick={() => setPaginaPagos((x) => x - 1)}>← Anterior</button>

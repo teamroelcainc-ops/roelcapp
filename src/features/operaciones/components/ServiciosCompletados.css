@@ -83,7 +83,6 @@
 .sc-x74::-webkit-scrollbar-track { background: #161b22; border-radius: 0 0 8px 8px; }
 .sc-x74::-webkit-scrollbar-thumb { background: #30363d; border-radius: 6px; border: 2px solid #161b22; }
 .sc-x74::-webkit-scrollbar-thumb:hover { background: #58a6ff; }
-.sc-x75 { padding: 40px; text-align: center; color: #8b949e; }
 .sc-x76 { width: 100%; min-width: 1300px; border-collapse: collapse; text-align: left; }
 .sc-x77 { background-color: #161b22; position: sticky; top: 0; z-index: 10; }
 .sc-x78 { padding: 16px; width: 150px; text-align: center; color: #8b949e; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; position: sticky; left: 0; background-color: #161b22; z-index: 12; border-right: 1px solid #30363d; border-bottom: 1px solid #30363d; }
@@ -266,7 +265,6 @@
   .sc-x49 { flex-wrap: wrap; }
   .sc-x58 { flex-wrap: wrap; }
   .sc-x68 { flex-wrap: wrap; }
-  .sc-x75 { padding: 14px 12px; }
   .sc-x76 { min-width: 0; }
   .sc-x80 { padding: 14px 12px; }
   .sc-x81 { padding: 14px 12px; }

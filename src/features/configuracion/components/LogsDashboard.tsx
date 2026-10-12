@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import './LogsDashboard.css';
+import CargandoDatos from '../../../shared/components/CargandoDatos';
 
 interface LogRecord {
   id: string;
@@ -15,6 +16,9 @@ interface LogRecord {
 
 export const LogsDashboard = () => {
   const [logs, setLogs] = useState<LogRecord[]>([]);
+  // ✅ V00449: ya llegó el primer snapshot del historial. Antes, un filtro aplicado con el
+  //   listener aún en camino decía "No hay registros que coincidan…".
+  const [logsListos, setLogsListos] = useState(false);
   
   // Estados para los filtros
   const [filtroUsuario, setFiltroUsuario] = useState('');
@@ -29,7 +33,8 @@ export const LogsDashboard = () => {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LogRecord));
       setLogs(data);
-    });
+      setLogsListos(true);
+    }, (err) => { console.error('Error escuchando historial_actividad:', err); setLogsListos(true); }); // ✅ V00449
     return () => unsubscribe();
   }, []);
 
@@ -162,6 +167,8 @@ export const LogsDashboard = () => {
                   Por favor, aplica al menos un filtro en la parte superior para visualizar el historial.
                 </td>
               </tr>
+            ) : !logsListos ? (
+              <tr><td colSpan={5}><CargandoDatos texto="Cargando historial…" /></td></tr>
             ) : logsFiltrados.length === 0 ? (
               <tr><td className="ld-x17" colSpan={5}>No hay registros que coincidan con los filtros aplicados.</td></tr>
             ) : (

@@ -27,6 +27,7 @@ import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
 import { FormularioOperacion } from '../../operaciones/components/FormularioOperacion';
 import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
 import './ReferenciasNominaDashboard.css';
+import CargandoDatos from '../../../shared/components/CargandoDatos';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { docsSinPruebas } from '../../../utils/operacionPrueba';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
@@ -108,6 +109,10 @@ export const ReferenciasNominaDashboard = () => {
   const [activeTab, setActiveTab] = useState<'operaciones' | 'historial' | 'prestamos' | 'ahorro'>('historial');
 
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
+  // ✅ V00449: ya llegó el primer snapshot de las operaciones completadas (pestaña "Asignar
+  //   Operaciones"). Sin esta bandera, "Buscar" con la consulta en camino decía "No hay
+  //   operaciones completadas pendientes de nómina."
+  const [opsNominaListas, setOpsNominaListas] = useState(false);
   // ✅ Fase 1.8b: las nóminas llegan ORDENADAS por fecha de pago (ventana en
   //   vivo + "Cargar más"). Solo alimentan el HISTORIAL en pantalla y señales
   //   de apoyo: el folio, la asignación de operaciones y los saldos ya no
@@ -531,8 +536,10 @@ export const ReferenciasNominaDashboard = () => {
       const ops = docsSinPruebas(snap.docs).map(d => ({ id: d.id, ...(d.data() as any) })); // ✅ V00380: pruebas no generan nómina
       ops.sort((a: any, b: any) => (parsearFechaSegura(b.fechaServicio || b.createdAt)?.getTime() || 0) - (parsearFechaSegura(a.fechaServicio || a.createdAt)?.getTime() || 0));
       setOperacionesGlobales(ops);
+      setOpsNominaListas(true); // ✅ V00449
     }, (err) => {
       console.error('[Nómina] Error cargando operaciones completadas:', err);
+      setOpsNominaListas(true); // ✅ V00449: con error no se queda girando la animación
     });
     return () => unSub();
   }, [activeTab]);
@@ -2177,6 +2184,9 @@ export const ReferenciasNominaDashboard = () => {
                       <button className="rnd-x52" onClick={() => setDrawerFiltrosAbierto(true)}>Abrir filtros</button>
                     </div>
                   </td></tr>
+                ) : !opsNominaListas ? (
+                  /* ✅ V00449: animación mientras llegan las operaciones completadas (antes: estado vacío). */
+                  <tr><td colSpan={colsOpsVisibles}><CargandoDatos texto="Cargando operaciones…" /></td></tr>
                 ) : operacionesMostradas.length === 0 ? (
                   <tr><td className="rnd-x53" colSpan={colsOpsVisibles}>
                     {filtroEstadoOps === 'pendientes'
@@ -2260,6 +2270,9 @@ export const ReferenciasNominaDashboard = () => {
                       <button className="rnd-x52" onClick={() => setDrawerFiltrosAbierto(true)}>Abrir filtros</button>
                     </div>
                   </td></tr>
+                ) : !nominasPaginadas.listo ? (
+                  /* ✅ V00449: Buscar antes de que llegue el historial decía "No hay nóminas pendientes de pago." */
+                  <tr><td className="rnd-x63" colSpan={7}><CargandoDatos texto="Cargando nóminas…" /></td></tr>
                 ) : registrosVisibles.length === 0 ? (
                   <tr><td className="rnd-x63" colSpan={7}>
                     {filtroEstadoHist === 'pendientes' ? 'No hay nóminas pendientes de pago.' : 'No hay nóminas pagadas.'}
@@ -2281,7 +2294,7 @@ export const ReferenciasNominaDashboard = () => {
                           <button className="rnd-x68" title="Editar Nómina" onClick={(e) => abrirEditarNomina(e, r)}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                           </button>
-                          <button className="rnd-x69" title="Ver Ficha" onClick={() => setNominaViendo(r)}>
+                          <button className="rnd-x69" title="Ver Ficha" onClick={() => { if (nominaViendo !== r) setCargandoOpsFicha(true); /* ✅ V00449: sube junto con la ficha (el efecto la subía un pintado después y se veía "No hay detalle…"); con la misma ficha el efecto no corre y no la bajaría */ setNominaViendo(r); }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                           </button>
                           <button className="rnd-x70" title="Recibo (PDF)" onClick={(e) => { e.stopPropagation(); generarReciboNomina(r); }}>
@@ -2318,6 +2331,8 @@ export const ReferenciasNominaDashboard = () => {
               <button onClick={irPaginaSiguiente} disabled={paginaActual === totalPaginas} style={{ padding: '8px 16px', cursor: (paginaActual === totalPaginas) ? 'not-allowed' : 'pointer', background: 'none', border: 'none', color: '#c9d1d9' }}>Siguiente</button>
             </div>
           )}
+          {/* ✅ V00449: mientras "Cargar más nóminas" trae la siguiente página. */}
+          {busquedaHistHecha && nominasPaginadas.cargandoMas && <CargandoDatos texto="Cargando más nóminas…" compacto />}
           {busquedaHistHecha && nominasPaginadas.hayMas && (
             <div className="rnd-x77">
               <span className="rnd-x29">Se muestran las {nominasGlobales.length} nóminas con fecha de pago más reciente.</span>
@@ -2376,7 +2391,11 @@ export const ReferenciasNominaDashboard = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {datosPrestamo.filas.length === 0 ? (
+                    {/* ✅ V00449: al elegir el operador, su historial aún viene en camino: animación
+                        en lugar de "no tiene movimientos". */}
+                    {datosPrestamo.filas.length === 0 && !historialOperador.listo && !historialOperador.error ? (
+                      <tr><td colSpan={5}><CargandoDatos texto="Cargando movimientos de préstamo…" /></td></tr>
+                    ) : datosPrestamo.filas.length === 0 ? (
                       <tr><td className="rnd-x63" colSpan={5}>Este operador no tiene movimientos de préstamo en las nóminas registradas.</td></tr>
                     ) : (
                       [...datosPrestamo.filas].reverse().map(mv => (
@@ -2451,7 +2470,10 @@ export const ReferenciasNominaDashboard = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {datosAhorro.filas.length === 0 ? (
+                    {/* ✅ V00449: mismo caso que Préstamos (historial del operador en camino). */}
+                    {datosAhorro.filas.length === 0 && !historialOperador.listo && !historialOperador.error ? (
+                      <tr><td colSpan={5}><CargandoDatos texto="Cargando movimientos de ahorro…" /></td></tr>
+                    ) : datosAhorro.filas.length === 0 ? (
                       <tr><td className="rnd-x63" colSpan={5}>Este operador no tiene movimientos de ahorro en las nóminas registradas.</td></tr>
                     ) : (
                       [...datosAhorro.filas].reverse().map(mv => (
@@ -2887,7 +2909,7 @@ export const ReferenciasNominaDashboard = () => {
                   </span>
 
                   {cargandoOpsFicha ? (
-                    <div className="rnd-x183">Buscando las referencias ligadas a esta nómina...</div>
+                    <CargandoDatos texto="Buscando las referencias ligadas a esta nómina..." compacto />
                   ) : opsFicha.length === 0 ? (
                     <div className="rnd-x184">
                       No hay detalle de operaciones ligado a esta nómina. Las nóminas generadas desde la app guardan el detalle automáticamente; las nóminas importadas necesitan el vínculo con sus operaciones (ver nota).

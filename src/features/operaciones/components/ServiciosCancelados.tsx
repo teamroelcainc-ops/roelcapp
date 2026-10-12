@@ -22,6 +22,7 @@ import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 // ✅ logo + nombre de la empresa removidos de esta vista (se quitó EmpresaBrand)
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
 import './ServiciosCancelados.css';
+import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
 import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
 import { ModalFechaStatus } from './ModalFechaStatus';
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
@@ -330,15 +331,25 @@ const ServiciosCancelados = () => {
   const rangoCanonRef = useRef('');
   /** Buscar un rango: con la bandera, solo ese rango (si cambió); sin ella, la descarga única de siempre.
    *  La bandera se ESPERA (al restaurar el filtro al montar puede no haber llegado todavía). */
+  // ✅ V00449: la animación de espera se enciende EN EL MISMO clic de Buscar (y al restaurar
+  //   el filtro al montar). Antes se encendía hasta después de `await obtenerFlags()` (hasta
+  //   3 s en una pestaña nueva) y, mientras, la pantalla ya mostraba "Sin resultados · No hay
+  //   operaciones canceladas registradas." o las del rango anterior. El finally la apaga en
+  //   todos los caminos (mismo rango, caché, error).
   const buscarRango = async (desde: string, hasta: string) => {
-    if ((await obtenerFlags()).consultasCanonicas) {
-      const k = `${desde}_${hasta}`;
-      if (rangoCanonRef.current === k) return;
-      rangoCanonRef.current = k;
-      await descargarOperaciones({ desde, hasta });
-    } else if (!yaDescargado.current) {
-      yaDescargado.current = true;
-      await descargarOperaciones();
+    setCargandoOperaciones(true);
+    try {
+      if ((await obtenerFlags()).consultasCanonicas) {
+        const k = `${desde}_${hasta}`;
+        if (rangoCanonRef.current === k) return;
+        rangoCanonRef.current = k;
+        await descargarOperaciones({ desde, hasta });
+      } else if (!yaDescargado.current) {
+        yaDescargado.current = true;
+        await descargarOperaciones();
+      }
+    } finally {
+      setCargandoOperaciones(false);
     }
   };
   const descargarOperaciones = async (opciones: { forzar?: boolean; desde?: string; hasta?: string } = {}) => {
@@ -1561,7 +1572,7 @@ const ServiciosCancelados = () => {
               <div className="scc-x52">Define <span className="scc-x53">Fecha Inicio</span> y <span className="scc-x53">Fecha Fin</span> y presiona <span className="scc-x54">Buscar</span> para ver las operaciones canceladas.</div>
             </div>
           ) : cargandoOperaciones ? (
-            <div className="scc-x55">Cargando operaciones canceladas...</div>
+            <div className="scc-x55"><CargandoDatos texto="Cargando operaciones canceladas..." /></div>
           ) : errorCarga ? (
             <div className="scc-x56">
               <div className="scc-x57">No se pudieron cargar las operaciones</div>

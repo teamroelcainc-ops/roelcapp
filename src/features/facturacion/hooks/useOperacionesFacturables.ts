@@ -33,6 +33,9 @@ export interface OperacionesFacturables<T> {
   topeAlcanzado: boolean;
   /** Con la bandera: ya están las facturadas además de las pendientes. */
   facturadasCargadas: boolean;
+  /** ✅ V00449: ya terminó al menos una descarga (bien o con error). Antes de eso una lista vacía
+   *  no quiere decir "no hay operaciones": el tablero muestra la animación de espera. */
+  descargaTerminada: boolean;
   /** Descarga (si la lista está vacía, o siempre con `forzar`). */
   descargar: (forzar?: boolean) => Promise<void>;
 }
@@ -53,6 +56,7 @@ export function useOperacionesFacturables<T extends Datos = Datos>(
   const [cargando, setCargando] = useState(false);
   const [topeAlcanzado, setTopeAlcanzado] = useState(false);
   const [facturadasCargadas, setFacturadasCargadas] = useState(false);
+  const [descargaTerminada, setDescargaTerminada] = useState(false); // ✅ V00449
   const peticionCanonRef = useRef({ id: 0, conFacturadas: false, enVuelo: false });
   // ✅ V00447: descarga vieja en curso. Sin esto, si el efecto del tablero corría otra vez
   //   antes de que terminara (cambio de pestaña, React en modo desarrollo), se bajaban las
@@ -91,6 +95,7 @@ export function useOperacionesFacturables<T extends Datos = Datos>(
       if (peticionCanonRef.current.id === id) {
         peticionCanonRef.current = { ...peticionCanonRef.current, enVuelo: false };
         setCargando(false);
+        setDescargaTerminada(true);
       }
     }
   };
@@ -143,6 +148,7 @@ export function useOperacionesFacturables<T extends Datos = Datos>(
       alert(`No se pudieron cargar las operaciones.\n\nDetalle: ${msg}`);
     }
     setCargando(false);
+    setDescargaTerminada(true);
   };
 
   const descargar = async (forzar = false): Promise<void> => {
@@ -158,6 +164,16 @@ export function useOperacionesFacturables<T extends Datos = Datos>(
     await p;
   };
 
+  // ✅ V00449: al pasar a "Facturadas"/"Todas" sin tenerlas, "cargando" se enciende en el MISMO
+  //   render del cambio de vista. El efecto de abajo las pide un render después y, mientras, la
+  //   tabla mostraba "No hay operaciones facturadas…". Misma condición que el efecto: él es quien
+  //   pide los datos y quien apaga la bandera al terminar (no cambia qué se pide ni cuándo).
+  const [vistaAnterior, setVistaAnterior] = useState(vistaOps);
+  if (vistaAnterior !== vistaOps) {
+    setVistaAnterior(vistaOps);
+    if (flags.consultasCanonicas && vistaOps !== 'pendientes' && !facturadasCargadas) setCargando(true);
+  }
+
   // Con la bandera, "Facturadas"/"Todas" piden las ya facturadas (una vez).
   const pedirFacturadas = useEffectEvent(() => {
     const p = peticionCanonRef.current;
@@ -169,5 +185,5 @@ export function useOperacionesFacturables<T extends Datos = Datos>(
     pedirFacturadas();
   }, [flags.consultasCanonicas, vistaOps, facturadasCargadas]);
 
-  return { operaciones, setOperaciones, cargando, topeAlcanzado, facturadasCargadas, descargar };
+  return { operaciones, setOperaciones, cargando, topeAlcanzado, facturadasCargadas, descargaTerminada, descargar };
 }

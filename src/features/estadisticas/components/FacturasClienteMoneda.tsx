@@ -18,6 +18,7 @@ import { db } from '../../../config/firebase';
 import { propagarMonedaEmpresa, type ReporteMoneda } from '../../empresas/services/propagarMoneda';
 import { registrarLog } from '../../../utils/logger';
 import { idMoneda, monedaCanonica, nombreMoneda } from '../../../shared/dominio/moneda';
+import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
 import './FacturasClienteMoneda.css';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docs sin tipo canónico (mismo criterio de Estadísticas).
@@ -148,7 +149,8 @@ export function FacturasClienteMoneda({ cliente, ops, onCerrar }: Props) {
             <h3 className="fcm-titulo">Facturas de <span className="fcm-cliente">{cliente}</span></h3>
             <p className="fcm-sub">
               Moneda registrada en Empresas:{' '}
-              {monedaEmpresa
+              {/* ✅ V00449: mientras carga ya no dice "SIN MONEDA" (la empresa aún no llegaba) */}
+              {cargando ? <span className="fcm-conteo">…</span> : monedaEmpresa
                 ? <span className={`fcm-chip ${monedaEmpresa === 'USD' ? 'fcm-chip-usd' : 'fcm-chip-mxn'}`}>{monedaEmpresa}</span>
                 : <span className="fcm-chip fcm-chip-falta">SIN MONEDA</span>}
               {!cargando && !error && <span className="fcm-conteo"> · {facturas.length} factura(s)</span>}
@@ -158,7 +160,7 @@ export function FacturasClienteMoneda({ cliente, ops, onCerrar }: Props) {
         </div>
 
         {cargando ? (
-          <p className="fcm-vacio">Cargando facturas del cliente…</p>
+          <CargandoDatos texto="Cargando facturas del cliente…" />
         ) : error ? (
           <p className="fcm-vacio">{error}</p>
         ) : (

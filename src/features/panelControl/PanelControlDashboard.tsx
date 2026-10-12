@@ -15,6 +15,7 @@ import { idReal, obtenerCatalogo } from '../../shared/data/catalogos';
 import { EditorEncabezados } from '../../components/EditorEncabezados';
 import { useEtiquetas } from '../../contexts/EtiquetasContext';
 import './PanelControlDashboard.css';
+import CargandoDatos from '../../shared/components/CargandoDatos';
 import { esOperacionPrueba } from '../../utils/operacionPrueba';
 
 interface Metas { opsMes: number; opsAnio: number; factMes: number; factAnio: number; utilMes: number; utilAnio: number; }
@@ -259,7 +260,7 @@ export const PanelControlDashboard = () => {
           <p className="pc-sub">Metas mensuales y anuales vs. resultados reales, y salud general del app.</p>
         </div>
         <div className="pc-encabezado-der">
-          <select className="form-control pc-select-anio" value={anio} onChange={(e) => setAnio(Number(e.target.value))}>
+          <select className="form-control pc-select-anio" value={anio} onChange={(e) => { setCargando(true); setAnio(Number(e.target.value)); /* ✅ V00449: la animación sale en el mismo cambio de año (antes un pintado con los datos del año anterior) */ }}>
             {[anioActual + 1, anioActual, anioActual - 1, anioActual - 2].map((a) => <option key={a} value={a}>{a}</option>)}
           </select>
           <EditorEncabezados titulo="Panel de Control" claves={[
@@ -280,7 +281,7 @@ export const PanelControlDashboard = () => {
         <div className={`pc-alerta${alertas.empresasSinMoneda ? ' pc-alerta-medio' : ''}`}>💱 Empresas sin moneda: <b>{alertas.empresasSinMoneda}</b></div>
       </div>
 
-      {cargando ? <p className="pc-cargando">⏳ Cargando información del {anio}…</p> : (
+      {cargando ? <CargandoDatos texto={`Cargando información del ${anio}…`} /> : (
         <>
           <h3 className="pc-seccion">Avance del mes ({MESES[mesActual]})</h3>
           <div className="pc-tarjetas">
