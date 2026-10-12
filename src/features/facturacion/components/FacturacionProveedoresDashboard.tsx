@@ -70,6 +70,7 @@ import {
   tienePagosAplicados,
   totalNativoDeOperaciones,
   totalNativoFactura,
+  totalNativoFacturaLegado,
   totalesTrasCambioDeOps,
 } from '../services/totalesFactura'; // ✅ Fase 1.8
 import { aplicarFacturas, aplicarOperaciones, llamarDinero, mensajeDinero } from '../services/dineroServidor'; // ✅ V00441
@@ -80,6 +81,7 @@ import {
 } from '../selectores'; // ✅ V00444 (Fase 8.1): una sola copia (antes idéntica en Clientes y Proveedores)
 import { useOperacionesFacturables } from '../hooks/useOperacionesFacturables'; // ✅ V00444 (Fase 8.1)
 import { conversionOperacion, montoOperacion } from '../../../shared/dominio/dinero';
+import { leerParaDocumento } from '../../../utils/direccionPdf'; // ✅ V00448
 
 // ──────────────────────────────────────────────────────────────────────
 // Constantes
@@ -275,6 +277,13 @@ const provDeOp = (op: any) => op?.[CAMPO_PROVEEDOR_OP] || op?.proveedorUnidadId;
 
 export const FacturacionProveedoresDashboard = () => {
   const flags = useFlags(); // ✅ V00441 (Fase 5): dinero por servidor
+  // ✅ V00448: el total que se MUESTRA (tabla, tarjetas, Excel) usa la misma regla que Pagos
+  //   mientras el dinero no lo lleve el servidor (como la V00434). La regla única cambiaba el
+  //   total de facturas viejas sin moneda reconocible o con renglones sin `dol`.
+  const totalFactura = useCallback(
+    (f: unknown): number => (flags.dineroPorServidor ? totalNativoFactura(f) : totalNativoFacturaLegado(f)),
+    [flags.dineroPorServidor],
+  );
   const flagsCargadas = useFlagsCargadas(); // ✅ V00443
   const [activeTab, setActiveTab] = useState<'operaciones' | 'historial' | 'pagadas'>('operaciones');
   // ✅ V00126: "Pagadas" reutiliza toda la vista de Historial filtrando facturas liquidadas
@@ -1526,7 +1535,8 @@ export const FacturacionProveedoresDashboard = () => {
 
   const abrirConfirmacionTarifa = async (e: React.MouseEvent, op: any) => {
     e.stopPropagation();
-    const direcciones = await obtenerCatalogo('direcciones');
+    const direcciones = await leerParaDocumento(() => obtenerCatalogo('direcciones')); // ✅ V00448
+    if (!direcciones) return;
     const m = obtenerMontoOperacion(op);
     const monedaFact = op.monedaUnidadNombre || mostrarMoneda(op.facturadoEnUnidad);
     const monedaConvRaw = mostrarMoneda(op.monedaConvenioProv);
@@ -2452,6 +2462,11 @@ export const FacturacionProveedoresDashboard = () => {
         return;
       }
       const facturasConOp = await facturasFrescasConOp(opId, op.facturaProveedorId); // ✅ Fase 1.8
+      // ✅ V00448: si ya está en una factura con ese folio, no hay nada que mover (antes la
+      // sacaba y creaba otra factura con el mismo folio).
+      const yaEsDelFolio = (f: { invoice?: unknown; proveedorId?: unknown }) =>
+        String(f.invoice || '').trim().toLowerCase() === nuevoInvoice.toLowerCase() && String(f.proveedorId || '') === provId;
+      if (facturasConOp.length > 0 && facturasConOp.every(yaEsDelFolio)) { setGestionOp(null); return; }
       const batch = writeBatch(db);
       const cambios: any[] = [];
 
@@ -2682,7 +2697,7 @@ export const FacturacionProveedoresDashboard = () => {
       case 'proveedor': return String(f.proveedorNombre || '').toLowerCase();
       case 'moneda': return String(f.monedaProveedor || '').toLowerCase();
       case 'cantOps': return Number(f.operacionesIds?.length || 0);
-      case 'total': return totalNativoFactura(f); // ✅ FIX MONEDA
+      case 'total': return totalFactura(f); // ✅ FIX MONEDA · V00448
       case 'createdAt': return String(f.createdAt || '');
       default: return '';
     }
@@ -2768,7 +2783,7 @@ export const FacturacionProveedoresDashboard = () => {
   const resumenHistorial = useMemo(() => {
     let totalUSD = 0, totalMXN = 0, totalSinMoneda = 0, totalOps = 0;
     historialOrdenado.forEach(f => {
-      const monto = totalNativoFactura(f); // ✅ FIX MONEDA
+      const monto = totalFactura(f); // ✅ FIX MONEDA · V00448
       // ✅ FIX: la moneda puede venir como nombre de catálogo ("Dólares",
       //   "Pesos") y las tarjetas comparaban contra 'USD'/'MXN' exactos, por
       //   lo que TOTAL FACTURADO marcaba $0.00. Se normaliza antes de sumar.
@@ -2781,7 +2796,7 @@ export const FacturacionProveedoresDashboard = () => {
     });
     return { cuenta: historialOrdenado.length, totalUSD, totalMXN, totalSinMoneda, totalOps };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [historialOrdenado]);
+  }, [historialOrdenado, totalFactura]);
 
   const conteoStatus = useMemo(() => {
     const q = textoBuscarFacturaDiferido.trim().toLowerCase();
@@ -2996,7 +3011,7 @@ export const FacturacionProveedoresDashboard = () => {
         return Array.isArray(f.operacionesGuardadas)
           ? f.operacionesGuardadas.map((op: any) => refDeOpCon(op, extra)).filter(Boolean).join(', ') // ✅ V00260
           : '-';
-      case 'total': return totalNativoFactura(f); // ✅ FIX MONEDA
+      case 'total': return totalFactura(f); // ✅ FIX MONEDA · V00448
       case 'createdAt': return f.createdAt ? formatearFechaHora(f.createdAt) : '-';
       default: return '-';
     }
@@ -3028,7 +3043,7 @@ export const FacturacionProveedoresDashboard = () => {
           </div>
         );
       }
-      case 'total': return <span className="fpd-x13">{formatoMoneda(totalNativoFactura(f))}</span>;
+      case 'total': return <span className="fpd-x13">{formatoMoneda(totalFactura(f))}</span>;
       case 'createdAt': return <span className="fpd-x10">{f.createdAt ? formatearFechaHora(f.createdAt) : '-'}</span>;
       default: return '-';
     }

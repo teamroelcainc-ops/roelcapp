@@ -91,7 +91,9 @@ export const precalentarCatalogos = (cols: readonly ColeccionCatalogo[]): void =
     cuandoLibre(() => {
       const c = pendientes[i];
       if (!auth.currentUser) { pendientes.slice(i).forEach((x) => enPrecalentado.delete(x)); return; } // cerró sesión
-      void obtenerCatalogo(c).finally(() => { enPrecalentado.delete(c); siguiente(i + 1); });
+      void obtenerCatalogo(c)
+        .catch(() => { /* sin datos a tiempo: la pantalla lo vuelve a pedir al abrirse */ })
+        .finally(() => { enPrecalentado.delete(c); siguiente(i + 1); });
     });
   };
   siguiente(0);

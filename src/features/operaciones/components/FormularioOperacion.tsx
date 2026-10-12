@@ -166,7 +166,8 @@ const obtenerMapaCargaVacia = async (): Promise<Map<string, string>> => {
 const resolverNombreCarga = async (valor: unknown): Promise<string> => {
   const v = String(valor ?? '').trim();
   if (!v) return 'N/A';
-  const mapa = await obtenerMapaCargaVacia();
+  // ✅ V00448: sin catálogo (sin red ni caché) se queda el valor tal cual, como antes.
+  const mapa = await obtenerMapaCargaVacia().catch((e: unknown) => { console.warn('[carga] sin catálogo:', e); return new Map<string, string>(); });
   return mapa.get(v) || mapa.get(v.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase()) || v;
 };
 const traficoCache = new Map<string, string>();
@@ -662,7 +663,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
       const objetivo = traf.includes('import') ? 'caseta avi' : traf.includes('export') ? 'caseta puente' : '';
       if (!objetivo) return {};
       // ✅ V00439 (Fase 3.6): tipos de gasto del listener compartido (antes getDocs de la colección).
-      const gastosSP = await obtenerCatalogo('catalogo_tipos_gastos');
+      const gastosSP = await obtenerCatalogo('catalogo_tipos_gastos', { fresco: true }); // ✅ V00448: escribe el peaje
       const normSP = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
       const x = gastosSP.find((g) => {
         const n = normSP(g.nombre_gasto);

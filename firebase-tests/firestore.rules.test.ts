@@ -21,6 +21,7 @@ beforeAll(async () => {
     await setDoc(doc(db, 'usuarios', 'adminis1'), { nombre: 'Administrativo', roles: ['ADMINISTRATIVO'] });
     await setDoc(doc(db, 'usuarios', 'cli1'), { nombre: 'Cliente', tipoUsuario: 'Cliente ', empresasClienteIds: ['E1'] });
     await setDoc(doc(db, 'usuarios', 'inact1'), { nombre: 'Baja', roles: ['Trafico'], activo: false });
+    await setDoc(doc(db, 'catalogo_roles', 'cr1'), { nombre: 'Trafico', requiereIPOficina: true });
     await setDoc(doc(db, 'operaciones', 'op1'), { ref: 'TR-010126-001', operador: 'emp1', status: 's1' });
     await setDoc(doc(db, 'roles', 'r1'), { nombre: 'Trafico' });
     await setDoc(doc(db, 'configuracion', 'flags'), {});
@@ -100,6 +101,20 @@ describe('perfil propio y roles', () => {
     const db = conClaims('borrado1', { personal: true, admin: false, cliente: false });
     await assertSucceeds(getDoc(doc(db, 'operaciones', 'op1')));
     await assertFails(updateDoc(doc(db, 'operaciones', 'op1'), { status: 'x' }));
+  });
+  it('V00448: con claim personal viejo pero perfil desactivado o de cliente: ya no escribe', async () => {
+    const baja = conClaims('inact1', { personal: true, admin: false, cliente: false });
+    await assertFails(updateDoc(doc(baja, 'operaciones', 'op1'), { status: 'x' }));
+    await assertFails(addDoc(collection(baja, 'historial_actividad'), { accion: 'x' }));
+    await assertFails(setDoc(doc(baja, 'configuracion', 'metas_operaciones'), { transfer: 1 }, { merge: true }));
+    const cliente = conClaims('cli1', { personal: true, admin: false, cliente: false });
+    await assertFails(updateDoc(doc(cliente, 'operaciones', 'op1'), { status: 'x' }));
+  });
+  it('V00448: catalogo_roles (también decide la red de la oficina): solo admin', async () => {
+    await assertSucceeds(getDoc(doc(sinClaims('pers1'), 'catalogo_roles', 'cr1')));
+    await assertFails(deleteDoc(doc(sinClaims('pers1'), 'catalogo_roles', 'cr1')));
+    await assertFails(updateDoc(doc(sinClaims('pers1'), 'catalogo_roles', 'cr1'), { requiereIPOficina: false }));
+    await assertSucceeds(updateDoc(doc(sinClaims('admin1'), 'catalogo_roles', 'cr1'), { requiereIPOficina: true }));
   });
 });
 

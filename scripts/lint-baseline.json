@@ -49,7 +49,7 @@
     "src/features/facturacion/components/generarRemisionPDF.ts": 4,
     "src/features/gastos/components/mtto/FormularioMtto.tsx": 32,
     "src/features/gastos/components/mtto/MttoAgrupadosInvoice.tsx": 10,
-    "src/features/gastos/components/mtto/MttoDashboard.tsx": 49,
+    "src/features/gastos/components/mtto/MttoDashboard.tsx": 47,
     "src/features/gastos/components/services/mttoService.ts": 3,
     "src/features/hilo/HiloModal.tsx": 3,
     "src/features/importacion/components/DataImportView.tsx": 25,
@@ -85,9 +85,8 @@
     "src/usuarios/components/RolesDashboard.tsx": 17,
     "src/usuarios/components/UsuariosDashboard.tsx": 15,
     "src/utils/lazyWithRetry.ts": 2,
-    "src/utils/pdfGenerator.ts": 2,
     "functions/src/index.ts": 13
   },
-  "anyTotal": 2327,
+  "anyTotal": 2323,
   "desactivadosDeps": 91
 }

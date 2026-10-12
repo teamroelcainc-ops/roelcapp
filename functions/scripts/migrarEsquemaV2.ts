@@ -151,6 +151,10 @@ async function migrar(db: Firestore, escritor: ReturnType<Firestore['bulkWriter'
     const enFacturaCliente = new Set<string>();
     const facs = await db.collection(COL.facturasClientes).select('operacionesIds').get();
     facs.docs.forEach((f) => { const ids = f.get('operacionesIds'); if (Array.isArray(ids)) ids.forEach((i) => enFacturaCliente.add(String(i))); });
+    // ✅ V00448: lo mismo para Facturación Proveedores (fila de paridad propia).
+    const enFacturaProveedor = new Set<string>();
+    const facsProv = await db.collection(COL.facturasProveedores).select('operacionesIds').get();
+    facsProv.docs.forEach((f) => { const ids = f.get('operacionesIds'); if (Array.isArray(ids)) ids.forEach((i) => enFacturaProveedor.add(String(i))); });
 
     const nombreFinal = (n: unknown): boolean => { const t = normalizarTexto(n); return t.includes('cancel') || t.includes('falso') || t.includes('complet'); };
     const n = await recorrer(db, COL.operaciones, (d) => {
@@ -172,11 +176,18 @@ async function migrar(db: Firestore, escritor: ReturnType<Firestore['bulkWriter'
       const canceladosHoy = st === STATUS_CANCELADO;
       const facturableHoy = (STATUS_COMPLETADOS.includes(st) || /falso/i.test(normalizarTexto(nomCat))) && !esOperacionPrueba(x)
         && !(txt(x.facturaClienteId) || x.facturado === true) && !enFacturaCliente.has(d.id);
+      // Regla de FacturacionProveedoresDashboard (texto en minúsculas, sin quitar acentos).
+      const tipoOp = String(x.tipoOperacionNombre || x.tipoOperacionId || '').toLowerCase();
+      const externoHoy = tipoOp.includes('flete')
+        || ((tipoOp.includes('logistica') || tipoOp.includes('logística')) && !String(x.proveedorUnidadNombre || x.proveedorUnidad || '').toLowerCase().includes('roelca'));
+      const facturableProvHoy = (STATUS_COMPLETADOS.includes(st) || /falso/i.test(normalizarTexto(nomCat))) && !esOperacionPrueba(x) && externoHoy
+        && !(txt(x.facturaProveedorId) || x.facturadoProveedor) && !enFacturaProveedor.has(d.id);
       const vistas: [string, boolean, boolean][] = [
         ['Operaciones activas', activaHoy, g === 'activa'],
         ['Servicios completados', completadosHoy, g === 'completada' || g === 'falso'],
         ['Servicios cancelados', canceladosHoy, g === 'cancelada'],
         ['Facturación clientes (pendientes)', facturableHoy, r.campos.porFacturarCliente === true],
+        ['Facturación proveedores (pendientes)', facturableProvHoy, r.campos.porFacturarProveedor === true],
       ];
       for (const [vista, hoy, nueva] of vistas) {
         if (hoy !== nueva) { filasParidad.push([d.id, ref, vista, hoy, nueva, st, txt(x.statusNombre)]); contar('paridad', vista); }

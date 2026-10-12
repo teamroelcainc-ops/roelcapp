@@ -33,7 +33,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { collection, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 // ✅ Logo de la empresa (mismo base64 que usan los PDF) para ambos exports
-import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
+import { escaparHTML, LOGO_DEFAULT } from '../../../utils/pdfGenerator';
 // ✅ NUEVO: Resúmenes Diarios (Transfer / Logística / Fletes) en PDF.
 import { ResumenDiarioOperaciones } from './ResumenDiarioOperaciones';
 import './ReportesDashboard.css';
@@ -1158,16 +1158,16 @@ export const ReportesDashboard = () => {
       const weekend = vv.weekendFlags && vv.weekendFlags[i];
       const bg = esTotalRow ? '#e8eef7' : (weekend ? '#fff6e5' : (i % 2 ? '#f6f8fa' : '#ffffff'));
       const fw = esTotalRow ? '700' : '400';
-      const tds = f.map((v) => `<td style="padding:7px 11px;border:1px solid #d0d7de;text-align:center;font-weight:${fw};white-space:nowrap">${v === '' || v == null ? '' : String(v)}</td>`).join('');
+      const tds = f.map((v) => `<td style="padding:7px 11px;border:1px solid #d0d7de;text-align:center;font-weight:${fw};white-space:nowrap">${v === '' || v == null ? '' : escaparHTML(v)}</td>`).join('');
       return `<tr style="background:${bg}">${tds}</tr>`;
     }).join('');
-    const ths = cols.map(c => `<th style="padding:9px 11px;border:1px solid #24292f;background:#24292f;color:#fff;text-align:center;font-size:11px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">${c.label}</th>`).join('');
+    const ths = cols.map(c => `<th style="padding:9px 11px;border:1px solid #24292f;background:#24292f;color:#fff;text-align:center;font-size:11px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">${escaparHTML(c.label)}</th>`).join('');
     const resumenHtml = (vista.resumen || []).map(r =>
       `<div style="background:#fff;border:1px solid #e6eaf0;border-radius:8px;padding:8px 14px;min-width:120px">
-        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:#8a94a6">${r.label}</div>
-        <div style="font-size:16px;font-weight:700;color:#c2410c">${r.valor}</div>
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:#8a94a6">${escaparHTML(r.label)}</div>
+        <div style="font-size:16px;font-weight:700;color:#c2410c">${escaparHTML(r.valor)}</div>
       </div>`).join('');
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${vista.titulo}</title>
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escaparHTML(vista.titulo)}</title>
 <style>
   /* Hoja CARTA HORIZONTAL con márgenes cortos: cabe mucho más ancho de tabla. */
   @page{ size: letter landscape; margin: 8mm }
@@ -1181,7 +1181,7 @@ export const ReportesDashboard = () => {
     <img src="${LOGO_DEFAULT}" alt="Roelca Inc." style="height:60px;width:auto" />
     <div style="flex:1">
       <div style="font-size:13px;font-weight:700;letter-spacing:.5px;color:#c2410c">ROELCA INC.</div>
-      <div style="font-size:22px;font-weight:800;margin:2px 0 2px;color:#1f2328">${vista.titulo}</div>
+      <div style="font-size:22px;font-weight:800;margin:2px 0 2px;color:#1f2328">${escaparHTML(vista.titulo)}</div>
       <div style="color:#57606a;font-size:13px">Periodo: <b>${fmtFechaCorta(desde)}</b> al <b>${fmtFechaCorta(hasta)}</b></div>
     </div>
   </div>

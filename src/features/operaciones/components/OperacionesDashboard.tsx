@@ -40,6 +40,7 @@ import { ConfigCartaModal } from './ConfigCartaModal';
 import { usePermisoFormularios } from '../../formularios/configFormularios';
 import { estadoGrupoDe } from '../../../shared/dominio/operacionCanonica';
 import { colorTipoOperacion, fmtFechaAuditoria, limpiarUndefined } from '../services/formatosOperacion'; // ✅ V00444 (Fase 8.3)
+import { leerParaDocumento } from '../../../utils/direccionPdf'; // ✅ V00448
 
 // ✅ V00439 (Fase 3.x): catálogos del módulo (alias → colección) desde el
 //   listener compartido (useCatalogos): sin getDocs propios ni copia en
@@ -688,7 +689,8 @@ const OperacionesDashboard = () => {
       const tarifaBase = String(dd.tarifaBaseId ?? dd.tarifa_base_id ?? dd.tarifaReferenciaId ?? dd.tarifa_referencia_id ?? '').trim();
       if (!tarifaBase) return null;
       // ✅ V00439 (Fase 3.x): gastos incluidos y tipos de gasto del listener compartido (antes getDocs por clic).
-      const [gastosIncluidos, tiposGastos] = await Promise.all([obtenerCatalogo('tarifas_gastos_incluidos'), obtenerCatalogo('catalogo_tipos_gastos')]);
+      // ✅ V00448: `fresco` — con esto se escribe el peaje (saldoPuente): confirmado por el servidor.
+      const [gastosIncluidos, tiposGastos] = await Promise.all([obtenerCatalogo('tarifas_gastos_incluidos', { fresco: true }), obtenerCatalogo('catalogo_tipos_gastos', { fresco: true })]);
       const normSP = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
       const gastoPorId = new Map(tiposGastos.map((g) => [idReal(g), g]));
       const esColSP = esAduanaColombia(await aduanaDeConvenio(op?.convenio)); // ✅ V00416
@@ -755,7 +757,7 @@ const OperacionesDashboard = () => {
       const traf = String(op?.trafico || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
       const objetivo = traf.includes('import') ? 'avi' : traf.includes('export') ? 'p3' : esVerdeUSA ? 'avi' : esVerdeMX ? 'p3' : '';
       if (!objetivo) return {};
-      const tiposGastos = await obtenerCatalogo('catalogo_tipos_gastos'); // ✅ V00439 (Fase 3.x)
+      const tiposGastos = await obtenerCatalogo('catalogo_tipos_gastos', { fresco: true }); // ✅ V00439 · V00448: escribe el peaje
       const normSP = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
       const x = tiposGastos.find((t) => {
         const n = normSP(t.nombre_gasto);
@@ -1222,7 +1224,8 @@ const OperacionesDashboard = () => {
   const onRestaurarFormulario = useCallback(() => setEstadoFormulario('abierto'), []);
 
   const handleDescargarSolicitudRetiro = async () => {
-    const cats = await catalogosPdf();
+    const cats = await leerParaDocumento(catalogosPdf);
+    if (!cats) return;
     if (!operacionViendo) return;
     const origen = mostrarDatoMapeado(operacionViendo.origen, 'empresas', 'nombre', operacionViendo.origenNombre);
     const destinoObj = cats.empresas.find((e) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
@@ -1245,7 +1248,8 @@ const OperacionesDashboard = () => {
   };
 
   const handleDescargarInstruccionesServicio = async () => {
-    const cats = await catalogosPdf();
+    const cats = await leerParaDocumento(catalogosPdf);
+    if (!cats) return;
     if (!operacionViendo) return;
     const origenObj = cats.empresas.find((e) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
     const destinoObj = cats.empresas.find((e) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
@@ -1278,7 +1282,8 @@ const OperacionesDashboard = () => {
   };
 
   const handleDescargarCheckList = async () => {
-    const cats = await catalogosPdf();
+    const cats = await leerParaDocumento(catalogosPdf);
+    if (!cats) return;
     if (!operacionViendo) return;
     const origenObj = cats.empresas.find((e) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
     const destinoObj = cats.empresas.find((e) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
@@ -1309,13 +1314,15 @@ const OperacionesDashboard = () => {
   };
 
   const handleDescargarPruebaEntrega = async () => {
-    const cats = await catalogosPdf();
+    const cats = await leerParaDocumento(catalogosPdf);
+    if (!cats) return;
     if (!operacionViendo) return;
     const origenObj = cats.empresas.find((e) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
     const destinoObj = cats.empresas.find((e) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
     const remolqueObj = cats.remolques.find((r) => r.id === operacionViendo.numeroRemolque) || await docPorId('remolques', operacionViendo.numeroRemolque); // ✅ V00419
     const empNombre = resolverOperadorParaPDF(cats);
-    const listaDirsPE = await obtenerDireccionesFrescas(); // ✅ V00419: direcciones frescas
+    const listaDirsPE = await leerParaDocumento(obtenerDireccionesFrescas); // ✅ V00419: direcciones frescas
+    if (!listaDirsPE) return;
     const dOri = datosDireccionEmpresa(origenObj, listaDirsPE);
     const dDes = datosDireccionEmpresa(destinoObj, listaDirsPE);
 
@@ -1420,13 +1427,15 @@ const OperacionesDashboard = () => {
   const obtenerDireccionesFrescas = (): Promise<DocLibre[]> => obtenerCatalogo('direcciones');
 
   const handleDescargarCartaInstrucciones = async () => {
-    const cats = await catalogosPdf();
+    const cats = await leerParaDocumento(catalogosPdf);
+    if (!cats) return;
     if (!operacionViendo) return;
     const origenObj = cats.empresas.find((e) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
     const destinoObj = cats.empresas.find((e) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
     const remolqueObj = cats.remolques.find((r) => r.id === operacionViendo.numeroRemolque) || await docPorId('remolques', operacionViendo.numeroRemolque); // ✅ V00419
     const empNombre = resolverOperadorParaPDF(cats);
-    const listaDirs = await obtenerDireccionesFrescas();
+    const listaDirs = await leerParaDocumento(obtenerDireccionesFrescas);
+    if (!listaDirs) return;
     const dirOrigen = datosDireccionEmpresa(origenObj, listaDirs);
     const dirDestino = datosDireccionEmpresa(destinoObj, listaDirs);
 

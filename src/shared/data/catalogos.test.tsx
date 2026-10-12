@@ -144,6 +144,36 @@ describe('catálogos compartidos', () => {
     await expect(p).resolves.toHaveLength(1);
   });
 
+  it('✅ V00448 obtenerCatalogo RECHAZA si no llegó ningún dato a tiempo (no devuelve una lista vacía)', async () => {
+    const p = mod.obtenerCatalogo('catalogo_tipos_gastos', { esperaMs: 1000 });
+    const rechazo = expect(p).rejects.toThrow(/sin respuesta/);
+    await act(async () => { vi.advanceTimersByTime(1100); });
+    await rechazo;
+  });
+
+  it('✅ V00448 obtenerCatalogo RECHAZA si el listener falla', async () => {
+    const p = mod.obtenerCatalogo('catalogo_moneda', { fresco: true });
+    act(() => { abiertos.get('catalogo_moneda')?.error(new Error('permiso')); });
+    await expect(p).rejects.toThrow(/permiso/);
+  });
+
+  it('✅ V00448 una colección que de verdad está vacía (confirmada por el servidor) sí se devuelve vacía', async () => {
+    const p = mod.obtenerCatalogo('catalogo_moneda', { fresco: true });
+    act(() => { abiertos.get('catalogo_moneda')?.next(snap([], false, 0)); });
+    await expect(p).resolves.toHaveLength(0);
+  });
+
+  it('✅ V00448 al reabrir tras un error, un resultado VACÍO reemplaza las filas viejas', () => {
+    const a = render(<UnCatalogo alRender={() => {}} />);
+    act(() => { abiertos.get('empresas')?.next(snap([{ id: 'a' }, { id: 'b' }], false)); vi.advanceTimersByTime(VENTANA_AVISO_MS); });
+    expect(mod.estadoCatalogo('empresas').datos).toHaveLength(2);
+    act(() => { abiertos.get('empresas')?.error(new Error('red')); });
+    a.unmount();
+    render(<UnCatalogo alRender={() => {}} />);
+    act(() => { abiertos.get('empresas')?.next(snap([], false, 0)); vi.advanceTimersByTime(VENTANA_AVISO_MS); });
+    expect(mod.estadoCatalogo('empresas').datos).toHaveLength(0);
+  });
+
   it('_docId es el id real del documento y no se copia con spread', () => {
     let fila: Record<string, unknown> | undefined;
     render(<UnCatalogo alRender={() => { fila = mod.estadoCatalogo('empresas').datos[0]; }} />);

@@ -252,11 +252,17 @@ export const moverOperacionFactura = callable(z.object({
     if (!op) throw new ErrorDinero('La operación ya no existe (otro usuario la eliminó).');
     const origen = await facturasConOperacion(db, tx, d.lado, d.operacionId, op);
     const empresaId = empresaDeOperacion(op.datos, d.lado);
-    const origenIds = new Set(origen.map((f) => f.id));
-    const { existente: destino, id: idNueva } = await destinoDeFolio(db, tx, d.lado, empresaId, d.nuevoInvoice, origenIds);
+    // ✅ V00448: si la operación ya está en una factura con ese folio, no se mueve a una
+    // copia nueva (antes: «Guardar» sin cambiar el folio, o un reintento, duplicaba el folio).
+    const yaAhi = origen.filter((f) => mismoFolio(f.datos, d.nuevoInvoice, empresaId, d.lado));
+    if (yaAhi[0] && yaAhi.length === origen.length) return { ok: true, facturas: {}, operaciones: {}, facturaId: yaAhi[0].id, sinCambios: true };
+    const salen = origen.filter((f) => !yaAhi.includes(f));
+    const { existente: destino, id: idNueva } = yaAhi[0]
+      ? { existente: yaAhi[0], id: yaAhi[0].id }
+      : await destinoDeFolio(db, tx, d.lado, empresaId, d.nuevoInvoice, new Set(origen.map((f) => f.id)));
     const empresa = destino ? null : await tx.get(db.collection('empresas').doc(empresaId || '-'));
     const nombreEmpresa = () => (empresa?.exists ? String((empresa.data() as Datos).nombre ?? '') : '');
-    const plan = planMoverOperacion({ lado: d.lado, nuevoInvoice: d.nuevoInvoice, ahoraISO: new Date().toISOString(), nombreEmpresa, nombreRemolque }, op, origen, destino, idNueva);
+    const plan = planMoverOperacion({ lado: d.lado, nuevoInvoice: d.nuevoInvoice, ahoraISO: new Date().toISOString(), nombreEmpresa, nombreRemolque }, op, salen, destino, idNueva);
     ejecutarPlan(db, tx, plan, { ops: [op], canon });
     return respuesta(plan, { facturaId: idNueva });
   });

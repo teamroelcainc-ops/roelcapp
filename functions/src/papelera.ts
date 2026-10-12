@@ -11,6 +11,7 @@
  *   · Solo personal. Colecciones de seguridad (usuarios, roles, configuración,
  *     autorizaciones, bitácoras, papelera, meta, contadores) NO se borran por aquí.
  *   · pagos no se borran por aquí (se revierten en Pagos, que devuelve los saldos).
+ *   · facturas tampoco (V00448): se borran en Facturación, que desliga sus operaciones.
  *   · Una factura con pagos aplicados no se borra.
  * La revisión de la regla "Borrar" de Autorizaciones se sigue haciendo en el
  * navegador antes de llamar (src/config/firebase.ts → eliminarRegistro).
@@ -32,6 +33,9 @@ export const COLECCIONES_NO_BORRABLES = new Set<string>([
   COL.usuarios, COL.roles, COL.configuracion, COL.configAutorizaciones,
   COL.historialActividad, COL.papelera, COL.meta, COL.contadores, 'counters',
   'historial_cambios', 'operaciones_idempotencia', COL.pagos,
+  // ✅ V00448: las facturas se borran desde Facturación (desliga sus operaciones);
+  // los saldos, contadores de uso y eventos los mantiene el servidor.
+  COL.facturasClientes, COL.facturasProveedores, 'saldos_corrientes', 'usos', 'eventos_procesados',
 ]);
 
 const esquema = z.object({

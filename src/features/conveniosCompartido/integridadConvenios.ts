@@ -132,6 +132,12 @@ export const asegurarIntegridad = async (tipo: TipoRel, opciones?: { soloIds?: s
     obtenerCatalogo(cfg.detalles, { fresco: true }),
     obtenerCatalogo('catalogo_tarifas_referencia', { fresco: true }),
   ]);
+  // ✅ V00448: con convenios pero SIN tarifarios o sin maestros, la lectura salió incompleta
+  //   (no es un estado real de Roelca): no se repara nada. Repararía creando un tarifario
+  //   vacío por empresa y re-apuntando todos los convenios a él.
+  if (catDet.length > 0 && (catTar.length === 0 || catMae.length === 0)) {
+    throw new Error(`Integridad de convenios (${tipo}): la lectura de tarifarios o maestros llegó vacía; no se repara nada.`);
+  }
 
   // ── Catálogo de tarifas: id → nombre, y nombre → id (solo si es único) ──
   const catNombre = new Map<string, string>();

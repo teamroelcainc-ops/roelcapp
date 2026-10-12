@@ -4,12 +4,13 @@ rules_version = '2';
 //  REGLAS DE STORAGE — V00437 (Fase 1.4)
 //  ⚠ Mismo punto de parada que firestore.rules (P1 en PLAN-REFACTOR.md).
 //  Publicar: firebase deploy --only storage
-//  · Personal (claim `personal`, o perfil válido mientras no haya claims) → todo.
+//  · Personal (claim `personal`, o perfil válido mientras no haya claims) → lee todo;
+//    para subir o borrar se revisa además su perfil en Firestore (V00448).
 //  · Clientes de la app móvil → nada directo (abren facturas con su enlace de
 //    descarga, que trae su propio token y no pasa por estas reglas).
 //  ⚠ La regla de respaldo consulta Firestore desde Storage: al publicarla, la
 //    consola pide permiso para que Storage lea Firestore. ACÉPTALO; si no, se
-//    niegan las subidas de los usuarios sin claims.
+//    niegan TODAS las subidas (V00448: toda subida revisa el perfil).
 // ═══════════════════════════════════════════════════════════════════════════
 service firebase.storage {
   match /b/{bucket}/o {
@@ -36,7 +37,10 @@ service firebase.storage {
     }
 
     match /{allPaths=**} {
-      allow read, write: if esPersonal();
+      allow read: if esPersonal();
+      // ✅ V00448: subir o borrar exige además el perfil vigente (como en Firestore):
+      // un usuario dado de baja o desactivado deja de subir archivos al instante.
+      allow write: if esPersonal() && perfilEsPersonal();
     }
   }
 }

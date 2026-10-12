@@ -8,7 +8,7 @@ import type { ResultadoTotales } from '../../../shared/dominio/dinero';
 
 export {
   ajustarTotal, monedaDeFactura, montoPagadoDe, tienePagosAplicados, totalConversionDeOperaciones,
-  totalNativoDeOperaciones, totalNativoFactura,
+  totalNativoDeOperaciones, totalNativoFactura, totalNativoFacturaLegado,
 } from '../../../shared/dominio/dinero';
 export type { CamposTotalesFactura, ResultadoTotales } from '../../../shared/dominio/dinero';
 

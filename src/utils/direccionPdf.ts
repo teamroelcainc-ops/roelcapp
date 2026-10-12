@@ -13,6 +13,21 @@ export type DireccionPdf = { direccion: string; colonia: string; cp: string; ciu
 
 export const direccionesParaPdf = (): Promise<Fila[]> => obtenerCatalogo('direcciones');
 
+/**
+ * ✅ V00448: lee lo que necesita un documento (PDF, confirmación). Si un catálogo no llegó
+ * (sin red ni caché, o sin permiso), AVISA y devuelve null: antes salía el documento con
+ * "N/A" o ids en lugar de nombres y direcciones, y así se mandaba al cliente.
+ */
+export const leerParaDocumento = async <T>(leer: () => Promise<T>): Promise<T | null> => {
+  try {
+    return await leer();
+  } catch (e) {
+    console.error('[documento] No se pudieron leer los catálogos:', e);
+    alert('No se pudieron leer los catálogos que necesita el documento (revisa tu conexión). Inténtalo de nuevo.');
+    return null;
+  }
+};
+
 export const parsearDireccionTexto = (texto: string) => {
   const t = String(texto || '');
   const partes = t.split(',').map((x) => x.trim()).filter(Boolean);

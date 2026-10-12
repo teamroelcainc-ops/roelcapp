@@ -29,12 +29,12 @@ import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
 import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
 import { docPorId, nombreEmpresaPdf } from '../../../utils/docPorId';
-import { datosDireccionEmpresaPdf, direccionesParaPdf } from '../../../utils/direccionPdf';
+import { datosDireccionEmpresaPdf, direccionesParaPdf, leerParaDocumento } from '../../../utils/direccionPdf';
 import { mostrarCartaPara, useConfigCarta } from '../../../utils/configCartaInstrucciones';
 import { ConfigCartaModal } from './ConfigCartaModal';
 import { usePermisoFormularios } from '../../formularios/configFormularios';
 import type { DocLibre } from '../../../utils/docPorId';
-import { idReal, useCatalogos } from '../../../shared/data/catalogos';
+import { idReal, obtenerCatalogo, useCatalogos } from '../../../shared/data/catalogos';
 import type { ColeccionCatalogo } from '../../../shared/data/catalogos';
 import { ID_MXN, ID_USD, STATUS_COMPLETADOS, TIPO_EMPRESA } from '../../../shared/dominio/constantes';
 import { estadoGrupoDe } from '../../../shared/dominio/operacionCanonica';
@@ -1087,17 +1087,29 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   //   reactiva el registro manual desde Completados.
   void ultimoStatusGuardado; void abrirRegistroHorario; void registrarStatusRapido;
 
+  // ✅ V00448: los documentos ESPERAN sus catálogos. Las unidades, operadores externos y
+  //   direcciones solo se abren con la ficha o el formulario; en el primer clic de la sesión
+  //   el PDF salía con "N/A", ids en lugar de nombres y sin dirección (V00434 los abría al entrar).
+  const catalogosDocumento = async () => {
+    const [unidades, unidadesProveedor, proveedoresUnidad, direcciones] = await Promise.all([
+      obtenerCatalogo('unidades'), obtenerCatalogo('unidades_proveedor'), obtenerCatalogo('proveedores_unidad'), obtenerCatalogo('direcciones'),
+    ]);
+    return { unidades: unidades as DocLibre[], unidadesProveedor: unidadesProveedor as DocLibre[], proveedoresUnidad: proveedoresUnidad as DocLibre[], direcciones };
+  };
+
   const handleDescSolicitudRetiro = async () => {
     if (!operacionViendo) return;
+    const cat = await leerParaDocumento(catalogosDocumento); // ✅ V00448
+    if (!cat) return;
     const origen = mostrarDatoMapeado(operacionViendo.origen, 'empresas', 'nombre', operacionViendo.origenNombre);
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
-    const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
+    const unidadObj = cat.unidades.find((u: any) => u.id === operacionViendo.unidad);
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque) || await docPorId('remolques', operacionViendo.numeroRemolque); // ✅ V00419
 
     const unidadProvVal = operacionViendo.unidadProveedor 
-      ? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
+      ? (cat.unidadesProveedor.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
     const operadorProvVal = operacionViendo.operadorProveedor
-      ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
+      ? (cat.proveedoresUnidad.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
 
     generarSolicitudRetiroPDF({
       bodegaNombre: origen,
@@ -1109,22 +1121,24 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       unidadPlacas: unidadObj ? (unidadObj.placa || 'N/A') : 'N/A',
       empleadoNombre: operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal),
       destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
-      destinoDireccion: direccionCompletaDeEmpresa(destinoObj, direccionesDoc),
+      destinoDireccion: direccionCompletaDeEmpresa(destinoObj, cat.direcciones),
     });
   };
 
   const handleDescargarInstruccionesServicio = async () => {
     if (!operacionViendo) return;
+    const cat = await leerParaDocumento(catalogosDocumento); // ✅ V00448
+    if (!cat) return;
 
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
-    const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
+    const unidadObj = cat.unidades.find((u: any) => u.id === operacionViendo.unidad);
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque) || await docPorId('remolques', operacionViendo.numeroRemolque); // ✅ V00419
 
     const unidadProvVal = operacionViendo.unidadProveedor 
-      ? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
+      ? (cat.unidadesProveedor.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
     const operadorProvVal = operacionViendo.operadorProveedor
-      ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
+      ? (cat.proveedoresUnidad.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
 
     generarInstruccionesServicioPDF({
       consecutivo: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'N/A',
@@ -1135,25 +1149,27 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       remolquePlacas: operacionViendo.remolquePlaca || (remolqueObj ? remolqueObj.placa : 'N/A'),
       tipoOperacion: operacionViendo.tipoOperacionNombre || mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion'),
       origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
-      origenDireccion: direccionCompletaDeEmpresa(origenObj, direccionesDoc),
+      origenDireccion: direccionCompletaDeEmpresa(origenObj, cat.direcciones),
       clienteMercancia: operacionViendo.clienteMercanciaNombre || mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas'),
       destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
-      destinoDireccion: direccionCompletaDeEmpresa(destinoObj, direccionesDoc),
+      destinoDireccion: direccionCompletaDeEmpresa(destinoObj, cat.direcciones),
     });
   };
 
   const handleDescargarCheckList = async () => {
     if (!operacionViendo) return;
+    const cat = await leerParaDocumento(catalogosDocumento); // ✅ V00448
+    if (!cat) return;
 
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
-    const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
+    const unidadObj = cat.unidades.find((u: any) => u.id === operacionViendo.unidad);
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque) || await docPorId('remolques', operacionViendo.numeroRemolque); // ✅ V00419
 
     const unidadProvVal = operacionViendo.unidadProveedor 
-      ? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
+      ? (cat.unidadesProveedor.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
     const operadorProvVal = operacionViendo.operadorProveedor
-      ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
+      ? (cat.proveedoresUnidad.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
 
     const empNombre = operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal);
     const uniNombre = operacionViendo.unidadNombre || (unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal);
@@ -1171,9 +1187,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       entryReferencia: operacionViendo.numeroEntrys || 'N/A',
       manifiesto: operacionViendo.numManifiesto || 'N/A',
       origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
-      origenDireccion: direccionCompletaDeEmpresa(origenObj, direccionesDoc),
+      origenDireccion: direccionCompletaDeEmpresa(origenObj, cat.direcciones),
       destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
-      destinoDireccion: direccionCompletaDeEmpresa(destinoObj, direccionesDoc),
+      destinoDireccion: direccionCompletaDeEmpresa(destinoObj, cat.direcciones),
       operadorNombre: empNombre,
       supervisor: operacionViendo.observacionesEjecutivo || 'Despacho',
     });
@@ -1181,13 +1197,15 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
   const handleDescargarPruebaEntrega = async () => {
     if (!operacionViendo) return;
+    const cat = await leerParaDocumento(catalogosDocumento); // ✅ V00448
+    if (!cat) return;
 
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque) || await docPorId('remolques', operacionViendo.numeroRemolque); // ✅ V00419
 
     const operadorProvVal = operacionViendo.operadorProveedor
-      ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
+      ? (cat.proveedoresUnidad.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
 
     const empNombre = operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal);
     const tipoOpNombre = operacionViendo.tipoOperacionNombre || mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion');
@@ -1197,11 +1215,11 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       fechaServicio: operacionViendo.fechaServicio || 'N/A',
       fechaCita: operacionViendo.fechaCita ? new Date(operacionViendo.fechaCita).toLocaleString('es-MX') : 'N/A',
       origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
-      origenDireccion: direccionCompletaDeEmpresa(origenObj, direccionesDoc),
+      origenDireccion: direccionCompletaDeEmpresa(origenObj, cat.direcciones),
       origenCP: origenObj ? (origenObj.cp || origenObj.codigoPostal || 'N/A') : 'N/A',
       origenCiudad: origenObj ? (origenObj.ciudad || origenObj.estado || 'N/A') : 'N/A',
       destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
-      destinoDireccion: direccionCompletaDeEmpresa(destinoObj, direccionesDoc),
+      destinoDireccion: direccionCompletaDeEmpresa(destinoObj, cat.direcciones),
       destinoCP: destinoObj ? (destinoObj.cp || destinoObj.codigoPostal || 'N/A') : 'N/A',
       destinoCiudad: destinoObj ? (destinoObj.ciudad || destinoObj.estado || 'N/A') : 'N/A',
       tipoServicio: `${tipoOpNombre} ${operacionViendo.trafico || ''}`,
@@ -1215,16 +1233,19 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
   const handleDescargarCartaInstrucciones = async () => {
     if (!operacionViendo) return;
+    const cat = await leerParaDocumento(catalogosDocumento); // ✅ V00448
+    if (!cat) return;
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque) || await docPorId('remolques', operacionViendo.numeroRemolque); // ✅ V00419
 
     const operadorProvVal = operacionViendo.operadorProveedor
-      ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
+      ? (cat.proveedoresUnidad.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
 
     const empNombre = operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal);
 
-    const listaDirsCarta = await direccionesParaPdf(); // ✅ V00419
+    const listaDirsCarta = await leerParaDocumento(direccionesParaPdf); // ✅ V00419
+    if (!listaDirsCarta) return;
     const dO = datosDireccionEmpresaPdf(origenObj, listaDirsCarta);
     const dD = datosDireccionEmpresaPdf(destinoObj, listaDirsCarta);
 

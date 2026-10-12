@@ -41,7 +41,7 @@ import { CATALOGO_ADUANAS, CATALOGO_CV, cambiosCanonicos, catalogoServidor, cont
 import { banderaServidor } from './flags';
 import { CAMPOS_CANONICOS, derivarDesdeConvenio } from './dominio/operacionCanonica.js';
 import { ESQUEMA_OPERACION_VERSION, ID_MXN, ID_USD } from './dominio/constantes.js';
-import { conversionOperacion, derivadosFactura, totalNativoDeRenglonesLegado } from './dominio/dinero.js';
+import { conversionOperacion, derivadosFactura, monedaDeFactura, totalNativoDeOperaciones, totalNativoDeRenglonesLegado } from './dominio/dinero.js';
 import { aNumero, deCentavos, r2 } from './dominio/numeros.js';
 import { borrarRenglones, proyectarRenglones } from './proyecciones.js';
 import { cambiosCobroPuente } from './puentesYDiesel.js';
@@ -440,6 +440,14 @@ const propagarMontoOperacionAFacturas = async (opId: string, lado: 'cliente' | '
       if (idx === -1) return false; // factura sin snapshot detallado: no se inventa
       const m = dineroOn ? conversionOperacion(op, lado) : conversionOperacionLegado(op, lado);
       const viejo = ops[idx] as Dict;
+      // ✅ V00448: si la conversión sale en 0 (p. ej. convenio en otra moneda SIN tipo de cambio)
+      //   y el renglón facturado tiene monto, NO se pone en 0: ese monto vino al facturar de un
+      //   respaldo (conversión guardada, confirmación de tarifa) y la factura bajaría sin razón.
+      //   Para quitar una operación de una factura se usa "Quitar referencia".
+      if (!(m.total > 0) && (aNumero(viejo.monto) > 0 || aNumero(viejo.dol) > 0 || aNumero(viejo.pes) > 0)) {
+        logger.warn(`[${REL_VERSION}] cascada: ${opId} calcula 0 en ${coleccion}/${d.id}; se conserva el renglón facturado.`);
+        return false;
+      }
       const nuevo: Dict = {
         ...viejo,
         monto: m.conv,
@@ -460,7 +468,8 @@ const propagarMontoOperacionAFacturas = async (opId: string, lado: 'cliente' | '
       if (difiere(fac.subtotalFactura, subtotalFactura)) cambios.subtotalFactura = subtotalFactura;
       // ✅ V00441 (Fase 5.5): un total capturado a mano (totalManualCentavos) no se pisa.
       if (!(aNumero(fac.totalManualCentavos) > 0)) {
-        const subtotalMonedaFactura = totalNativoDeRenglonesLegado(fac, ops);
+        // ✅ V00448: con dineroPorServidor, la regla única (la misma de las callables y la web).
+        const subtotalMonedaFactura = dineroOn ? totalNativoDeOperaciones(monedaDeFactura(fac), ops) : totalNativoDeRenglonesLegado(fac, ops);
         if (difiere(fac.subtotalMonedaFactura, subtotalMonedaFactura)) cambios.subtotalMonedaFactura = subtotalMonedaFactura;
       }
       tx.update(d.ref, cambios);

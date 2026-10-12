@@ -337,17 +337,22 @@ export const totalesTrasCambioDeOps = (facturaFresca: unknown, operacionesNuevas
     }
     return nuevo;
   };
-  const conversionGuardada = r2(fac.subtotalFactura);
+  // ✅ V00448: un total GUARDADO (aunque sea 0) es el punto de partida. Antes, con 0 se tomaba
+  //   el de los renglones: el documento secundario de un folio repetido (que guarda 0/0 porque
+  //   el total lo lleva el primero) quedaba con saldo al quitarle o moverle una operación.
+  const guardado = (v: unknown): number | null => (trae(v) && Number.isFinite(Number(v)) ? r2(v) : null);
+  const nativoGuardado = aNumero(fac.totalManualCentavos) > 0 ? null : guardado(fac.subtotalMonedaFactura);
+  const conversionGuardada = guardado(fac.subtotalFactura);
   const campos: CamposTotalesFactura = {
     subtotalMonedaFactura: nuevoTotal(
       'subtotalMonedaFactura',
-      r2(totalNativoFactura(fac)),
+      nativoGuardado ?? r2(totalNativoFactura(fac)),
       totalNativoDeOperaciones(moneda, filasAntes),
       totalNativoDeOperaciones(moneda, operacionesNuevas),
     ),
     subtotalFactura: nuevoTotal(
       'subtotalFactura',
-      conversionGuardada > 0 ? conversionGuardada : totalConversionDeOperaciones(filasAntes),
+      conversionGuardada ?? totalConversionDeOperaciones(filasAntes),
       totalConversionDeOperaciones(filasAntes),
       totalConversionDeOperaciones(operacionesNuevas),
     ),

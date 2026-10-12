@@ -61,6 +61,8 @@ interface Entrada {
   confirmado: boolean;
   /** No se cierra por tiempo (catálogos): solo con reiniciarVivas. */
   permanente: boolean;
+  /** ✅ V00448: el próximo snapshot es el primero de un listener (re)abierto: se publica siempre. */
+  primerSnapshot: boolean;
 }
 
 const entradas = new Map<string, Entrada>();
@@ -70,7 +72,7 @@ export const entradaViva = (clave: string): Entrada => {
   if (!e) {
     e = {
       estado: ESTADO_VACIO, demanda: 0, crear: null, cancelar: null, temporizador: null, oyentes: new Set(),
-      esperandoServidor: new Set(), esperandoDatos: new Set(), confirmado: false, permanente: false,
+      esperandoServidor: new Set(), esperandoDatos: new Set(), confirmado: false, permanente: false, primerSnapshot: false,
     };
     entradas.set(clave, e);
   }
@@ -122,6 +124,7 @@ const abrir = (clave: string, e: Entrada): void => {
   // Al reabrir (tras un error o tras cerrarse por permanencia) el estado anterior
   // ya no está confirmado por el servidor.
   e.confirmado = false;
+  e.primerSnapshot = true;
   if (e.estado.error || e.estado.delServidor) e.estado = { ...e.estado, delServidor: false, error: null };
   e.cancelar = onSnapshot(
     e.crear(),
@@ -132,10 +135,13 @@ const abrir = (clave: string, e: Entrada): void => {
     (snap) => {
       if (!snap.metadata.fromCache) e.confirmado = true;
       const delServidor = e.confirmado;
+      const primero = e.primerSnapshot;
+      e.primerSnapshot = false;
       // Cambio solo de metadatos (confirmación del servidor, escrituras pendientes):
       // no hay datos nuevos. ✅ V00446: no se repinta; solo se libera a quien espera
-      // al servidor (obtenerCatalogo fresco).
-      if (e.estado.listo && snap.docChanges().length === 0) {
+      // al servidor (obtenerCatalogo fresco). ✅ V00448: el primer snapshot de un listener
+      // reabierto se publica siempre (si ahora viene vacío, no deben quedar las filas viejas).
+      if (!primero && e.estado.listo && snap.docChanges().length === 0) {
         if (e.confirmado) resolverEspera(e.esperandoServidor);
         return;
       }
@@ -189,6 +195,10 @@ export const estadoVivo = (clave: string): EstadoVivo => entradas.get(clave)?.es
  *   (abrir un formulario, un reporte) podía tardar hasta 6 s.
  * · `fresco: true` espera la confirmación del SERVIDOR (máx. `esperaMs`; sin red, lo que
  *   haya en la caché): para servicios que ESCRIBEN decidiendo con esos datos.
+ * · ✅ V00448: RECHAZA si el listener falló o si pasó `esperaMs` sin NINGÚN dato (ni de la
+ *   caché ni del servidor). Antes devolvía `[]`, y un servicio que escribe no distinguía
+ *   "la colección está vacía" de "no llegó": la reparación de convenios creaba tarifarios
+ *   vacíos y re-apuntaba los convenios a ellos.
  */
 export const obtenerVivo = (
   clave: string, crear: () => Query, esperaMs = 6000, opciones: { fresco?: boolean; permanente?: boolean } = {},
@@ -197,10 +207,16 @@ export const obtenerVivo = (
   pedirVivo(clave, crear, { permanente: opciones.permanente });
   const conjunto = opciones.fresco ? e.esperandoServidor : e.esperandoDatos;
   const yaEsta = () => !!e.estado.error || (opciones.fresco ? e.confirmado : e.estado.listo);
-  return new Promise<DocVivo[]>((resolver) => {
-    const terminar = () => { clearTimeout(t); soltarVivo(clave); resolver(e.estado.datos); };
+  return new Promise<DocVivo[]>((resolver, rechazar) => {
+    const terminar = () => {
+      clearTimeout(t);
+      soltarVivo(clave);
+      if (e.estado.error) rechazar(new Error(`No se pudo leer ${clave}: ${e.estado.error}`));
+      else if (!e.estado.listo) rechazar(new Error(`No se pudo leer ${clave}: sin respuesta en ${Math.round(esperaMs / 1000)} s.`));
+      else resolver(e.estado.datos);
+    };
     const t = setTimeout(() => { conjunto.delete(terminar); terminar(); }, esperaMs);
-    if (yaEsta()) { clearTimeout(t); soltarVivo(clave); resolver(e.estado.datos); return; }
+    if (yaEsta()) { terminar(); return; }
     conjunto.add(terminar);
   });
 };

@@ -376,11 +376,20 @@ const iguales = (a: unknown, b: unknown): boolean => {
   return (a ?? null) === (b ?? null);
 };
 
+/**
+ * ✅ V00448: campos que se escriben aunque valgan null. Una consulta con
+ * orderBy('fechaServicioISO') DEJA FUERA los documentos que no tienen el campo; con
+ * `null` explícito sí salen (al final, en orden descendente). Antes una operación sin
+ * fecha de servicio no aparecía en las listas canónicas (activas, por empresa…).
+ */
+const SIEMPRE_ESCRITOS: ReadonlySet<string> = new Set(['fechaServicioISO']);
+
 /** Solo los campos canónicos que cambian respecto al documento actual (vacío = no escribir). */
 export const diferenciasCanonicas = (actual: Datos, calculados: Partial<CamposCanonicos>): Partial<CamposCanonicos> => {
   const salida: Partial<CamposCanonicos> = {};
   for (const [k, v] of Object.entries(calculados) as [keyof CamposCanonicos, unknown][]) {
-    if (!iguales(actual[k], v)) (salida as Record<string, unknown>)[k] = v;
+    const falta = SIEMPRE_ESCRITOS.has(k) && actual[k] === undefined;
+    if (falta || !iguales(actual[k], v)) (salida as Record<string, unknown>)[k] = v;
   }
   return salida;
 };

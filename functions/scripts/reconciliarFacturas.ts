@@ -4,7 +4,9 @@
  * Recorre facturas_clientes y facturas_proveedores y compara, factura por factura:
  *   · total: el que usan hoy Pagos/servidor ("legado") vs. la regla única;
  *   · total editado a mano: subtotalMonedaFactura que ya no coincide con sus
- *     renglones → se propone marcarlo (totalManualCentavos) para que nada lo pise;
+ *     renglones → se REPORTA. Solo se marca (totalManualCentavos, para que nada lo
+ *     pise) si el negocio confirma su ID en --manuales <archivo> (✅ V00448: antes se
+ *     marcaban todas, y un total viejo/desfasado quedaba congelado para siempre);
  *   · montoPagado guardado vs. la suma de lo aplicado en `pagos` (libro de pagos);
  *   · saldoPendiente y statusPago vs. lo que da la regla única;
  *   · agregados en centavos (totalCentavos, saldoCentavos, saldoAFavorCentavos…).
@@ -13,7 +15,7 @@
  *    revisa `diferencias.csv` factura por factura antes de aplicar.
  *
  * Con --aplicar escribe, por factura (con precondición lastUpdateTime):
- *   totalManualCentavos (si se detectó total manual), saldoPendiente, statusPago,
+ *   totalManualCentavos (solo las de --manuales), saldoPendiente, statusPago,
  *   los agregados en centavos, esquemaDinero: 2 y las tablas hijas
  *   renglones/{opId} y aplicaciones/{pagoId}. El montoPagado guardado NO se
  *   cambia salvo con --pagado-desde-pagos (entonces se toma del libro de pagos).
@@ -22,9 +24,12 @@
  *   npm run reconciliar                                         → simulación
  *   npm run reconciliar -- --aplicar --confirmo-respaldo        → aplica (después de P3)
  *   npm run reconciliar -- --solo clientes|proveedores · --limite N · --pagado-desde-pagos
+ *   npm run reconciliar -- --manuales manuales.txt  (un facturaId por línea: los totales
+ *                                                     que el negocio confirmó como manuales)
  * Reportes en functions/reportes/reconciliacion-<fecha>/: resumen.json, diferencias.csv, errores.csv.
  * ------------------------------------------------------------------------------
  */
+import { readFileSync } from 'node:fs';
 import type { DocumentData, Firestore, QueryDocumentSnapshot } from 'firebase-admin/firestore';
 import {
   agregadosFactura, aplicadoPorFactura, monedaDeFactura, renglonEnCentavos, statusPagoDe, totalNativoDeOperaciones,
@@ -36,6 +41,14 @@ import type { Datos } from './comun.js';
 
 const ARGS = leerArgumentos(['clientes', 'proveedores'], 'P3');
 const PAGADO_DESDE_PAGOS = ARGS.tiene('--pagado-desde-pagos');
+/** IDs de factura cuyo total el negocio confirmó como editado a mano (--manuales <archivo>). */
+const MANUALES: ReadonlySet<string> = (() => {
+  const i = process.argv.indexOf('--manuales');
+  if (i < 0) return new Set<string>();
+  const archivo = process.argv[i + 1];
+  if (!archivo || archivo.startsWith('--')) throw new Error('Falta el archivo de --manuales (un facturaId por línea).');
+  return new Set(readFileSync(archivo, 'utf8').split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean));
+})();
 const reporte = new Reporte('reconciliacion');
 const diferencias = reporte.tabla('diferencias', ['coleccion', 'facturaId', 'invoice', 'empresa', 'moneda', 'campo', 'actual', 'nuevo', 'motivo']);
 
@@ -82,8 +95,13 @@ async function reconciliar(db: Firestore, escritor: ReturnType<Firestore['bulkWr
       const deRenglones = r2(totalNativoDeOperaciones(moneda, fac.operacionesGuardadas));
       const guardado = r2(fac.subtotalMonedaFactura);
       const yaManual = Number(fac.totalManualCentavos) > 0;
-      const proponerManual = !yaManual && guardado > 0 && deRenglones > 0 && difiere(guardado, deRenglones);
-      if (proponerManual) anotar('totalManualCentavos', '', aCentavos(guardado), `total guardado ${guardado} ≠ renglones ${deRenglones}: se conserva como total manual`);
+      const pareceManual = !yaManual && guardado > 0 && deRenglones > 0 && difiere(guardado, deRenglones);
+      const proponerManual = pareceManual && MANUALES.has(d.id);
+      if (pareceManual) {
+        anotar('totalManualCentavos', '', proponerManual ? aCentavos(guardado) : '', proponerManual
+          ? `total guardado ${guardado} ≠ renglones ${deRenglones}: confirmado en --manuales, se conserva como total manual`
+          : `total guardado ${guardado} ≠ renglones ${deRenglones}: REVISAR. Si se editó a mano, agrega el ID a --manuales; si no, no se marca y la próxima edición lo recalcula de los renglones`);
+      }
       const facConMarca: Datos = proponerManual ? { ...fac, totalManualCentavos: aCentavos(guardado) } : fac;
 
       const totalLegado = r2(totalNativoFacturaLegado(fac));

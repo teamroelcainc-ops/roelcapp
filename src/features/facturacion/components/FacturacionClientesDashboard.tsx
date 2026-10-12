@@ -59,6 +59,7 @@ import {
   tienePagosAplicados,
   totalNativoDeOperaciones,
   totalNativoFactura,
+  totalNativoFacturaLegado,
   totalesTrasCambioDeOps,
 } from '../services/totalesFactura'; // ✅ Fase 1.8
 import { aplicarFacturas, aplicarOperaciones, llamarDinero, mensajeDinero } from '../services/dineroServidor'; // ✅ V00441
@@ -267,6 +268,13 @@ const obtenerMontoOperacion = (op: any) => montoOperacion(op, 'cliente'); // ✅
 
 export const FacturacionClientesDashboard = () => {
   const flags = useFlags(); // ✅ V00441 (Fase 5): dinero por servidor
+  // ✅ V00448: el total que se MUESTRA (tabla, tarjetas, Excel) usa la misma regla que Pagos
+  //   mientras el dinero no lo lleve el servidor (como la V00434). La regla única cambiaba el
+  //   total de facturas viejas sin moneda reconocible o con renglones sin `dol`.
+  const totalFactura = useCallback(
+    (f: unknown): number => (flags.dineroPorServidor ? totalNativoFactura(f) : totalNativoFacturaLegado(f)),
+    [flags.dineroPorServidor],
+  );
   const flagsCargadas = useFlagsCargadas(); // ✅ V00443
   const [activeTab, setActiveTab] = useState<'operaciones' | 'historial' | 'pagadas'>('operaciones');
   const [mostrarAuditoria, setMostrarAuditoria] = useState(false); // ✅ V00318
@@ -1788,6 +1796,11 @@ export const FacturacionClientesDashboard = () => {
         return;
       }
       const facturasConOp = await facturasFrescasConOp(opId, op.facturaClienteId); // ✅ Fase 1.8
+      // ✅ V00448: si ya está en una factura con ese folio, no hay nada que mover (antes la
+      // sacaba y creaba otra factura con el mismo folio).
+      const yaEsDelFolio = (f: { invoice?: unknown; clienteId?: unknown }) =>
+        String(f.invoice || '').trim().toLowerCase() === nuevoInvoice.toLowerCase() && String(f.clienteId || '') === clienteId;
+      if (facturasConOp.length > 0 && facturasConOp.every(yaEsDelFolio)) { setGestionOp(null); return; }
       const batch = writeBatch(db);
       const cambios: any[] = [];
 
@@ -2021,7 +2034,7 @@ export const FacturacionClientesDashboard = () => {
       case 'numeroPago': return numerosPagoDe(f).join(', ').toLowerCase();
       case 'moneda': return String(f.monedaFacturacion || '').toLowerCase();
       case 'cantOps': return Number(f.operacionesIds?.length || 0);
-      case 'total': return totalNativoFactura(f); // ✅ FIX MONEDA
+      case 'total': return totalFactura(f); // ✅ FIX MONEDA · V00448
       case 'createdAt': return String(f.createdAt || '');
       default: return '';
     }
@@ -2107,7 +2120,7 @@ export const FacturacionClientesDashboard = () => {
   const resumenHistorial = useMemo(() => {
     let totalUSD = 0, totalMXN = 0, totalSinMoneda = 0, totalOps = 0;
     historialOrdenado.forEach(f => {
-      const monto = totalNativoFactura(f); // ✅ FIX MONEDA: suma en la moneda de la factura
+      const monto = totalFactura(f); // ✅ FIX MONEDA · V00448: suma en la moneda de la factura
       // ✅ FIX: la moneda puede venir como nombre de catálogo ("Dólares",
       //   "Pesos") y las tarjetas comparaban contra 'USD'/'MXN' exactos, por
       //   lo que TOTAL FACTURADO marcaba $0.00. Se normaliza antes de sumar.
@@ -2120,7 +2133,7 @@ export const FacturacionClientesDashboard = () => {
     });
     const r2c = (x: number) => Math.round(x * 100) / 100; // ✅ V00265: tarjetas a 2 decimales
     return { cuenta: historialOrdenado.length, totalUSD: r2c(totalUSD), totalMXN: r2c(totalMXN), totalSinMoneda: r2c(totalSinMoneda), totalOps };
-  }, [historialOrdenado]);
+  }, [historialOrdenado, totalFactura]);
 
   const conteoStatus = useMemo(() => {
     const q = textoBuscarFacturaDiferido.trim().toLowerCase();
@@ -2503,7 +2516,7 @@ export const FacturacionClientesDashboard = () => {
           </div>
         );
       }
-      case 'total': return <span className="fcd-x15">{formatoMoneda(totalNativoFactura(f))}</span>;
+      case 'total': return <span className="fcd-x15">{formatoMoneda(totalFactura(f))}</span>;
       case 'createdAt': return <span className="fcd-x1">{f.createdAt ? formatearFechaHora(f.createdAt) : '-'}</span>;
       default: return '-';
     }
@@ -2550,7 +2563,7 @@ export const FacturacionClientesDashboard = () => {
     usd: 'Total Facturado (USD)',
     mxn: 'Total Facturado (MXN)',
   };
-  const totalTarjetaAbierta = useMemo(() => facturasDeTarjeta.reduce((acc: number, f) => acc + totalNativoFactura(f), 0), [facturasDeTarjeta]);
+  const totalTarjetaAbierta = useMemo(() => facturasDeTarjeta.reduce((acc: number, f) => acc + totalFactura(f), 0), [facturasDeTarjeta, totalFactura]);
   const opsTarjetaAbierta = useMemo(() => facturasDeTarjeta.reduce((acc: number, f) => acc + (Array.isArray(f.operacionesIds) ? f.operacionesIds.length : 0), 0), [facturasDeTarjeta]);
   const exportarTarjetaExcel = async () => {
     if (exportandoTarjeta || !tarjetaAbierta || facturasDeTarjeta.length === 0) return;
@@ -2564,7 +2577,7 @@ export const FacturacionClientesDashboard = () => {
         moneda: monedaFacturaMostrar(f),
         cantOps: Number(f.operacionesIds?.length || 0),
         referencias: Array.isArray(f.operacionesGuardadas) ? f.operacionesGuardadas.map((op) => refDeOpCon(op, mapaExport)).filter(Boolean).join(', ') : '',
-        total: totalNativoFactura(f),
+        total: totalFactura(f),
       }));
       await exportarExcelProfesional({
         nombreArchivo: `Tarjeta_${tarjetaAbierta.toUpperCase()}_${hoyLocalISO()}.xlsx`,
@@ -2698,7 +2711,7 @@ export const FacturacionClientesDashboard = () => {
         case 'facturaCcp': return f.facturaCcp || '';
         case 'cantOps': return Number(f.operacionesIds?.length || 0);
         case 'referencias': return Array.isArray(f.operacionesGuardadas) ? f.operacionesGuardadas.map((op: any) => refDeOpCon(op, mapaExport)).filter(Boolean).join(', ') : ''; // ✅ V00260
-        case 'total': return totalNativoFactura(f); // ✅ FIX MONEDA
+        case 'total': return totalFactura(f); // ✅ FIX MONEDA · V00448
         case 'createdAt': return f.createdAt || '';
         default: return '';
       }
@@ -3028,7 +3041,7 @@ export const FacturacionClientesDashboard = () => {
       )}
       <h1 className="fcd-x31">Facturación de Clientes</h1>
       {mostrarAuditoria && (
-        <AuditoriaCadenaCliente onCerrar={() => setMostrarAuditoria(false)} montoOperacion={(op) => obtenerMontoOperacion(op)} totalNativo={(f) => totalNativoFactura(f)} />
+        <AuditoriaCadenaCliente onCerrar={() => setMostrarAuditoria(false)} montoOperacion={(op) => obtenerMontoOperacion(op)} totalNativo={totalFactura} />
       )}{/* ✅ V00318 */}
 
       <div className="fcd-x32">
@@ -3551,7 +3564,7 @@ export const FacturacionClientesDashboard = () => {
                   <span className="fac-tarjeta-modal__c-cliente" title={nombreClienteFactura_(f)}>{nombreClienteFactura_(f)}</span>
                   <span className="fac-tarjeta-modal__c-ops">{Number(f.operacionesIds?.length || 0)}</span>
                   <span className="fac-tarjeta-modal__c-moneda">{monedaFacturaMostrar(f)}</span>
-                  <span className="fac-tarjeta-modal__c-total">{formatoMoneda(totalNativoFactura(f))}</span>
+                  <span className="fac-tarjeta-modal__c-total">{formatoMoneda(totalFactura(f))}</span>
                 </div>
               ))}
               {facturasDeTarjeta.length === 0 && <div className="fac-tarjeta-modal__vacio">Sin facturas con los filtros actuales.</div>}

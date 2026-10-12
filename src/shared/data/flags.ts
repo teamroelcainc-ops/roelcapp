@@ -54,7 +54,8 @@ let cancelar: (() => void) | null = null;
 let cargadas = false;
 const suscriptores = new Set<() => void>();
 let resolverPrimeraCarga: (() => void) | null = null;
-const primeraCarga = new Promise<void>((r) => { resolverPrimeraCarga = r; });
+let primeraCarga = new Promise<void>((r) => { resolverPrimeraCarga = r; });
+let temporizadorCarga: ReturnType<typeof setTimeout> | null = null;
 
 const normalizar = (datos: Record<string, unknown> | undefined): Flags => {
   const f = { ...FLAGS_APAGADAS };
@@ -75,7 +76,8 @@ export const iniciarFlags = (): void => {
   escuchando = true;
   // ✅ V00443: como obtenerFlags, a los 3 s sin respuesta (sin red y sin caché) se da por
   //   "todas apagadas" para que useFlagsCargadas no deje pantallas esperando para siempre.
-  setTimeout(() => {
+  temporizadorCarga = setTimeout(() => {
+    temporizadorCarga = null;
     if (cargadas) return;
     marcarCargadas();
     suscriptores.forEach((fn) => fn());
@@ -104,6 +106,12 @@ export const detenerFlags = (): void => {
   cancelar = null;
   escuchando = false;
   actuales = FLAGS_APAGADAS;
+  // ✅ V00448: la siguiente sesión vuelve a esperar SU primera lectura (antes quedaba
+  //   "cargadas" de la sesión anterior y se elegía el camino viejo con todo apagado).
+  if (temporizadorCarga) clearTimeout(temporizadorCarga);
+  temporizadorCarga = null;
+  cargadas = false;
+  primeraCarga = new Promise<void>((r) => { resolverPrimeraCarga = r; });
   suscriptores.forEach((fn) => fn());
 };
 

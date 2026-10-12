@@ -29,6 +29,7 @@ import { z } from 'zod';
 import { claimsDePerfil, exigirAdmin, EXIGIR_APP_CHECK } from './acceso.js';
 import type { ClaimsRoelca } from './acceso.js';
 import { conReintento, OPCIONES_TRIGGER } from './eventos.js';
+import { banderaServidorFresca } from './flags.js';
 
 if (getApps().length === 0) initializeApp();
 
@@ -122,6 +123,13 @@ const CAMPOS_PROTEGIDOS = ['claimsActualizadosEn', 'uid', 'id'];
 
 export const gestionarUsuario = onCall({ region: 'us-central1', enforceAppCheck: EXIGIR_APP_CHECK }, async (request) => {
   await exigirAdmin(request.auth?.uid);
+  // ✅ V00448: apagada hasta encender `usuariosPorServidor` (la web solo la llama con
+  // la bandera). Con las reglas viejas cualquiera puede escribirse rol ADMIN en su
+  // perfil; esta función da poder sobre las cuentas de Auth, así que no debe quedar
+  // disponible antes de publicar las reglas nuevas (P1) y encender la bandera.
+  if (!(await banderaServidorFresca('usuariosPorServidor'))) {
+    throw new HttpsError('failed-precondition', 'La gestión de usuarios por servidor está apagada (bandera usuariosPorServidor).');
+  }
   const parsed = esquemaGestion.safeParse(request.data);
   if (!parsed.success) throw new HttpsError('invalid-argument', `Datos inválidos: ${parsed.error.issues.map((i) => i.message).join('; ')}`);
   const datos = parsed.data;

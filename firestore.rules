@@ -21,7 +21,7 @@ rules_version = '2';
 //    · Sin documento en `usuarios`, desactivado o de cliente → nada.
 //    · Nadie puede cambiarse sus propios roles: en su perfil solo puede tocar
 //      campos de sesión (isOnline, ultimoAcceso, foto, datos de la app móvil).
-//    · Usuarios, roles, autorizaciones y configuración de seguridad → solo admin.
+//    · Usuarios, roles (las dos colecciones), autorizaciones y configuración de seguridad → solo admin.
 //    · Bitácora (historial_actividad): solo se agregan registros; nadie los edita
 //      ni borra desde el navegador.
 //    · meta/* lo escriben solo las Cloud Functions.
@@ -74,14 +74,6 @@ service cloud.firestore {
       );
     }
 
-    // El perfil sigue existiendo. Se exige en TODAS las escrituras: si un admin
-    // borra al usuario, deja de escribir al instante aunque su token (≤1 h) siga
-    // diciendo `personal`. Cuesta 1 lectura por escritura; las lecturas confían en
-    // el claim (un usuario dado de baja puede LEER hasta 1 h: compromiso documentado).
-    function perfilVigente() {
-      return exists(rutaPerfil());
-    }
-
     // Admin SIEMPRE con el documento (no con el claim): quitarle el rol a alguien
     // surte efecto al instante. Las escrituras de admin son pocas.
     function esAdmin() {
@@ -91,7 +83,7 @@ service cloud.firestore {
 
     // Colecciones que el personal NO escribe por la regla general (tienen la suya abajo).
     function protegida(coleccion) {
-      return coleccion in ['usuarios', 'roles', 'config_autorizaciones', 'configuracion', 'meta', 'historial_actividad',
+      return coleccion in ['usuarios', 'roles', 'catalogo_roles', 'config_autorizaciones', 'configuracion', 'meta', 'historial_actividad',
                            'saldos_corrientes', 'usos', 'eventos_procesados'];
     }
 
@@ -101,8 +93,13 @@ service cloud.firestore {
         .hasOnly(['isOnline', 'ultimoAcceso', 'fotoPerfil', 'ultimoAccesoMovil', 'plataformaMovil', 'versionAppMovil']);
     }
 
+    // Escribir exige además que el perfil SIGA siendo de personal (existe, activo, no
+    // cliente). ✅ V00448: antes solo se revisaba que existiera; un usuario desactivado
+    // o pasado a cliente seguía escribiendo hasta 1 h con su token viejo. Cuesta 1
+    // lectura por escritura; las lecturas confían en el claim (un usuario dado de baja
+    // puede LEER hasta 1 h: compromiso documentado).
     function escritor() {
-      return esPersonal() && perfilVigente();
+      return esPersonal() && perfilEsPersonal();
     }
 
     // ── Dinero (V00441, Fase 5.8) ──
@@ -187,16 +184,20 @@ service cloud.firestore {
     match /config_autorizaciones/{id} {
       allow write: if esAdmin();
     }
+    // ✅ V00448: la colección vieja de roles también decide "Requiere IP de oficina".
+    match /catalogo_roles/{id} {
+      allow write: if esAdmin();
+    }
 
     // ── Configuración: seguridad y banderas solo admin; metas y obligatorios, personal ──
     match /configuracion/{id} {
       allow write: if esAdmin()
-        || (esPersonal() && perfilVigente() && id in ['metas_operaciones', 'metas_globales', 'obligatorios_formulario_tarifa', 'empresa']);
+        || (escritor() && id in ['metas_operaciones', 'metas_globales', 'obligatorios_formulario_tarifa', 'empresa']);
     }
 
     // ── Bitácora: solo agregar, con el usuario de la sesión ──
     match /historial_actividad/{id} {
-      allow create: if esPersonal() && perfilVigente();
+      allow create: if escritor();
     }
 
     // ── saldos_corrientes/* (V00441) y usos/* (V00442, contadores): los mantiene el servidor; se leen por la regla general ──

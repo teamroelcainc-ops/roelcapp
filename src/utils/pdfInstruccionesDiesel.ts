@@ -1,6 +1,6 @@
 // src/utils/pdfInstruccionesDiesel.ts
 import html2pdf from 'html2pdf.js';
-import { LOGO_DEFAULT, getLogoPdf } from './pdfGenerator';
+import { LOGO_DEFAULT, escaparTextos, getLogoPdf } from './pdfGenerator';
 
 // ============================================================================
 // INSTRUCCIONES DEL SERVICIO (DIESEL)
@@ -32,7 +32,8 @@ export interface DatosInstruccionesDiesel {
   logoBase64?: string;
 }
 
-export const generarInstruccionesDieselPDF = (datos: DatosInstruccionesDiesel) => {
+export const generarInstruccionesDieselPDF = (datosCrudos: DatosInstruccionesDiesel) => {
+  const datos = escaparTextos(datosCrudos); // ✅ V00448
   // Fecha legible en español (mismo formato que Instrucciones del Servicio).
   let fechaFormateada = datos.fecha;
   if (datos.fecha) {

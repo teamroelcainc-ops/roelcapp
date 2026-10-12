@@ -31,7 +31,7 @@ import type { DocLibre } from '../../../utils/docPorId';
 import { obtenerCatalogo, useCatalogos } from '../../../shared/data/catalogos';
 import type { ColeccionCatalogo } from '../../../shared/data/catalogos';
 import { ID_MXN, ID_USD, STATUS_CANCELADO, TIPO_EMPRESA } from '../../../shared/dominio/constantes';
-import { datosDireccionEmpresaPdf, direccionesParaPdf } from '../../../utils/direccionPdf';
+import { datosDireccionEmpresaPdf, direccionesParaPdf, leerParaDocumento } from '../../../utils/direccionPdf';
 import { mostrarCartaPara, useConfigCarta } from '../../../utils/configCartaInstrucciones';
 import { ConfigCartaModal } from './ConfigCartaModal';
 import { usePermisoFormularios } from '../../formularios/configFormularios';
@@ -762,7 +762,8 @@ const ServiciosCancelados = () => {
   // ✅ PDFs: los catálogos pesados se activan al abrir la ficha (V00439, Fase 3.x).
   const handleDescargarSolicitudRetiro = async () => {
     if (!operacionViendo) return;
-    const dirsDoc = await asegurarDireccionesDoc(); // ✅ V00281
+    const dirsDoc = await leerParaDocumento(asegurarDireccionesDoc); // ✅ V00281
+    if (!dirsDoc) return;
     const origen = mostrarDatoMapeado(operacionViendo.origen, 'empresas', 'nombre', operacionViendo.origenNombre);
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
     const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
@@ -788,7 +789,8 @@ const ServiciosCancelados = () => {
 
   const handleDescargarInstruccionesServicio = async () => {
     if (!operacionViendo) return;
-    const dirsDoc = await asegurarDireccionesDoc(); // ✅ V00281
+    const dirsDoc = await leerParaDocumento(asegurarDireccionesDoc); // ✅ V00281
+    if (!dirsDoc) return;
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
     const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
@@ -817,7 +819,8 @@ const ServiciosCancelados = () => {
 
   const handleDescargarCheckList = async () => {
     if (!operacionViendo) return;
-    const dirsDoc = await asegurarDireccionesDoc(); // ✅ V00281
+    const dirsDoc = await leerParaDocumento(asegurarDireccionesDoc); // ✅ V00281
+    if (!dirsDoc) return;
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
     const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
@@ -854,7 +857,8 @@ const ServiciosCancelados = () => {
 
   const handleDescargarPruebaEntrega = async () => {
     if (!operacionViendo) return;
-    const dirsDoc = await asegurarDireccionesDoc(); // ✅ V00281
+    const dirsDoc = await leerParaDocumento(asegurarDireccionesDoc); // ✅ V00281
+    if (!dirsDoc) return;
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen) || await docPorId('empresas', operacionViendo.origen); // ✅ V00419
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino) || await docPorId('empresas', operacionViendo.destino); // ✅ V00419
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque) || await docPorId('remolques', operacionViendo.numeroRemolque); // ✅ V00419
@@ -896,7 +900,8 @@ const ServiciosCancelados = () => {
 
     const empNombre = operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal);
 
-    const listaDirsCarta = await direccionesParaPdf(); // ✅ V00419
+    const listaDirsCarta = await leerParaDocumento(direccionesParaPdf); // ✅ V00419
+    if (!listaDirsCarta) return;
     const dO = datosDireccionEmpresaPdf(origenObj, listaDirsCarta);
     const dD = datosDireccionEmpresaPdf(destinoObj, listaDirsCarta);
 

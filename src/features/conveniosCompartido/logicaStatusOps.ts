@@ -16,7 +16,8 @@ export interface OpConStatus {
 /** id → nombre del catálogo de status.
  *  ✅ V00439 (Fase 3.x): del listener compartido (en vivo) en vez de una lectura por sesión. */
 export const cargarNombresStatus = async (): Promise<Map<string, string>> => {
-  const lista = await obtenerCatalogo('catalogo_status_servicio');
+  // ✅ V00448: solo para MOSTRAR; si el catálogo no llega, se usa statusNombre de la operación.
+  const lista = await obtenerCatalogo('catalogo_status_servicio').catch((e: unknown) => { console.warn('[status] sin catálogo:', e); return []; });
   return new Map(lista.map((d) => [idReal(d), String(d.nombre || idReal(d))]));
 };
 

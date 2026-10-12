@@ -180,6 +180,17 @@ describe('total de la factura (regla única)', () => {
     const r = totalesTrasCambioDeOps(fac, [{ id: 'a', dol: 400, monto: 7200 }]);
     expect(r).toMatchObject({ ok: true, total: 500, campos: { subtotalMonedaFactura: 500, totalManualCentavos: 50000 } });
   });
+  it('✅ V00448 el documento secundario de un folio repetido (0/0 guardado) sigue en 0 al quitarle una operación', () => {
+    const sec = { monedaFacturacion: 'USD', subtotalMonedaFactura: 0, subtotalFactura: 0,
+      operacionesGuardadas: [{ id: 'a', dol: 300, monto: 5400 }, { id: 'b', dol: 500, monto: 9000 }] };
+    const r = totalesTrasCambioDeOps(sec, [{ id: 'b', dol: 500, monto: 9000 }]);
+    expect(r).toMatchObject({ ok: true, total: 0, campos: { subtotalMonedaFactura: 0, subtotalFactura: 0 } });
+  });
+  it('sin total guardado se parte de los renglones (como antes)', () => {
+    const fac = { monedaFacturacion: 'USD', operacionesGuardadas: [{ id: 'a', dol: 300, monto: 5400 }, { id: 'b', dol: 500, monto: 9000 }] };
+    const r = totalesTrasCambioDeOps(fac, [{ id: 'b', dol: 500, monto: 9000 }]);
+    expect(r).toMatchObject({ ok: true, total: 500, campos: { subtotalMonedaFactura: 500, subtotalFactura: 9000 } });
+  });
 });
 
 describe('pagos', () => {

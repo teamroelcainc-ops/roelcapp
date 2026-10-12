@@ -135,6 +135,9 @@ describe('camposCanonicos', () => {
     expect(diferenciasCanonicas(yaMigrada, campos)).toEqual({});
     expect(diferenciasCanonicas({ ...yaMigrada, empresasIds: ['zz'] }, campos)).toEqual({ empresasIds: [EMP_A] });
     expect(diferenciasCanonicas({ ...base, ...campos, unidadId: undefined }, { unidadId: null })).toEqual({});
+    // ✅ V00448: fechaServicioISO SÍ se escribe como null si falta (orderBy deja fuera los documentos sin el campo).
+    expect(diferenciasCanonicas({ ...base, ...campos, fechaServicioISO: undefined }, { fechaServicioISO: null })).toEqual({ fechaServicioISO: null });
+    expect(diferenciasCanonicas({ ...base, ...campos, fechaServicioISO: null }, { fechaServicioISO: null })).toEqual({});
   });
 });
 

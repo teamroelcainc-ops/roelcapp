@@ -7,7 +7,7 @@ import { db } from '../../../../config/firebase';
 import MttoAgrupadosInvoice from './MttoAgrupadosInvoice';
 import * as XLSX from 'xlsx';
 // ✅ Logo de los PDF (mismas exportaciones que ya usa el historial de Invoice).
-import { getLogoPdf, LOGO_DEFAULT } from '../../../../utils/pdfGenerator';
+import { escaparHTML, getLogoPdf, LOGO_DEFAULT } from '../../../../utils/pdfGenerator';
 import './MttoDashboard.css';
 import { useCatalogos } from '../../../../shared/data/catalogos';
 import type { DocCatalogo } from '../../../../shared/data/catalogos';
@@ -253,14 +253,12 @@ const MttoDashboard = () => {
     const formatearFechaEspanolDoc = (fechaStr: string | Date) => {
       const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
       const d = new Date(fechaStr);
-      if (isNaN(d.getTime())) return String(fechaStr || '-');
+      if (isNaN(d.getTime())) return escaparHTML(fechaStr || '-'); // ✅ V00448: texto capturado → escapado
       const dUTC = new Date(d.getTime() + d.getTimezoneOffset() * 60000);
       return `${dUTC.getDate()} de ${meses[dUTC.getMonth()]} de ${dUTC.getFullYear()}`;
     };
-    const escaparHTMLDoc = (texto: any) => String(texto ?? '')
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
-    const multilineaDoc = (texto: any) => escaparHTMLDoc(texto).replace(/\r\n|\r|\n/g, '<br>');
+    const escaparHTMLDoc = escaparHTML;
+    const multilineaDoc = (texto: unknown) => escaparHTMLDoc(texto).replace(/\r\n|\r|\n/g, '<br>');
 
     const folio = formatearFolio(m);
     const invoiceTxt = m.invoice && String(m.invoice).trim() !== '' ? String(m.invoice).trim() : '';
