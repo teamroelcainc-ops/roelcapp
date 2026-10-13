@@ -98,6 +98,9 @@ const AutorizacionesDashboard = lazyWithRetry(() => import('./features/autorizac
 import './App.css';
 import { almacenSesion } from './utils/cacheMemoria';
 import { STATUS_CANCELADO, STATUS_COMPLETADOS } from './shared/dominio/constantes';
+import AvisosFlotantes from './shared/components/AvisosFlotantes'; // ✅ V00450
+import { irARevision, NOMBRE_MODULO_REVISION, useAvisos } from './shared/data/avisos'; // ✅ V00450
+import type { ModuloRevision } from './shared/data/avisos';
 
 // ============================================================================
 // Mapa: etiqueta del módulo (como se guarda en el rol) -> clave interna (moduloActivo).
@@ -881,6 +884,10 @@ function AppContenido() {
   //     abrir el panel.
   const [notisVistas, setNotisVistas] = useState(true);
   const totalNotisRef = useRef<number | null>(null);
+  // ✅ V00450: operaciones en "Revisión" por Ref Cliente duplicada (las publica cada módulo).
+  const { revisiones } = useAvisos();
+  const modulosConRevision = (Object.keys(revisiones) as ModuloRevision[]).filter((m) => revisiones[m].n > 0);
+  const totalRevision = modulosConRevision.reduce((s, m) => s + revisiones[m].n, 0);
   const audioCtxRef = useRef<any>(null);
   useEffect(() => {
     const desbloquear = () => {
@@ -921,11 +928,11 @@ function AppContenido() {
     // ✅ V00188: la actualización disponible TAMBIÉN cuenta como notificación
     //   (brinca y suena al llegar). En la primera carga solo brinca — el
     //   navegador bloquea el audio hasta que el usuario interactúe.
-    const total = notisAcceso.length + solicitudesPendientes.length + (versionNueva ? 1 : 0);
+    const total = notisAcceso.length + solicitudesPendientes.length + (versionNueva ? 1 : 0) + totalRevision; // ✅ V00450
     if (totalNotisRef.current === null) { totalNotisRef.current = total; if (total > 0) setNotisVistas(false); return; }
     if (total > totalNotisRef.current) { sonarPing(); setNotisVistas(false); }
     totalNotisRef.current = total;
-  }, [notisAcceso.length, solicitudesPendientes.length, versionNueva]);
+  }, [notisAcceso.length, solicitudesPendientes.length, versionNueva, totalRevision]);
 
   // ✅ V00184: HISTÓRICO de notificaciones (últimas 30, estilo Facebook).
   const [historialAbierto, setHistorialAbierto] = useState(false);
@@ -1527,6 +1534,8 @@ function AppContenido() {
       {/* ✅ Alerta del Reloj Checador: FLOTANTE (position fixed), no ocupa
           espacio en el layout — imposible que desacomode la vista. */}
       <AvisoChecador />
+      {/* ✅ V00450: notificaciones flotantes (Ref Cliente duplicada, …) */}
+      <AvisosFlotantes />
 
       {/* MÓVIL: barra de navegación inferior fija y personalizable */}
       <BarraNavMovil
@@ -1943,8 +1952,8 @@ function AppContenido() {
                 title={versionNueva ? `Nueva versión ${versionNueva} disponible` : 'Notificaciones'}
                 onClick={() => { setAvisoVersionAbierto((v) => !v); setNotisVistas(true); }}
                 style={{ background: 'none', border: `1px solid ${versionNueva ? '#d29922' : '#30363d'}`, borderRadius: '999px', color: versionNueva ? '#d29922' : '#8b949e', width: '34px', height: '34px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginRight: '8px' }}>
-                <span className={(!notisVistas && (versionNueva || (notisAcceso.length + solicitudesPendientes.length) > 0)) ? 'app-campana-brinco' : undefined} style={{ display: 'inline-flex' }}><Bell size={17} color={versionNueva ? '#d29922' : '#8b949e'} strokeWidth={2} style={{ display: 'block', flexShrink: 0 }} /></span>
-                {(versionNueva || notisAcceso.length > 0 || solicitudesPendientes.length > 0) && <span style={{ position: 'absolute', top: '-2px', right: '6px', width: '9px', height: '9px', borderRadius: '50%', backgroundColor: '#f85149', border: '2px solid #0d1117' }} />}
+                <span className={(!notisVistas && (versionNueva || (notisAcceso.length + solicitudesPendientes.length + totalRevision) > 0)) ? 'app-campana-brinco' : undefined} style={{ display: 'inline-flex' }}><Bell size={17} color={versionNueva ? '#d29922' : '#8b949e'} strokeWidth={2} style={{ display: 'block', flexShrink: 0 }} /></span>
+                {(versionNueva || notisAcceso.length > 0 || solicitudesPendientes.length > 0 || totalRevision > 0) && <span style={{ position: 'absolute', top: '-2px', right: '6px', width: '9px', height: '9px', borderRadius: '50%', backgroundColor: '#f85149', border: '2px solid #0d1117' }} />}
               </button>
               {avisoVersionAbierto && (
                 <div style={{ position: 'absolute', top: '42px', right: 0, zIndex: 3000, width: '270px', background: '#161b22', border: '1px solid #30363d', borderRadius: '10px', padding: '14px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
@@ -1959,7 +1968,7 @@ function AppContenido() {
                         Actualizar ahora
                       </button>
                     </>
-                  ) : (notisAcceso.length === 0 && solicitudesPendientes.length === 0) ? (
+                  ) : (notisAcceso.length === 0 && solicitudesPendientes.length === 0 && totalRevision === 0) ? (
                     <div style={{ color: '#8b949e', fontSize: '0.78rem', lineHeight: 1.45 }}>
                       Sin notificaciones pendientes. ✅<br />
                       <span style={{ color: '#6e7681', fontSize: '0.72rem' }}>Versión actual: {APP_VERSION}</span>
@@ -1974,6 +1983,12 @@ function AppContenido() {
                   {solicitudesPendientes.length > 6 && (
                     <div className="app-noti-solicitud" onClick={() => { setAvisoVersionAbierto(false); navegarA('autorizaciones' as any); }}>… y {solicitudesPendientes.length - 6} solicitud(es) más — abrir Autorizaciones</div>
                   )}
+                  {/* ✅ V00450: Ref Cliente duplicada → pestaña Revisión del módulo */}
+                  {modulosConRevision.map((m) => (
+                    <div key={`rev-${m}`} className="app-noti-solicitud" onClick={() => { setAvisoVersionAbierto(false); irARevision(m); }} title="Abrir la pestaña Revisión">
+                      <b className="app-noti-revision-b">⚠️ REF Cliente duplicada:</b> {revisiones[m].n} operación(es) en Revisión en <b className="app-noti-campo">{NOMBRE_MODULO_REVISION[m]}</b>{revisiones[m].muestra.length > 0 ? <> ({revisiones[m].muestra.join(', ')}{revisiones[m].n > revisiones[m].muestra.length ? '…' : ''})</> : null}.
+                    </div>
+                  ))}
                   {/* ✅ V00141: resultado de solicitudes de acceso a campos */}
                   {notisAcceso.map((n: any) => (
                     <div key={n.id} style={{ borderTop: '1px solid #30363d', paddingTop: '8px', marginTop: '8px' }}>

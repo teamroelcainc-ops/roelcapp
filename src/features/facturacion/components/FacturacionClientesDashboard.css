@@ -523,3 +523,11 @@
 /* ✅ V00318: botón de la auditoría de la cadena */
 .fcd-btn-auditoria { margin-left: 12px; margin-bottom: 6px; padding: 8px 14px; background-color: #161b22; border: 1px solid #8957e5; border-radius: 8px; color: #bc8cff; cursor: pointer; font-weight: 700; font-size: 0.85rem; }
 .fcd-btn-auditoria:hover { background-color: rgba(137, 87, 229, 0.15); }
+/* ✅ V00450: pestaña Revisión (Ref Cliente duplicada) — mismo aspecto que las otras pestañas; roja si tiene operaciones */
+.fcd-tab-revision { display: inline-flex; align-items: center; gap: 6px; padding: 12px 24px; background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; color: #8b949e; font-weight: normal; font-size: inherit; }
+.fcd-tab-revision:hover { color: #f0f6fc; }
+.fcd-tab-revision--activa { color: #f0f6fc; font-weight: bold; border-bottom-color: #D84315; }
+.fcd-tab-revision--con { color: #f85149; }
+.fcd-tab-revision--con.fcd-tab-revision--activa { color: #ff7b72; border-bottom-color: #f85149; }
+.fcd-tab-revision__n { min-width: 20px; padding: 1px 7px; border-radius: 999px; background: #21262d; color: #c9d1d9; font-size: 0.72rem; font-weight: 700; text-align: center; }
+.fcd-tab-revision--con .fcd-tab-revision__n { background: rgba(248, 81, 73, 0.18); color: #ff7b72; }

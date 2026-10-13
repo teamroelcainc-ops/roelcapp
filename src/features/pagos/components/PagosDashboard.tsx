@@ -40,6 +40,7 @@ import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { Plus, FileText, Trash2, X, Search, Download, Pencil, RefreshCw } from 'lucide-react';
 import { SelectBuscable } from '../../catalogos/components/SelectBuscable';
 import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
+import AdjuntoComprobante from './AdjuntoComprobante'; // ✅ V00450
 import './PagosDashboard.css';
 
 type TipoPago = 'cliente' | 'proveedor' | 'mtto';
@@ -2096,9 +2097,14 @@ export function PagosDashboard() {
                 <label>Memo / Observaciones</label>
                 <textarea className="pg-memo" rows={3} value={editObs} onChange={(e) => setEditObs(e.target.value)} placeholder="Nota del pago..." />
               </div>
+              {/* ✅ V00450: comprobante con vista previa y Reemplazar (estilo QuickBooks) */}
               <div className="pg-campo">
-                <label>Comprobante {pagoEditando.pdfNombre ? `(actual: ${pagoEditando.pdfNombre})` : '(sin comprobante)'} — subir uno lo reemplaza</label>
-                <input type="file" accept="application/pdf,image/*" onChange={(e) => setEditArchivoPdf(e.target.files?.[0] || null)} />
+                <AdjuntoComprobante
+                  etiqueta="Comprobante (PDF o imagen)"
+                  archivo={editArchivoPdf}
+                  onArchivo={setEditArchivoPdf}
+                  existente={pagoEditando.pdfUrl ? { url: pagoEditando.pdfUrl, nombre: pagoEditando.pdfNombre || 'Comprobante' } : null}
+                />
               </div>
 
               {/* ✅ NUEVO — AGREGAR FACTURAS A ESTE PAGO */}
@@ -2386,9 +2392,9 @@ export function PagosDashboard() {
                         <label>Memo / Observaciones</label>
                         <textarea className="pg-memo" rows={3} value={observaciones} onChange={(e) => setObservaciones(e.target.value)} placeholder="Nota del pago..." />
                       </div>
+                      {/* ✅ V00450: comprobante con vista previa y Reemplazar (estilo QuickBooks) */}
                       <div className="pg-campo">
-                        <label>Comprobante (PDF o imagen, opcional)</label>
-                        <input type="file" accept="application/pdf,image/*" onChange={(e) => setArchivoPdf(e.target.files?.[0] || null)} />
+                        <AdjuntoComprobante archivo={archivoPdf} onArchivo={setArchivoPdf} />
                       </div>
                     </div>
                     <div className="pg-qb-pie-der">

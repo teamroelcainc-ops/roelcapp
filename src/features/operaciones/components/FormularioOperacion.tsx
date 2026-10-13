@@ -54,6 +54,10 @@ import { colorTipoOperacion, formatearDireccionPorPais, normalizarTxtDir, paisDe
 import { buscarTCDeFecha, normalizarFechaISO } from './formulario/tipoCambioFila';
 import { referenciaDeOperacion, subirDocumentoOperacion, TIPOS_DOCUMENTO_OPERACION } from './formulario/documentosOperacion';
 import { BotonAgregar, CampoArchivo } from './formulario/CampoArchivo';
+import { claveRefCliente, describirOp, etiquetaEstado } from '../services/refClienteDuplicado'; // ✅ V00450
+import type { OpRefResumen } from '../services/refClienteDuplicado';
+import { buscarRefCliente } from '../services/refClienteDuplicadoServidor'; // ✅ V00450
+import { avisar } from '../../../shared/data/avisos'; // ✅ V00450
 import {
   IconAlert, IconArrowRight, IconBriefcase, IconCalendar, IconCheck, IconClipboard, IconDollar, IconEdit, IconFileText,
   IconMapPin, IconMinimize, IconPackage, IconReceipt, IconRoute, IconSave, IconTrendingUp, IconTruck, IconUsers, IconX,
@@ -468,6 +472,41 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     dolaresCliente: 0, pesosCliente: 0, conversionCliente: 0,
     utilidadEstimada: 0, tipoCambioAprobado: 0
   });
+
+  // ✅ V00450: REF CLIENTE DUPLICADA — al salir del campo (y al abrir una operación que ya la
+  //   trae) se busca la Ref en TODAS las operaciones. Solo avisa: no impide guardar; la
+  //   operación irá a la pestaña Revisión de Operaciones / Facturación.
+  const [refClienteDup, setRefClienteDup] = useState<{ clave: string; otras: OpRefResumen[] }>({ clave: '', otras: [] });
+  const consultaRefClienteRef = useRef(0); // la última consulta manda (respuestas fuera de orden)
+  const refClienteAvisadaRef = useRef(''); // una notificación por Ref, no en cada salida del campo
+  const refClienteYaRevisada = (clave: string): boolean => !!clave && claveRefCliente(initialData?.refClienteRevisado) === clave;
+  const verificarRefClienteDuplicada = async (valor: string, silencioso: boolean): Promise<void> => {
+    const clave = claveRefCliente(valor);
+    const n = ++consultaRefClienteRef.current;
+    if (!clave) { setRefClienteDup({ clave: '', otras: [] }); return; }
+    try {
+      const otras = await buscarRefCliente(valor, { id: String(initialData?._docId || initialData?.id || ''), ref: String(initialData?.ref || '') });
+      if (n !== consultaRefClienteRef.current) return;
+      setRefClienteDup({ clave, otras });
+      if (!silencioso && otras.length > 0 && !refClienteYaRevisada(clave) && refClienteAvisadaRef.current !== clave) {
+        refClienteAvisadaRef.current = clave;
+        const lista = otras.slice(0, 3).map(describirOp).join(', ') + (otras.length > 3 ? ` y ${otras.length - 3} más` : '');
+        avisar({
+          tipo: 'alerta',
+          titulo: 'REF Cliente duplicada',
+          texto: `La Ref Cliente "${valor.trim()}" ya existe en ${lista}. Puedes guardar, pero la operación irá a la pestaña Revisión.`,
+        });
+      }
+    } catch (e) {
+      console.warn('[REF Cliente] No se pudo verificar la Ref Cliente:', e); // nunca frena la captura
+    }
+  };
+  const verificarRefAlAbrir = useEffectEvent(() => {
+    if (initialData?.refCliente) void verificarRefClienteDuplicada(String(initialData.refCliente), true);
+  });
+  useEffect(() => verificarRefAlAbrir(), []);
+  const claveRefActual = claveRefCliente(formData.refCliente);
+  const dupRefVisible = refClienteDup.clave !== '' && refClienteDup.clave === claveRefActual && refClienteDup.otras.length > 0;
 
   // ✅ NUEVO — INFO DE LA UNIDAD SELECCIONADA: al elegir unidad se consulta su
   //   ÚLTIMO SERVICIO (operación más reciente) y la ÚLTIMA REFERENCIA DE
@@ -2869,7 +2908,23 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
                           <BotonAgregar title="Agregar nuevo Remolque" onClick={() => abrirCreacion({ tipo: 'remolque', coleccion: 'remolques' }, (id, reg) => { setFormData(prev => ({ ...prev, numeroRemolque: id })); setSearchRemolque(labelRemolque(reg)); })} />
                         </div>
                       </div>
-                      <div className="form-group"><label className="form-label">Ref Cliente <span className="campo-badge">refCliente</span></label><input type="text" name="refCliente" className={`form-control${claseSiFalta('refCliente')}`} value={formData.refCliente || ''} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Ref Cliente <span className="campo-badge">refCliente</span></label><input type="text" name="refCliente" className={`form-control${claseSiFalta('refCliente')}${dupRefVisible && !refClienteYaRevisada(claveRefActual) ? ' fo-ref-dup-input' : ''}`} value={formData.refCliente || ''} onChange={handleChange} onBlur={(e) => { void verificarRefClienteDuplicada(e.target.value, false); }} />
+                        {/* ✅ V00450: aviso de Ref Cliente duplicada */}
+                        {dupRefVisible && (
+                          <div className={`fo-ref-dup${refClienteYaRevisada(claveRefActual) ? ' fo-ref-dup--revisada' : ''}`} role="alert">
+                            {refClienteYaRevisada(claveRefActual)
+                              ? <>Esta Ref Cliente también está en otra(s) operación(es); ya se marcó como <b>No es duplicado</b>:</>
+                              : <><b>⚠️ Ref Cliente duplicada.</b> Ya existe en:</>}
+                            <ul className="fo-ref-dup-lista">
+                              {refClienteDup.otras.slice(0, 5).map((o) => (
+                                <li key={o.id}><b>{o.ref || 'sin ref'}</b>{o.clienteNombre ? ` · ${o.clienteNombre}` : ''} · {etiquetaEstado(o)}</li>
+                              ))}
+                              {refClienteDup.otras.length > 5 && <li>y {refClienteDup.otras.length - 5} más</li>}
+                            </ul>
+                            {!refClienteYaRevisada(claveRefActual) && <span>Puedes guardar; la operación irá a la pestaña <b>Revisión</b>.</span>}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
 

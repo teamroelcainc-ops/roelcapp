@@ -119,7 +119,8 @@ export function useOperacionesFacturables<T extends Datos = Datos>(
       };
       let usarFallback = false;
       try {
-        await paginar([where('status', 'in', [...statusFacturables])], (d) => todas.push({ id: d.id, ...d.data() }));
+        // ✅ V00450: `_docId` = ID real (un campo `id` interno de registros viejos pisa a d.id en el spread).
+        await paginar([where('status', 'in', [...statusFacturables])], (d) => todas.push({ id: d.id, ...d.data(), _docId: d.id }));
       } catch (e1: unknown) {
         const msg1 = String((e1 as { message?: unknown })?.message || (e1 as { code?: unknown })?.code || e1 || '');
         if (msg1.toLowerCase().includes('index') || msg1.toLowerCase().includes('failed-precondition')) {
@@ -132,7 +133,7 @@ export function useOperacionesFacturables<T extends Datos = Datos>(
       if (usarFallback) {
         todas = [];
         await paginar([], (d) => {
-          const o: Datos = { id: d.id, ...d.data() };
+          const o: Datos = { id: d.id, ...d.data(), _docId: d.id };
           if (statusFacturables.includes(String(o.status || '').trim())) todas.push(o);
         });
       }

@@ -1235,6 +1235,7 @@ body {
 .app-noti-solicitud { border-top: 1px solid #30363d; padding: 8px 0; color: #8b949e; font-size: 0.78rem; line-height: 1.45; cursor: pointer; }
 .app-noti-solicitud:hover { color: #c9d1d9; }
 .app-noti-solicitud-b { color: #f59e0b; }
+.app-noti-revision-b { color: #f85149; } /* ✅ V00450 */
 .app-noti-campo { color: #f0f6fc; }
 
 /* ✅ V00184: histórico de notificaciones */

@@ -40,6 +40,12 @@ import type { EmisorRemision, RemisionData } from './generarRemisionPDF';
 import './FacturacionClientesDashboard.css';
 import { TarjetaDocumentoFactura } from './TarjetaDocumentoFactura';
 import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
+import RevisionRefCliente from '../../operaciones/components/RevisionRefCliente'; // ✅ V00450
+import { idDeLista, useRefClienteDuplicados } from '../../operaciones/hooks/useRefClienteDuplicados'; // ✅ V00450
+import { claveRefCliente } from '../../operaciones/services/refClienteDuplicado'; // ✅ V00450
+import type { OpRefResumen } from '../../operaciones/services/refClienteDuplicado';
+import { olvidarRefsConsultadas } from '../../operaciones/services/refClienteDuplicadoServidor'; // ✅ V00450
+import { pestanaAtendida, usePestanaPedida } from '../../../shared/data/avisos'; // ✅ V00450
 import { limpiarCachesPorPrefijo } from '../../../utils/cacheMemoria'; // ✅ V00262
 import { registrarLog } from '../../../utils/logger'; // ✅ V00262
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
@@ -277,7 +283,8 @@ export const FacturacionClientesDashboard = () => {
     [flags.dineroPorServidor],
   );
   const flagsCargadas = useFlagsCargadas(); // ✅ V00443
-  const [activeTab, setActiveTab] = useState<'operaciones' | 'historial' | 'pagadas'>('operaciones');
+  // ✅ V00450: + 'revision' (Ref Cliente duplicada; salen de "Asignar Operaciones").
+  const [activeTab, setActiveTab] = useState<'operaciones' | 'historial' | 'pagadas' | 'revision'>('operaciones');
   const [mostrarAuditoria, setMostrarAuditoria] = useState(false); // ✅ V00318
   // ✅ V00126: "Pagadas" reutiliza toda la vista de Historial filtrando facturas liquidadas
   const esHistorial = activeTab === 'historial' || activeTab === 'pagadas';
@@ -783,7 +790,7 @@ export const FacturacionClientesDashboard = () => {
   } = useOperacionesFacturables<any>('cliente', STATUS_FACTURABLES, vistaOps); // eslint-disable-line @typescript-eslint/no-explicit-any -- operaciones sin tipo canónico en el tablero (antes useState<any[]>).
 
   const cargarOperacionesAlEntrar = useEffectEvent(() => {
-    if (activeTab !== 'operaciones') return;
+    if (activeTab !== 'operaciones' && activeTab !== 'revision') return; // ✅ V00450: Revisión usa la misma lista
     if (operacionesGlobales.length > 0) return;
     // ✅ V00439 (Fase 3.x): espera el catálogo de status (los "Falso" entran en el filtro).
     if (!statusListos) return;
@@ -820,6 +827,7 @@ export const FacturacionClientesDashboard = () => {
 
   // Refresca AMBAS colecciones (operaciones + facturas) forzando lectura desde Firestore.
   const recargarTodo = () => {
+    olvidarRefsConsultadas(); // ✅ V00450: también vuelve a buscar las Ref Cliente
     recargarOperaciones();
     recargarFacturas();
   };
@@ -933,6 +941,55 @@ export const FacturacionClientesDashboard = () => {
   };
 
   const esFacturada = (op: any) => opIndex.has(String(op.id)) || !!op.facturaClienteId || !!op.facturado;
+
+  // ✅ V00450: REF CLIENTE DUPLICADA — las pendientes de facturar cuya Ref Cliente ya existe en
+  //   otra operación (de cualquier cliente) salen de "Asignar Operaciones" y van a "Revisión"
+  //   hasta que se corrija la Ref o se marque "No es duplicado".
+  const candidataRevision = useCallback(
+    (op: Record<string, unknown>) => !(opIndex.has(String(op.id)) || !!op.facturaClienteId || !!op.facturado),
+    [opIndex],
+  );
+  const dupRef = useRefClienteDuplicados(operacionesGlobales, {
+    modulo: 'facturacionClientes',
+    activo: opsDescargaTerminada && !cargandoOperaciones && !cargandoFacturas, // con las facturas: "pendiente" depende de ellas
+    candidata: candidataRevision,
+  });
+  const enRevisionRef = dupRef.enRevision;
+  const opsEnRevision = useMemo(
+    () => operacionesGlobales.filter((op) => enRevisionRef.has(idDeLista(op))),
+    [operacionesGlobales, enRevisionRef],
+  );
+  // Una seleccionada que pasó a Revisión deja de estar seleccionada (no se puede facturar).
+  const [revisionAnterior, setRevisionAnterior] = useState(enRevisionRef);
+  if (revisionAnterior !== enRevisionRef) {
+    setRevisionAnterior(enRevisionRef);
+    const idsLista = new Set(opsEnRevision.map((op) => String(op.id)));
+    if (seleccionadas.some((id) => idsLista.has(id))) setSeleccionadas(seleccionadas.filter((id) => !idsLista.has(id)));
+  }
+  const revisionPedida = usePestanaPedida('facturacionClientes');
+  const abrirRevision = useEffectEvent(() => {
+    pestanaAtendida('facturacionClientes');
+    setActiveTab('revision');
+  });
+  useEffect(() => { if (revisionPedida) abrirRevision(); }, [revisionPedida]);
+  // No se factura una operación en Revisión ni una cuya Ref todavía se está verificando
+  //   (lista o facturas cargando, consulta en camino). Devuelve el aviso o ''.
+  const bloqueoPorRevision = (ops: readonly Record<string, unknown>[]): string => {
+    const enRev = ops.filter((op) => enRevisionRef.has(idDeLista(op)));
+    if (enRev.length) return `Estas operaciones tienen una Ref Cliente duplicada y están en la pestaña Revisión; no se pueden facturar hasta revisarlas:\n${enRev.map((op) => `${String(op.ref ?? op.id)} (${String(op.refCliente ?? '')})`).join(', ')}`;
+    const pendientes = ops.filter((op) => dupRef.pendienteDeVerificar(op));
+    if (pendientes.length) return `Se está verificando la Ref Cliente de ${pendientes.map((op) => String(op.ref ?? op.id)).join(', ')}. Intenta de nuevo en unos segundos.`;
+    return '';
+  };
+  const opsDeSeleccion = (): Record<string, unknown>[] =>
+    seleccionadas.map((id) => operacionesGlobales.find((o) => String(o.id) === id)).filter((o): o is Record<string, unknown> => !!o);
+  const alMarcarNoDuplicado = (clave: string, hechas: readonly OpRefResumen[]): void => {
+    const ids = new Set(hechas.map((r) => r.id));
+    const refs = new Set(hechas.map((r) => r.ref).filter(Boolean));
+    setOperacionesGlobales((prev) => prev.map((o: Record<string, unknown>) => (
+      claveRefCliente(o.refCliente) === clave && (ids.has(idDeLista(o)) || refs.has(String(o.ref ?? '')))
+        ? { ...o, refClienteRevisado: clave } : o)));
+  };
   const invoiceDeOp = (op: any): string => op.facturaClienteInvoice || opIndex.get(String(op.id))?.invoice || '';
 
   const clienteFacturaId = useMemo(() => {
@@ -1122,10 +1179,10 @@ export const FacturacionClientesDashboard = () => {
     return '';
   };
   const resumenMonedaOps = useMemo(() => {
-    const base = operacionesGlobales.filter(op => dentroRangoFecha(op) && coincideClienteOp(op) && coincideTipoOp(op) && (vistaOps === 'todas' || (vistaOps === 'facturadas') === esFacturada(op)));
+    const base = operacionesGlobales.filter(op => !enRevisionRef.has(idDeLista(op)) && dentroRangoFecha(op) && coincideClienteOp(op) && coincideTipoOp(op) && (vistaOps === 'todas' || (vistaOps === 'facturadas') === esFacturada(op))); // ✅ V00450: sin las de Revisión
     return { usd: base.filter(op => monedaFacturacionOp(op) === 'USD').length, mxn: base.filter(op => monedaFacturacionOp(op) === 'MXN').length, todas: base.length };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [operacionesGlobales, fechaDesdeOps, fechaHastaOps, filtroCliente, filtroTipoOp, vistaOps, facturasGlobales]);
+  }, [operacionesGlobales, fechaDesdeOps, fechaHastaOps, filtroCliente, filtroTipoOp, vistaOps, facturasGlobales, enRevisionRef]);
 
   const operacionesMostradas = useMemo(() => {
     const q = textoBuscarRemolqueOpsDiferido.trim().toLowerCase();
@@ -1149,6 +1206,7 @@ export const FacturacionClientesDashboard = () => {
     //   calculadas (mismo comparador y sort estable → mismo orden que antes).
     const indices: number[] = [];
     operacionesGlobales.forEach((op, i) => {
+      if (enRevisionRef.has(idDeLista(op))) return; // ✅ V00450: Ref Cliente duplicada → pestaña Revisión
       if (dentroRangoFecha(op) && coincideClienteOp(op) && coincideTipoOp(op) && coincideVista(op) && coincideMonedaVista(op) && coincide(op)) indices.push(i);
     });
     const dir = ordenOps.dir === 'asc' ? 1 : -1;
@@ -1162,16 +1220,16 @@ export const FacturacionClientesDashboard = () => {
     });
     return indices.map((i) => operacionesGlobales[i]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [operacionesGlobales, clavesOrdenOps, ordenOps.dir, fechaDesdeOps, fechaHastaOps, mapaCatalogos, vistaOps, monedaVistaOps, textoBuscarRemolqueOpsDiferido, facturasGlobales, filtroCliente, filtroTipoOp]);
+  }, [operacionesGlobales, clavesOrdenOps, ordenOps.dir, fechaDesdeOps, fechaHastaOps, mapaCatalogos, vistaOps, monedaVistaOps, textoBuscarRemolqueOpsDiferido, facturasGlobales, filtroCliente, filtroTipoOp, enRevisionRef]);
 
   const resumenOps = useMemo(() => {
-    const enRango = operacionesGlobales.filter(op => dentroRangoFecha(op) && coincideClienteOp(op) && coincideTipoOp(op));
+    const enRango = operacionesGlobales.filter(op => !enRevisionRef.has(idDeLista(op)) && dentroRangoFecha(op) && coincideClienteOp(op) && coincideTipoOp(op)); // ✅ V00450: sin las de Revisión
     const facturadas = enRango.filter(op => esFacturada(op)).length;
     const total = enRango.length;
     const porFacturar = total - facturadas;
     return { porFacturar, facturadas, total };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [operacionesGlobales, fechaDesdeOps, fechaHastaOps, facturasGlobales, filtroCliente, filtroTipoOp]);
+  }, [operacionesGlobales, fechaDesdeOps, fechaHastaOps, facturasGlobales, filtroCliente, filtroTipoOp, enRevisionRef]);
 
   const diagnostico = useMemo(() => {
     const totalFacturas = facturasGlobales.length;
@@ -1407,6 +1465,8 @@ export const FacturacionClientesDashboard = () => {
     }
     // ✅ Fase 1.8: 1 escritura por operación + la factura; avisar antes de que falle el commit.
     if (seleccionadas.length + 1 > MAX_ESCRITURAS_LOTE) return alert(avisoLoteGrande(seleccionadas.length + 1));
+    const bloqueo = bloqueoPorRevision(opsDeSeleccion()); // ✅ V00450
+    if (bloqueo) return alert(bloqueo);
     // ✅ V00279: el documento NO es obligatorio para facturar — sin adjunto se
     //   factura directo y la fila queda con ⚠ como recordatorio visual.
     setGuardando(true);
@@ -1895,6 +1955,8 @@ export const FacturacionClientesDashboard = () => {
   };
 
   const agregarOpAFactura = async (facturaGrupo: any, op: any) => {
+    const bloqueo = bloqueoPorRevision([op]); // ✅ V00450
+    if (bloqueo) { alert(bloqueo); return; }
     const opId = String(op.id);
     const rawId = (Array.isArray(facturaGrupo.__groupIds) && facturaGrupo.__groupIds.length) ? facturaGrupo.__groupIds[0] : facturaGrupo.id;
     const resumen = buildResumenOp(op);
@@ -1975,6 +2037,7 @@ export const FacturacionClientesDashboard = () => {
     const q = busquedaRefPendiente.trim().toLowerCase();
     const lista = operacionesGlobales.filter(op => {
       if (esFacturada(op)) return false;
+      if (enRevisionRef.has(idDeLista(op))) return false; // ✅ V00450: Ref Cliente duplicada sin revisar
       if (clienteId && String(op.clientePaga || op.clienteId || '') !== clienteId) return false;
       if (!q) return true;
       const campos = [op.numReferencia, op.referencia, op.ref, op.remolqueNombre, op.remolquePlaca, op.numeroRemolque];
@@ -1982,7 +2045,7 @@ export const FacturacionClientesDashboard = () => {
     });
     return lista.slice(0, 50);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agregarRefFactura, operacionesGlobales, busquedaRefPendiente, facturasGlobales]);
+  }, [agregarRefFactura, operacionesGlobales, busquedaRefPendiente, facturasGlobales, enRevisionRef]);
 
   const handleEliminarFactura = async (e: React.MouseEvent, facData: any) => {
     e.stopPropagation();
@@ -3058,6 +3121,13 @@ export const FacturacionClientesDashboard = () => {
         <button onClick={() => setActiveTab('historial')} style={tabStyle(activeTab === 'historial')}>Historial de Facturas</button>
         {/* ✅ V00126: facturas liquidadas con su # de pago */}
         <button onClick={() => setActiveTab('pagadas')} style={tabStyle(activeTab === 'pagadas')}>Pagadas</button>
+        {/* ✅ V00450: Ref Cliente duplicada (pendientes de facturar) */}
+        <button type="button" onClick={() => setActiveTab('revision')}
+          className={`fcd-tab-revision${opsEnRevision.length > 0 ? ' fcd-tab-revision--con' : ''}${activeTab === 'revision' ? ' fcd-tab-revision--activa' : ''}`}
+          title="Operaciones pendientes de facturar con una Ref Cliente que ya existe en otra operación">
+          Revisión{' '}
+          {mostrarCargandoOps || cargandoFacturas ? <CargandoDatos enLinea texto="Buscando…" /> : <span className="fcd-tab-revision__n">{opsEnRevision.length}</span>}
+        </button>
         {/* ✅ V00318: verificación de la cadena Operación → Factura → Pago */}
         <button type="button" className="fcd-btn-auditoria" title="Verificar por cliente que cada operación esté facturada con el monto vigente y que cada factura cuadre con sus pagos" onClick={() => setMostrarAuditoria(true)}>🔍 Auditar cliente</button>
         <button onClick={recargarTodo} disabled={cargandoOperaciones || cargandoFacturas}
@@ -3068,6 +3138,7 @@ export const FacturacionClientesDashboard = () => {
         </button>
       </div>
 
+      {activeTab !== 'revision' && (
       <div className="fcd-x34">
         <button onClick={() => setFiltrosAbiertos(true)} title="Mostrar filtros"
           style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${filtrosActivos > 0 ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
@@ -3097,6 +3168,7 @@ export const FacturacionClientesDashboard = () => {
           </span>
         )}
       </div>
+      )}
 
       {filtrosAbiertos && (
         <div className="fcd-x41" onClick={() => setFiltrosAbiertos(false)}>
@@ -3257,7 +3329,20 @@ export const FacturacionClientesDashboard = () => {
         </div>
       )}
 
-      {activeTab === 'operaciones' ? (
+      {activeTab === 'revision' ? (
+        <div className="animation-fade-in">
+          <RevisionRefCliente
+            modulo="facturacionClientes"
+            ops={opsEnRevision}
+            duplicados={dupRef.porOp}
+            cargando={mostrarCargandoOps || cargandoFacturas || dupRef.verificando}
+            nombreCliente={(id, guardado) => { const n = id ? getNombreCliente(id) : ''; return n && n !== id && n !== '-' ? n : (guardado || n); }}
+            onVer={(op) => setOpEditandoId(String(op.id))}
+            etiquetaVer="✎ Operación"
+            onMarcadas={alMarcarNoDuplicado}
+          />
+        </div>
+      ) : activeTab === 'operaciones' ? (
         <div className="animation-fade-in">
           <div className="fcd-x64">
             <div className="fcd-x65">
@@ -3296,7 +3381,7 @@ export const FacturacionClientesDashboard = () => {
                 title="Agregar un costo adicional al cliente en una operación seleccionada">
                 Costo adicional
               </button>
-              <button disabled={seleccionadas.length === 0 || seleccionMultiCliente} onClick={() => { setStatusFacturaForm('Facturado'); setDocFacturaFile(null); setModalAbierto(true); }}
+              <button disabled={seleccionadas.length === 0 || seleccionMultiCliente} onClick={() => { const bloqueo = bloqueoPorRevision(opsDeSeleccion()); if (bloqueo) { alert(bloqueo); return; } setStatusFacturaForm('Facturado'); setDocFacturaFile(null); setModalAbierto(true); }}
                 style={{ padding: '8px 20px', backgroundColor: (seleccionadas.length > 0 && !seleccionMultiCliente) ? '#D84315' : '#30363d', color: '#fff', border: 'none', borderRadius: '6px', cursor: (seleccionadas.length > 0 && !seleccionMultiCliente) ? 'pointer' : 'not-allowed', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
                 Generar Factura ({seleccionadas.length})
               </button>

@@ -20,6 +20,12 @@ import * as XLSX from 'xlsx';
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
 import './OperacionesDashboard.css';
 import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
+import RevisionRefCliente from './RevisionRefCliente'; // ✅ V00450
+import { idDeLista, useRefClienteDuplicados } from '../hooks/useRefClienteDuplicados'; // ✅ V00450
+import { pestanaAtendida, usePestanaPedida } from '../../../shared/data/avisos'; // ✅ V00450
+import { claveRefCliente } from '../services/refClienteDuplicado'; // ✅ V00450
+import type { OpRefResumen } from '../services/refClienteDuplicado';
+import { olvidarRefsConsultadas, quitarOperacionDeRefs } from '../services/refClienteDuplicadoServidor'; // ✅ V00450
 import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
 import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 import { ModalFechaStatus } from './ModalFechaStatus';
@@ -566,6 +572,7 @@ const OperacionesDashboard = () => {
   const actualizarOperaciones = async () => {
     if (cargandoOperaciones || cargandoMas) return;
     setPaginaActual(1);
+    olvidarRefsConsultadas(); // ✅ V00450: "Actualizar" también vuelve a buscar las Ref Cliente
     await actualizarLista();
   };
 
@@ -621,6 +628,7 @@ const OperacionesDashboard = () => {
     if (window.confirm('¿Estás seguro de eliminar este registro permanentemente?')) {
       try {
         await eliminarRegistro('operaciones', docId); 
+        quitarOperacionDeRefs(String(docId)); // ✅ V00450: ya no cuenta como duplicada
         setOperacionesGlobales(prev => prev.filter((o: any) => String(o.id) !== String(op.id)));
         setOperacionViendo(null);
       } catch (error: any) {
@@ -1586,8 +1594,32 @@ const OperacionesDashboard = () => {
   const limpiarFiltros = () => { setFiltroTipoOperacion(''); setFiltroStatus(''); setFiltroUnidad(''); setFiltroRemolque(''); };
 
   // ✅ V00422: PESTAÑAS por tipo de operación (Todos · Transfer · Logística Cruces · Logística Fletes · Rentas)
-  type TabTipoOp = 'todos' | 'transfer' | 'cruces' | 'fletes' | 'rentas' | 'otros';
+  // ✅ V00450: + "Revisión" — las de Ref Cliente duplicada salen de las demás pestañas.
+  type TabTipoOp = 'todos' | 'transfer' | 'cruces' | 'fletes' | 'rentas' | 'otros' | 'revision';
   const [tabTipoOp, setTabTipoOp] = useState<TabTipoOp>('todos');
+  const dupRef = useRefClienteDuplicados(operacionesGlobales, { modulo: 'operaciones', activo: !cargandoOperaciones });
+  const enRevisionRef = dupRef.enRevision;
+  const estaEnRevision = (op: Record<string, unknown>): boolean => enRevisionRef.has(idDeLista(op));
+  // La campana o un aviso pidieron abrir la pestaña Revisión.
+  const revisionPedida = usePestanaPedida('operaciones');
+  const abrirRevision = useEffectEvent(() => {
+    pestanaAtendida('operaciones');
+    setTabTipoOp('revision');
+    setPaginaActual(1);
+  });
+  useEffect(() => { if (revisionPedida) abrirRevision(); }, [revisionPedida]);
+  const opsEnRevision = useMemo(
+    () => operacionesGlobales.filter((op) => enRevisionRef.has(idDeLista(op))),
+    [operacionesGlobales, enRevisionRef],
+  );
+  // "No es duplicado" ya se guardó: la lista local refleja la marca (sale de Revisión).
+  const alMarcarNoDuplicado = (clave: string, hechas: readonly OpRefResumen[]): void => {
+    const ids = new Set(hechas.map((r) => r.id));
+    const refs = new Set(hechas.map((r) => r.ref).filter(Boolean));
+    setOperacionesGlobales((prev) => prev.map((o: Record<string, unknown>) => (
+      claveRefCliente(o.refCliente) === clave && (ids.has(idDeLista(o)) || refs.has(String(o.ref ?? '')))
+        ? { ...o, refClienteRevisado: clave } : o)));
+  };
   const grupoTipoOp = (op: Record<string, unknown>): TabTipoOp => {
     const t = String(valorTextoColumna(op, 'tipoOperacion') || op?.tipoOperacionNombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
     if (t.includes('flete')) return 'fletes';
@@ -1597,18 +1629,23 @@ const OperacionesDashboard = () => {
     return 'otros';
   };
   const conteoTabsTipo = useMemo(() => {
-    const c: Record<string, number> = { todos: operacionesGlobales.length, transfer: 0, cruces: 0, fletes: 0, rentas: 0, otros: 0 };
-    operacionesGlobales.forEach(op => { c[grupoTipoOp(op)] += 1; });
+    const c: Record<string, number> = { todos: 0, transfer: 0, cruces: 0, fletes: 0, rentas: 0, otros: 0, revision: 0 };
+    operacionesGlobales.forEach(op => {
+      if (enRevisionRef.has(idDeLista(op))) { c.revision += 1; return; } // ✅ V00450
+      c.todos += 1;
+      c[grupoTipoOp(op)] += 1;
+    });
     return c;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [operacionesGlobales, catalogosGlobales]);
+  }, [operacionesGlobales, catalogosGlobales, enRevisionRef]);
 
   const operacionesFiltradas = useMemo(() => {
     const b = busqueda.trim().toLowerCase();
     const tokens = b.split(/\s+/).filter(Boolean);
 
-    let base = operacionesGlobales;
-    if (tabTipoOp !== 'todos') base = base.filter(op => grupoTipoOp(op) === tabTipoOp); // ✅ V00422: pestaña por tipo
+    // ✅ V00450: "Revisión" solo trae las de Ref Cliente duplicada; las demás pestañas, sin ellas.
+    let base = tabTipoOp === 'revision' ? opsEnRevision : operacionesGlobales.filter(op => !estaEnRevision(op));
+    if (tabTipoOp !== 'todos' && tabTipoOp !== 'revision') base = base.filter(op => grupoTipoOp(op) === tabTipoOp); // ✅ V00422: pestaña por tipo
     if (filtroTipoOperacion) base = base.filter(op => valorTextoColumna(op, 'tipoOperacion') === filtroTipoOperacion);
     if (filtroStatus)   base = base.filter(op => valorTextoColumna(op, 'status')   === filtroStatus);
     if (filtroUnidad)   base = base.filter(op => valorTextoColumna(op, 'unidad')   === filtroUnidad);
@@ -1630,7 +1667,7 @@ const OperacionesDashboard = () => {
       if (ta !== tb) return tb - ta;
       return obtenerConsecutivoRef(b2) - obtenerConsecutivoRef(a);
     });
-  }, [busqueda, operacionesGlobales, catalogosGlobales, columnasTabla, filtroTipoOperacion, filtroStatus, filtroUnidad, filtroRemolque, tabTipoOp]);
+  }, [busqueda, operacionesGlobales, catalogosGlobales, columnasTabla, filtroTipoOperacion, filtroStatus, filtroUnidad, filtroRemolque, tabTipoOp, opsEnRevision, enRevisionRef]);
 
   // ✅ NUEVO: valor de una celda para ORDENAR. Reusa valorTextoColumna, pero las
   //   fechas se convierten a un valor cronológico real (timestamp) para que el
@@ -2031,9 +2068,27 @@ const OperacionesDashboard = () => {
               Otros<span className="od-tab-tipo__n">{conteoTabsTipo.otros}</span>
             </button>
           )}
+          {/* ✅ V00450: Ref Cliente duplicada */}
+          <button type="button" role="tab" aria-selected={tabTipoOp === 'revision'}
+            className={`od-tab-tipo od-tab-revision${conteoTabsTipo.revision > 0 ? ' od-tab-revision--con' : ''}${tabTipoOp === 'revision' ? ' od-tab-tipo--activa' : ''}`}
+            title="Operaciones con una Ref Cliente que ya existe en otra operación"
+            onClick={() => { setTabTipoOp('revision'); setPaginaActual(1); }}>
+            Revisión<span className="od-tab-tipo__n">{conteoTabsTipo.revision}</span>
+          </button>
         </div>
 
         <div className="content-body od-x30">
+          {tabTipoOp === 'revision' ? (
+            <RevisionRefCliente
+              modulo="operaciones"
+              ops={opsEnRevision}
+              duplicados={dupRef.porOp}
+              cargando={cargandoOperaciones || dupRef.verificando}
+              nombreCliente={(_id, guardado) => guardado}
+              onVer={(op) => { setOperacionViendo(op); setPestañaDetalleActiva('general'); }}
+              onMarcadas={alMarcarNoDuplicado}
+            />
+          ) : (
           <div className="table-container od-x31">
             {cargandoOperaciones ? (
               <CargandoDatos texto="Cargando operaciones activas..." />
@@ -2095,11 +2150,12 @@ const OperacionesDashboard = () => {
               </table>
             )}
           </div>
+          )}
 
           {/* ✅ V00449: "Cargar más" descarga 50 más del servidor: animación debajo de la tabla (lo ya visible se queda). */}
           {cargandoMas && <CargandoDatos compacto texto="Cargando más…" />}
 
-          {operacionesFiltradas.length > 0 && !cargandoOperaciones && (
+          {operacionesFiltradas.length > 0 && !cargandoOperaciones && tabTipoOp !== 'revision' && (
             <div className="od-x43">
               <div className="od-x44">
                 Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, operacionesFiltradas.length)} de {operacionesFiltradas.length} operaciones activas

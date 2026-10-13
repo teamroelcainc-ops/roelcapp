@@ -1,0 +1,109 @@
+/* src/features/pagos/components/AdjuntoComprobante.css — ✅ V00450 (prefijo adj-) */
+.adj-caja { display: flex; flex-direction: column; gap: 8px; }
+.adj-etiqueta { color: #8b949e; font-size: 0.82rem; font-weight: 600; }
+.adj-input-oculto { display: none; }
+
+.adj-zona {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 84px;
+  padding: 14px;
+  border: 2px dashed #30363d;
+  border-radius: 8px;
+  background: #0d1117;
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+.adj-zona:hover,
+.adj-zona:focus-visible { border-color: #58a6ff; outline: none; }
+.adj-caja--arrastrando .adj-zona { border-color: #3fb950; background: rgba(63, 185, 80, 0.08); }
+.adj-caja--arrastrando .adj-renglon { border-color: #3fb950; }
+/* Mientras se arrastra, el visor no se "traga" el archivo. */
+.adj-caja--arrastrando .adj-visor-pdf { pointer-events: none; }
+.adj-zona-titulo { color: #58a6ff; font-weight: 700; font-size: 0.9rem; }
+.adj-zona-sub { color: #8b949e; font-size: 0.76rem; }
+
+.adj-renglon {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  background: #161b22;
+}
+.adj-icono { font-size: 1.05rem; }
+.adj-nombre {
+  flex: 1 1 160px;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #58a6ff;
+  font-size: 0.84rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.adj-nombre:hover { text-decoration: underline; }
+.adj-tamano { color: #8b949e; font-size: 0.76rem; white-space: nowrap; }
+.adj-estado {
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(63, 185, 80, 0.5);
+  color: #3fb950;
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.adj-estado--nuevo { border-color: rgba(210, 153, 34, 0.5); color: #d29922; }
+.adj-acciones { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+.adj-btn {
+  padding: 4px 10px;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  background: transparent;
+  color: #c9d1d9;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.adj-btn:hover { border-color: #58a6ff; color: #58a6ff; }
+.adj-quitar {
+  padding: 0 4px;
+  border: none;
+  background: none;
+  color: #8b949e;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.adj-quitar:hover { color: #f85149; }
+.adj-nota { color: #d29922; font-size: 0.76rem; }
+
+.adj-previa {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  background: #0d1117;
+}
+.adj-visor-pdf { width: 100%; height: 380px; border: none; border-radius: 6px; background: #fff; }
+.adj-visor-img { display: block; max-width: 100%; max-height: 380px; margin: 0 auto; object-fit: contain; border-radius: 6px; }
+.adj-sin-previa { padding: 18px; color: #8b949e; font-size: 0.8rem; text-align: center; }
+.adj-abrir { align-self: flex-end; color: #58a6ff; font-size: 0.76rem; text-decoration: none; }
+.adj-abrir:hover { text-decoration: underline; }
+
+@media (max-width: 768px) {
+  .adj-visor-pdf { height: 300px; }
+}
