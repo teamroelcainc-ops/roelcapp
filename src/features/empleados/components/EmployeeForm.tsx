@@ -4,9 +4,13 @@ import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import { camposModificadosDe } from '../../autorizaciones/autorizaciones';
 import { collection, getDocs, query, orderBy, limit, addDoc, updateDoc, doc } from 'firebase/firestore';
-import { db, storage } from '../../../config/firebase';
-import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'; // ✅ V00287: foto del empleado
+import { db } from '../../../config/firebase';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
+import AdjuntosArchivos from '../../../shared/components/AdjuntosArchivos'; // ✅ V00451: foto del empleado
+import { desdeGuardados } from '../../../shared/archivos/adjuntos';
+import type { Adjunto } from '../../../shared/archivos/adjuntos';
+import { subirAdjuntos } from '../../../shared/archivos/subirAdjuntos';
+import { useUrlArchivo } from '../../../shared/hooks/useUrlArchivo';
 import { guardarEmpleadoConTransaccion } from '../../../services/employeeService';
 import { FormularioDireccion } from '../../direcciones/components/FormularioDireccion';
 import type { Employee } from '../../../types/empleado';
@@ -18,6 +22,10 @@ import { idReal, useCatalogos } from '../../../shared/data/catalogos';
 // ✅ V00439 (Fase 3.x): tipo de empresa con la que se da de alta a los colaboradores
 //   ("Empresa de Alta"). No está en TIPO_EMPRESA de constantes.
 const TIPO_EMPRESA_ALTA_COLABORADORES = 'f21b15a4';
+
+// ✅ V00451: la foto guardada (URL) como adjunto ya guardado, para verla y reemplazarla.
+const fotoComoAdjuntos = (foto: unknown): Adjunto[] =>
+  desdeGuardados(typeof foto === 'string' && foto ? [{ url: foto, nombre: 'Foto actual' }] : []);
 
 // Roles disponibles en la empresa
 const ROLES_DISPONIBLES = ['Administrador', 'Recursos Humanos', 'Operaciones', 'Contabilidad', 'Gerencia'];
@@ -231,13 +239,12 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
     [catEmp.empresas],
   );
   // ✅ V00287: FOTO del empleado (subida a Storage al guardar).
-  const [fotoFile, setFotoFile] = useState<File | null>(null);
-  const [fotoPreview, setFotoPreview] = useState<string>('');
-  const elegirFoto = (f: File | null) => {
-    setFotoFile(f);
-    if (f) { const r = new FileReader(); r.onload = () => setFotoPreview(String(r.result || '')); r.readAsDataURL(f); }
-    else setFotoPreview('');
-  };
+  // ✅ V00451: con la carga compartida (una imagen): la actual entra como guardada (se ve y se
+  //   puede reemplazar o quitar); la nueva se sube al guardar. El círculo muestra la que quedará.
+  const [adjuntosFoto, setAdjuntosFoto] = useState<Adjunto[]>(() => fotoComoAdjuntos(initialData?.foto));
+  const fotoElegida = adjuntosFoto[0];
+  const urlFotoNueva = useUrlArchivo(fotoElegida?.estado === 'nuevo' ? fotoElegida.file : null);
+  const urlFotoMarco = !fotoElegida ? '' : fotoElegida.estado === 'nuevo' ? urlFotoNueva : fotoElegida.archivo.url;
   // ✅ V00287: ALTA RÁPIDA a los catálogos desde el propio formulario — lo
   //   agregado queda guardado en su catálogo (base de datos) y seleccionado.
   const agregarCargoRapido = async () => {
@@ -351,7 +358,7 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
         ...initialData,
         observacionesEmpresa: (initialData as any).observacionesEmpresa || ''
       });
-      setFotoPreview(String(initialData.foto || '')); // ✅ V00287
+      setAdjuntosFoto(fotoComoAdjuntos(initialData.foto)); // ✅ V00287 · V00451
     }
   }, [initialData]);
 
@@ -385,8 +392,12 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
     //   el return dejaba pasar el submit nativo del navegador (recarga de la
     //   página) y el registro "no se guardaba" sin explicación.
     e.preventDefault();
+    // ✅ V00451: foto: sin ninguna → '' (se quitó); la guardada se conserva; una nueva se sube
+    //   después de guardar (mientras tanto queda la anterior).
+    const fotoNueva = fotoElegida?.estado === 'nuevo' ? fotoElegida.file : null;
+    const datosGuardar = fotoNueva ? formData : { ...formData, foto: fotoElegida?.estado === 'guardado' ? fotoElegida.archivo.url : '' };
     // ✅ V00140: reglas de acción (crear/editar) de Autorizaciones
-    if (!aut.verificarAccion(initialData?.id ? 'editar' : 'crear', camposModificadosDe((formData || {}) as unknown as Record<string, unknown>, (initialData || {}) as unknown as Record<string, unknown>), (initialData || {}) as unknown as Record<string, unknown>) /* ✅ V00382: solo lo que REALMENTE cambió */) return;
+    if (!aut.verificarAccion(initialData?.id ? 'editar' : 'crear', camposModificadosDe((datosGuardar || {}) as unknown as Record<string, unknown>, (initialData || {}) as unknown as Record<string, unknown>), (initialData || {}) as unknown as Record<string, unknown>) /* ✅ V00382: solo lo que REALMENTE cambió */) return;
     
     if (!formData.employeeId || formData.employeeId.trim() === '' || formData.employeeId === 'Generando...') {
       return alert('El Número de Empleado (Ej. Col-001) es estrictamente necesario.');
@@ -407,15 +418,12 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
     
     setCargando(true);
     try {
-      const idEmpleado = await guardarEmpleadoConTransaccion(formData);
+      const idEmpleado = await guardarEmpleadoConTransaccion(datosGuardar);
       // ✅ V00287: la FOTO se sube a Storage con el id real y se liga al doc.
-      if (fotoFile && idEmpleado) {
+      if (fotoNueva && idEmpleado) {
         try {
-          const limpio = fotoFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-          const destino = storageRef(storage, `empleados_fotos/${idEmpleado}/${Date.now()}_${limpio}`);
-          await uploadBytes(destino, fotoFile, fotoFile.type ? { contentType: fotoFile.type } : undefined);
-          const url = await getDownloadURL(destino);
-          await updateDoc(doc(db, 'empleados', idEmpleado), { foto: url });
+          const [subida] = await subirAdjuntos(adjuntosFoto, `empleados_fotos/${idEmpleado}`); // ✅ V00451
+          await updateDoc(doc(db, 'empleados', idEmpleado), { foto: subida.url });
         } catch (eFoto) {
           console.error(eFoto);
           alert('El empleado se guardó, pero la FOTO no se pudo subir. Inténtalo de nuevo desde Editar.');
@@ -495,15 +503,14 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
               {pestañaActiva === 'personales' && (
                 <div className="ef-x33">
 
-                  {/* ✅ V00287: FOTO del colaborador */}
+                  {/* ✅ V00287: FOTO del colaborador — ✅ V00451: carga compartida (Ver, Reemplazar, ×) */}
                   <div className="ef-foto-bloque">
                     <div className="ef-foto-marco">
-                      {(fotoPreview || formData.foto) ? <img className="ef-foto-img" src={fotoPreview || formData.foto} alt="Foto del colaborador" /> : <span className="ef-foto-vacia">Sin foto</span>}
+                      {urlFotoMarco ? <img className="ef-foto-img" src={urlFotoMarco} alt="Foto del colaborador" /> : <span className="ef-foto-vacia">Sin foto</span>}
                     </div>
                     <div className="ef-foto-controles">
                       <label className="form-label ef-foto-label">Foto del Empleado</label>
-                      <input type="file" accept="image/*" className="ef-foto-input" onChange={(e) => elegirFoto(e.target.files?.[0] || null)} />
-                      {(fotoPreview || formData.foto) && <button type="button" className="ef-foto-quitar" onClick={() => { elegirFoto(null); setFormData((prev: typeof formData) => ({ ...prev, foto: '' })); }}>Quitar foto</button>}
+                      <AdjuntosArchivos etiqueta="" max={1} tipos="imagen" previaCerrada adjuntos={adjuntosFoto} onCambiar={setAdjuntosFoto} deshabilitado={cargando} />
                       <small className="ef-foto-nota">Se sube al guardar el empleado.</small>
                     </div>
                   </div>

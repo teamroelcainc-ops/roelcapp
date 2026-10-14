@@ -19,11 +19,10 @@ import { ID_MXN, ID_USD } from '../../../shared/dominio/constantes';
 import { monedaCanonica as monedaCanonicaComun } from '../../../shared/dominio/moneda';
 import {
   collection, query, where, getDocs, onSnapshot, writeBatch, doc, arrayUnion, arrayRemove, limit,
-  orderBy, startAfter, documentId, runTransaction,
+  orderBy, startAfter, documentId, runTransaction, updateDoc,
 } from 'firebase/firestore';
-import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../../../config/firebase';
-import { r2, sumarMontos } from '../../../shared/dominio/numeros';
+import { db } from '../../../config/firebase';
+import { aCentavos, r2, sumarMontos } from '../../../shared/dominio/numeros';
 import {
   ErrorPago, aplicadoPorFactura, calcularAbono, calcularReversion, totalNativoFactura, validarLimiteFacturas,
 } from '../services/aplicarPagos';
@@ -40,7 +39,10 @@ import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { Plus, FileText, Trash2, X, Search, Download, Pencil, RefreshCw } from 'lucide-react';
 import { SelectBuscable } from '../../catalogos/components/SelectBuscable';
 import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
-import AdjuntoComprobante from './AdjuntoComprobante'; // ✅ V00450
+import AdjuntosArchivos from '../../../shared/components/AdjuntosArchivos'; // ✅ V00451 (antes AdjuntoComprobante, V00450)
+import { archivosDeDocumento, cambioAdjuntos, desdeGuardados } from '../../../shared/archivos/adjuntos';
+import type { Adjunto, ArchivoGuardado } from '../../../shared/archivos/adjuntos';
+import { subirAdjuntos } from '../../../shared/archivos/subirAdjuntos';
 import './PagosDashboard.css';
 
 type TipoPago = 'cliente' | 'proveedor' | 'mtto';
@@ -92,12 +94,18 @@ interface PagoDoc {
   observaciones?: string;
   pdfUrl?: string;
   pdfNombre?: string;
+  /** ✅ V00451: varios comprobantes (pdfUrl/pdfNombre = el primero, para el portal y la app móvil). */
+  comprobantes?: ArchivoGuardado[];
   facturas: FacturaAplicada[];
   creadoEn?: string;
   creadoPor?: string;
 }
 
 // ✅ V00126: sin redondeo — hasta 6 decimales tal cual resultan del cálculo.
+/** ✅ V00451: comprobantes del pago (la lista nueva o el pdfUrl de siempre). */
+const comprobantesDe = (p: { comprobantes?: unknown; pdfUrl?: unknown; pdfNombre?: unknown } | null | undefined): ArchivoGuardado[] =>
+  archivosDeDocumento(p as Record<string, unknown> | null | undefined, 'comprobantes', { url: 'pdfUrl', nombre: 'pdfNombre' });
+
 const money = (n: number, moneda = '') =>
   `$${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${moneda ? ` ${moneda}` : ''}`; // ✅ V00274: 2 decimales
 
@@ -148,7 +156,7 @@ export function PagosDashboard() {
   const [editReferencia, setEditReferencia] = useState('');
   const [editMetodo, setEditMetodo] = useState('Transferencia');
   const [editObs, setEditObs] = useState('');
-  const [editArchivoPdf, setEditArchivoPdf] = useState<File | null>(null);
+  const [editAdjuntos, setEditAdjuntos] = useState<Adjunto[]>([]); // ✅ V00451: comprobantes (hasta 10)
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
 
   // ✅ NUEVO — DETALLE Y EDICIÓN DE FACTURA desde el modal de pago.
@@ -312,8 +320,14 @@ export function PagosDashboard() {
         if (typeof nueva.saldoPendiente === 'number') saldoFinal = nueva.saldoPendiente;
       } else {
         const batch = writeBatch(db);
-        // ✅ V00441: sin la bandera manda lo capturado aquí (no una marca de total manual vieja).
-        batch.set(doc(db, coleccion, facturaViendo.id), { ...cambios, totalManualCentavos: 0 }, { merge: true });
+        // ✅ V00451: el total solo se escribe si se CAMBIÓ, y entonces queda marcado como capturado a
+        //   mano (totalManualCentavos): sin la marca, el recálculo del servidor lo regresaba a la suma
+        //   de los renglones y la factura volvía a quedar con saldo pendiente.
+        const totalCambio = Math.abs(totalNuevo - (Number(facturaViendo.total) || 0)) > 0.009;
+        const escribir: Record<string, unknown> = { ...cambios };
+        if (totalCambio) escribir.totalManualCentavos = aCentavos(totalNuevo);
+        else { delete escribir.subtotalFactura; delete escribir.subtotalMonedaFactura; delete escribir.saldoPendiente; delete escribir.statusPago; }
+        batch.set(doc(db, coleccion, facturaViendo.id), escribir, { merge: true });
         await batch.commit();
       }
       registrarLog('Pagos', 'Edición', `Editó la factura ${cambios.invoice} de ${facturaViendo.entidadNombre} desde Pagos.`).catch(() => {});
@@ -583,7 +597,7 @@ export function PagosDashboard() {
     setEditReferencia(p.referencia || '');
     setEditMetodo(p.metodoPago || 'Transferencia');
     setEditObs(p.observaciones || '');
-    setEditArchivoPdf(null);
+    setEditAdjuntos(desdeGuardados(comprobantesDe(p))); // ✅ V00451
     setEditFacturasSel([]);
     setEditPagoPorFactura({});
     setEditFacturasDisp([]);
@@ -625,15 +639,12 @@ export function PagosDashboard() {
     const pago = pagoEditando;
     setGuardandoEdicion(true);
     try {
-      // Comprobante nuevo (opcional): reemplaza al anterior en el registro.
-      let pdfUrl = pago.pdfUrl || '';
-      let pdfNombre = pago.pdfNombre || '';
-      if (editArchivoPdf) {
-        const destino = storageRef(storage, `pagos/${pago.id}/${editArchivoPdf.name}`);
-        await uploadBytes(destino, editArchivoPdf);
-        pdfUrl = await getDownloadURL(destino);
-        pdfNombre = editArchivoPdf.name;
-      }
+      // ✅ V00451: comprobantes (hasta 10): se suben los nuevos y se guarda la lista; pdfUrl /
+      //   pdfNombre = el primero (lo que leen el portal de clientes y la app móvil).
+      const antes = comprobantesDe(pago);
+      const lista = cambioAdjuntos(editAdjuntos, antes) ? await subirAdjuntos(editAdjuntos, `pagos/${pago.id}`) : antes;
+      const pdfUrl = lista[0]?.url ?? '';
+      const pdfNombre = lista[0]?.nombre ?? '';
       // ✅ NUEVO — facturas agregadas en la edición: se validan y aplican.
       const agregadas = editFacturasSel
         .map((id) => ({ fac: editFacturasDisp.find((fx) => fx.id === id)!, monto: Number(editPagoPorFactura[id]) || 0 }))
@@ -669,8 +680,10 @@ export function PagosDashboard() {
           const n = r.facturas[fx.id];
           return n ? { ...fx, montoPagado: Number(n.montoPagado) || 0, saldo: Number(n.saldoPendiente) || 0 } : fx;
         }));
+        // La callable no conoce la lista: se escribe aparte (no es un campo de dinero; las reglas lo permiten).
+        if (lista !== antes) await updateDoc(doc(db, 'pagos', pago.id), { comprobantes: lista });
         registrarLog('Pagos', 'Edición', `Editó el pago ${cambios.numeroPago} de ${pago.entidadNombre}.`).catch(() => {});
-        setPagoViendo((prev) => prev && prev.id === pago.id ? { ...prev, ...cambios, ...((r.pago ?? {}) as Partial<PagoDoc>) } : prev);
+        setPagoViendo((prev) => prev && prev.id === pago.id ? { ...prev, ...cambios, comprobantes: lista, ...((r.pago ?? {}) as Partial<PagoDoc>) } : prev);
         setPagoEditando(null);
         return;
       }
@@ -715,9 +728,12 @@ export function PagosDashboard() {
           nuevas.push({ facturaId: fac.id, invoice: fac.invoice, fecha: fac.fecha, total: abono.total, saldoAnterior: abono.saldoAnterior, aplicado: abono.aplicado, saldoNuevo: abono.saldoNuevo });
           escrituras.push({ id: fac.id, cambios: abono.cambios });
         });
+        // ✅ V00451: la lista de comprobantes también se guarda en este camino (antes solo pdfUrl:
+        //   los agregados se subían pero no quedaban en el pago y los quitados seguían apareciendo).
+        const base = lista !== antes ? { ...cambios, comprobantes: lista } : cambios;
         const datos = nuevas.length > 0
-          ? { ...cambios, facturas: [...previas, ...nuevas], monto: sumarMontos([actual.monto, ...nuevas.map((n) => n.aplicado)]) }
-          : cambios;
+          ? { ...base, facturas: [...previas, ...nuevas], monto: sumarMontos([actual.monto, ...nuevas.map((n) => n.aplicado)]) }
+          : base;
         escrituras.forEach((w) => tx.set(doc(db, coleccionFact, w.id), w.cambios, { merge: true }));
         tx.set(pagoRef, datos, { merge: true });
         return { datos, nuevas, escrituras };
@@ -894,7 +910,7 @@ export function PagosDashboard() {
 
 
   const [observaciones, setObservaciones] = useState('');
-  const [archivoPdf, setArchivoPdf] = useState<File | null>(null);
+  const [adjuntosPago, setAdjuntosPago] = useState<Adjunto[]>([]); // ✅ V00451: comprobantes (hasta 10)
   const [guardando, setGuardando] = useState(false);
 
   // ── Lista de pagos del tab activo, en vivo ──
@@ -932,7 +948,7 @@ export function PagosDashboard() {
       case 'metodo': return String(p.metodoPago || '').toLowerCase();
       case 'monto': return Number(p.monto) || 0;
       case 'facturas': return (p.facturas || []).length;
-      case 'comprobante': return p.pdfUrl ? 1 : 0;
+      case 'comprobante': return comprobantesDe(p).length;
       default: return '';
     }
   };
@@ -1310,7 +1326,7 @@ export function PagosDashboard() {
     setMontoTexto('');
     setMontoEditado(false);
     setObservaciones('');
-    setArchivoPdf(null);
+    setAdjuntosPago([]);
     try {
       const lista = await cargarFacturasPendientes(tab);
       setFacturasPendientes(lista);
@@ -1501,15 +1517,10 @@ export function PagosDashboard() {
       const pagoId = porServidor ? (pagoPendienteRef.current ??= doc(collection(db, 'pagos')).id) : doc(collection(db, 'pagos')).id;
       const pagoRef = doc(db, 'pagos', pagoId);
 
-      // Comprobante PDF (opcional): se sube ANTES de la transacción.
-      let pdfUrl = '';
-      let pdfNombre = '';
-      if (archivoPdf) {
-        const destino = storageRef(storage, `pagos/${pagoRef.id}/${archivoPdf.name}`);
-        await uploadBytes(destino, archivoPdf);
-        pdfUrl = await getDownloadURL(destino);
-        pdfNombre = archivoPdf.name;
-      }
+      // Comprobantes (opcional, hasta 10): se suben ANTES de la transacción. ✅ V00451
+      const comprobantes = await subirAdjuntos(adjuntosPago, `pagos/${pagoRef.id}`);
+      const pdfUrl = comprobantes[0]?.url ?? '';
+      const pdfNombre = comprobantes[0]?.nombre ?? '';
 
       const d = new Date();
       const numeroPago = referencia.trim() || `PAGO-${String(d.getDate()).padStart(2, '0')}${String(d.getMonth() + 1).padStart(2, '0')}${d.getFullYear()}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}${String(d.getSeconds()).padStart(2, '0')}`;
@@ -1532,6 +1543,8 @@ export function PagosDashboard() {
           monto: montoRecibido, observaciones: observacionesPago, pdfUrl, pdfNombre, aplicacion: aplicacion.map((a) => ({ ...a })),
         });
         pagoPendienteRef.current = null;
+        // ✅ V00451: la callable guarda pdfUrl/pdfNombre (el primero); la lista completa, aparte.
+        if (comprobantes.length > 1) await updateDoc(pagoRef, { comprobantes }).catch((e: unknown) => console.error('[Pagos] No se guardó la lista de comprobantes:', e));
         if (r.yaExistia) alert('Este pago ya se había registrado en el intento anterior (no se duplicó).');
         registrarLog('Pagos', 'Creación', `Registró el pago ${numeroPago} (${money(monto, monedasSel[0])}) de ${entidadSel} cubriendo ${aplicacion.filter(a => a.aplicado > 0).length} factura(s).`).catch(() => {});
         setModalAbierto(false);
@@ -1576,6 +1589,7 @@ export function PagosDashboard() {
           observaciones: observacionesPago,
           pdfUrl,
           pdfNombre,
+          comprobantes, // ✅ V00451
           facturas,
           creadoEn,
           creadoPor,
@@ -1806,11 +1820,12 @@ export function PagosDashboard() {
                 <div><span className="pg-etq">Registró</span><span>{pagoViendo.creadoPor || '—'}</span></div>
               </div>
               {pagoViendo.observaciones && <p className="pg-obs">{pagoViendo.observaciones}</p>}
-              {pagoViendo.pdfUrl && (
-                <a className="pg-pdf" href={pagoViendo.pdfUrl} target="_blank" rel="noopener noreferrer">
-                  <FileText size={14} /> {pagoViendo.pdfNombre || 'Ver comprobante'}
+              {/* ✅ V00451: todos los comprobantes */}
+              {comprobantesDe(pagoViendo).map((c) => (
+                <a key={c.url} className="pg-pdf" href={c.url} target="_blank" rel="noopener noreferrer">
+                  <FileText size={14} /> {c.nombre || 'Ver comprobante'}
                 </a>
-              )}
+              ))}
               <table className="pg-tabla pg-tabla-aplicacion">
                 <thead>
                   <tr><th>FACTURA</th><th>FECHA</th><th>TOTAL</th><th>APLICADO</th><th>SALDO RESULTANTE</th></tr>
@@ -2099,12 +2114,7 @@ export function PagosDashboard() {
               </div>
               {/* ✅ V00450: comprobante con vista previa y Reemplazar (estilo QuickBooks) */}
               <div className="pg-campo">
-                <AdjuntoComprobante
-                  etiqueta="Comprobante (PDF o imagen)"
-                  archivo={editArchivoPdf}
-                  onArchivo={setEditArchivoPdf}
-                  existente={pagoEditando.pdfUrl ? { url: pagoEditando.pdfUrl, nombre: pagoEditando.pdfNombre || 'Comprobante' } : null}
-                />
+                <AdjuntosArchivos etiqueta="Comprobantes (PDF o imagen)" adjuntos={editAdjuntos} onCambiar={setEditAdjuntos} />
               </div>
 
               {/* ✅ NUEVO — AGREGAR FACTURAS A ESTE PAGO */}
@@ -2394,7 +2404,7 @@ export function PagosDashboard() {
                       </div>
                       {/* ✅ V00450: comprobante con vista previa y Reemplazar (estilo QuickBooks) */}
                       <div className="pg-campo">
-                        <AdjuntoComprobante archivo={archivoPdf} onArchivo={setArchivoPdf} />
+                        <AdjuntosArchivos etiqueta="Comprobantes (PDF o imagen, opcional)" adjuntos={adjuntosPago} onCambiar={setAdjuntosPago} />
                       </div>
                     </div>
                     <div className="pg-qb-pie-der">

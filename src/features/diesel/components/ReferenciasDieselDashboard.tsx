@@ -17,7 +17,10 @@ import { db, auth } from '../../../config/firebase';
 import { useEstadoPersistente } from '../../../hooks/useEstadoPersistente';
 import * as XLSX from 'xlsx';
 import { generarInstruccionesDieselPDF } from '../../../utils/pdfInstruccionesDiesel';
-import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import AdjuntosArchivos from '../../../shared/components/AdjuntosArchivos'; // ✅ V00451
+import { archivosDeDocumento, cambioAdjuntos, desdeGuardados } from '../../../shared/archivos/adjuntos';
+import type { Adjunto, ArchivoGuardado } from '../../../shared/archivos/adjuntos';
+import { subirAdjuntos } from '../../../shared/archivos/subirAdjuntos';
 import './ReferenciasDieselDashboard.css';
 import CargandoDatos from '../../../shared/components/CargandoDatos';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
@@ -25,6 +28,11 @@ import { SelectBuscable } from '../../catalogos/components/SelectBuscable';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 import { useCatalogos } from '../../../shared/data/catalogos';
 import { TIPO_EMPRESA } from '../../../shared/dominio/constantes';
+
+// ✅ V00451: fotos de una referencia (`fotos`: {url, path, nombre}[]), hasta 10 por referencia.
+const MAX_FOTOS_REFERENCIA = 10;
+const fotosDeReferencia = (r: unknown): ArchivoGuardado[] =>
+  archivosDeDocumento(r as Record<string, unknown> | null | undefined, 'fotos');
 
 // Columnas configurables de la tabla "Asignar Operaciones" (tabla + Excel).
 // orden:true -> la cabecera es clicable para ordenar por ese campo.
@@ -312,179 +320,46 @@ export const ReferenciasDieselDashboard = () => {
   const [observacionesForm, setObservacionesForm] = useState('');
 
   // ──────────────────────────────────────────────────────────────────
-  // ✅ FOTOS DE LA REFERENCIA (subida a Storage: consecutivo/unidad/foto)
+  // ✅ FOTOS DE LA REFERENCIA
+  // ✅ V00451: la carga compartida de toda la app (AdjuntosArchivos): hasta 10 fotos por
+  //   referencia, vista previa, Reemplazar y quitar. Las nuevas se suben a
+  //   referencias_diesel/<id>/ (las de antes se quedan donde estaban: consecutivo/unidad/).
+  //   `fotos` sigue siendo una lista de {url, path, nombre} (+ tamaño, tipo, fecha, por).
   // ──────────────────────────────────────────────────────────────────
-  const fotoInputRef = useRef<HTMLInputElement>(null);
-  const [fotosSeleccionadas, setFotosSeleccionadas] = useState<File[]>([]);
-  const [arrastrandoFoto, setArrastrandoFoto] = useState(false);
+  const [adjuntosFotos, setAdjuntosFotos] = useState<Adjunto[]>([]);
   const [subiendoFotos, setSubiendoFotos] = useState(false);
-  const dragDepthFoto = useRef(0);
 
-  // Previews locales (se liberan al desmontar / cambiar la lista).
-  const previewsFotos = useMemo(
-    () => fotosSeleccionadas.map(f => URL.createObjectURL(f)),
-    [fotosSeleccionadas]
-  );
-  useEffect(() => {
-    return () => { previewsFotos.forEach(url => URL.revokeObjectURL(url)); };
-  }, [previewsFotos]);
-
-  // ✅ NUEVO: AGREGAR FOTOS DESDE LA FICHA (modal de detalle de la referencia).
-  //   Mismo esquema que el alta: se suben a Storage (consecutivo/unidad/) y se
-  //   anexan al arreglo `fotos` del documento en Firestore.
-  const fotoDetalleInputRef = useRef<HTMLInputElement>(null);
-  const [fotosNuevasDetalle, setFotosNuevasDetalle] = useState<File[]>([]);
-  const [arrastrandoFotoDetalle, setArrastrandoFotoDetalle] = useState(false);
-  const [subiendoFotosDetalle, setSubiendoFotosDetalle] = useState(false);
-  const dragDepthFotoDetalle = useRef(0);
-
-  const previewsFotosDetalle = useMemo(
-    () => fotosNuevasDetalle.map(f => URL.createObjectURL(f)),
-    [fotosNuevasDetalle]
-  );
-  useEffect(() => {
-    return () => { previewsFotosDetalle.forEach(url => URL.revokeObjectURL(url)); };
-  }, [previewsFotosDetalle]);
-
-  // Al abrir/cambiar de referencia se limpia cualquier selección pendiente.
-  useEffect(() => {
-    setFotosNuevasDetalle([]);
-    setArrastrandoFotoDetalle(false);
-    dragDepthFotoDetalle.current = 0;
-  }, [referenciaViendo?.id]);
-
-  const agregarFotosDetalle = (files: FileList | File[]) => {
-    const nuevas = Array.from(files).filter(f => f.type.startsWith('image/'));
-    if (nuevas.length === 0) return;
-    setFotosNuevasDetalle(prev => {
-      const clave = (f: File) => `${f.name}_${f.size}`;
-      const existentes = new Set(prev.map(clave));
-      return [...prev, ...nuevas.filter(f => !existentes.has(clave(f)))];
-    });
-  };
-  const handleFotosDetalleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) agregarFotosDetalle(e.target.files);
-    e.target.value = '';
-  };
-  const quitarFotoDetalle = (index: number) => {
-    setFotosNuevasDetalle(prev => prev.filter((_, i) => i !== index));
-  };
-  const handleDragEnterFotoDetalle = (e: React.DragEvent) => {
-    e.preventDefault(); e.stopPropagation();
-    dragDepthFotoDetalle.current += 1;
-    setArrastrandoFotoDetalle(true);
-  };
-  const handleDragLeaveFotoDetalle = (e: React.DragEvent) => {
-    e.preventDefault(); e.stopPropagation();
-    dragDepthFotoDetalle.current -= 1;
-    if (dragDepthFotoDetalle.current <= 0) { dragDepthFotoDetalle.current = 0; setArrastrandoFotoDetalle(false); }
-  };
-  const handleDragOverFotoDetalle = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); };
-  const handleDropFotoDetalle = (e: React.DragEvent) => {
-    e.preventDefault(); e.stopPropagation();
-    dragDepthFotoDetalle.current = 0;
-    setArrastrandoFotoDetalle(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) agregarFotosDetalle(e.dataTransfer.files);
+  // Fotos en la ficha: lo guardado o, si el usuario las está cambiando, su lista (solo
+  // de ESA referencia: al abrir otra se parte otra vez de lo guardado, sin efectos).
+  const [edicionFotos, setEdicionFotos] = useState<{ refId: string; adjuntos: Adjunto[] } | null>(null);
+  const [guardandoFotosDetalle, setGuardandoFotosDetalle] = useState(false);
+  const fotosGuardadasViendo = fotosDeReferencia(referenciaViendo);
+  const adjuntosDetalle = edicionFotos && referenciaViendo && edicionFotos.refId === referenciaViendo.id
+    ? edicionFotos.adjuntos
+    : desdeGuardados(fotosGuardadasViendo);
+  const cambiosFotosDetalle = cambioAdjuntos(adjuntosDetalle, fotosGuardadasViendo);
+  const cambiarFotosDetalle = (lista: Adjunto[]) => {
+    if (referenciaViendo) setEdicionFotos({ refId: referenciaViendo.id, adjuntos: lista });
   };
 
-  // Sube las fotos seleccionadas y las anexa al documento de la referencia.
-  const subirFotosDesdeDetalle = async () => {
-    if (!referenciaViendo || fotosNuevasDetalle.length === 0 || subiendoFotosDetalle) return;
-    setSubiendoFotosDetalle(true);
+  // Sube las fotos nuevas y guarda la lista completa (agregadas, reemplazadas o quitadas).
+  const guardarFotosDesdeDetalle = async () => {
+    if (!referenciaViendo || !cambiosFotosDetalle || guardandoFotosDetalle) return;
+    const refId = referenciaViendo.id;
+    setGuardandoFotosDetalle(true);
     try {
-      const consecutivo = referenciaViendo.consecutivo || referenciaViendo.id;
-      const unidad = referenciaViendo.unidadNombre || referenciaViendo.unidadId || referenciaViendo.unidad || 'unidad';
-      const subidas = await subirFotosReferencia(consecutivo, unidad, fotosNuevasDetalle);
-      const fotosFinales = [...(Array.isArray(referenciaViendo.fotos) ? referenciaViendo.fotos : []), ...subidas];
-      await updateDoc(doc(db, 'referencias_diesel', referenciaViendo.id), { fotos: fotosFinales });
+      const fotosFinales = await subirAdjuntos(adjuntosDetalle, `referencias_diesel/${refId}`);
+      await updateDoc(doc(db, 'referencias_diesel', refId), { fotos: fotosFinales });
       // Refleja el cambio en la ficha y en la tabla sin recargar.
-      setReferenciaViendo((prev: any) => (prev && prev.id === referenciaViendo.id) ? { ...prev, fotos: fotosFinales } : prev);
-      setReferenciasGlobales((prev: any[]) => prev.map((r: any) => r.id === referenciaViendo.id ? { ...r, fotos: fotosFinales } : r));
-      setFotosNuevasDetalle([]);
+      setReferenciaViendo((prev: Record<string, unknown> | null) => (prev && prev.id === refId) ? { ...prev, fotos: fotosFinales } : prev);
+      setReferenciasGlobales((prev) => prev.map((r) => r.id === refId ? { ...r, fotos: fotosFinales } : r));
+      setEdicionFotos(null);
     } catch (error) {
-      console.error('Error subiendo fotos desde la ficha:', error);
-      alert('No se pudieron subir las fotos. Revisa tu conexión o permisos de Storage.');
+      console.error('Error guardando las fotos desde la ficha:', error);
+      alert('No se pudieron guardar las fotos. Revisa tu conexión o permisos de Storage.');
     } finally {
-      setSubiendoFotosDetalle(false);
+      setGuardandoFotosDetalle(false);
     }
-  };
-
-  // Limpia un segmento de ruta de Storage. Mantiene guiones (para el
-  // consecutivo tipo DIESEL-260626-001) y reemplaza lo demás por "_".
-  const sanitizarSegmentoRuta = (valor: string): string =>
-    String(valor || '')
-      .trim()
-      .replace(/[^a-zA-Z0-9\-_]+/g, '_')
-      .replace(/_+/g, '_')
-      .replace(/^_+|_+$/g, '') || 'sin_dato';
-
-  const sanitizarNombreArchivo = (nombre: string): string =>
-    String(nombre || 'foto')
-      .trim()
-      .replace(/[^a-zA-Z0-9.\-_]+/g, '_')
-      .replace(/_+/g, '_');
-
-  // Agrega solo imágenes a la lista (evita duplicados por nombre+tamaño).
-  const agregarFotos = (files: FileList | File[]) => {
-    const nuevas = Array.from(files).filter(f => f.type.startsWith('image/'));
-    if (nuevas.length === 0) return;
-    setFotosSeleccionadas(prev => {
-      const clave = (f: File) => `${f.name}_${f.size}`;
-      const existentes = new Set(prev.map(clave));
-      return [...prev, ...nuevas.filter(f => !existentes.has(clave(f)))];
-    });
-  };
-
-  const handleFotosInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) agregarFotos(e.target.files);
-    e.target.value = ''; // permite volver a elegir el mismo archivo
-  };
-
-  const quitarFoto = (index: number) => {
-    setFotosSeleccionadas(prev => prev.filter((_, i) => i !== index));
-  };
-
-  // Drag & drop (patrón dragDepth para que el borde no parpadee).
-  const handleDragEnterFoto = (e: React.DragEvent) => {
-    e.preventDefault(); e.stopPropagation();
-    dragDepthFoto.current += 1;
-    setArrastrandoFoto(true);
-  };
-  const handleDragLeaveFoto = (e: React.DragEvent) => {
-    e.preventDefault(); e.stopPropagation();
-    dragDepthFoto.current -= 1;
-    if (dragDepthFoto.current <= 0) { dragDepthFoto.current = 0; setArrastrandoFoto(false); }
-  };
-  const handleDragOverFoto = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); };
-  const handleDropFoto = (e: React.DragEvent) => {
-    e.preventDefault(); e.stopPropagation();
-    dragDepthFoto.current = 0;
-    setArrastrandoFoto(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) agregarFotos(e.dataTransfer.files);
-  };
-
-  // Sube las fotos a Storage en la ruta: consecutivo/unidad/archivo
-  // y devuelve los metadatos {url, path, nombre} para guardar en Firestore.
-  const subirFotosReferencia = async (
-    consecutivo: string,
-    unidad: string,
-    archivos: File[]
-  ): Promise<{ url: string; path: string; nombre: string }[]> => {
-    const storage = getStorage();
-    const carpetaCons = sanitizarSegmentoRuta(consecutivo);
-    const carpetaUni = sanitizarSegmentoRuta(unidad);
-    const resultados: { url: string; path: string; nombre: string }[] = [];
-
-    for (let i = 0; i < archivos.length; i++) {
-      const file = archivos[i];
-      const nombreLimpio = sanitizarNombreArchivo(file.name);
-      const path = `${carpetaCons}/${carpetaUni}/${Date.now()}_${i}_${nombreLimpio}`;
-      const refFoto = storageRef(storage, path);
-      await uploadBytes(refFoto, file);
-      const url = await getDownloadURL(refFoto);
-      resultados.push({ url, path, nombre: file.name });
-    }
-    return resultados;
   };
 
   const formatoMoneda = (monto: any) => {
@@ -1192,12 +1067,13 @@ export const ReferenciasDieselDashboard = () => {
 
       const foundUni = unidadesList.find(u => u.unidad === filtroUnidad || u.nombre === filtroUnidad);
 
-      // ✅ Sube las fotos (si hay) a Storage: consecutivo/unidad/foto
-      let fotosSubidas: { url: string; path: string; nombre: string }[] = [];
-      if (fotosSeleccionadas.length > 0) {
+      // ✅ Sube las fotos (si hay) a Storage.
+      // ✅ V00451: a referencias_diesel/<id>/ (el id ya existe antes de guardar).
+      let fotosSubidas: ArchivoGuardado[] = [];
+      if (adjuntosFotos.length > 0) {
         try {
           setSubiendoFotos(true);
-          fotosSubidas = await subirFotosReferencia(consecutivoFinal, filtroUnidad, fotosSeleccionadas);
+          fotosSubidas = await subirAdjuntos(adjuntosFotos, `referencias_diesel/${nuevoRefId}`);
         } catch (errFotos) {
           console.error('Error subiendo fotos:', errFotos);
           const seguir = window.confirm('No se pudieron subir una o más fotos. ¿Deseas guardar la referencia SIN fotos?');
@@ -1258,8 +1134,8 @@ export const ReferenciasDieselDashboard = () => {
       setGalonesCargados('');
       setObservacionesForm('');
       setProveedorSeleccionado('');
-      setFotosSeleccionadas([]);
-      
+      setAdjuntosFotos([]);
+
       setActiveTab('referencias');
     } catch (error) {
       alert("Error al guardar.");
@@ -1720,7 +1596,7 @@ export const ReferenciasDieselDashboard = () => {
             <div className="rdd-x21">
               <button 
                 disabled={seleccionadas.length === 0 || filtroEstadoOps === 'cargadas'} 
-                onClick={() => { setConsecutivoForm(generarConsecutivo(fechaForm)); setFotosSeleccionadas([]); setKilometrajeReal(''); setModalAbierto(true); }}
+                onClick={() => { setConsecutivoForm(generarConsecutivo(fechaForm)); setAdjuntosFotos([]); setKilometrajeReal(''); setModalAbierto(true); }}
                 style={{ padding: '10px 20px', backgroundColor: (seleccionadas.length > 0 && filtroEstadoOps !== 'cargadas') ? '#D84315' : '#30363d', color: '#fff', border: 'none', borderRadius: '6px', cursor: (seleccionadas.length > 0 && filtroEstadoOps !== 'cargadas') ? 'pointer' : 'not-allowed', fontWeight: 'bold', whiteSpace: 'nowrap' }}
               >
                 Generar Referencia ({seleccionadas.length})
@@ -2356,62 +2232,13 @@ export const ReferenciasDieselDashboard = () => {
               </div>
 
               <div className="rdd-modal-col">
-              {/* FOTOS DE LA REFERENCIA */}
+              {/* FOTOS DE LA REFERENCIA — ✅ V00451: hasta 10, con vista previa y Reemplazar.
+                  La etiqueta se queda aquí para que Configurar formulario siga encontrando el campo. */}
               <div className="rdd-x113">
                 <label className="rdd-x115">
-                  FOTOS <span className="rdd-x116">(se guardan en {sanitizarSegmentoRuta(consecutivoForm)}/{sanitizarSegmentoRuta(filtroUnidad)}/)</span>
+                  FOTOS <span className="rdd-x116">(hasta {MAX_FOTOS_REFERENCIA})</span>
                 </label>
-
-                <input className="rdd-x117"
-                  ref={fotoInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={handleFotosInput}
-                />
-
-                <div
-                  onClick={() => fotoInputRef.current?.click()}
-                  onDragEnter={handleDragEnterFoto}
-                  onDragLeave={handleDragLeaveFoto}
-                  onDragOver={handleDragOverFoto}
-                  onDrop={handleDropFoto}
-                  style={{
-                    border: `2px dashed ${arrastrandoFoto ? '#D84315' : '#30363d'}`,
-                    backgroundColor: arrastrandoFoto ? 'rgba(216,67,21,0.08)' : '#161b22',
-                    borderRadius: '8px',
-                    padding: '24px',
-                    textAlign: 'center',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                  }}
-                >
-                  <svg className="rdd-x118" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={arrastrandoFoto ? '#D84315' : '#8b949e'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
-                  <div style={{ color: arrastrandoFoto ? '#D84315' : '#c9d1d9', fontSize: '0.9rem', fontWeight: 'bold' }}>
-                    {arrastrandoFoto ? 'Suelta las fotos aquí' : 'Haz clic o arrastra fotos aquí'}
-                  </div>
-                  <div className="rdd-x119">Solo imágenes (JPG, PNG, etc.)</div>
-                </div>
-
-                {fotosSeleccionadas.length > 0 && (
-                  <div className="rdd-x120">
-                    {previewsFotos.map((url, i) => (
-                      <div className="rdd-x121" key={i}>
-                        <img className="rdd-x122" src={url} alt={fotosSeleccionadas[i]?.name || `foto-${i}`} />
-                        <button className="rdd-x123"
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); quitarFoto(i); }}
-                          title="Quitar foto"
-                        >✕</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {fotosSeleccionadas.length > 0 && (
-                  <span className="rdd-x124">
-                    {fotosSeleccionadas.length} {fotosSeleccionadas.length === 1 ? 'foto seleccionada' : 'fotos seleccionadas'}
-                  </span>
-                )}
+                <AdjuntosArchivos etiqueta="" tipos="imagen" max={MAX_FOTOS_REFERENCIA} adjuntos={adjuntosFotos} onCambiar={setAdjuntosFotos} deshabilitado={guardando} />
               </div>
 
               </div>
@@ -2550,87 +2377,50 @@ export const ReferenciasDieselDashboard = () => {
                 </div>
 
                 {/* FOTOS DE LA REFERENCIA (ver y AGREGAR desde la ficha) */}
+                {/* ✅ V00451: miniaturas de lo guardado + la carga compartida (hasta 10): ver,
+                    reemplazar, quitar y agregar; "Guardar fotos" escribe la lista. */}
                 <div className="rdd-x143">
                   <span className="rdd-x158">
-                    Fotos ({Array.isArray(referenciaViendo.fotos) ? referenciaViendo.fotos.length : 0})
+                    Fotos ({fotosGuardadasViendo.length})
                   </span>
 
-                  {Array.isArray(referenciaViendo.fotos) && referenciaViendo.fotos.length > 0 && (
+                  {fotosGuardadasViendo.length > 0 && (
                     <div className="rdd-x159">
-                      {referenciaViendo.fotos.map((foto: any, i: number) => (
+                      {fotosGuardadasViendo.map((foto, i) => (
                         <a className="rdd-x160"
-                          key={i}
+                          key={foto.url}
                           href={foto.url}
                           target="_blank"
                           rel="noopener noreferrer"
                           title={foto.nombre || `Foto ${i + 1}`}
                         >
-                          <img className="rdd-x161" src={foto.url} alt={foto.nombre || `foto-${i}`} />
+                          <img className="rdd-x161" src={foto.url} alt={foto.nombre || `foto-${i}`} loading="lazy" />
                         </a>
                       ))}
                     </div>
                   )}
 
-                  {/* Zona para agregar fotos nuevas (clic o arrastrar) */}
-                  <input className="rdd-x117"
-                    ref={fotoDetalleInputRef}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handleFotosDetalleInput}
+                  <AdjuntosArchivos
+                    key={referenciaViendo.id}
+                    etiqueta="Agregar, reemplazar o quitar fotos"
+                    tipos="imagen"
+                    max={MAX_FOTOS_REFERENCIA}
+                    previaCerrada
+                    adjuntos={adjuntosDetalle}
+                    onCambiar={cambiarFotosDetalle}
+                    deshabilitado={guardandoFotosDetalle}
                   />
-                  <div
-                    onClick={() => fotoDetalleInputRef.current?.click()}
-                    onDragEnter={handleDragEnterFotoDetalle}
-                    onDragLeave={handleDragLeaveFotoDetalle}
-                    onDragOver={handleDragOverFotoDetalle}
-                    onDrop={handleDropFotoDetalle}
-                    style={{
-                      border: `2px dashed ${arrastrandoFotoDetalle ? '#D84315' : '#30363d'}`,
-                      backgroundColor: arrastrandoFotoDetalle ? 'rgba(216,67,21,0.08)' : '#161b22',
-                      borderRadius: '8px',
-                      padding: '16px',
-                      textAlign: 'center',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
-                    }}
-                  >
-                    <svg className="rdd-x162" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={arrastrandoFotoDetalle ? '#D84315' : '#8b949e'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
-                    <div style={{ color: arrastrandoFotoDetalle ? '#D84315' : '#c9d1d9', fontSize: '0.85rem', fontWeight: 'bold' }}>
-                      {arrastrandoFotoDetalle ? 'Suelta las fotos aquí' : 'Haz clic o arrastra fotos para agregarlas a esta referencia'}
-                    </div>
-                    <div className="rdd-x163">Solo imágenes (JPG, PNG, etc.)</div>
-                  </div>
 
-                  {fotosNuevasDetalle.length > 0 && (
-                    <>
-                      <div className="rdd-x120">
-                        {previewsFotosDetalle.map((url, i) => (
-                          <div className="rdd-x164" key={i}>
-                            <img src={url} alt={fotosNuevasDetalle[i]?.name || `foto-nueva-${i}`} style={{ width: '100%', height: '80px', objectFit: 'cover', display: 'block', opacity: subiendoFotosDetalle ? 0.5 : 1 }} />
-                            <button className="rdd-x123"
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); quitarFotoDetalle(i); }}
-                              disabled={subiendoFotosDetalle}
-                              title="Quitar foto"
-                            >✕</button>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="rdd-x165">
-                        <span className="rdd-x166">
-                          {fotosNuevasDetalle.length} {fotosNuevasDetalle.length === 1 ? 'foto nueva por subir' : 'fotos nuevas por subir'}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={subirFotosDesdeDetalle}
-                          disabled={subiendoFotosDetalle}
-                          style={{ padding: '8px 20px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: subiendoFotosDetalle ? 'wait' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem', opacity: subiendoFotosDetalle ? 0.7 : 1 }}
-                        >
-                          {subiendoFotosDetalle ? 'Subiendo fotos...' : `Subir ${fotosNuevasDetalle.length} ${fotosNuevasDetalle.length === 1 ? 'foto' : 'fotos'}`}
+                  {cambiosFotosDetalle && (
+                    <div className="rdd-x165">
+                      <span className="rdd-x166">Hay cambios en las fotos sin guardar.</span>
+                      <span className="rdd-fotos-acciones">
+                        <button className="rdd-x126" type="button" onClick={() => setEdicionFotos(null)} disabled={guardandoFotosDetalle}>Descartar</button>
+                        <button className="rdd-x127" type="button" onClick={guardarFotosDesdeDetalle} disabled={guardandoFotosDetalle}>
+                          {guardandoFotosDetalle ? 'Guardando fotos…' : 'Guardar fotos'}
                         </button>
-                      </div>
-                    </>
+                      </span>
+                    </div>
                   )}
                 </div>
 

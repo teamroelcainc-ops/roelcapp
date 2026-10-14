@@ -6,6 +6,8 @@ import {
   totalNativoDeOperaciones,
   totalNativoFactura,
   totalesTrasCambioDeOps,
+  totalDeFilaFactura,
+  totalGuardadoDeDocumento,
 } from './totalesFactura';
 
 describe('totalNativoFactura', () => {
@@ -81,5 +83,30 @@ describe('tienePagosAplicados', () => {
     expect(tienePagosAplicados({ montoPagado: 12 })).toBe(true);
     expect(tienePagosAplicados({ statusPago: 'parcial' })).toBe(true);
     expect(tienePagosAplicados(null)).toBe(false);
+  });
+});
+
+// ✅ V00451: total de una fila del Historial con varios documentos del mismo folio.
+describe('totalDeFilaFactura', () => {
+  const regla = (d: unknown) => totalNativoFactura(d);
+  const renglones = [{ id: 'op1', dol: 500, subtotalBase: 500 }];
+  it('un solo documento: la regla de siempre', () => {
+    expect(totalDeFilaFactura({ subtotalMonedaFactura: 1500, __groupDocs: [{}] }, regla)).toBe(1500);
+  });
+  it('el documento puesto en 0 al editar el grupo NO suma sus renglones', () => {
+    const a = { subtotalMonedaFactura: 1500, totalManualCentavos: 150000, moneda: ID_USD };
+    const b = { subtotalMonedaFactura: 0, totalManualCentavos: 0, moneda: ID_USD, operacionesGuardadas: renglones };
+    expect(totalDeFilaFactura({ __groupDocs: [a, b] }, regla)).toBe(1500);
+    // guardar sin cambiar nada no lo infla
+    expect(totalDeFilaFactura({ __groupDocs: [{ ...a }, { ...b }] }, regla)).toBe(1500);
+  });
+  it('dos documentos con su propio total se suman', () => {
+    expect(totalDeFilaFactura({ __groupDocs: [{ subtotalMonedaFactura: 1500 }, { subtotalMonedaFactura: 500 }] }, regla)).toBe(2000);
+  });
+  it('sin subtotalMonedaFactura usa los renglones', () => {
+    expect(totalGuardadoDeDocumento({ moneda: ID_USD, operacionesGuardadas: renglones }, regla)).toBe(500);
+  });
+  it('el capturado a mano manda', () => {
+    expect(totalGuardadoDeDocumento({ subtotalMonedaFactura: 10, totalManualCentavos: 12345 }, regla)).toBe(123.45);
   });
 });

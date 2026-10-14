@@ -1,6 +1,6 @@
 import { useState, useEffect, useEffectEvent, useMemo, useCallback, useRef, cloneElement, Fragment, memo } from 'react';
 import { createPortal } from 'react-dom'; // ✅ V00264: el formulario vive en document.body
-import { doc, getDoc, updateDoc, collection, getDocs, addDoc, query, where, limit, orderBy } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, getDocs, addDoc, query, where, limit, orderBy, arrayUnion } from 'firebase/firestore';
 import type { DocumentData } from 'firebase/firestore';
 import { prefijoTipoOperacion } from '../../../utils/generarReferencia';
 import { db, auth } from '../../../config/firebase';
@@ -48,11 +48,13 @@ import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
 import { aduanaDeConvenio, camposPisoColombia, casetaRespaldoColombia, esAduanaColombia, esGastoPisoColombia, nombresAduana, normPuente } from '../../../utils/puenteColombia';
 import { abrirEdicion, useEdicionAbierta } from '../../../shared/utils/edicionesAbiertas'; // ✅ V00438
 import { CAMPOS_CANONICOS, normalizarNumerosOperacion } from '../../../shared/dominio/operacionCanonica';
+import { quitarCamposAjenos } from '../services/camposAjenos'; // ✅ V00451
 // ✅ V00444 (Fase 8.3): piezas sin estado del formulario, en archivos propios.
 import { describirCambiosLog, describirCamposCapturadosLog, listaCambiosAuditoria } from '../services/auditoriaLog';
 import { colorTipoOperacion, formatearDireccionPorPais, normalizarTxtDir, paisDeDireccion } from './formulario/direcciones';
 import { buscarTCDeFecha, normalizarFechaISO } from './formulario/tipoCambioFila';
-import { referenciaDeOperacion, subirDocumentoOperacion, TIPOS_DOCUMENTO_OPERACION } from './formulario/documentosOperacion';
+import { adjuntosDeCampo, archivosDeCampo, referenciaDeOperacion, subirDocumentosOperacion, TIPOS_DOCUMENTO_OPERACION } from './formulario/documentosOperacion';
+import type { Adjunto } from '../../../shared/archivos/adjuntos'; // ✅ V00451: varios archivos por documento
 import { BotonAgregar, CampoArchivo } from './formulario/CampoArchivo';
 import { claveRefCliente, describirOp, etiquetaEstado } from '../services/refClienteDuplicado'; // ✅ V00450
 import type { OpRefResumen } from '../services/refClienteDuplicado';
@@ -455,9 +457,9 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     origen: '', destino: '', kilometrajeEstimado: '', observacionesEjecutivo: '',
     clienteMercancia: '', descripcionMercancia: '', cantidad: '', embalaje: '',
     pesoKg: '', numDoda: '', fechaEmisionDoda: '',
-    pdfCartaPorte: null as File | null, pdfDoda: null as File | null,
+    pdfCartaPorte: [] as Adjunto[], pdfDoda: [] as Adjunto[], // ✅ V00451: varios archivos (se suben al guardar)
     numeroEntrys: '', cantEntrys: 0, numManifiesto: '', provServicios: '', montoManifiesto: 0,
-    pdfManifiesto: null as File | null, pdfsEntrys: [] as (File | null)[],
+    pdfManifiesto: [] as Adjunto[], pdfsEntrys: [] as (Adjunto[] | null)[], // ✅ V00451: por Entry, su lista (null = sin archivos)
     proveedorUnidad: '', facturadoEnUnidad: '', convenioProveedor: '', monedaConvenioProv: '',
     totalAPagarProv: 0, cargosAdicionalesProv: 0, subtotalProv: 0, 
     dolaresProv: 0, pesosProv: 0, conversionProv: 0,
@@ -1835,15 +1837,17 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, field: string, index?: number) => {
-    const file = e.target.files?.[0] || null;
-    if (index !== undefined) {
-      const nuevosPdfs = [...(formData.pdfsEntrys || [])]; 
-      nuevosPdfs[index] = file;
-      setFormData(prev => ({ ...prev, pdfsEntrys: nuevosPdfs }));
-    } else {
-      setFormData(prev => ({ ...prev, [field]: file }));
-    }
+  // ✅ V00451: cada documento guarda su LISTA de archivos nuevos (AdjuntosArchivos). Un Entry sin
+  //   archivos queda en null, así la revisión de obligatorios lo sigue viendo vacío.
+  const handleAdjuntosChange = (field: 'pdfCartaPorte' | 'pdfDoda' | 'pdfManifiesto', lista: Adjunto[]) => {
+    setFormData(prev => ({ ...prev, [field]: lista }));
+  };
+  const handleAdjuntosEntry = (index: number, lista: Adjunto[]) => {
+    setFormData(prev => {
+      const arr = [...(prev.pdfsEntrys || [])];
+      arr[index] = lista.length > 0 ? lista : null;
+      return { ...prev, pdfsEntrys: arr };
+    });
   };
 
   // ✅ Helper: los campos de tipos pueden venir como arreglo de IDs o como texto.
@@ -2307,7 +2311,6 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
         //    solo es texto de ayuda y estaba filtrándose a la tabla del dashboard)
         statusNombre: statusObj?.nombre || statusObj?.descripcion || statusCalculado || 'Pendiente',
         ...ajusteSueldoPorStatus({ ...formData, ...datosLimpios }, statusObj?.nombre || statusObj?.descripcion || statusCalculado || ''), // ✅ V00387: Falso = sueldo a la mitad
-        tienePdfDoda: !!pdfDoda, cantPdfsEntrys: (pdfsEntrys || []).filter(Boolean).length,
         clienteNombre: searchClientePaga || '', origenNombre: searchOrigen || '',
         destinoNombre: searchDestino || '', remolqueNombre: searchRemolque || '',clienteMercanciaNombre: searchClienteMercancia || '', provServiciosNombre: searchProvServicios || '',
         proveedorUnidadNombre: searchProvTransporte || '', unidadNombre: searchUnidad || '',
@@ -2345,6 +2348,9 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
       //   escribe SOLO el servidor. El formulario trae una copia del documento que pudo
       //   quedar vieja mientras estaba abierto; guardarla regresaría valores anteriores.
       for (const campo of CAMPOS_CANONICOS) if (campo !== 'esPrueba') delete operacionData[campo];
+      // ✅ V00451: tampoco los que escriben otros módulos (facturación, nómina, diésel, puentes…):
+      //   guardar la copia vieja regresaba a "Pendiente" una operación ya facturada.
+      quitarCamposAjenos(operacionData);
 
       if (initialData && puedeEditarRef && referencia.trim() && referencia.trim() !== String((initialData as any).ref || '')) {
         operacionData.ref = referencia.trim();
@@ -2447,13 +2453,25 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
         // La ref NUNCA viaja en el update: la posee el backend.
         delete (operacionData as any).ref;
 
-        await updateDoc(doc(db, 'operaciones', String(initialData.id)), operacionData);
-        idGuardado = String(initialData.id);
+        // ✅ V00451: al ID REAL del documento (registros viejos traen un campo `id` distinto), y la
+        //   bitácora se AGREGA (arrayUnion): la copia del formulario no pisa entradas de otros.
+        const idDocReal = String((initialData as { _docId?: unknown })._docId || initialData.id);
+        const historialNuevo = Array.isArray(operacionData.historialEdiciones) ? operacionData.historialEdiciones : null;
+        const entradaHistorial = historialNuevo && historialNuevo.length ? historialNuevo[historialNuevo.length - 1] : null;
+        const payloadFirestore: Record<string, unknown> = { ...operacionData };
+        const previasHistorial = Array.isArray(initialData.historialEdiciones) ? initialData.historialEdiciones.length : 0;
+        if (entradaHistorial && historialNuevo && historialNuevo.length > previasHistorial) {
+          payloadFirestore.historialEdiciones = arrayUnion(entradaHistorial);
+        } else {
+          delete payloadFirestore.historialEdiciones;
+        }
+        await updateDoc(doc(db, 'operaciones', idDocReal), payloadFirestore);
+        idGuardado = String(initialData.id); // documentos y avisos: el id con el que la conoce la lista (como siempre)
         if (renumerarPendiente) {
           try {
             const { getFunctions, httpsCallable } = await import('firebase/functions');
             const fn = httpsCallable(getFunctions(undefined, 'us-central1'), 'renumerarOperacion');
-            const rRes: any = await fn({ operacionId: idGuardado, ...renumerarPendiente });
+            const rRes: any = await fn({ operacionId: idDocReal, ...renumerarPendiente }); // ✅ V00451: el documento REAL
             const nuevaRef = String(rRes?.data?.ref || '');
             if (nuevaRef) {
               (operacionData as any).ref = nuevaRef;
@@ -2463,7 +2481,9 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
             alert(`La operación se guardó, pero NO se pudo renumerar a la nueva línea (${eRen?.message || eRen}). Conserva su referencia anterior; reintenta guardando de nuevo.`);
           }
         }
-        notificarOperacionGuardada(idGuardado, { ...(initialData as any), ...operacionData }); // ✅ V00126: avisa a Facturación/Pagos
+        // ✅ V00126: avisa a Facturación/Pagos. ✅ V00451: sin los campos de otros módulos de la copia
+        //   del formulario (la de Facturación es la vigente; la del formulario pudo quedar vieja).
+        notificarOperacionGuardada(idGuardado, quitarCamposAjenos({ ...(initialData as any), ...operacionData }));
         refGuardado = referenciaDeOperacion(idGuardado, operacionData.ref || (initialData as any).ref);
         if (onSave) onSave({ id: initialData.id, ...operacionData });
       } else {
@@ -2486,19 +2506,30 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
         }
       } catch { /* el log nunca debe romper el guardado */ }
 
-      const archivosPorCampo: { file: File; campo: string; sufijo?: string }[] = [];
-      if (pdfCartaPorte) archivosPorCampo.push({ file: pdfCartaPorte, campo: 'Carta Porte' });
-      if (pdfDoda) archivosPorCampo.push({ file: pdfDoda, campo: 'DODA' });
-      if (pdfManifiesto) archivosPorCampo.push({ file: pdfManifiesto, campo: 'Manifiesto' });
-      (pdfsEntrys || []).forEach((f: File | null, i: number) => { if (f) archivosPorCampo.push({ file: f, campo: "Entry's", sufijo: String(i + 1) }); });
+      // ✅ V00451: varios archivos por documento (sin límite). El primero conserva el id y el nombre
+      //   de siempre; los demás, "Carta Porte (2)"… Se avisa cuáles fallaron.
+      const archivosPorCampo: { files: File[]; campo: string; sufijo?: string }[] = [];
+      const agregarCampo = (valor: unknown, campo: string, sufijo?: string) => {
+        const files = archivosDeCampo(valor);
+        if (files.length > 0) archivosPorCampo.push({ files, campo, sufijo });
+      };
+      agregarCampo(pdfCartaPorte, 'Carta Porte');
+      agregarCampo(pdfDoda, 'DODA');
+      agregarCampo(pdfManifiesto, 'Manifiesto');
+      (pdfsEntrys || []).forEach((lista: unknown, i: number) => agregarCampo(lista, "Entry's", String(i + 1)));
 
+      const totalDocs = archivosPorCampo.reduce((n, a) => n + a.files.length, 0);
       let subidos = 0;
+      const fallidos: string[] = [];
       for (const a of archivosPorCampo) {
-        try { await subirDocumentoOperacion(a.file, idGuardado, refGuardado, a.campo, a.sufijo); subidos++; }
-        catch (err) { console.error('Error subiendo documento de operación:', a.campo, err); }
+        const r = await subirDocumentosOperacion(a.files, idGuardado, refGuardado, a.campo, a.sufijo);
+        subidos += r.subidos;
+        fallidos.push(...r.errores);
       }
 
-      const resumenDocs = archivosPorCampo.length > 0 ? `\n\nDocumentos subidos a "${refGuardado}": ${subidos}/${archivosPorCampo.length}` : '';
+      const resumenDocs = totalDocs > 0
+        ? `\n\nDocumentos subidos a "${refGuardado}": ${subidos}/${totalDocs}${fallidos.length ? `\nNo se pudieron subir:\n• ${fallidos.join('\n• ')}\nSúbelos desde "Documentos guardados de esta operación".` : ''}`
+        : '';
       alert(`Operación ${initialData ? 'actualizada' : 'guardada'} correctamente.${resumenDocs}`);
       onClose();
     } catch (error: any) {
@@ -3015,8 +3046,8 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
                     <div className="form-grid">
                       <div className="form-group"><label className="form-label"># DODA <span className="campo-badge">numDoda</span></label><input type="text" name="numDoda" className={`form-control${claseSiFalta('numDoda')}`} value={formData.numDoda || ''} onChange={handleChange} /></div>
                       <div className="form-group"><label className="form-label">Fecha Emisión DODA <span className="campo-badge">fechaEmisionDoda</span></label><input type="date" name="fechaEmisionDoda" className={`form-control${claseSiFalta('fechaEmisionDoda')}`} value={formData.fechaEmisionDoda || ''} onChange={handleChange} /></div>
-                      <CampoArchivo label="PDF Carta Porte" file={formData.pdfCartaPorte} resaltar={camposObligatoriosFaltantesSet.has('pdfCartaPorte')} onChange={(e) => handleFileChange(e, 'pdfCartaPorte')} />
-                      <CampoArchivo label="PDF DODA" file={formData.pdfDoda} resaltar={camposObligatoriosFaltantesSet.has('pdfDoda')} onChange={(e) => handleFileChange(e, 'pdfDoda')} />
+                      <CampoArchivo label="PDF Carta Porte" adjuntos={adjuntosDeCampo(formData.pdfCartaPorte)} resaltar={camposObligatoriosFaltantesSet.has('pdfCartaPorte')} onCambiar={(l) => handleAdjuntosChange('pdfCartaPorte', l)} />
+                      <CampoArchivo label="PDF DODA" adjuntos={adjuntosDeCampo(formData.pdfDoda)} resaltar={camposObligatoriosFaltantesSet.has('pdfDoda')} onCambiar={(l) => handleAdjuntosChange('pdfDoda', l)} />
                     </div>
                   </div>
                   {/* ✅ V00341: los documentos YA GUARDADOS de esta operación —
@@ -3045,7 +3076,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
                     {Number(formData.cantEntrys) > 0 && (
                       <div className="form-grid fo-x25">
                         {Array.from({ length: Number(formData.cantEntrys) }).map((_, i) => (
-                          <CampoArchivo key={i} label={`PDF Entry #${i + 1}`} file={formData.pdfsEntrys?.[i]} onChange={(e) => handleFileChange(e, 'pdfsEntrys', i)} />
+                          <CampoArchivo key={i} label={`PDF Entry #${i + 1}`} adjuntos={adjuntosDeCampo(formData.pdfsEntrys?.[i])} onCambiar={(l) => handleAdjuntosEntry(i, l)} />
                         ))}
                       </div>
                     )}
@@ -3078,7 +3109,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
                         <ConSimboloMoneda><input type="number" step="0.01" name="montoManifiesto" className={`form-control${claseSiFalta('montoManifiesto')}`} value={formData.montoManifiesto || 0} onChange={handleChange} /></ConSimboloMoneda>
                         <small className="fo-x21">Costo por defecto: ${COSTO_MANIFIESTO_DEFAULT.toFixed(2)}</small>
                       </div>
-                      <CampoArchivo label="PDF Manifiesto" file={formData.pdfManifiesto} resaltar={camposObligatoriosFaltantesSet.has('pdfManifiesto')} onChange={(e) => handleFileChange(e, 'pdfManifiesto')} />
+                      <CampoArchivo label="PDF Manifiesto" adjuntos={adjuntosDeCampo(formData.pdfManifiesto)} resaltar={camposObligatoriosFaltantesSet.has('pdfManifiesto')} onCambiar={(l) => handleAdjuntosChange('pdfManifiesto', l)} />
                     </div>
                   </div>
                 </>

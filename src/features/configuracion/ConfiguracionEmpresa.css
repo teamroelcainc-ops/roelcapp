@@ -14,9 +14,6 @@
 .ce-x10 { flex: 1; min-width: 220px; }
 .ce-x11 { color: #f0f6fc; font-weight: 600; margin-bottom: 4px; }
 .ce-x12 { color: #8b949e; font-size: 0.82rem; margin-bottom: 10px; }
-.ce-x13 { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 6px; background-color: #D84315; color: #fff; cursor: pointer; font-weight: 600; font-size: 0.85rem; }
-.ce-x14 { display: none; }
-.ce-x15 { color: #3fb950; font-size: 0.8rem; margin-left: 10px; }
 .ce-x16 { padding: 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .ce-x17 { grid-column: 1 / -1; }
 .ce-x18 { color: #ef4444; }

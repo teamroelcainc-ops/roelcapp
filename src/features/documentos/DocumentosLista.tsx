@@ -6,17 +6,26 @@
 //
 // Es REUTILIZABLE: sirve igual para empresas, empleados, etc.
 //
+// ✅ V00451: por renglón "Ver" (vista previa aquí mismo, debajo del renglón) y "Reemplazar"
+//   (elige otro archivo: se sube a la misma carpeta con nombre nuevo, se actualiza ESE documento
+//   y se borra el archivo anterior). Subir otra vez el mismo tipo AGREGA otro archivo.
+//
 // Uso:
 //   <DocumentosLista coleccionOrigen="empresas"  registroId={empresa.id} />
 //   <DocumentosLista coleccionOrigen="empleados" registroId={empleado.id} />
 
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import type { ChangeEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { collection, query, where, onSnapshot, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
-import { ref as storageRef, deleteObject } from 'firebase/storage';
-import { db, storage } from '../../config/firebase';
+import { collection, query, where, onSnapshot, doc, updateDoc, writeBatch } from 'firebase/firestore';
+import { db } from '../../config/firebase';
 import './DocumentosLista.css';
 import { useCatalogo } from '../../shared/data/catalogos';
+import VistaPreviaArchivo from '../../shared/components/VistaPreviaArchivo';
+import { ACCEPT_TIPOS, validarArchivo } from '../../shared/archivos/adjuntos';
+import { comoDocumentoExpediente, mensajeError, pathCompartido } from './expediente';
+import type { DocumentoExpediente } from './expediente';
+import { eliminarDocumentoExpediente, reemplazarArchivoDocumento } from './expedienteServicio';
 
 interface DocumentosListaProps {
   coleccionOrigen: string;    // 'empresas' | 'empleados' | ...
@@ -44,12 +53,12 @@ const estadoVencimiento = (vence?: boolean, fechaVencimiento?: string) => {
   return { color: '#3fb950', texto: `Vigente (vence ${formatearFecha(fechaVencimiento)})` };
 };
 
-export const DocumentosLista: React.FC<DocumentosListaProps> = ({ coleccionOrigen, registroId, permitirEliminar = true }) => {
-  const [docs, setDocs] = useState<any[]>([]);
+export function DocumentosLista({ coleccionOrigen, registroId, permitirEliminar = true }: DocumentosListaProps) {
+  const [docs, setDocs] = useState<DocumentoExpediente[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
   // ✅ V00149: edición de un documento (fechas/observaciones) y edición MASIVA de fechas
-  const [editDoc, setEditDoc] = useState<any | null>(null);
+  const [editDoc, setEditDoc] = useState<DocumentoExpediente | null>(null);
   const [editVals, setEditVals] = useState<{ vence: boolean; fechaExpedicion: string; fechaVencimiento: string; observaciones: string; tipoDocumento: string }>({ vence: false, fechaExpedicion: '', fechaVencimiento: '', observaciones: '', tipoDocumento: '' });
   // ✅ V00177: catálogo de tipos para REUBICAR un documento (ej. los "Por clasificar")
   //   ✅ V00439 (Fase 3.x): del listener compartido, solo mientras el editor está abierto.
@@ -64,7 +73,13 @@ export const DocumentosLista: React.FC<DocumentosListaProps> = ({ coleccionOrige
   const [fechasVals, setFechasVals] = useState<Record<string, { fechaExpedicion: string; fechaVencimiento: string }>>({});
   const [guardandoMasivo, setGuardandoMasivo] = useState(false);
 
-  const abrirEdicion = (d: any) => {
+  // ✅ V00451: vista previa en línea y reemplazo del archivo de un documento.
+  const [verId, setVerId] = useState<string | null>(null);
+  const [reemplazandoId, setReemplazandoId] = useState<string | null>(null);
+  const inputReemplazo = useRef<HTMLInputElement>(null);
+  const docAReemplazar = useRef<DocumentoExpediente | null>(null);
+
+  const abrirEdicion = (d: DocumentoExpediente) => {
     setEditDoc(d);
     setEditVals({ vence: !!d.vence, fechaExpedicion: d.fechaExpedicion || '', fechaVencimiento: d.fechaVencimiento || '', observaciones: d.observaciones || '', tipoDocumento: d.tipoDocumento || '' });
   };
@@ -86,7 +101,7 @@ export const DocumentosLista: React.FC<DocumentosListaProps> = ({ coleccionOrige
         observaciones: editVals.observaciones,
       });
       setEditDoc(null);
-    } catch (e: any) { alert(`No se pudo guardar: ${e?.message || e}`); }
+    } catch (e: unknown) { alert(`No se pudo guardar: ${mensajeError(e)}`); }
     finally { setGuardandoEdit(false); }
   };
   const abrirFechasMasivo = () => {
@@ -111,7 +126,7 @@ export const DocumentosLista: React.FC<DocumentosListaProps> = ({ coleccionOrige
       if (cambios > 0) await batch.commit();
       setFechasMasivo(false);
       alert(cambios > 0 ? `Fechas actualizadas en ${cambios} documento(s). ✅` : 'No había cambios que guardar.');
-    } catch (e: any) { alert(`No se pudieron guardar las fechas: ${e?.message || e}`); }
+    } catch (e: unknown) { alert(`No se pudieron guardar las fechas: ${mensajeError(e)}`); }
     finally { setGuardandoMasivo(false); }
   };
 
@@ -125,7 +140,7 @@ export const DocumentosLista: React.FC<DocumentosListaProps> = ({ coleccionOrige
     const unsub = onSnapshot(
       q,
       (snap) => {
-        let lista = snap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+        let lista = snap.docs.map((d) => comoDocumentoExpediente(d.id, d.data() as Record<string, unknown>));
         if (coleccionOrigen) lista = lista.filter(x => x.coleccionOrigen === coleccionOrigen);
         lista.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
         setDocs(lista);
@@ -140,17 +155,39 @@ export const DocumentosLista: React.FC<DocumentosListaProps> = ({ coleccionOrige
     return () => unsub();
   }, [coleccionOrigen, registroId]);
 
-  const eliminarDocumento = async (d: any) => {
+  const eliminarDocumento = async (d: DocumentoExpediente) => {
     if (!window.confirm(`¿Eliminar el documento "${d.nombreArchivo || d.tipoDocumento}"?\nEsta acción no se puede deshacer.`)) return;
     try {
-      if (d.path) {
-        try { await deleteObject(storageRef(storage, d.path)); }
-        catch (e) { console.warn('No se pudo borrar el archivo de Storage (se borrará el registro de todos modos):', e); }
-      }
-      await deleteDoc(doc(db, 'documentos', d.id));
-    } catch (e: any) {
+      // ✅ V00451: primero el registro y después el archivo (si se puede y nadie más lo usa).
+      await eliminarDocumentoExpediente(d, !pathCompartido(d, docs));
+    } catch (e: unknown) {
       console.error('Error eliminando documento:', e);
-      alert('No se pudo eliminar el documento.\n\nDetalle: ' + (e?.message || e));
+      alert('No se pudo eliminar el documento.\n\nDetalle: ' + mensajeError(e));
+    }
+  };
+
+  // ✅ V00451: Reemplazar = elegir otro archivo para ESTE documento.
+  const pedirReemplazo = (d: DocumentoExpediente) => {
+    docAReemplazar.current = d;
+    inputReemplazo.current?.click();
+  };
+  const alElegirReemplazo = async (e: ChangeEvent<HTMLInputElement>) => {
+    const archivo = e.target.files?.[0];
+    e.target.value = ''; // permite volver a elegir el mismo archivo
+    const d = docAReemplazar.current;
+    docAReemplazar.current = null;
+    if (!archivo || !d) return;
+    const error = validarArchivo(archivo, 'pdf-imagen');
+    if (error) { alert(error); return; }
+    if (!window.confirm(`¿Reemplazar "${d.nombreArchivo || d.tipoDocumento}" por "${archivo.name}"?\nEl archivo anterior se borra.`)) return;
+    setReemplazandoId(d.id);
+    try {
+      await reemplazarArchivoDocumento(d, archivo, { borrarAnterior: !pathCompartido(d, docs) });
+    } catch (err: unknown) {
+      console.error('Error reemplazando documento:', err);
+      alert('No se pudo reemplazar el archivo.\n\nDetalle: ' + mensajeError(err));
+    } finally {
+      setReemplazandoId(null);
     }
   };
 
@@ -179,67 +216,86 @@ export const DocumentosLista: React.FC<DocumentosListaProps> = ({ coleccionOrige
           <button type="button" className="dl-btn-fechas" onClick={abrirFechasMasivo} title="Captura o corrige de una sola vez la expedición y el vencimiento de todos los documentos que vencen">📅 Actualizar fechas ({docs.filter((d) => d.vence).length})</button>
         )}
       </div>
+      {/* ✅ V00451: un solo selector de archivo para "Reemplazar" (recuerda el documento elegido). */}
+      {permitirEliminar && (
+        <input ref={inputReemplazo} type="file" accept={ACCEPT_TIPOS['pdf-imagen']} className="dlv-input-oculto" onChange={alElegirReemplazo} tabIndex={-1} aria-hidden="true" />
+      )}
 
       {docs.map(d => {
         const venc = estadoVencimiento(d.vence, d.fechaVencimiento);
+        const viendo = verId === d.id && !!d.url;
         return (
-          <div className="dl-x6" key={d.id}>
-            {/* Icono */}
-            <div className="dl-x7">
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-            </div>
-
-            {/* Datos */}
-            <div className="dl-x8">
-              <div className="dl-x9">{d.tipoDocumento || 'Documento'}</div>
-              <div className="dl-x10">{d.nombreArchivo || '-'}</div>
-
-              <div className="dl-x11">
-                <span>Subido: {formatearFecha(d.createdAt)}{d.subidoPor ? ` · por ${d.subidoPor}` : ''}</span>{/* ✅ V00283 */}
-                {d.vence && <span>Expedición: {formatearFecha(d.fechaExpedicion)}</span>}
+          <div className="dlv-item" key={d.id}>
+            <div className="dl-x6">
+              {/* Icono */}
+              <div className="dl-x7">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
               </div>
 
-              {venc && (
-                <span style={{ display: 'inline-block', marginTop: '8px', fontSize: '0.75rem', fontWeight: 600, color: venc.color, backgroundColor: `${venc.color}1a`, border: `1px solid ${venc.color}55`, borderRadius: '12px', padding: '3px 10px' }}>
-                  {venc.texto}
-                </span>
-              )}
+              {/* Datos */}
+              <div className="dl-x8">
+                <div className="dl-x9">{d.tipoDocumento || 'Documento'}</div>
+                <div className="dl-x10">{d.nombreArchivo || '-'}</div>
 
-              {d.observaciones && (
-                <div className="dl-x12">“{d.observaciones}”</div>
-              )}
-            </div>
+                <div className="dl-x11">
+                  <span>Subido: {formatearFecha(d.createdAt)}{d.subidoPor ? ` · por ${d.subidoPor}` : ''}</span>{/* ✅ V00283 */}
+                  {d.vence && <span>Expedición: {formatearFecha(d.fechaExpedicion)}</span>}
+                </div>
 
-            {/* Acciones */}
-            <div className="dl-x13">
-              {d.url && (
-                <a className="dl-x14"
-                  href={d.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                  Ver / Descargar
-                </a>
-              )}
-              {permitirEliminar && (
-                <button className="dl-btn-editar"
-                  type="button"
-                  onClick={() => abrirEdicion(d)}
-                  title="Editar fechas y observaciones del documento"
-                >✎ Editar</button>
-              )}
-              {permitirEliminar && (
-                <button className="dl-x15"
-                  type="button"
-                  onClick={() => eliminarDocumento(d)}
-                  title="Eliminar documento"
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                  Eliminar
-                </button>
-              )}
+                {venc && (
+                  <span style={{ display: 'inline-block', marginTop: '8px', fontSize: '0.75rem', fontWeight: 600, color: venc.color, backgroundColor: `${venc.color}1a`, border: `1px solid ${venc.color}55`, borderRadius: '12px', padding: '3px 10px' }}>
+                    {venc.texto}
+                  </span>
+                )}
+
+                {d.observaciones && (
+                  <div className="dl-x12">“{d.observaciones}”</div>
+                )}
+              </div>
+
+              {/* Acciones */}
+              <div className="dl-x13">
+                {d.url && (
+                  <a className="dl-x14"
+                    href={d.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    Descargar
+                  </a>
+                )}
+                {/* ✅ V00451: vista previa aquí mismo, debajo del renglón */}
+                {d.url && (
+                  <button type="button" className={`dlv-btn${viendo ? ' dlv-btn--activo' : ''}`} onClick={() => setVerId(viendo ? null : d.id)} title={viendo ? 'Ocultar la vista previa' : 'Ver el archivo aquí mismo'}>
+                    {viendo ? 'Ocultar' : '👁 Ver'}
+                  </button>
+                )}
+                {permitirEliminar && (
+                  <button type="button" className="dlv-btn" onClick={() => pedirReemplazo(d)} disabled={reemplazandoId !== null} title="Elegir otro archivo en lugar de este">
+                    {reemplazandoId === d.id ? 'Subiendo…' : '⇄ Reemplazar'}
+                  </button>
+                )}
+                {permitirEliminar && (
+                  <button className="dl-btn-editar"
+                    type="button"
+                    onClick={() => abrirEdicion(d)}
+                    title="Editar fechas y observaciones del documento"
+                  >✎ Editar</button>
+                )}
+                {permitirEliminar && (
+                  <button className="dl-x15"
+                    type="button"
+                    onClick={() => eliminarDocumento(d)}
+                    title="Eliminar documento"
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    Eliminar
+                  </button>
+                )}
+              </div>
             </div>
+            {viendo && <VistaPreviaArchivo url={d.url} nombre={d.nombreArchivo || d.tipoDocumento || 'Documento'} />}
           </div>
         );
       })}
@@ -280,7 +336,8 @@ export const DocumentosLista: React.FC<DocumentosListaProps> = ({ coleccionOrige
                 </div>
               )}
               <label className="dl-edit-obs"><span>Observaciones</span><textarea rows={2} value={editVals.observaciones} onChange={(e) => setEditVals((p) => ({ ...p, observaciones: e.target.value }))} /></label>
-              <p className="dl-edit-nota">Para reemplazar el archivo usa "Subir Documentos" con el mismo tipo: el nuevo archivo sustituye al anterior.</p>
+              {/* ✅ V00451: el reemplazo ya es por documento; subir el mismo tipo agrega otro archivo. */}
+              <p className="dl-edit-nota">Para cambiar el archivo usa «Reemplazar» en su renglón. Subir otra vez el mismo tipo AGREGA otro archivo (no sustituye).</p>
               <div className="dl-edit-acciones">
                 <button type="button" className="btn btn-outline" onClick={() => setEditDoc(null)} disabled={guardandoEdit}>Cancelar</button>
                 <button type="button" className="btn btn-primary" onClick={guardarEdicion} disabled={guardandoEdit}>{guardandoEdit ? 'Guardando…' : 'Guardar cambios'}</button>
@@ -324,4 +381,4 @@ export const DocumentosLista: React.FC<DocumentosListaProps> = ({ coleccionOrige
       , document.body)}
     </div>
   );
-};
+}

@@ -20,7 +20,8 @@ import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { useModuloEscuchando } from '../../../utils/moduloVivoContexto'; // ✅ V00438 (Fase 2.7)
 import { EditorOperacionEmbebido } from '../../operaciones/components/EditorOperacionEmbebido';
 import { HiloModal } from '../../hilo/HiloModal';
-import { suscribirOperacionGuardada } from '../../../utils/operacionesBus';
+import { datosAAplicar, notificarOperacionGuardada, suscribirOperacionGuardada } from '../../../utils/operacionesBus';
+import { avisoYaFacturadas, facturaExistenteFresca, operacionesYaFacturadas } from '../services/facturarSeguro'; // ✅ V00451
 import {
   collection,
   query,
@@ -39,8 +40,7 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import { SelectBuscable } from '../../catalogos/components/SelectBuscable';
-import { db, storage, auth } from '../../../config/firebase'; // ✅ V00276 · ✅ V00283: auth para registrar quién sube
-import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage'; // ✅ V00276
+import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
 import { exportarExcelProfesional } from './exportarExcelProfesional';
 import { generarRemisionPDF } from './generarRemisionPDF';
@@ -50,7 +50,16 @@ import type { ConfirmacionTarifaData, RateProveedorData } from './generarDocumen
 import { getAuth } from 'firebase/auth';
 import { registrarLog } from '../../../utils/logger';
 import './FacturacionProveedoresDashboard.css';
-import { TarjetaDocumentoFactura } from './TarjetaDocumentoFactura';
+import TarjetaDocumentoFactura, { PildoraDocsFactura } from './TarjetaDocumentoFactura';
+import DocumentosFacturaModal from './DocumentosFacturaModal'; // ✅ V00451
+import AdjuntosArchivos from '../../../shared/components/AdjuntosArchivos'; // ✅ V00451
+import { desdeGuardados } from '../../../shared/archivos/adjuntos';
+import type { Adjunto } from '../../../shared/archivos/adjuntos';
+import {
+  MAX_DOCS_FACTURA, aplicarEscriturasDocs, camposDocsDeGrupo, camposDocsFactura, detalleError, docsDeFactura, idsDeFila,
+} from '../services/documentosFactura'; // ✅ V00451: varios documentos por factura
+import type { EscrituraDocs } from '../services/documentosFactura';
+import { agregarDocsFactura, guardarDocsFactura, rescatarDocsDeBorradas } from '../services/guardarDocsFactura';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 import { esUSD as esMonedaUSD, monedaCanonica as monedaCanonicaComun } from '../../../shared/dominio/moneda';
@@ -60,7 +69,7 @@ import type { DocCatalogo } from '../../../shared/data/catalogos'; // ✅ V00439
 import { CATALOGOS_NOMBRES_FACTURACION, construirMapaCatalogos } from '../services/mapaCatalogos';
 import { useMapaEstable } from '../../../shared/hooks/useMapaEstable'; // ✅ V00447
 import type { EmpresaFacturacion } from '../services/mapaCatalogos';
-import { r2 } from '../../../shared/dominio/numeros';
+import { aCentavos, r2 } from '../../../shared/dominio/numeros';
 import {
   MAX_ESCRITURAS_LOTE,
   avisoFacturaConPagos,
@@ -72,6 +81,7 @@ import {
   totalNativoFactura,
   totalNativoFacturaLegado,
   totalesTrasCambioDeOps,
+  totalDeFilaFactura, // ✅ V00451
 } from '../services/totalesFactura'; // ✅ Fase 1.8
 import { aplicarFacturas, aplicarOperaciones, llamarDinero, mensajeDinero } from '../services/dineroServidor'; // ✅ V00441
 import { useFlags, useFlagsCargadas } from '../../../shared/data/flags';
@@ -285,6 +295,9 @@ export const FacturacionProveedoresDashboard = () => {
     (f: unknown): number => (flags.dineroPorServidor ? totalNativoFactura(f) : totalNativoFacturaLegado(f)),
     [flags.dineroPorServidor],
   );
+  // ✅ V00451: total de una fila del Historial (varios documentos con el mismo folio se agrupan):
+  //   el mismo en la tabla, el Excel y el editor (services/totalesFactura.ts).
+  const totalDeGrupo = useCallback((f: unknown): number => totalDeFilaFactura(f, totalFactura), [totalFactura]);
   const flagsCargadas = useFlagsCargadas(); // ✅ V00443
   const [activeTab, setActiveTab] = useState<'operaciones' | 'historial' | 'pagadas'>('operaciones');
   // ✅ V00126: "Pagadas" reutiliza toda la vista de Historial filtrando facturas liquidadas
@@ -374,75 +387,45 @@ export const FacturacionProveedoresDashboard = () => {
   const [modalAbierto, setModalAbierto] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [facturaViendo, setFacturaViendo] = useState<any | null>(null);
-  // ✅ V00276: DOCUMENTO DE LA FACTURA (el PDF/imagen de la factura emitida) —
-  //   relación 1:1 con la factura (docFacturaUrl/Nombre/Fecha), archivo en
-  //   Storage `facturas_documentos/facturas_proveedores/{id}/`. Se pide al facturar,
-  //   y se puede subir desde la fila, la ficha o el editor. Mismo patrón que
-  //   el tarifario firmado (V00273/V00274).
-  const inputDocFacturaRef = useRef<HTMLInputElement | null>(null);
-  const facturaDocRef = useRef<{ id?: unknown; invoice?: unknown; docFacturaUrl?: unknown; docFacturaNombre?: unknown; docFacturaFecha?: unknown } | null>(null);
-  const [subiendoDocFactura, setSubiendoDocFactura] = useState<string>('');
-  const [docFacturaFile, setDocFacturaFile] = useState<File | null>(null); // archivo diferido (facturar / editar)
-  const inputDocFacturaModalRef = useRef<HTMLInputElement | null>(null);
-  const subirDocFacturaA = async (id: string, archivo: File, etiqueta: string) => {
-    const limpio = archivo.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const destino = storageRef(storage, `facturas_documentos/facturas_proveedores/${id}/${Date.now()}_${limpio}`);
-    await uploadBytes(destino, archivo, archivo.type ? { contentType: archivo.type } : undefined);
-    const url = await getDownloadURL(destino);
-    await setDoc(doc(db, 'facturas_proveedores', id), {
-      docFacturaUrl: url,
-      docFacturaNombre: archivo.name,
-      docFacturaFecha: new Date().toISOString().slice(0, 10),
-        docFacturaPor: auth.currentUser?.email || '', // ✅ V00283
-    }, { merge: true });
-    await registrarLog('Facturación Proveedores', 'Edición', `Subió el documento de la factura ${etiqueta}: ${archivo.name}.`);
-    setFacturasGlobales(prev => prev.map(f => String(f.id) === id ? { ...f, docFacturaUrl: url, docFacturaNombre: archivo.name } : f));
-    // ✅ V00381: la ficha abierta refleja el documento al instante
-    const hoyDoc = new Date().toISOString().slice(0, 10);
-    setFacturaViendo((prev: Record<string, unknown> | null) => (prev && String(prev.id) === id) ? { ...prev, docFacturaUrl: url, docFacturaNombre: archivo.name, docFacturaFecha: hoyDoc, docFacturaPor: auth.currentUser?.email || '' } : prev);
-    return url;
+  // ✅ V00276: DOCUMENTO DE LA FACTURA (el PDF/imagen de la factura emitida), archivo en
+  //   Storage `facturas_documentos/facturas_proveedores/{id}/`. Se pide al facturar y se puede
+  //   subir desde la fila, la ficha o el editor.
+  // ✅ V00451: VARIOS documentos por factura (hasta 10): lista `docsFactura` + los campos de
+  //   siempre (docFactura* = el primero, para lo que todavía lee uno solo). Facturar y
+  //   Editar usan AdjuntosArchivos (vista previa en el mismo formulario); la píldora de la fila y
+  //   la tarjeta de la Ficha abren "Documentos de la factura" (antes: subida inmediata de UNO).
+  const [adjuntosFacturar, setAdjuntosFacturar] = useState<Adjunto[]>([]); // Generar Factura: se suben al confirmar
+  const [adjuntosEdicion, setAdjuntosEdicion] = useState<Adjunto[]>([]); // Editar factura: se guardan al guardar
+  const [docsFacturaDe, setDocsFacturaDe] = useState<Record<string, unknown> | null>(null); // fila con el modal abierto
+  /** La tabla y la Ficha abierta reflejan los documentos guardados al instante. */
+  const aplicarDocsLocal = (escrituras: EscrituraDocs[]): void => {
+    const [primera] = escrituras;
+    if (!primera) return;
+    setFacturasGlobales(prev => aplicarEscriturasDocs(prev, escrituras));
+    setFacturaViendo((prev: Record<string, unknown> | null) => (prev && idsDeFila(prev).includes(primera.id)) ? { ...prev, ...primera.campos } : prev);
   };
-  const pedirDocFactura = (f: { id?: unknown; invoice?: unknown; docFacturaUrl?: unknown; docFacturaNombre?: unknown; docFacturaFecha?: unknown }) => {
-    facturaDocRef.current = f;
-    inputDocFacturaRef.current?.click();
-  };
-  const alElegirDocFactura = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const archivo = e.target.files?.[0];
-    e.target.value = '';
-    const f = facturaDocRef.current;
-    if (!archivo || !f) return;
-    setSubiendoDocFactura(String(f.id));
+  /** Facturar: sube los documentos elegidos y los AGREGA a los de la factura (el folio pudo existir). Devuelve los campos para la fila. */
+  const subirDocsAlFacturar = async (idFactura: string, folio: string): Promise<Record<string, unknown>> => {
+    if (adjuntosFacturar.length === 0 || !idFactura) return {};
     try {
-      await subirDocFacturaA(String(f.id), archivo, String(f.invoice || f.id));
-    } catch (err) {
-      console.error('No se pudo subir el documento de la factura:', err);
-      alert('No se pudo subir el documento de la factura.');
+      return camposDocsFactura(await agregarDocsFactura('proveedores', idFactura, adjuntosFacturar, folio));
+    } catch (eDoc: unknown) {
+      console.error(eDoc);
+      alert(`La factura se guardó, pero los documentos no se pudieron subir.\n\nMotivo: ${detalleError(eDoc)}\n\nPuedes reintentar desde la fila ("Sin doc").`);
+      return {};
     } finally {
-      setSubiendoDocFactura('');
-      facturaDocRef.current = null;
+      setAdjuntosFacturar([]);
     }
   };
-  /** Indicador 📄/⚠ del documento de la factura (fila, ficha). */
-  /** ✅ V00381: indicador del documento en la FILA — píldora con texto (Doc ✓ / Sin doc). */
-  const indicadorDocFactura = (f: { id?: unknown; invoice?: unknown; docFacturaUrl?: unknown; docFacturaNombre?: unknown; docFacturaFecha?: unknown; docFacturaPor?: unknown }) => {
-    const tiene = !!String(f?.docFacturaUrl || '');
-    const subiendo = subiendoDocFactura === String(f?.id);
-    return (
-      <span
-        role="button"
-        className={`tdf-pill ${subiendo ? 'tdf-pill--subiendo' : tiene ? 'tdf-pill--ok' : 'tdf-pill--falta'}`}
-        title={tiene
-          ? `Documento cargado${f?.docFacturaFecha ? ` el ${f.docFacturaFecha}` : ''}${String(f?.docFacturaPor || '') ? ` por ${f.docFacturaPor}` : ''} — clic para verlo; Ctrl+clic para reemplazarlo`
-          : 'SIN el documento de la factura — clic para subirlo'}
-        onClick={(e) => {
-          e.stopPropagation();
-          if (subiendo) return;
-          const url = String(f?.docFacturaUrl || '');
-          if (url && !e.ctrlKey) { window.open(url, '_blank', 'noopener'); return; }
-          pedirDocFactura(f);
-        }}
-      >{subiendo ? 'Subiendo…' : tiene ? 'Doc ✓' : 'Sin doc'}</span>
-    );
+  /** Editar factura: guarda los documentos DESPUÉS de la factura (la factura nunca depende de la subida). */
+  const guardarDocsDeEdicion = async (fila: Record<string, unknown>): Promise<void> => {
+    try {
+      const escrituras = await guardarDocsFactura('proveedores', fila, adjuntosEdicion);
+      if (escrituras) aplicarDocsLocal(escrituras);
+    } catch (eDoc: unknown) {
+      console.error(eDoc);
+      alert(`Los cambios de la factura SÍ se guardaron, pero los documentos no.\n\nMotivo: ${detalleError(eDoc)}`);
+    }
   };
   // Cruce con Facturación de CLIENTES: para saber si la operación ya fue facturada a cliente.
   const [facturasClientesGlobales, setFacturasClientesGlobales] = useState<any[]>([]);
@@ -823,10 +806,12 @@ export const FacturacionProveedoresDashboard = () => {
 
   // ✅ V00126: cualquier guardado en `operaciones` se refleja aquí al instante.
   useEffect(() => {
-    return suscribirOperacionGuardada(({ id, data }) => {
+    return suscribirOperacionGuardada((aviso) => {
+      const { id, data } = aviso;
       setOperacionesGlobales(prev => {
         const idx = prev.findIndex(o => String(o.id) === String(id));
-        if (idx >= 0) { const next = [...prev]; next[idx] = { ...prev[idx], ...data, id: String(id) }; return next; }
+        // ✅ V00451: solo los campos que cambiaron, si el aviso los dice (no pisa datos más nuevos).
+        if (idx >= 0) { const next = [...prev]; next[idx] = { ...prev[idx], ...datosAAplicar(aviso), id: String(id) }; return next; }
         return [{ id: String(id), ...data }, ...prev];
       });
     });
@@ -2032,7 +2017,7 @@ export const FacturacionProveedoresDashboard = () => {
         const obsPrev = String(op.observacionesUnidad || '').trim();
         updates.observacionesUnidad = `${obsPrev ? obsPrev + ' | ' : ''}Costo adicional: ${concepto} (${monto >= 0 ? '+' : ''}${monto})`;
       }
-      await setDoc(doc(db, 'operaciones', String(op.id)), updates, { merge: true });
+      await setDoc(doc(db, 'operaciones', idRealOp(op.id)), updates, { merge: true }); // ✅ V00451: id real
       setOperacionesGlobales(prev => prev.map(o => o.id === op.id ? { ...o, ...updates } : o));
       setModalCostoAdic(false);
     } catch (e) {
@@ -2062,6 +2047,13 @@ export const FacturacionProveedoresDashboard = () => {
     const snap = await getDoc(doc(db, 'facturas_proveedores', String(id)));
     return snap.exists() ? normalizarFactura({ id: snap.id, ...snap.data() }) : null;
   };
+  // ✅ V00451: id REAL del documento de una operación. La lista usa el campo `id` guardado si lo
+  //   tiene (operaciones importadas): escribir con ese id fallaba ("Error al guardar la factura") o
+  //   creaba un documento suelto, y la operación seguía "pendiente".
+  const idRealOp = (id: unknown): string => {
+    const op = operacionesGlobales.find((o) => String(o.id) === String(id));
+    return op ? String(op._docId ?? op.id) : String(id);
+  };
 
   // ✅ V00441 (Fase 5): campos de una factura editada (para fusionarlos en la ficha
   //   o el grupo abiertos sin pisar sus operaciones agrupadas).
@@ -2074,6 +2066,8 @@ export const FacturacionProveedoresDashboard = () => {
   const handleGuardarFactura = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!invoiceForm.trim()) return alert('El # de Invoice es obligatorio.');
+    // ✅ V00451: sin operaciones no se crea nada (antes, tras refrescar la lista, se podía crear una factura vacía).
+    if (seleccionadas.length === 0) return alert('Selecciona al menos una operación para facturar.');
     if (seleccionMultiProveedor || !proveedorFacturaId) {
       return alert('Las operaciones seleccionadas deben ser de un mismo proveedor. Selecciona un proveedor en el filtro o elige operaciones de un solo proveedor.');
     }
@@ -2093,11 +2087,9 @@ export const FacturacionProveedoresDashboard = () => {
         const idFactura = String(r.facturaId || '');
         setFacturasGlobales(prev => aplicarFacturas(prev, r.facturas, normalizarFactura));
         setOperacionesGlobales(prev => aplicarOperaciones(prev, r.operaciones));
-        if (docFacturaFile && idFactura) {
-          try { await subirDocFacturaA(idFactura, docFacturaFile, invoiceForm.trim() || idFactura); }
-          catch (eDoc: unknown) { console.error(eDoc); const det = (eDoc as { code?: string; message?: string })?.code || (eDoc as { message?: string })?.message || String(eDoc); alert(`La factura se guardó, pero el documento no se pudo subir.\n\nMotivo: ${det}\n\nPuedes reintentar desde la fila (⚠).`); }
-          setDocFacturaFile(null);
-        }
+        // ✅ V00451: documentos (varios); si el folio ya existía, se agregan a los suyos.
+        const docsNuevos = await subirDocsAlFacturar(idFactura, invoiceForm.trim() || idFactura);
+        if (Object.keys(docsNuevos).length > 0) setFacturasGlobales(prev => aplicarEscriturasDocs(prev, [{ id: idFactura, campos: docsNuevos }]));
         setModalAbierto(false);
         setSeleccionadas([]);
         setInvoiceForm('');
@@ -2160,7 +2152,22 @@ export const FacturacionProveedoresDashboard = () => {
       // ✅ Fase 1.8: se fusiona contra la factura FRESCA (sus operacionesIds /
       //   operacionesGuardadas actuales), no contra la copia en memoria.
       const fresca = existenteCache ? await leerFacturaFresca(existenteCache.id) : null;
-      const existente = fresca && coincideInvoice(fresca) ? fresca : null;
+      // ✅ V00451: si no está en la lista cargada se busca en el SERVIDOR (antes se creaba otra
+      //   factura con el mismo folio y el documento quedaba escondido en esa segunda).
+      const existente = fresca && coincideInvoice(fresca) ? fresca : await facturaExistenteFresca('proveedor', invoiceForm, String(proveedorFacturaId));
+      // ✅ V00451: ninguna operación puede estar ya facturada según el SERVIDOR.
+      const yaFacturadas = await operacionesYaFacturadas('proveedor', seleccionadas
+        .map((id) => operacionesGlobales.find((o) => String(o.id) === String(id)))
+        .filter((o): o is Record<string, unknown> => !!o)
+        .map((op) => ({ idLista: String(op.id), idReal: String(op._docId ?? op.id), ref: String(op.ref ?? op.numReferencia ?? op.id ?? '') })),
+        existente ? String(existente.id) : undefined);
+      if (yaFacturadas.length > 0) {
+        alert(avisoYaFacturadas(yaFacturadas));
+        setModalAbierto(false); // ✅ V00451: la selección ya no vale; se cierra antes de refrescar
+        setSeleccionadas([]);
+        recargarTodo();
+        return;
+      }
       let docId = nuevoId;
       let facturaResultante: any = data;
       if (existente) {
@@ -2201,7 +2208,7 @@ export const FacturacionProveedoresDashboard = () => {
         batch.set(doc(db, 'facturas_proveedores', docId), data);
       }
       seleccionadas.forEach(id => {
-        batch.update(doc(db, 'operaciones', id), {
+        batch.update(doc(db, 'operaciones', idRealOp(id)), { // ✅ V00451: id real
           facturaProveedorId: docId,
           facturaProveedorFolio: invoiceForm.trim(),
           facturadoProveedor: true,
@@ -2211,15 +2218,8 @@ export const FacturacionProveedoresDashboard = () => {
       // ✅ V00276: el documento adjuntado se sube ya con el id real de la factura.
       // ✅ V00390: los datos del documento se guardan también en la fila NUEVA del
       //   historial (antes la fila se agregaba DESPUÉS de subirlo y quedaba sin él).
-      let docSubido: Record<string, unknown> = {};
-      if (docFacturaFile) {
-        try {
-          const urlDoc = await subirDocFacturaA(docId, docFacturaFile, invoiceForm.trim() || docId);
-          docSubido = { docFacturaUrl: urlDoc, docFacturaNombre: docFacturaFile.name, docFacturaFecha: new Date().toISOString().slice(0, 10), docFacturaPor: auth.currentUser?.email || '' };
-        }
-        catch (eDoc: unknown) { console.error(eDoc); const det = (eDoc as { code?: string; message?: string })?.code || (eDoc as { message?: string })?.message || String(eDoc); alert(`La factura se guardó, pero el documento no se pudo subir.\n\nMotivo: ${det}\n\nSi dice "unauthorized", hay que permitir la ruta facturas_documentos/ en las reglas de Storage. Puedes reintentar desde la fila (⚠).`); }
-        setDocFacturaFile(null);
-      }
+      // ✅ V00451: varios documentos; si se fusionó con un folio existente, se AGREGAN a los suyos.
+      const docSubido = await subirDocsAlFacturar(docId, invoiceForm.trim() || docId);
       setModalAbierto(false);
       const idsFacturadas = [...seleccionadas];
       const invoiceTrim = invoiceForm.trim();
@@ -2230,8 +2230,11 @@ export const FacturacionProveedoresDashboard = () => {
       setOperacionesGlobales(prev => prev.map(op =>
         idsFacturadas.includes(op.id) ? { ...op, facturaProveedorId: docId, facturaProveedorFolio: invoiceTrim, facturadoProveedor: true } : op
       ));
+      avisarOpsFacturacion(idsFacturadas, { facturaProveedorId: docId, facturaProveedorFolio: invoiceTrim, facturadoProveedor: true }); // ✅ V00451
       setFacturasGlobales(prev => {
         if (existente) {
+          // ✅ V00451: la existente pudo llegar del servidor sin estar en la lista.
+          if (!prev.some(f => f.id === docId)) return [normalizarFactura({ ...facturaResultante, ...docSubido, id: docId }), ...prev];
           return prev.map(f => f.id === docId ? normalizarFactura({ ...facturaResultante, ...docSubido, id: docId }) : f);
         }
         // La copia en memoria que ya no existe (o cambió de invoice) se refresca.
@@ -2264,7 +2267,7 @@ export const FacturacionProveedoresDashboard = () => {
   };
 
   const abrirEditarFactura = (e: React.MouseEvent, f: any) => {
-    setDocFacturaFile(null); // ✅ V00276: sin arrastre entre facturas
+    setAdjuntosEdicion(desdeGuardados(docsDeFactura(f))); // ✅ V00451: los documentos actuales (de todo el grupo)
     e.stopPropagation();
     setFacturaEditando(f);
     setEditInvoice(String(f.invoice || ''));
@@ -2274,7 +2277,8 @@ export const FacturacionProveedoresDashboard = () => {
     setEditMoneda(resolverMoneda(f.monedaProveedor) || '');
     // ✅ V00441: con la bandera, el total EN LA MONEDA de la factura (el que se ve en la
     //   tabla y el que guarda el servidor); antes se precargaba la conversión a pesos.
-    setEditTotal(String(flags.dineroPorServidor ? r2(totalNativoFactura(f)) : (Number(f.subtotalFactura) || 0)));
+    // ✅ V00451: el total EN LA MONEDA de la factura también sin la bandera (antes, la conversión).
+    setEditTotal(String(r2(totalDeGrupo(f))));
     setEditProveedorId(String(f.proveedorId || '')); // ✅ NUEVO
   };
 
@@ -2294,11 +2298,7 @@ export const FacturacionProveedoresDashboard = () => {
         setFacturasGlobales(prev => aplicarFacturas(prev, r.facturas, normalizarFactura));
         const primera = r.facturas[ids[0]];
         if (primera) setFacturaViendo((prev: Record<string, unknown> | null) => (prev && ids.includes(String(prev.id))) ? { ...prev, ...camposEditadosFactura(primera) } : prev);
-        if (docFacturaFile) {
-          try { await subirDocFacturaA(String(facturaEditando.id), docFacturaFile, String(facturaEditando.invoice || facturaEditando.id)); }
-          catch (eDoc: unknown) { console.error(eDoc); const det = (eDoc as { code?: string; message?: string })?.code || (eDoc as { message?: string })?.message || String(eDoc); alert(`Los cambios de la factura SÍ se guardaron, pero el documento no se pudo subir.\n\nMotivo: ${det}`); }
-          setDocFacturaFile(null);
-        }
+        await guardarDocsDeEdicion(facturaEditando); // ✅ V00451
         setFacturaEditando(null);
         return;
       }
@@ -2324,15 +2324,19 @@ export const FacturacionProveedoresDashboard = () => {
       const saldoNuevo = Math.max(0, totalNum - pagadoActual);
       const extraPago: any = { saldoPendiente: saldoNuevo };
       if (pagadoActual > 0.009) extraPago.statusPago = saldoNuevo <= 0.009 ? 'PAGADA' : 'PARCIAL';
+      // ✅ V00451: el total solo se escribe si se CAMBIÓ, marcado como capturado a mano.
+      const totalCambio = Math.abs(totalNum - r2(totalDeGrupo(facturaEditando))) > 0.009;
 
       const batch = writeBatch(db);
       ids.forEach((id, idx) => {
         batch.set(doc(db, 'facturas_proveedores', id), {
           ...baseUpdate,
-          subtotalFactura: idx === 0 ? totalNum : 0,
-          subtotalMonedaFactura: idx === 0 ? totalNum : 0, // ✅ FIX: el campo que se muestra
-          totalManualCentavos: 0, // ✅ V00441: sin la bandera manda lo capturado aquí (no una marca vieja)
-          ...(idx === 0 ? extraPago : {}),
+          ...(totalCambio ? {
+            subtotalFactura: idx === 0 ? totalNum : 0,
+            subtotalMonedaFactura: idx === 0 ? totalNum : 0, // ✅ FIX: el campo que se muestra
+            totalManualCentavos: idx === 0 ? aCentavos(totalNum) : 0,
+            ...(idx === 0 ? extraPago : {}),
+          } : {}),
         }, { merge: true });
       });
       await batch.commit();
@@ -2340,22 +2344,14 @@ export const FacturacionProveedoresDashboard = () => {
       //   factura nunca depende de la subida (recuerda: el documento en
       //   facturación NO es obligatorio; la ⚠ solo avisa). Si Storage rechaza
       //   la subida, se muestra el motivo exacto para diagnosticarlo.
-      if (docFacturaFile) {
-        try {
-          await subirDocFacturaA(String(facturaEditando.id), docFacturaFile, String(facturaEditando.invoice || facturaEditando.id));
-        } catch (eDoc: unknown) {
-          console.error(eDoc);
-          const det = (eDoc as { code?: string; message?: string })?.code || (eDoc as { message?: string })?.message || String(eDoc);
-          alert(`Los cambios de la factura SÍ se guardaron, pero el documento no se pudo subir.\n\nMotivo: ${det}\n\nSi dice "unauthorized", hay que permitir la ruta facturas_documentos/ en las reglas de Storage. Puedes reintentar desde la fila (⚠).`);
-        }
-        setDocFacturaFile(null);
-      }
+      await guardarDocsDeEdicion(facturaEditando); // ✅ V00451: varios documentos (del grupo, en el primero)
       setFacturasGlobales(prev => prev.map(f => {
         if (!ids.includes(f.id)) return f;
+        if (!totalCambio) return normalizarFactura({ ...f, ...baseUpdate });
         const esPrimero = f.id === ids[0];
-        return normalizarFactura({ ...f, ...baseUpdate, subtotalFactura: esPrimero ? totalNum : 0, subtotalMonedaFactura: esPrimero ? totalNum : 0, ...(esPrimero ? extraPago : {}) });
+        return normalizarFactura({ ...f, ...baseUpdate, subtotalFactura: esPrimero ? totalNum : 0, subtotalMonedaFactura: esPrimero ? totalNum : 0, totalManualCentavos: esPrimero ? aCentavos(totalNum) : 0, ...(esPrimero ? extraPago : {}) });
       }));
-      setFacturaViendo((prev: any) => (prev && ids.includes(prev.id)) ? { ...prev, ...baseUpdate, subtotalFactura: totalNum, subtotalMonedaFactura: totalNum, ...extraPago } : prev);
+      setFacturaViendo((prev: any) => (prev && ids.includes(prev.id)) ? { ...prev, ...baseUpdate, ...(totalCambio ? { subtotalFactura: totalNum, subtotalMonedaFactura: totalNum, ...extraPago } : {}) } : prev);
       setFacturaEditando(null);
     } catch (e) {
       console.error('Error guardando edición de factura:', e);
@@ -2379,6 +2375,15 @@ export const FacturacionProveedoresDashboard = () => {
       pes: m.pes,
       remolque: txt(op.remolqueNombre, op.remolquePlaca, op.numeroRemolque),
     };
+  };
+
+  // ✅ V00451: avisa a los demás módulos abiertos que la operación cambió de factura (operación
+  //   COMPLETA: el bus de Facturación saca de su lista las que no traen un status facturable).
+  const avisarOpsFacturacion = (ids: readonly string[], cambios: Record<string, unknown>) => {
+    ids.forEach((id) => {
+      const op = operacionesGlobales.find((o) => String(o.id) === String(id));
+      if (op) notificarOperacionGuardada(String(id), { ...op, ...cambios }, 'facturacion-proveedores', Object.keys(cambios));
+    });
   };
 
   const aplicarCambiosFacturas = (cambios: any[]) => {
@@ -2442,10 +2447,14 @@ export const FacturacionProveedoresDashboard = () => {
           cambios.push({ tipo: 'update', id: f.id, data });
         }
       }
-      batch.update(doc(db, 'operaciones', opId), { facturaProveedorId: null, facturaProveedorFolio: null, facturadoProveedor: false });
+      // ✅ V00451: los archivos de un documento que se borra pasan al otro documento del mismo folio.
+      (await rescatarDocsDeBorradas('proveedores', facturasConOp.filter((f: { id?: unknown }) => cambios.some((c) => c.tipo === 'delete' && c.id === f.id)), facturasGlobales, batch))
+        .forEach((e) => cambios.push({ tipo: 'update', id: e.id, data: e.campos }));
+      batch.update(doc(db, 'operaciones', idRealOp(opId)), { facturaProveedorId: null, facturaProveedorFolio: null, facturadoProveedor: false });
       await batch.commit();
       aplicarCambiosFacturas(cambios);
       setOperacionesGlobales(prev => prev.map(o => o.id === opId ? { ...o, facturaProveedorId: null, facturaProveedorFolio: null, facturadoProveedor: false } : o));
+      avisarOpsFacturacion([opId], { facturaProveedorId: null, facturaProveedorFolio: null, facturadoProveedor: false }); // ✅ V00451
       setGestionOp(null);
     } catch (e) {
       console.error('Error quitando operación de la factura:', e);
@@ -2506,6 +2515,9 @@ export const FacturacionProveedoresDashboard = () => {
         }
       }
 
+      // ✅ V00451: los archivos de un documento de origen que se borra pasan al otro documento de su folio.
+      (await rescatarDocsDeBorradas('proveedores', facturasConOp.filter((f: { id?: unknown }) => cambios.some((c) => c.tipo === 'delete' && c.id === f.id)), facturasGlobales, batch))
+        .forEach((e) => cambios.push({ tipo: 'update', id: e.id, data: e.campos }));
       const esDestino = (f: { id?: unknown; invoice?: unknown; proveedorId?: unknown }) =>
         String(f.invoice || '').trim().toLowerCase() === nuevoInvoice.toLowerCase() &&
         String(f.proveedorId || '') === provId &&
@@ -2513,7 +2525,11 @@ export const FacturacionProveedoresDashboard = () => {
       // ✅ Fase 1.8: la factura destino se fusiona FRESCA, no desde la lista en memoria.
       const targetCache = facturasGlobales.find(esDestino);
       const targetFresca = targetCache ? await leerFacturaFresca(targetCache.id) : null;
-      const target = targetFresca && esDestino(targetFresca) ? targetFresca : null;
+      // ✅ V00451: si el folio destino no está en la lista cargada se busca en el SERVIDOR (antes se
+      //   creaba otro documento con el mismo folio).
+      const targetServidor = targetFresca && esDestino(targetFresca) ? null : await facturaExistenteFresca('proveedor', nuevoInvoice, provId);
+      const target = targetFresca && esDestino(targetFresca) ? targetFresca
+        : targetServidor && esDestino(targetServidor) ? (targetServidor as typeof targetFresca) : null;
       let targetId: string;
       if (target) {
         const ids = Array.from(new Set([...(target.operacionesIds || []).map(String), opId]));
@@ -2547,10 +2563,11 @@ export const FacturacionProveedoresDashboard = () => {
         cambios.push({ tipo: 'create', id: targetId, data });
       }
 
-      batch.update(doc(db, 'operaciones', opId), { facturaProveedorId: targetId, facturaProveedorFolio: nuevoInvoice, facturadoProveedor: true });
+      batch.update(doc(db, 'operaciones', idRealOp(opId)), { facturaProveedorId: targetId, facturaProveedorFolio: nuevoInvoice, facturadoProveedor: true });
       await batch.commit();
       aplicarCambiosFacturas(cambios);
       setOperacionesGlobales(prev => prev.map(o => o.id === opId ? { ...o, facturaProveedorId: targetId, facturaProveedorFolio: nuevoInvoice, facturadoProveedor: true } : o));
+      avisarOpsFacturacion([opId], { facturaProveedorId: targetId, facturaProveedorFolio: nuevoInvoice, facturadoProveedor: true }); // ✅ V00451
       setGestionOp(null);
     } catch (e) {
       console.error('Error editando # de factura de la operación:', e);
@@ -2595,6 +2612,9 @@ export const FacturacionProveedoresDashboard = () => {
       // ✅ Fase 1.8: se fusiona contra la factura FRESCA, no contra la lista en memoria.
       const rawDoc = await leerFacturaFresca(rawId);
       if (!rawDoc) return alert('Esta factura ya no existe (alguien más la eliminó). Recarga el historial.');
+      // ✅ V00451: la operación no puede estar ya en otra factura según el SERVIDOR.
+      const yaEnOtra = await operacionesYaFacturadas('proveedor', [{ idLista: opId, idReal: idRealOp(opId), ref: String(op.ref ?? op.numReferencia ?? opId) }], rawId);
+      if (yaEnOtra.length > 0) { alert(avisoYaFacturadas(yaEnOtra)); recargarTodo(); return; }
       const ids = Array.from(new Set([...(rawDoc.operacionesIds || []).map(String), opId]));
       const mapG = new Map<string, any>();
       [...(rawDoc.operacionesGuardadas || []), resumen].forEach((o: any) => { if (o?.id) mapG.set(String(o.id), o); });
@@ -2611,10 +2631,11 @@ export const FacturacionProveedoresDashboard = () => {
       };
       const batch = writeBatch(db);
       batch.set(doc(db, 'facturas_proveedores', rawId), data, { merge: true });
-      batch.update(doc(db, 'operaciones', opId), { facturaProveedorId: rawId, facturaProveedorFolio: rawDoc.invoice || facturaGrupo.invoice, facturadoProveedor: true });
+      batch.update(doc(db, 'operaciones', idRealOp(opId)), { facturaProveedorId: rawId, facturaProveedorFolio: rawDoc.invoice || facturaGrupo.invoice, facturadoProveedor: true });
       await batch.commit();
       setFacturasGlobales(prev => prev.map(f => f.id === rawId ? normalizarFactura({ ...f, ...data }) : f));
       setOperacionesGlobales(prev => prev.map(o => o.id === opId ? { ...o, facturaProveedorId: rawId, facturaProveedorFolio: rawDoc.invoice || facturaGrupo.invoice, facturadoProveedor: true } : o));
+      avisarOpsFacturacion([opId], { facturaProveedorId: rawId, facturaProveedorFolio: rawDoc.invoice || facturaGrupo.invoice, facturadoProveedor: true }); // ✅ V00451
       const aplicarEnGrupo = (g: any) => {
         if (!g) return g;
         const mismoGrupo = (Array.isArray(g.__groupIds) ? g.__groupIds : [g.id]).includes(rawId) || g.id === facturaGrupo.id;
@@ -2680,7 +2701,7 @@ export const FacturacionProveedoresDashboard = () => {
         const batch = writeBatch(db);
         ids.forEach(fid => batch.delete(doc(db, 'facturas_proveedores', fid)));
         idsLiberadas.forEach(opId => {
-          batch.update(doc(db, 'operaciones', opId), {
+          batch.update(doc(db, 'operaciones', idRealOp(opId)), { // ✅ V00451: id real
             facturaProveedorId: null,
             facturaProveedorFolio: null,
             facturadoProveedor: false,
@@ -2691,6 +2712,7 @@ export const FacturacionProveedoresDashboard = () => {
         setOperacionesGlobales(prev => prev.map(op =>
           idsLiberadas.includes(op.id) ? { ...op, facturaProveedorId: null, facturaProveedorFolio: null, facturadoProveedor: false } : op
         ));
+        avisarOpsFacturacion(idsLiberadas, { facturaProveedorId: null, facturaProveedorFolio: null, facturadoProveedor: false }); // ✅ V00451
       } catch (error) {
         console.error('Error al eliminar factura:', error);
         alert(mensajeDinero(error, 'Hubo un error al eliminar.'));
@@ -2706,7 +2728,7 @@ export const FacturacionProveedoresDashboard = () => {
       case 'proveedor': return String(f.proveedorNombre || '').toLowerCase();
       case 'moneda': return String(f.monedaProveedor || '').toLowerCase();
       case 'cantOps': return Number(f.operacionesIds?.length || 0);
-      case 'total': return totalFactura(f); // ✅ FIX MONEDA · V00448
+      case 'total': return totalDeGrupo(f); // ✅ FIX MONEDA · V00448 · V00451: fila agrupada
       case 'createdAt': return String(f.createdAt || '');
       default: return '';
     }
@@ -2773,6 +2795,9 @@ export const FacturacionProveedoresDashboard = () => {
         if (!g.createdAt || (f.createdAt && String(f.createdAt) < String(g.createdAt))) g.createdAt = f.createdAt || g.createdAt;
         const rank = (s: any) => { const t = String(s || '').toLowerCase(); if (t.includes('cancel')) return 3; if (t.includes('no')) return 2; return 1; };
         if (rank(f.statusFactura) > rank(g.statusFactura)) g.statusFactura = f.statusFactura;
+        // ✅ V00451: los archivos de TODOS los documentos del grupo cuentan (antes solo los del
+        //   primero: el PDF subido al segundo seguía mostrando "Sin doc"): lista unida, sin repetir.
+        Object.assign(g, camposDocsDeGrupo(g, f));
       }
     }
     let agrupadas = Array.from(grupos.values());
@@ -2792,7 +2817,7 @@ export const FacturacionProveedoresDashboard = () => {
   const resumenHistorial = useMemo(() => {
     let totalUSD = 0, totalMXN = 0, totalSinMoneda = 0, totalOps = 0;
     historialOrdenado.forEach(f => {
-      const monto = totalFactura(f); // ✅ FIX MONEDA · V00448
+      const monto = totalDeGrupo(f); // ✅ FIX MONEDA · V00448 · V00451: fila agrupada
       // ✅ FIX: la moneda puede venir como nombre de catálogo ("Dólares",
       //   "Pesos") y las tarjetas comparaban contra 'USD'/'MXN' exactos, por
       //   lo que TOTAL FACTURADO marcaba $0.00. Se normaliza antes de sumar.
@@ -2805,7 +2830,7 @@ export const FacturacionProveedoresDashboard = () => {
     });
     return { cuenta: historialOrdenado.length, totalUSD, totalMXN, totalSinMoneda, totalOps };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [historialOrdenado, totalFactura]);
+  }, [historialOrdenado, totalDeGrupo]);
 
   const conteoStatus = useMemo(() => {
     const q = textoBuscarFacturaDiferido.trim().toLowerCase();
@@ -3020,7 +3045,7 @@ export const FacturacionProveedoresDashboard = () => {
         return Array.isArray(f.operacionesGuardadas)
           ? f.operacionesGuardadas.map((op: any) => refDeOpCon(op, extra)).filter(Boolean).join(', ') // ✅ V00260
           : '-';
-      case 'total': return totalFactura(f); // ✅ FIX MONEDA · V00448
+      case 'total': return totalDeGrupo(f); // ✅ FIX MONEDA · V00448 · V00451: fila agrupada
       case 'createdAt': return f.createdAt ? formatearFechaHora(f.createdAt) : '-';
       default: return '-';
     }
@@ -3052,7 +3077,7 @@ export const FacturacionProveedoresDashboard = () => {
           </div>
         );
       }
-      case 'total': return <span className="fpd-x13">{formatoMoneda(totalFactura(f))}</span>;
+      case 'total': return <span className="fpd-x13">{formatoMoneda(totalDeGrupo(f))}</span>;
       case 'createdAt': return <span className="fpd-x10">{f.createdAt ? formatearFechaHora(f.createdAt) : '-'}</span>;
       default: return '-';
     }
@@ -3105,7 +3130,7 @@ export const FacturacionProveedoresDashboard = () => {
     setCargandoDetalle(true);
     setPestañaDetalleActiva('general');
     try {
-      const snap = await getDoc(doc(db, 'operaciones', String(opId)));
+      const snap = await getDoc(doc(db, 'operaciones', idRealOp(opId))); // ✅ V00451: id real
       if (snap.exists()) {
         setOperacionDetalle({ id: snap.id, ...(snap.data() as any) });
       } else {
@@ -3206,12 +3231,10 @@ export const FacturacionProveedoresDashboard = () => {
 
   return (
     <div className="module-container fpd-x28">
-      {/* ✅ V00276: selector del documento de la factura (oculto, subida inmediata) */}
-      <input ref={inputDocFacturaRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="fcd-input-doc-oculto" onChange={alElegirDocFactura} />
-      {/* ✅ V00277.1: el selector del archivo DIFERIDO (facturar/editar) vive aquí,
-          SIEMPRE montado — antes estaba dentro del modal de facturar y el botón
-          "Reemplazar…" del EDITOR apuntaba a un input inexistente. */}
-      <input ref={inputDocFacturaModalRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="fcd-input-doc-oculto" onChange={(e) => { const a = e.target.files?.[0] || null; e.target.value = ''; if (a) setDocFacturaFile(a); }} />
+      {/* ✅ V00451: "Documentos de la factura" (píldora de la fila y tarjeta de la Ficha) */}
+      {docsFacturaDe && (
+        <DocumentosFacturaModal lado="proveedores" fila={docsFacturaDe} onGuardado={aplicarDocsLocal} onCerrar={() => setDocsFacturaDe(null)} />
+      )}
       {hiloFacturaId && <HiloModal tipo="proveedor" facturaId={hiloFacturaId} onClose={() => setHiloFacturaId(null)} onEditarOperacion={(id) => setOpEditandoId(id)} />}
       {opEditandoId && (
         <EditorOperacionEmbebido operacionId={opEditandoId} operacion={operacionesGlobales.find((o: any) => String(o.id) === opEditandoId)} onClose={() => setOpEditandoId(null)} />
@@ -3452,7 +3475,7 @@ export const FacturacionProveedoresDashboard = () => {
                   const seguir = window.confirm(`ATENCIÓN: ${enCero.length} operación(es) tienen los montos EN CERO:\n\n${refs}\n\nRevisa su registro en el módulo de Operaciones (convenio del proveedor y montos) antes de facturar.\n\n¿Deseas continuar de todos modos?`);
                   if (!seguir) return;
                 }
-                setStatusFacturaForm('Facturado'); setDocFacturaFile(null); setModalAbierto(true);
+                setStatusFacturaForm('Facturado'); setAdjuntosFacturar([]); setModalAbierto(true);
               }}
                 style={{ padding: '8px 20px', backgroundColor: (seleccionadas.length > 0 && !seleccionMultiProveedor) ? '#D84315' : '#30363d', color: '#fff', border: 'none', borderRadius: '6px', cursor: (seleccionadas.length > 0 && !seleccionMultiProveedor) ? 'pointer' : 'not-allowed', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
                 Generar Factura ({seleccionadas.length})
@@ -3642,7 +3665,7 @@ export const FacturacionProveedoresDashboard = () => {
                       onClick={(e) => { if ((e.target as HTMLElement).closest('button, a, input, select, textarea, label, [role="button"]')) return; setFacturaViendo(f); }}>{/* ✅ V00381 */}
                       <td className="fpd-x95">
                         <div className="fpd-x112">
-                          {indicadorDocFactura(f)}{/* ✅ V00276 */}
+                          <PildoraDocsFactura archivos={docsDeFactura(f)} onAbrir={() => setDocsFacturaDe(f)} />{/* ✅ V00276 · ✅ V00451 */}
                           <button className="fpd-x113" title="Ver Ficha" onClick={() => setFacturaViendo(f)}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                           </button>
@@ -3849,12 +3872,8 @@ export const FacturacionProveedoresDashboard = () => {
                 <div className="fac-doc-ancho">{/* ✅ V00390: documento a lo ancho del formulario */}
                   {/* ✅ V00276: documento de la factura (se sube al confirmar) */}
                   <label className="fpd-x143">DOCUMENTO DE LA FACTURA</label>
-                  <TarjetaDocumentoFactura
-                    pendiente={docFacturaFile}
-                    notaPendiente="Se subirá al confirmar la factura"
-                    onElegir={() => inputDocFacturaModalRef.current?.click()}
-                    onQuitarPendiente={() => setDocFacturaFile(null)}
-                  />{/* ✅ V00381 */}
+                  {/* ✅ V00451: varios (hasta 10), con vista previa; se suben al confirmar */}
+                  <AdjuntosArchivos etiqueta="Archivos (opcional)" adjuntos={adjuntosFacturar} onCambiar={setAdjuntosFacturar} max={MAX_DOCS_FACTURA} deshabilitado={guardando} />
                 </div>
               </div>
               <div className="fpd-x164">
@@ -3951,14 +3970,7 @@ export const FacturacionProveedoresDashboard = () => {
                 </div>
 
                 {/* ✅ V00381: documento de la factura bien visible */}
-                <TarjetaDocumentoFactura
-                  url={facturaViendo.docFacturaUrl}
-                  nombre={facturaViendo.docFacturaNombre}
-                  fecha={facturaViendo.docFacturaFecha}
-                  por={facturaViendo.docFacturaPor}
-                  subiendo={subiendoDocFactura === String(facturaViendo.id)}
-                  onElegir={() => pedirDocFactura(facturaViendo)}
-                />
+                <TarjetaDocumentoFactura archivos={docsDeFactura(facturaViendo)} onAbrir={() => setDocsFacturaDe(facturaViendo)} />{/* ✅ V00451: varios */}
                 <div className="fpd-x194"><hr className="fpd-x195" /></div>
 
                 <div className="fpd-x196">
@@ -4188,7 +4200,7 @@ export const FacturacionProveedoresDashboard = () => {
                 placeholder="Buscar proveedor..."
               />
               {Array.isArray(facturaEditando.__groupIds) && facturaEditando.__groupIds.length > 1 && (
-                <span> · <b className="fpd-x248">{facturaEditando.__groupIds.length} documentos agrupados</b> (el total se asigna al primero)</span>
+                <span> · <b className="fpd-x248">{facturaEditando.__groupIds.length} documentos agrupados</b> (el total y los archivos se guardan en el primero)</span>
               )}
             </div>
 
@@ -4208,16 +4220,8 @@ export const FacturacionProveedoresDashboard = () => {
               <div className="fpd-x161">
                 {/* ✅ V00276: documento de la factura desde el editor (se sube al guardar) */}
                 <label className="fpd-x143">DOCUMENTO DE LA FACTURA</label>
-                <TarjetaDocumentoFactura
-                  url={facturaEditando.docFacturaUrl}
-                  nombre={facturaEditando.docFacturaNombre}
-                  fecha={facturaEditando.docFacturaFecha}
-                  por={facturaEditando.docFacturaPor}
-                  pendiente={docFacturaFile}
-                  notaPendiente={String(facturaEditando.docFacturaUrl || '') ? 'Reemplazará al actual al guardar' : 'Se subirá al guardar'}
-                  onElegir={() => inputDocFacturaModalRef.current?.click()}
-                  onQuitarPendiente={() => setDocFacturaFile(null)}
-                />{/* ✅ V00381 */}
+                {/* ✅ V00451: varios (hasta 10), con vista previa; se guardan al guardar */}
+                <AdjuntosArchivos etiqueta="Archivos" adjuntos={adjuntosEdicion} onCambiar={setAdjuntosEdicion} max={MAX_DOCS_FACTURA} deshabilitado={guardandoEdit} />
               </div>
               <div>
                 <label className="fpd-x143">FECHA DE FACTURACIÓN</label>

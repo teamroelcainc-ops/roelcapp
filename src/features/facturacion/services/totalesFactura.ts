@@ -59,3 +59,27 @@ export const avisoLoteGrande = (
   consejo = 'Divide la selección en partes más pequeñas y vuelve a intentar.',
 ): string =>
   `Este cambio necesita ${escrituras} escrituras y el máximo por lote es ${MAX_ESCRITURAS_LOTE}.\n\n${consejo}`;
+
+// ✅ V00451 — TOTAL DE UNA FILA DEL HISTORIAL (varios documentos con el mismo folio se agrupan).
+//   Por documento: el total capturado a mano; si no, `subtotalMonedaFactura` AUNQUE SEA 0 (al
+//   editar un grupo, los demás documentos se guardan en 0 y conservan sus renglones: sumar sus
+//   renglones inflaba el total y, con la bandera, cada guardado lo subía más); si no lo tiene, la
+//   regla de siempre (`totalDoc`). Una fila de un solo documento usa la regla de siempre.
+const numeroDe = (v: unknown): number => (typeof v === 'number' ? v : Number(v)) || 0;
+
+export const totalGuardadoDeDocumento = (doc: unknown, totalDoc: (d: unknown) => number): number => {
+  const d = (doc && typeof doc === 'object' ? doc : {}) as Record<string, unknown>;
+  const manual = numeroDe(d.totalManualCentavos);
+  if (manual > 0) return Math.round(manual) / 100;
+  const guardado = d.subtotalMonedaFactura;
+  if (guardado !== undefined && guardado !== null && guardado !== '') return numeroDe(guardado);
+  return totalDoc(d);
+};
+
+export const totalDeFilaFactura = (fila: unknown, totalDoc: (d: unknown) => number): number => {
+  const f = (fila && typeof fila === 'object' ? fila : {}) as Record<string, unknown>;
+  const docs = Array.isArray(f.__groupDocs) ? (f.__groupDocs as unknown[]) : [];
+  if (docs.length <= 1) return totalDoc(f);
+  const centavos = docs.reduce<number>((acc, d) => acc + Math.round(totalGuardadoDeDocumento(d, totalDoc) * 100), 0);
+  return centavos / 100;
+};

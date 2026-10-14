@@ -19,12 +19,22 @@ export interface OperacionGuardadaDetalle {
   id: string;
   data: Record<string, unknown>;
   origen?: string;
+  /**
+   * ✅ V00451: campos que CAMBIARON (si el que avisa lo sabe). `data` trae la operación completa
+   * (para quien no la tiene en su lista), pero puede ser una copia vieja: quien ya la tiene aplica
+   * solo estos campos y no pisa datos más nuevos.
+   */
+  campos?: readonly string[];
 }
 
-export const notificarOperacionGuardada = (id: string, data: Record<string, unknown>, origen = 'operaciones') => {
+/** Lo que hay que aplicar a una operación que YA está en la lista: solo los campos que cambiaron, si se saben. */
+export const datosAAplicar = ({ data, campos }: Pick<OperacionGuardadaDetalle, 'data' | 'campos'>): Record<string, unknown> =>
+  campos ? Object.fromEntries(campos.filter((c) => c in data).map((c) => [c, data[c]])) : data;
+
+export const notificarOperacionGuardada = (id: string, data: Record<string, unknown>, origen = 'operaciones', campos?: readonly string[]) => {
   CACHES_DEPENDIENTES_DE_OPERACIONES.forEach((k) => { try { almacenSesion.removeItem(k); } catch { /* noop */ } });
   try {
-    window.dispatchEvent(new CustomEvent<OperacionGuardadaDetalle>(EVENTO_OPERACION_GUARDADA, { detail: { id: String(id), data, origen } }));
+    window.dispatchEvent(new CustomEvent<OperacionGuardadaDetalle>(EVENTO_OPERACION_GUARDADA, { detail: { id: String(id), data, origen, ...(campos ? { campos } : {}) } }));
   } catch { /* SSR / entorno sin window */ }
 };
 

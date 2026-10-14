@@ -1,0 +1,21 @@
+/* src/features/facturacion/components/DocumentosFacturaModal.css — ✅ V00451 (prefijo dfm-) */
+/* Encima de la Ficha de la factura (z-index 1500) y de los demás modales de Facturación. */
+.dfm-fondo { position: fixed; inset: 0; z-index: 1950; display: flex; align-items: center; justify-content: center; padding: 20px; background-color: rgba(0, 0, 0, 0.85); backdrop-filter: blur(4px); }
+.dfm-caja { display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: 720px; max-height: 90vh; overflow-y: auto; padding: 20px 22px; border: 1px solid #30363d; border-radius: 12px; background-color: #0d1117; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); }
+.dfm-cabeza { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.dfm-titulo { margin: 0; color: #f0f6fc; font-size: 1.1rem; font-weight: 700; }
+.dfm-folio { color: #58a6ff; }
+.dfm-cerrar { flex: 0 0 auto; padding: 4px 10px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: #8b949e; font-size: 1rem; cursor: pointer; }
+.dfm-cerrar:hover { border-color: #30363d; color: #f0f6fc; }
+.dfm-nota { margin: 0; color: #8b949e; font-size: 0.8rem; }
+.dfm-pie { display: flex; justify-content: flex-end; gap: 10px; padding-top: 14px; border-top: 1px solid #30363d; }
+.dfm-btn { padding: 8px 18px; border: 1px solid #30363d; border-radius: 6px; background: transparent; color: #c9d1d9; font-weight: 600; cursor: pointer; }
+.dfm-btn:hover { border-color: #8b949e; }
+.dfm-btn--guardar { border-color: #238636; background-color: #238636; color: #ffffff; }
+.dfm-btn--guardar:hover { border-color: #2ea043; background-color: #2ea043; }
+.dfm-btn:disabled,
+.dfm-cerrar:disabled { opacity: 0.55; cursor: not-allowed; }
+
+@media (max-width: 640px) {
+  .dfm-caja { max-height: none; padding: 14px 12px; }
+}

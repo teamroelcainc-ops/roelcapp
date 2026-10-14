@@ -66,3 +66,11 @@
 .dl-edit-tipo { display: flex; flex-direction: column; gap: 4px; color: #8b949e; font-size: 0.72rem; font-weight: 700; margin-bottom: 12px; }
 .dl-edit-tipo select { background: #0d1117; border: 1px solid #30363d; color: #f0f6fc; border-radius: 8px; padding: 8px 10px; font-size: 0.85rem; }
 .dl-edit-pendiente { color: #fbbf24; font-style: normal; font-size: 0.72rem; margin-top: 2px; }
+
+/* ✅ V00451: Ver (vista previa debajo del renglón) y Reemplazar por documento. Prefijo dlv-. */
+.dlv-item { display: flex; flex-direction: column; gap: 6px; }
+.dlv-input-oculto { display: none; }
+.dlv-btn { display: inline-flex; align-items: center; gap: 5px; background: transparent; border: 1px solid #30363d; color: #c9d1d9; border-radius: 8px; padding: 5px 10px; font-size: 0.72rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.dlv-btn--activo { border-color: #58a6ff; color: #58a6ff; }
+.dlv-btn:hover { border-color: #58a6ff; color: #58a6ff; }
+.dlv-btn:disabled { opacity: 0.5; cursor: not-allowed; }

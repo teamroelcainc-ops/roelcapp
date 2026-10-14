@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback, useEffectEvent } from 'react';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { useHandlerEstable } from '../hooks/useHandlerEstable';
-import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
+import { datosAAplicar, notificarOperacionGuardada, suscribirOperacionGuardada } from '../../../utils/operacionesBus';
+import { CAMPOS_AJENOS_AL_FORMULARIO } from '../services/camposAjenos'; // ✅ V00451
 import { sinPruebas, esOperacionPrueba } from '../../../utils/operacionPrueba';
-import { addDoc, collection, query, getDocs, orderBy, limit, where, startAfter, documentId, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
+import { addDoc, collection, query, getDocs, getDoc, orderBy, limit, where, startAfter, documentId, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db, auth } from '../../../config/firebase';
 import { direccionCompletaDeEmpresa } from '../../../utils/direccionEmpresa'; // ✅ V00281
 import { EditorTarifaOrigenDestino } from './EditorTarifaOrigenDestino'; // ✅ V00224
@@ -143,6 +144,33 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     setSincronizandoNombres(false);
   };
   const [operacionViendo, setOperacionViendo] = useState<any | null>(null);
+  // ✅ V00451: CONEXIONES (factura cliente/proveedor, nómina, diésel, puentes) al día. La lista se
+  //   descarga una vez al buscar; si Facturación factura la operación después, la ficha seguía
+  //   diciendo "Factura Cliente: Pendiente". Ahora (1) al abrir la ficha se leen esos campos del
+  //   servidor y (2) los cambios avisados en la sesión (operacionesBus) se aplican a la lista.
+  const conexionesDe = (datos: Record<string, unknown>): Record<string, unknown> => {
+    const r: Record<string, unknown> = {};
+    for (const c of CAMPOS_AJENOS_AL_FORMULARIO) if (c !== 'id' && c !== '_docId' && c in datos) r[c] = datos[c];
+    return r;
+  };
+  const aplicarConexiones = useEffectEvent((ids: readonly string[], datos: Record<string, unknown>) => {
+    const cambios = conexionesDe(datos);
+    if (Object.keys(cambios).length === 0) return;
+    const es = (o: { id?: unknown; _docId?: unknown } | null | undefined) => !!o && (ids.includes(String(o.id)) || ids.includes(String(o._docId ?? '')));
+    setOperacionesGlobales((prev) => (prev.some(es) ? prev.map((o) => (es(o) ? { ...o, ...cambios } : o)) : prev));
+    setOperacionViendo((prev: Record<string, unknown> | null) => (es(prev) ? { ...prev, ...cambios } : prev));
+  });
+  // Solo los campos que cambiaron, si el aviso los dice (la copia del que avisa puede ser más vieja).
+  useEffect(() => suscribirOperacionGuardada((aviso) => aplicarConexiones([String(aviso.id), String(aviso.data._docId ?? '')].filter(Boolean), datosAAplicar(aviso))), []);
+  const idDocViendo = operacionViendo ? String(operacionViendo._docId || operacionViendo.id || '') : '';
+  useEffect(() => {
+    if (!idDocViendo) return undefined;
+    let vigente = true;
+    getDoc(doc(db, 'operaciones', idDocViendo))
+      .then((snap) => { if (vigente && snap.exists()) aplicarConexiones([idDocViendo], snap.data()); })
+      .catch((e: unknown) => console.warn('[Completados] No se pudo refrescar la ficha:', e));
+    return () => { vigente = false; };
+  }, [idDocViendo]);
   // ✅ V00421: cuándo se muestra la Carta de Instrucciones (configurable)
   const cfgCarta = useConfigCarta();
   const [cfgCartaAbierto, setCfgCartaAbierto] = useState(false);

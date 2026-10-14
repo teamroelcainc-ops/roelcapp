@@ -13,6 +13,16 @@ import './FormularioMtto.css';
 import { hoyLocalISO } from '../../../../utils/fechaHoraLocal';
 import { FormularioConfigurable } from '../../../formularios/FormularioConfigurable';
 import { validarFormularioConfigurable } from '../../../formularios/configFormularios';
+import AdjuntosArchivos from '../../../../shared/components/AdjuntosArchivos'; // ✅ V00451
+import { archivosDeDocumento, cambioAdjuntos, camposDeArchivos, desdeGuardados } from '../../../../shared/archivos/adjuntos';
+import type { Adjunto, ArchivoGuardado } from '../../../../shared/archivos/adjuntos';
+import { subirAdjuntos } from '../../../../shared/archivos/subirAdjuntos';
+
+// ✅ V00451: archivos del gasto (hasta 10, PDF o imagen) en `archivos`; el primero también en
+//   archivoPdfUrl / archivoPdfNombre (los registros viejos solo tienen esos dos).
+const LEGADO_ARCHIVO_MTTO = { url: 'archivoPdfUrl', nombre: 'archivoPdfNombre' };
+const archivosMtto = (m: unknown): ArchivoGuardado[] =>
+  archivosDeDocumento(m as Record<string, unknown> | null | undefined, 'archivos', LEGADO_ARCHIVO_MTTO);
 // ✅ NUEVO — REFACCIONES: cuando el Tipo de Gasto es "Gastos de Refacción y
 //   Mantenimiento" se habilita una lista de refacciones compradas, cada una
 //   con su detalle, fecha de compra, garantía (y días restantes), dónde se
@@ -167,13 +177,15 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
     facturaTexto: '',
     fechaFactura: '',
     descripcionFactura: '',
-    archivoPdf: null as File | null,
     fechaPago: '',
     formaPagoId: '',
     observaciones: '',
     operacionAsignadaId: '',
     refacciones: [] as Refaccion[],   // ✅ NUEVO
   });
+  // ✅ V00451: archivos del gasto (los guardados + los elegidos; se suben al guardar).
+  //   El dashboard monta el formulario con key por registro, así que basta el valor inicial.
+  const [adjuntos, setAdjuntos] = useState<Adjunto[]>(() => desdeGuardados(archivosMtto(initialData)));
 
   const guardarConfiguracion = (nuevaConfig: any) => {
     setConfiguracion(nuevaConfig);
@@ -342,10 +354,6 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData(prev => ({ ...prev, archivoPdf: e.target.files?.[0] || null }));
-  };
-
   const toggleServicio = (idServicio: string) => {
     setFormData(prev => {
       const actuales = [...prev.tipoServicioId];
@@ -389,8 +397,20 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
   const handleSubmit = async (e: React.FormEvent) => {
     if (!validarFormularioConfigurable('mtto')) { e?.preventDefault?.(); return; } // ✅ V00385: campos obligatorios (Autorizaciones / editor)
     // ✅ V00140: reglas de acción (crear/editar) de Autorizaciones
-    if (!aut.verificarAccion(initialData?.id ? 'editar' : 'crear', camposModificadosDe((formData || {}) as unknown as Record<string, unknown>, (initialData || {}) as unknown as Record<string, unknown>), (initialData || {}) as unknown as Record<string, unknown>) /* ✅ V00382: solo lo que REALMENTE cambió */) return;
+    // ✅ V00451: cambiar los archivos cuenta como cambio del campo de siempre (archivoPdf).
+    const archivosAntes = archivosMtto(initialData);
+    const archivosCambiaron = cambioAdjuntos(adjuntos, archivosAntes);
+    const modificados = camposModificadosDe((formData || {}) as unknown as Record<string, unknown>, (initialData || {}) as unknown as Record<string, unknown>);
+    if (archivosCambiaron) modificados.push('archivoPdf');
+    if (!aut.verificarAccion(initialData?.id ? 'editar' : 'crear', modificados, (initialData || {}) as unknown as Record<string, unknown>) /* ✅ V00382: solo lo que REALMENTE cambió */) return;
     e.preventDefault();
+
+    // ✅ V00451: "Archivo obligatorio" (Configurar Formulario) = al menos uno, guardado o nuevo.
+    if (configuracion.requeridos.archivoPdf && adjuntos.length === 0) {
+      setPestañaActiva('documentos');
+      alert('Agrega al menos un archivo (PDF o imagen).');
+      return;
+    }
 
     // ✅ NUEVO — validación de refacciones cuando aplica el tipo de gasto.
     if (formData.tipoGasto === TIPO_GASTO_REFACCION) {
@@ -408,8 +428,8 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
 
     setCargando(true);
     try {
-      // Separamos el archivo (si lo hay) de los datos de texto
-      const { archivoPdf, ...dataLista } = formData;
+      // ✅ V00451: los archivos ya no van en formData (antes el PDF se descartaba aquí y nunca se subía).
+      const dataLista = { ...formData };
 
       // ✅ NUEVO — se guardan solo refacciones con contenido; si el tipo de
       //   gasto no es Refacción, la lista se vacía para no arrastrar datos.
@@ -420,17 +440,35 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
       // ✅ SI ES UNA EDICIÓN, ACTUALIZAMOS DIRECTAMENTE LA FILA EXISTENTE
       if (initialData && initialData.id) {
         const docRef = doc(db, 'gastos_mtto', initialData.id);
-        await updateDoc(docRef, dataLista); // Actualización forzada
-        
+        // ✅ V00451: se suben los archivos nuevos a gastos_mtto/<id> y se guarda la lista
+        //   (+ el primero en archivoPdfUrl/archivoPdfNombre). Sin cambios, se conserva lo guardado.
+        const datos = archivosCambiaron
+          ? { ...dataLista, ...camposDeArchivos(await subirAdjuntos(adjuntos, `gastos_mtto/${initialData.id}`), 'archivos', LEGADO_ARCHIVO_MTTO) }
+          : dataLista;
+        await updateDoc(docRef, datos); // Actualización forzada
+
         alert("Gasto actualizado con éxito.");
-        if (onSave) onSave({ id: initialData.id, ...dataLista });
-        
+        if (onSave) onSave({ id: initialData.id, ...datos });
+
       } else {
         // ✅ SI ES UN REGISTRO NUEVO, USAMOS TU FUNCIÓN NORMAL
         //    (ahora regresa el id REAL del documento creado en Firestore)
         const nuevoId = await guardarMttoSeguro(dataLista);
+        // ✅ V00451: el id existe hasta crear el gasto: después se suben los archivos y se agregan.
+        let camposArchivos: Record<string, unknown> = {};
+        if (adjuntos.length > 0) {
+          try {
+            camposArchivos = camposDeArchivos(await subirAdjuntos(adjuntos, `gastos_mtto/${nuevoId}`), 'archivos', LEGADO_ARCHIVO_MTTO);
+            await updateDoc(doc(db, 'gastos_mtto', nuevoId), camposArchivos);
+          } catch (errorArchivos) {
+            console.error('Error subiendo archivos del gasto:', errorArchivos);
+            alert('El gasto se guardó, pero no se subieron los archivos. Ábrelo con Editar y vuelve a agregarlos.');
+            if (onSave) onSave({ id: nuevoId, ...dataLista });
+            return;
+          }
+        }
         alert("Gasto guardado con éxito.");
-        if (onSave) onSave({ id: nuevoId, ...dataLista });
+        if (onSave) onSave({ id: nuevoId, ...dataLista, ...camposArchivos });
       }
 
     } catch (error) {
@@ -856,9 +894,11 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
                 <label className="fm-x14">Descripción Factura {configuracion.requeridos.descripcionFactura && <RequeridoMark />}</label>
                 <input className="fm-x15" type="text" name="descripcionFactura" required={configuracion.requeridos.descripcionFactura} value={formData.descripcionFactura} onChange={handleChange} />
               </div>
-              <div className="form-group">
-                <label className="fm-x14">Archivo (PDF) {configuracion.requeridos.archivoPdf && <RequeridoMark />}</label>
-                <input className="fm-x15" type="file" accept=".pdf" required={configuracion.requeridos.archivoPdf && !initialData?.archivoPdfUrl} onChange={handleFileChange} />
+              {/* ✅ V00451: hasta 10 archivos (PDF o imagen) con vista previa y Reemplazar.
+                  data-campo conserva la clave del campo de siempre en Configurar formulario. */}
+              <div className="form-group fm-x23" data-campo="archivo-pdf">
+                <label className="fm-x14">Archivos (PDF o imagen) {configuracion.requeridos.archivoPdf && <RequeridoMark />}</label>
+                <AdjuntosArchivos etiqueta="" adjuntos={adjuntos} onCambiar={setAdjuntos} deshabilitado={cargando} />
               </div>
               <div className="form-group">
                 <label className="fm-x14">Fecha de Pago {configuracion.requeridos.fechaPago && <RequeridoMark />}</label>

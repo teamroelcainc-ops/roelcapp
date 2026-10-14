@@ -95,6 +95,8 @@
 .md-x92 { color: #58a6ff; font-weight: bold; font-size: 1.1rem; }
 .md-x93 { font-size: 1.8rem; font-weight: bold; color: #3fb950; }
 .md-x94 { color: #58a6ff; text-decoration: underline; }
+/* ✅ V00451: lista de archivos del gasto en el detalle */
+.md-archivos { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; overflow-wrap: anywhere; }
 .md-x95 { padding: 16px 24px; text-align: right; border-top: 1px solid #30363d; }
 .md-x96 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.5); z-index: 1400; backdrop-filter: blur(2px); }
 .md-x97 { position: fixed; top: 0; right: 0; bottom: 0; width: 360px; max-width: 92%; background-color: #0d1117; border-left: 1px solid #30363d; box-shadow: -8px 0 28px rgba(0,0,0,0.5); padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; z-index: 1401; animation: fadeIn 0.15s ease; }

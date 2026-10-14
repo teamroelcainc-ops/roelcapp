@@ -34,9 +34,9 @@
 .he-x30 { width: 100%; padding: 10px; background-color: #161b22; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; box-sizing: border-box; }
 .he-x31 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .he-x32 { width: 100%; padding: 10px; background-color: #161b22; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; box-sizing: border-box; resize: vertical; }
-.he-x33 { width: 100%; padding: 8px; color: #c9d1d9; }
 .he-x34 { margin-top: 8px; font-size: 0.8rem; color: #58a6ff; }
-.he-x35 { margin-top: 8px; font-size: 0.8rem; color: #8b949e; }
+/* ✅ V00451: documentos de la herramienta en la tabla (uno por renglón) */
+.he-documentos { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; overflow-wrap: anywhere; }
 .he-x36 { padding: 16px 24px; border-top: 1px solid #30363d; display: flex; justify-content: flex-end; gap: 12px; }
 .he-x37 { padding: 8px 16px; background-color: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; cursor: pointer; }
 .he-x38 { padding: 8px 16px; background-color: #D84315; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }

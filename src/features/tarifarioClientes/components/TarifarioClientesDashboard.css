@@ -344,21 +344,20 @@
 .tc-filtros-conteo { margin-left: auto; color: #8b949e; font-size: 0.78rem; white-space: nowrap; }
 
 /* ✅ V00273: indicador del tarifario firmado en la fila (ambos tarifarios) */
-.tc-doc-firmado { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; margin-right: 6px; border-radius: 6px; border: 1px solid #30363d; cursor: pointer; font-size: 0.82rem; user-select: none; }
-.tc-doc-firmado:hover { background: rgba(139, 148, 158, 0.12); }
+.tc-doc-firmado { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; margin-right: 6px; padding: 0; border-radius: 6px; border: 1px solid #30363d; background: transparent; color: inherit; cursor: pointer; font-size: 0.82rem; user-select: none; } /* ✅ V00451: ahora es <button> */
+.tc-doc-firmado:hover { background: rgba(139, 148, 158, 0.12); border-color: #8b949e; }
 .tc-doc-firmado--ok { border-color: #238636; }
 .tc-doc-firmado--falta { border-color: #d29922; background: rgba(210, 153, 34, 0.12); animation: tcDocPulso 2s ease-in-out infinite; }
+/* ✅ V00451: el borde de estado se conserva al pasar el mouse (el :hover global de button lo cambiaba) */
+.tc-doc-firmado--ok:hover { border-color: #238636; }
+.tc-doc-firmado--falta:hover { border-color: #d29922; }
 @keyframes tcDocPulso { 0%, 100% { box-shadow: 0 0 0 0 rgba(210, 153, 34, 0.25); } 50% { box-shadow: 0 0 0 4px rgba(210, 153, 34, 0.0); } }
-.tc-input-doc-oculto { display: none; }
+/* ✅ V00451: cuántos archivos tiene el tarifario firmado (solo si son 2 o más) */
+.tc-doc-firmado-conteo { position: absolute; top: -7px; right: -7px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 999px; background: #238636; color: #fff; font-size: 0.62rem; font-weight: 700; line-height: 15px; text-align: center; pointer-events: none; }
 
 /* ✅ V00274: tarifario firmado en el formulario y la ficha */
 .tc-campo-docfirmado { grid-column: 1 / -1; }
 .tc-docfirmado-linea { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.tc-docfirmado-nombre { font-size: 0.82rem; color: #c9d1d9; }
-.tc-docfirmado-nombre--vacio { color: #8b949e; font-style: italic; }
-.tc-docfirmado-ver { background: none; border: 1px solid #238636; border-radius: 6px; color: #3fb950; padding: 4px 10px; font-size: 0.8rem; cursor: pointer; }
-.tc-docfirmado-ver:hover { background: rgba(35, 134, 54, 0.12); }
-.tc-docfirmado-btn { cursor: pointer; }
 .tc-doc-firmado-ficha { cursor: pointer; }
 
 /* ✅ V00277: regla "Tarifario obligatorio" (Sí/No) en el formulario */

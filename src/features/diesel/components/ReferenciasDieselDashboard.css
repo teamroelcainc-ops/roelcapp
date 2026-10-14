@@ -118,13 +118,6 @@
 .rdd-x114 { width: 100%; padding: 8px; background-color: #161b22; color: #fff; border: 1px solid #30363d; border-radius: 4px; height: 80px; }
 .rdd-x115 { color: #8b949e; font-size: 0.75rem; display: block; margin-bottom: 8px; }
 .rdd-x116 { color: #484f58; font-weight: normal; }
-.rdd-x117 { display: none; }
-.rdd-x118 { margin-bottom: 8px; }
-.rdd-x119 { color: #8b949e; font-size: 0.75rem; margin-top: 4px; }
-.rdd-x120 { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 10px; margin-top: 12px; }
-.rdd-x121 { position: relative; border-radius: 6px; overflow: hidden; border: 1px solid #30363d; background-color: #010409; }
-.rdd-x122 { width: 100%; height: 80px; object-fit: cover; display: block; }
-.rdd-x123 { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; border: none; background-color: rgba(239,68,68,0.9); color: #fff; cursor: pointer; font-size: 0.85rem; line-height: 1; display: flex; align-items: center; justify-content: center; }
 .rdd-x124 { display: block; color: #8b949e; font-size: 0.75rem; margin-top: 8px; }
 .rdd-x125 { display: flex; justify-content: flex-end; gap: 12px; }
 .rdd-x126 { padding: 8px 24px; background: none; color: #8b949e; border: 1px solid #30363d; border-radius: 6px; cursor: pointer; }
@@ -163,11 +156,12 @@
 .rdd-x159 { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; margin-bottom: 12px; }
 .rdd-x160 { display: block; border-radius: 6px; overflow: hidden; border: 1px solid #30363d; background-color: #010409; }
 .rdd-x161 { width: 100%; height: 100px; object-fit: cover; display: block; }
-.rdd-x162 { margin-bottom: 6px; }
-.rdd-x163 { color: #8b949e; font-size: 0.72rem; margin-top: 4px; }
-.rdd-x164 { position: relative; border-radius: 6px; overflow: hidden; border: 1px dashed #D84315; background-color: #010409; }
 .rdd-x165 { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; flex-wrap: wrap; gap: 8px; }
 .rdd-x166 { color: #8b949e; font-size: 0.75rem; }
+/* ✅ V00451: Descartar / Guardar fotos en la ficha (reusan rdd-x126 / rdd-x127) */
+.rdd-fotos-acciones { display: inline-flex; flex-wrap: wrap; gap: 8px; }
+.rdd-x126:disabled,
+.rdd-x127:disabled { cursor: not-allowed; opacity: 0.6; }
 .rdd-x167 { font-size: 0.62rem; font-weight: bold; padding: 1px 7px; border-radius: 999px; letter-spacing: 0.5px; border: 1px solid #f85149; color: #f85149; }
 .rdd-x168 { padding: 16px 24px; display: flex; justify-content: flex-end; border-top: 1px solid #30363d; background-color: #161b22; }
 .rdd-x169 { padding: 8px 24px; border-radius: 6px; color: #c9d1d9; border: 1px solid #30363d; background: transparent; cursor: pointer; }
@@ -258,7 +252,6 @@
   .rdd-x104 { flex-wrap: wrap; }
   .rdd-x107 { flex-wrap: wrap; }
   .rdd-x111 { flex-wrap: wrap; }
-  .rdd-x123 { flex-wrap: wrap; }
   .rdd-x125 { flex-wrap: wrap; }
   .rdd-x128 { flex-wrap: wrap; }
   .rdd-x130 { flex-wrap: wrap; }

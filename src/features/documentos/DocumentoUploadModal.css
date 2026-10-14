@@ -11,9 +11,6 @@
 .dum-x7 { font-size: 0.75rem; color: #6e7681; background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 10px 12px; }
 .dum-x8 { color: #8b949e; }
 .dum-x9 { color: #6e7681; }
-.dum-x10 { color: #3fb950; font-weight: 600; font-size: 0.85rem; text-align: center; word-break: break-all; }
-.dum-x11 { color: #8b949e; font-size: 0.82rem; }
-.dum-x12 { display: none; }
 .dum-x13 { display: inline-flex; border: 1px solid #30363d; border-radius: 8px; overflow: hidden; width: fit-content; }
 .dum-x14 { padding: 16px 24px; border-top: 1px solid #30363d; display: flex; justify-content: flex-end; gap: 12px; flex-shrink: 0; }
 .dum-x15 { padding: 10px 20px; border-radius: 6px; }
@@ -24,4 +21,36 @@
   .dum-x3 { flex-wrap: wrap; }
   .dum-x6 { padding: 14px 12px; }
   .dum-x14 { flex-wrap: wrap; }
+}
+
+/* ✅ V00451: expediente sin límite (AdjuntosArchivos) y estilos que antes eran objetos de
+   estilo en JS (labelStyle, inputStyle, filaStyle, segBtn…), mismos valores. Prefijo dsub-. */
+.dsub-fila { display: grid; grid-template-columns: 160px 1fr; align-items: center; gap: 16px; }
+.dsub-fila--arriba { align-items: flex-start; }
+.dsub-etq { color: #8b949e; font-size: 0.9rem; }
+.dsub-etq--arriba { padding-top: 8px; }
+.dsub-input { width: 100%; padding: 10px 12px; background-color: #010409; border: 1px solid #30363d; border-radius: 8px; color: #c9d1d9; font-size: 0.9rem; box-sizing: border-box; }
+.dsub-textarea { resize: vertical; }
+.dsub-tipo { display: flex; gap: 8px; align-items: center; }
+.dsub-tipo-select { flex: 1; min-width: 0; }
+.dsub-mas { flex-shrink: 0; width: 38px; height: 38px; border-radius: 8px; cursor: pointer; border: 1px solid #30363d; background-color: #161b22; color: #c9d1d9; font-size: 1.15rem; font-weight: 700; }
+.dsub-mas--activo { border-color: #D84315; background-color: rgba(216, 67, 21, 0.15); color: #D84315; }
+.dsub-nota-catalogo { font-size: 0.75rem; margin-top: -12px; }
+.dsub-nuevo { border: 1px dashed #D84315; border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 12px; background-color: rgba(216, 67, 21, 0.05); }
+.dsub-nuevo-titulo { color: #f0f6fc; font-weight: 600; font-size: 0.9rem; }
+.dsub-seg { padding: 10px 30px; border: none; cursor: pointer; font-weight: 600; font-size: 0.9rem; background-color: transparent; color: #8b949e; transition: all 0.15s ease; }
+.dsub-seg--no { background-color: #30363d; color: #fff; }
+.dsub-seg--si { background-color: #D84315; color: #fff; }
+.dsub-acciones-tipo { display: flex; justify-content: flex-end; gap: 10px; }
+.dsub-btn-primario { padding: 10px 20px; border-radius: 6px; border: none; background-color: #D84315; color: #fff; font-weight: bold; cursor: pointer; }
+.dsub-btn-primario:disabled { background-color: #21262d; color: #6e7681; cursor: not-allowed; }
+.dsub-btn-subir { padding: 10px 24px; }
+.dsub-archivos { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.dsub-ayuda { margin: 0; color: #6e7681; font-size: 0.75rem; }
+.dsub-error { padding: 8px 10px; border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 8px; background-color: rgba(239, 68, 68, 0.06); color: #f87171; font-size: 0.8rem; }
+.dsub-aviso-vence { color: #D84315; font-size: 0.8rem; font-weight: 600; }
+
+@media (max-width: 640px) {
+  .dsub-fila { grid-template-columns: 1fr; gap: 6px; }
+  .dsub-etq--arriba { padding-top: 0; }
 }

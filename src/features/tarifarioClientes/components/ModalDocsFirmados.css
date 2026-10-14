@@ -1,0 +1,28 @@
+/* src/features/tarifarioClientes/components/ModalDocsFirmados.css — ✅ V00451 (prefijo tfm-) */
+/* Encima del detalle del tarifario (2300) y del editor de línea (2400): se abre desde ambos. */
+.tfm-overlay { z-index: 2450; }
+.tfm-modal {
+  width: min(720px, 94vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.tfm-encabezado { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.tfm-titulo { margin: 0; color: #f0f6fc; font-size: 1.05rem; }
+.tfm-entidad { color: #fb923c; }
+.tfm-sub { margin: 4px 0 0 0; color: #8b949e; font-size: 0.8rem; }
+.tfm-cerrar { background: none; border: none; color: #8b949e; font-size: 1rem; cursor: pointer; padding: 2px 6px; }
+.tfm-cerrar:hover { color: #f0f6fc; }
+.tfm-pie { display: flex; justify-content: flex-end; gap: 8px; }
+.tfm-pie button:disabled,
+.tfm-cerrar:disabled { opacity: 0.55; cursor: not-allowed; }
+
+@media (max-width: 640px) {
+  .tfm-modal { width: 100vw; max-height: 100dvh; border-radius: 0; }
+}

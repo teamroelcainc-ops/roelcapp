@@ -6,8 +6,6 @@
 .fo-x2 { display: block; flex-shrink: 0; }
 .fo-x3 { flex-shrink: 0; width: 38px; height: 38px; display: inline-flex; align-items: center; justify-content: center; background-color: rgba(251, 146, 60, 0.10); border: 1px solid rgba(251, 146, 60, 0.35); border-radius: 8px; color: #fb923c; cursor: pointer; transition: all 0.15s ease; }
 .fo-x3:hover { background-color: rgba(251, 146, 60, 0.20); } /* ✅ V00444: antes onMouseEnter/onMouseLeave */
-.fo-x4 { flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #f85149; background-color: rgba(248,81,73,0.08); border: 1px solid rgba(248,81,73,0.35); border-radius: 6px; cursor: pointer; }
-.fo-x5 { display: none; }
 .fo-x6 { padding: 40px; text-align: center; color: #8b949e; }
 .fo-x7 { display: flex; gap: 8px; }
 .fo-x8 { font-size: 0.82rem; font-weight: 600; }

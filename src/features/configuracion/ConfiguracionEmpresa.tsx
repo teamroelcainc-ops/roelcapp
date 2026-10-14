@@ -11,14 +11,16 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { doc, setDoc } from 'firebase/firestore';
-import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { ref as storageRef, deleteObject } from 'firebase/storage';
 import { db, storage } from '../../config/firebase';
 import { useEmpresaConfig, CONFIG_EMPRESA_COL, CONFIG_EMPRESA_DOC } from './useEmpresaConfig';
 import type { EmpresaConfig } from './useEmpresaConfig';
+import AdjuntosArchivos from '../../shared/components/AdjuntosArchivos'; // ✅ V00451
+import { desdeGuardados } from '../../shared/archivos/adjuntos';
+import type { Adjunto } from '../../shared/archivos/adjuntos';
+import { subirAdjuntos } from '../../shared/archivos/subirAdjuntos';
+import { useUrlArchivo } from '../../shared/hooks/useUrlArchivo';
 import './ConfiguracionEmpresa.css';
-
-const sanitizarRuta = (s: string) =>
-  String(s || '').trim().replace(/[\/\\:*?"<>|#]+/g, '').replace(/\s+/g, '_').trim();
 
 // ✅ Convierte un archivo LOCAL de imagen a dataURL base64, redimensionándolo a un
 // máximo razonable para no inflar el documento de Firestore (límite ~1 MB por doc).
@@ -56,8 +58,9 @@ const ConfiguracionEmpresa = () => {
   const { config, cargando } = useEmpresaConfig();
 
   const [form, setForm] = useState<EmpresaConfig>({});
-  const [archivoLogo, setArchivoLogo] = useState<File | null>(null);
-  const [previewLocal, setPreviewLocal] = useState<string>('');
+  // ✅ V00451: logo con la carga compartida (una imagen). null = sin cambios: se muestra el
+  //   guardado (se ve y se puede reemplazar o quitar); el nuevo se sube al guardar.
+  const [logoElegido, setLogoElegido] = useState<Adjunto[] | null>(null);
   const [guardando, setGuardando] = useState(false);
   const inicializado = useRef(false);
 
@@ -73,12 +76,11 @@ const ConfiguracionEmpresa = () => {
     setForm(prev => ({ ...prev, [campo]: valor }));
   };
 
-  const handleArchivo = (file: File | null) => {
-    setArchivoLogo(file);
-    if (file) setPreviewLocal(URL.createObjectURL(file));
-  };
-
-  const logoMostrado = previewLocal || form.logoBase64 || form.logoUrl || '';
+  const urlLogoGuardado = form.logoUrl || form.logoBase64 || '';
+  const adjuntosLogo = logoElegido ?? desdeGuardados(urlLogoGuardado ? [{ url: urlLogoGuardado, nombre: 'Logo actual' }] : []);
+  const logoActual = adjuntosLogo[0];
+  const urlLogoNuevo = useUrlArchivo(logoActual?.estado === 'nuevo' ? logoActual.file : null);
+  const logoMostrado = !logoActual ? '' : logoActual.estado === 'nuevo' ? urlLogoNuevo : (form.logoBase64 || form.logoUrl || '');
 
   const handleGuardar = async () => {
     if (!form.nombre || !form.nombre.trim()) {
@@ -90,19 +92,15 @@ const ConfiguracionEmpresa = () => {
       let logoUrl = form.logoUrl || '';
       let logoPath = form.logoPath || '';
       let logoBase64 = form.logoBase64 || '';
+      const logoAnterior = logoPath;
 
       // Si se eligió un nuevo logo, súbelo a Storage Y conviértelo a base64.
+      // ✅ V00451: con la carga compartida (nombre único + caché); quitarlo deja los campos vacíos.
+      const archivoLogo = logoActual?.estado === 'nuevo' ? logoActual.file : null;
       if (archivoLogo) {
-        const ruta = `configuracion/logo_${Date.now()}_${sanitizarRuta(archivoLogo.name)}`;
-        const r = storageRef(storage, ruta);
-        await uploadBytes(r, archivoLogo);
-        logoUrl = await getDownloadURL(r);
-
-        // Borra el logo anterior (si existía y es distinto)
-        if (logoPath && logoPath !== ruta) {
-          try { await deleteObject(storageRef(storage, logoPath)); } catch (e) { console.warn('No se pudo borrar el logo anterior:', e); }
-        }
-        logoPath = ruta;
+        const [subido] = await subirAdjuntos(adjuntosLogo, 'configuracion');
+        logoUrl = subido.url;
+        logoPath = subido.path ?? '';
 
         // ✅ Generar el base64 (lo usan la app y los PDFs sin CORS)
         try {
@@ -111,6 +109,10 @@ const ConfiguracionEmpresa = () => {
           console.warn('No se pudo generar el logo en base64:', e);
           logoBase64 = '';
         }
+      } else if (!logoActual) {
+        logoUrl = '';
+        logoPath = '';
+        logoBase64 = '';
       }
 
       const datos: EmpresaConfig = {
@@ -129,8 +131,13 @@ const ConfiguracionEmpresa = () => {
 
       await setDoc(doc(db, CONFIG_EMPRESA_COL, CONFIG_EMPRESA_DOC), datos, { merge: true });
 
-      setArchivoLogo(null);
-      setPreviewLocal('');
+      // Borra el logo anterior (si existía y es distinto). ✅ V00451: después de guardar, para no
+      //   dejar la configuración apuntando a un archivo borrado si el guardado falla.
+      if (logoAnterior && logoAnterior !== logoPath) {
+        try { await deleteObject(storageRef(storage, logoAnterior)); } catch (e) { console.warn('No se pudo borrar el logo anterior:', e); }
+      }
+
+      setLogoElegido(null);
       setForm(datos);
       alert('Datos de la empresa guardados correctamente.');
     } catch (e: any) {
@@ -164,12 +171,8 @@ const ConfiguracionEmpresa = () => {
               <div className="ce-x10">
                 <div className="ce-x11">Logo de la empresa</div>
                 <div className="ce-x12">Aparecerá en el menú y en los documentos PDF. Recomendado: imagen cuadrada (PNG/JPG).</div>
-                <label className="ce-x13">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                  {logoMostrado ? 'Cambiar logo' : 'Subir logo'}
-                  <input className="ce-x14" type="file" accept="image/*" onChange={(e) => handleArchivo(e.target.files?.[0] || null)} />
-                </label>
-                {archivoLogo && <span className="ce-x15">✓ {archivoLogo.name} (se subirá al guardar)</span>}
+                {/* ✅ V00451: carga compartida (Ver, Reemplazar, ×); se sube al guardar */}
+                <AdjuntosArchivos etiqueta="" max={1} tipos="imagen" previaCerrada adjuntos={adjuntosLogo} onCambiar={setLogoElegido} deshabilitado={guardando} />
               </div>
             </div>
 

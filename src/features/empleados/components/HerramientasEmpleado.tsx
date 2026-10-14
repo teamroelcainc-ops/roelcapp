@@ -2,9 +2,18 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom'; // ✅ IMPORTACIÓN CLAVE PARA ARREGLAR EL MODAL
 import { collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, query, where } from 'firebase/firestore';
-import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db } from '../../../config/firebase';
+import AdjuntosArchivos from '../../../shared/components/AdjuntosArchivos'; // ✅ V00451
+import { archivosDeDocumento, cambioAdjuntos, camposDeArchivos, desdeGuardados, hayNuevos } from '../../../shared/archivos/adjuntos';
+import type { Adjunto, ArchivoGuardado } from '../../../shared/archivos/adjuntos';
+import { subirAdjuntos } from '../../../shared/archivos/subirAdjuntos';
 import './HerramientasEmpleado.css';
+
+// ✅ V00451: documentos de la herramienta (hasta 10) en DOCUMENTOS; DOCUMENTO = la URL del primero
+//   (los registros viejos solo tienen DOCUMENTO).
+const LEGADO_DOCUMENTO = { url: 'DOCUMENTO' };
+const documentosDe = (h: unknown): ArchivoGuardado[] =>
+  archivosDeDocumento(h as Record<string, unknown> | null | undefined, 'DOCUMENTOS', LEGADO_DOCUMENTO);
 
 interface Props {
   empleadoId: string;
@@ -16,7 +25,6 @@ export const HerramientasEmpleado: React.FC<Props> = ({ empleadoId }) => {
   const [modalAbierto, setModalAbierto] = useState(false);
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
-  const [progresoUpload, setProgresoUpload] = useState(0);
 
   const [formData, setFormData] = useState({
     FECHA_ENTREGA: '',
@@ -24,10 +32,11 @@ export const HerramientasEmpleado: React.FC<Props> = ({ empleadoId }) => {
     VALOR: '',
     OBSERVACIONES: '',
     NuevoUsado: 'Nuevo',
-    DOCUMENTO: ''
   });
-  
-  const [archivoSeleccionado, setArchivoSeleccionado] = useState<File | null>(null);
+
+  // ✅ V00451: documentos (los guardados + los elegidos; se suben al guardar).
+  const [adjuntos, setAdjuntos] = useState<Adjunto[]>([]);
+  const [documentosAntes, setDocumentosAntes] = useState<ArchivoGuardado[]>([]);
 
   useEffect(() => {
     if (!empleadoId) return;
@@ -48,9 +57,9 @@ export const HerramientasEmpleado: React.FC<Props> = ({ empleadoId }) => {
   }, [empleadoId]);
 
   const abrirModalNuevo = () => {
-    setFormData({ FECHA_ENTREGA: '', DISPOSITIVO: '', VALOR: '', OBSERVACIONES: '', NuevoUsado: 'Nuevo', DOCUMENTO: '' });
-    setArchivoSeleccionado(null);
-    setProgresoUpload(0);
+    setFormData({ FECHA_ENTREGA: '', DISPOSITIVO: '', VALOR: '', OBSERVACIONES: '', NuevoUsado: 'Nuevo' });
+    setAdjuntos([]);
+    setDocumentosAntes([]);
     setEditandoId(null);
     setModalAbierto(true);
   };
@@ -62,10 +71,10 @@ export const HerramientasEmpleado: React.FC<Props> = ({ empleadoId }) => {
       VALOR: herramienta.VALOR || '',
       OBSERVACIONES: herramienta.OBSERVACIONES || '',
       NuevoUsado: herramienta.NuevoUsado || 'Nuevo',
-      DOCUMENTO: herramienta.DOCUMENTO || ''
     });
-    setArchivoSeleccionado(null);
-    setProgresoUpload(0);
+    const antes = documentosDe(herramienta);
+    setAdjuntos(desdeGuardados(antes));
+    setDocumentosAntes(antes);
     setEditandoId(herramienta.id);
     setModalAbierto(true);
   };
@@ -81,33 +90,18 @@ export const HerramientasEmpleado: React.FC<Props> = ({ empleadoId }) => {
     setGuardando(true);
 
     try {
-      let urlDocumento = formData.DOCUMENTO;
-
-      if (archivoSeleccionado) {
-        const storage = getStorage();
-        const archivoRef = ref(storage, `herramientas_empleados/${empleadoId}_${Date.now()}_${archivoSeleccionado.name}`);
-        const uploadTask = uploadBytesResumable(archivoRef, archivoSeleccionado);
-
-        urlDocumento = await new Promise((resolve, reject) => {
-          uploadTask.on('state_changed', 
-            (snapshot) => {
-              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-              setProgresoUpload(progress);
-            }, 
-            (error) => reject(error), 
-            async () => {
-              const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-              resolve(downloadURL);
-            }
-          );
-        });
-      }
+      // ✅ V00451: los documentos nuevos se suben a herramientas_empleados/<empleado>; se guarda la
+      //   lista (DOCUMENTOS) y la URL del primero en DOCUMENTO. Al editar sin cambios no se tocan.
+      const cambio = cambioAdjuntos(adjuntos, documentosAntes);
+      const documentos = !editandoId || cambio
+        ? camposDeArchivos(cambio ? await subirAdjuntos(adjuntos, `herramientas_empleados/${empleadoId}`) : [], 'DOCUMENTOS', LEGADO_DOCUMENTO)
+        : {};
 
       const datosFinales = {
         ...formData,
         ID_EMPLEADOS: empleadoId,
         VALOR: Number(formData.VALOR),
-        DOCUMENTO: urlDocumento
+        ...documentos,
       };
 
       if (editandoId) {
@@ -181,7 +175,14 @@ export const HerramientasEmpleado: React.FC<Props> = ({ empleadoId }) => {
                   </td>
                   <td className="he-x13">${Number(h.VALOR || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   <td className="he-x15">
-                    {h.DOCUMENTO ? <a className="he-x16" href={h.DOCUMENTO} target="_blank" rel="noopener noreferrer">Ver Archivo ↗</a> : <span className="he-x17">Sin adjunto</span>}
+                    {/* ✅ V00451: todos los documentos de la herramienta */}
+                    {documentosDe(h).length > 0 ? (
+                      <ul className="he-documentos">
+                        {documentosDe(h).map((a) => (
+                          <li key={a.url}><a className="he-x16" href={a.url} target="_blank" rel="noopener noreferrer">{a.nombre} ↗</a></li>
+                        ))}
+                      </ul>
+                    ) : <span className="he-x17">Sin adjunto</span>}
                   </td>
                   <td className="he-x18">
                     <div className="he-x19">
@@ -243,15 +244,10 @@ export const HerramientasEmpleado: React.FC<Props> = ({ empleadoId }) => {
                   <textarea className="he-x32" rows={3} value={formData.OBSERVACIONES} onChange={(e) => setFormData({ ...formData, OBSERVACIONES: e.target.value })} />
                 </div>
 
+                {/* ✅ V00451: hasta 10 documentos con vista previa y Reemplazar */}
                 <div>
-                  <label className="he-x29">Documento (Opcional)</label>
-                  <input className="he-x33" type="file" onChange={(e) => setArchivoSeleccionado(e.target.files ? e.target.files[0] : null)} />
-                  {progresoUpload > 0 && progresoUpload < 100 && (
-                    <div className="he-x34">Subiendo documento: {Math.round(progresoUpload)}%</div>
-                  )}
-                  {formData.DOCUMENTO && !archivoSeleccionado && (
-                    <div className="he-x35">Ya existe un documento cargado. Subir uno nuevo lo reemplazará.</div>
-                  )}
+                  <AdjuntosArchivos etiqueta="Documentos (opcional)" tipos="cualquiera" adjuntos={adjuntos} onCambiar={setAdjuntos} deshabilitado={guardando} />
+                  {guardando && hayNuevos(adjuntos) && <div className="he-x34">Subiendo documentos…</div>}
                 </div>
 
               </div>
@@ -259,7 +255,7 @@ export const HerramientasEmpleado: React.FC<Props> = ({ empleadoId }) => {
               <div className="he-x36">
                 <button className="he-x37" type="button" onClick={() => setModalAbierto(false)}>Cancelar</button>
                 <button className="he-x38" type="submit" disabled={guardando}>
-                  {guardando ? 'Guardando...' : 'Guardar Herramienta'}
+                  {guardando ? (hayNuevos(adjuntos) ? 'Subiendo…' : 'Guardando...') : 'Guardar Herramienta'}
                 </button>
               </div>
             </form>

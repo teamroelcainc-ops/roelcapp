@@ -1,24 +1,19 @@
 // src/features/facturacion/components/TarjetaDocumentoFactura.tsx
-// ✅ V00381: tarjeta GRANDE del documento de la factura (Clientes y Proveedores).
-//   Se usa en la Ficha de Factura, en "Confirmar Factura" y en "Editar Factura"
-//   para que se note a simple vista si el documento YA está cargado.
-//   Estados: cargado (verde) · listo para subir (azul) · subiendo · sin documento (ámbar).
-import React from 'react';
+// ✅ V00381: tarjeta GRANDE del documento de la factura (Clientes y Proveedores) en la Ficha de
+//   Factura, para que se note a simple vista si el documento YA está cargado.
+// ✅ V00451: VARIOS documentos por factura (hasta 10). La tarjeta lista los archivos (cada nombre
+//   abre el archivo) y "Ver documentos" abre el modal "Documentos de la factura" (vista previa,
+//   agregar, reemplazar, quitar). La píldora de la fila (PildoraDocsFactura) abre lo mismo.
+//   Facturar y Editar factura usan AdjuntosArchivos (ya no la tarjeta con el archivo pendiente).
+import type { MouseEvent } from 'react';
+import type { ArchivoGuardado } from '../../../shared/archivos/adjuntos';
+import { etiquetaPildoraDocs, tituloPildoraDocs } from '../services/documentosFactura';
 import './TarjetaDocumentoFactura.css';
 
 interface Props {
-  url?: unknown;
-  nombre?: unknown;
-  fecha?: unknown;
-  por?: unknown;
-  /** Archivo elegido que todavía no se sube (se sube al guardar/confirmar). */
-  pendiente?: File | null;
-  /** Texto de cuándo se sube el pendiente. */
-  notaPendiente?: string;
-  subiendo?: boolean;
-  /** Elegir / reemplazar archivo. */
-  onElegir: () => void;
-  onQuitarPendiente?: () => void;
+  archivos: readonly ArchivoGuardado[];
+  /** Abre "Documentos de la factura". */
+  onAbrir: () => void;
 }
 
 const extension = (nombre: string): string => {
@@ -26,14 +21,14 @@ const extension = (nombre: string): string => {
   return m ? m[1].toUpperCase() : 'DOC';
 };
 
-const fechaCorta = (v: unknown): string => {
-  const s = String(v ?? '').slice(0, 10);
+const fechaCorta = (v: string): string => {
+  const s = v.slice(0, 10);
   const [a, m, d] = s.split('-');
   return a && m && d ? `${d}/${m}/${a}` : s;
 };
 
-const tamano = (bytes: number): string =>
-  bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+const cargado = (a: ArchivoGuardado): string =>
+  [a.fecha ? `Cargado el ${fechaCorta(a.fecha)}` : 'Cargado', a.por ? `por ${a.por}` : ''].filter(Boolean).join(' ');
 
 const IconoCheck = () => (
   <svg className="tdf-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12" /></svg>
@@ -42,69 +37,59 @@ const IconoAlerta = () => (
   <svg className="tdf-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
 );
 
-export const TarjetaDocumentoFactura: React.FC<Props> = ({ url, nombre, fecha, por, pendiente, notaPendiente, subiendo, onElegir, onQuitarPendiente }) => {
-  const link = String(url || '');
-  const nombreDoc = String(nombre || '') || 'Documento de la factura';
+export default function TarjetaDocumentoFactura({ archivos, onAbrir }: Props) {
+  const primero = archivos[0];
 
-  if (subiendo) {
+  if (!primero) {
     return (
-      <div className="tdf tdf--subiendo" role="status">
-        <div className="tdf-archivo">…</div>
+      <div className="tdf tdf--vacio">
+        <div className="tdf-archivo tdf-archivo--vacio">—</div>
         <div className="tdf-cuerpo">
-          <span className="tdf-estado">Subiendo documento…</span>
-          <span className="tdf-meta">No cierres la ventana hasta que termine.</span>
-        </div>
-      </div>
-    );
-  }
-
-  if (pendiente) {
-    return (
-      <div className="tdf tdf--pendiente">
-        <div className="tdf-archivo">{extension(pendiente.name)}</div>
-        <div className="tdf-cuerpo">
-          <span className="tdf-estado"><IconoCheck /> Documento listo para subir</span>
-          <span className="tdf-nombre" title={pendiente.name}>{pendiente.name}</span>
-          <span className="tdf-meta">{tamano(pendiente.size)} · {notaPendiente || 'Se subirá al guardar'}</span>
+          <span className="tdf-estado"><IconoAlerta /> Sin documento de la factura</span>
+          <span className="tdf-meta">Aún no se ha cargado el PDF o la imagen de esta factura.</span>
         </div>
         <div className="tdf-acciones">
-          <button type="button" className="tdf-btn" onClick={onElegir}>Cambiar</button>
-          {onQuitarPendiente && <button type="button" className="tdf-btn tdf-btn--quitar" onClick={onQuitarPendiente}>Quitar</button>}
-        </div>
-      </div>
-    );
-  }
-
-  if (link) {
-    const meta = [fecha ? `Cargado el ${fechaCorta(fecha)}` : 'Cargado', String(por || '') ? `por ${String(por)}` : ''].filter(Boolean).join(' ');
-    return (
-      <div className="tdf tdf--ok">
-        <div className="tdf-archivo">{extension(nombreDoc)}</div>
-        <div className="tdf-cuerpo">
-          <span className="tdf-estado"><IconoCheck /> Documento cargado</span>
-          <span className="tdf-nombre" title={nombreDoc}>{nombreDoc}</span>
-          <span className="tdf-meta">{meta}</span>
-        </div>
-        <div className="tdf-acciones">
-          <a className="tdf-btn tdf-btn--ver" href={link} target="_blank" rel="noopener noreferrer">Ver documento</a>
-          <button type="button" className="tdf-btn" onClick={onElegir}>Reemplazar</button>
+          <button type="button" className="tdf-btn tdf-btn--subir" onClick={onAbrir}>Subir documentos</button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="tdf tdf--vacio">
-      <div className="tdf-archivo tdf-archivo--vacio">—</div>
+    <div className="tdf tdf--ok">
+      <div className="tdf-archivo">{extension(primero.nombre || primero.url)}</div>
       <div className="tdf-cuerpo">
-        <span className="tdf-estado"><IconoAlerta /> Sin documento de la factura</span>
-        <span className="tdf-meta">Aún no se ha cargado el PDF o la imagen de esta factura.</span>
+        <span className="tdf-estado"><IconoCheck /> {archivos.length === 1 ? 'Documento cargado' : `${archivos.length} documentos cargados`}</span>
+        <ul className="tdf-lista">
+          {archivos.map((a) => (
+            <li key={a.url} className="tdf-lista-item">
+              <a className="tdf-nombre" href={a.url} target="_blank" rel="noopener noreferrer" title={`${a.nombre} · ${cargado(a)} · abrir en otra pestaña`}>{a.nombre}</a>
+            </li>
+          ))}
+        </ul>
+        {archivos.length === 1 && <span className="tdf-meta">{cargado(primero)}</span>}
       </div>
       <div className="tdf-acciones">
-        <button type="button" className="tdf-btn tdf-btn--subir" onClick={onElegir}>Subir documento</button>
+        <button type="button" className="tdf-btn tdf-btn--ver" onClick={onAbrir} title="Ver, agregar, reemplazar o quitar documentos">Ver documentos</button>
       </div>
     </div>
   );
-};
+}
 
-export default TarjetaDocumentoFactura;
+interface PropsPildora {
+  archivos: readonly ArchivoGuardado[];
+  onAbrir: () => void;
+}
+
+/** Píldora de la FILA del Historial: "Doc ✓", "Doc ✓ (3)" o "Sin doc"; abre "Documentos de la factura". */
+export function PildoraDocsFactura({ archivos, onAbrir }: PropsPildora) {
+  const alClic = (e: MouseEvent<HTMLButtonElement>): void => {
+    e.stopPropagation(); // la fila abre la Ficha
+    onAbrir();
+  };
+  return (
+    <button type="button" className={`tdf-pill ${archivos.length > 0 ? 'tdf-pill--ok' : 'tdf-pill--falta'}`} title={tituloPildoraDocs(archivos)} onClick={alClic}>
+      {etiquetaPildoraDocs(archivos.length)}
+    </button>
+  );
+}

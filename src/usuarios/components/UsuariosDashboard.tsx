@@ -1,5 +1,5 @@
 // src/usuarios/components/UsuariosDashboard.tsx
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, query, where } from 'firebase/firestore';
 import { createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
 import { db, secondaryAuth } from '../../config/firebase';
@@ -15,6 +15,10 @@ import { gestionarUsuarioServidor, sincronizarClaimsServidor } from '../../featu
 import { esAdminPorRoles } from '../../features/auth/services/acceso';
 import { useUsuarioStore } from '../../stores/useUsuarioStore';
 import { idReal, useCatalogo } from '../../shared/data/catalogos';
+import AdjuntosArchivos from '../../shared/components/AdjuntosArchivos'; // ✅ V00451
+import { desdeGuardados } from '../../shared/archivos/adjuntos';
+import type { Adjunto } from '../../shared/archivos/adjuntos';
+import { useUrlArchivo } from '../../shared/hooks/useUrlArchivo';
 
 // Comprime y redimensiona la imagen a un cuadrado pequeño (máx 256px) en base64,
 // para que la foto pese pocos KB y quepa sin problema en el documento de Firestore.
@@ -45,6 +49,16 @@ const procesarImagen = (file: File, maxLado = 256): Promise<string> =>
     reader.readAsDataURL(file);
   });
 
+// ✅ V00451: foto de perfil con la carga compartida. La guardada (base64) entra como adjunto
+//   guardado; una nueva se reduce a base64 al guardar el usuario; sin ninguna = sin foto.
+const fotoComoAdjuntos = (foto: unknown): Adjunto[] =>
+  desdeGuardados(typeof foto === 'string' && foto ? [{ url: foto, nombre: 'Foto actual' }] : []);
+const fotoPerfilDe = async (adjuntos: readonly Adjunto[]): Promise<string> => {
+  const a = adjuntos[0];
+  if (!a) return '';
+  return a.estado === 'nuevo' ? procesarImagen(a.file) : a.archivo.url;
+};
+
 export const UsuariosDashboard = () => {
   const [usuarios, setUsuarios] = useState<any[]>([]);
   // ✅ V00449: ya llegó el primer snapshot de `usuarios` (antes: "No hay usuarios registrados."
@@ -66,7 +80,10 @@ export const UsuariosDashboard = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rolesAsignados, setRolesAsignados] = useState<string[]>([]);
-  const [fotoPerfil, setFotoPerfil] = useState<string>(''); // ✅ NUEVO
+  const [adjuntosFoto, setAdjuntosFoto] = useState<Adjunto[]>([]); // ✅ V00451 (antes fotoPerfil en base64)
+  const fotoElegida = adjuntosFoto[0];
+  const urlFotoNueva = useUrlArchivo(fotoElegida?.estado === 'nuevo' ? fotoElegida.file : null);
+  const fotoVista = !fotoElegida ? '' : fotoElegida.estado === 'nuevo' ? urlFotoNueva : fotoElegida.archivo.url;
   // ✅ NUEVO: exención de la validación de IP en el Reloj Checador (por usuario).
   const [exentoIpChecador, setExentoIpChecador] = useState(false);
   // ✅ NUEVO: vínculo Usuario ↔ Colaborador (empleados). Un colaborador solo
@@ -139,7 +156,6 @@ export const UsuariosDashboard = () => {
       setGuardandoHorario(false);
     }
   };
-  const fileRef = useRef<HTMLInputElement>(null);            // ✅ NUEVO
 
   // NUEVOS ESTADOS PARA EL HISTORIAL DE SESIONES
   const [historialAbierto, setHistorialAbierto] = useState(false);
@@ -189,7 +205,7 @@ export const UsuariosDashboard = () => {
       setEmail(user.email || '');
       setPassword(''); 
       setRolesAsignados(user.roles || []);
-      setFotoPerfil(user.fotoPerfil || ''); // ✅ NUEVO
+      setAdjuntosFoto(fotoComoAdjuntos(user.fotoPerfil)); // ✅ V00451
       setExentoIpChecador(user.exentoIpChecador === true); // ✅ NUEVO
       setColaboradorId(user.colaboradorId || ''); // ✅ NUEVO
       setBusquedaColab('');
@@ -210,7 +226,7 @@ export const UsuariosDashboard = () => {
       setEmail('');
       setPassword('');
       setRolesAsignados([]);
-      setFotoPerfil(''); // ✅ NUEVO
+      setAdjuntosFoto([]); // ✅ V00451
       setExentoIpChecador(false); // ✅ NUEVO
       setColaboradorId(''); // ✅ NUEVO
       setBusquedaColab('');
@@ -236,26 +252,6 @@ export const UsuariosDashboard = () => {
     );
   };
 
-  // ✅ NUEVO: elegir y procesar la imagen de perfil
-  const elegirFoto = () => fileRef.current?.click();
-
-  const onArchivoFoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      alert('Selecciona un archivo de imagen (JPG, PNG, etc.).');
-      return;
-    }
-    try {
-      const dataUrl = await procesarImagen(file);
-      setFotoPerfil(dataUrl);
-    } catch (err: any) {
-      alert(err?.message || 'No se pudo procesar la imagen.');
-    } finally {
-      if (fileRef.current) fileRef.current.value = '';
-    }
-  };
-
   const handleGuardar = async (e: React.FormEvent) => {
     e.preventDefault();
     // ✅ V00435: un cliente sin empresa no vería nada en la app.
@@ -270,6 +266,8 @@ export const UsuariosDashboard = () => {
     };
     setCargando(true);
     try {
+      // ✅ V00451: la foto elegida se reduce a base64 aquí (antes al elegirla).
+      const fotoPerfil = await fotoPerfilDe(adjuntosFoto);
       if (usuarioActual) {
         await setDoc(doc(db, 'usuarios', usuarioActual.id), {
           nombre: nombre.toUpperCase(),
@@ -549,16 +547,13 @@ export const UsuariosDashboard = () => {
                 <label className="usd-x37">Foto de Perfil</label>
                 <div className="usd-x38">
                   <div className="usd-x39">
-                    {fotoPerfil
-                      ? <img className="usd-x24" src={fotoPerfil} alt="Perfil" />
+                    {fotoVista
+                      ? <img className="usd-x24" src={fotoVista} alt="Perfil" />
                       : (nombre ? nombre.substring(0, 2).toUpperCase() : 'US')}
                   </div>
+                  {/* ✅ V00451: carga compartida (una imagen: Ver, Reemplazar, ×); se guarda con el usuario */}
                   <div className="usd-x40">
-                    <input className="usd-x41" ref={fileRef} type="file" accept="image/*" onChange={onArchivoFoto} />
-                    <button className="usd-x42" type="button" onClick={elegirFoto}>Elegir imagen</button>
-                    {fotoPerfil && (
-                      <button className="usd-x43" type="button" onClick={() => setFotoPerfil('')}>Quitar</button>
-                    )}
+                    <AdjuntosArchivos etiqueta="" max={1} tipos="imagen" previaCerrada adjuntos={adjuntosFoto} onCambiar={setAdjuntosFoto} deshabilitado={cargando} />
                   </div>
                 </div>
               </div>

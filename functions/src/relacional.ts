@@ -556,6 +556,7 @@ const recalcularSaldoFactura = async (
 const CAMPOS_SIN_DINERO_FACTURA: ReadonlySet<string> = new Set([
   // (statusFactura NO: "Cancelada" cambia `abierta`)
   'docFacturaUrl', 'docFacturaNombre', 'docFacturaFecha', 'docFacturaPor', 'rateProveedor', 'encabezadoRemision',
+  'docsFactura', // ✅ V00451: varios documentos por factura (docFactura* = el primero)
   'auditRevisado', 'clienteNombre', 'proveedorNombre', 'updatedAt', 'editadoEn', 'editadoPor', 'facturaCcp', 'fecha', 'invoice',
   // del propio trigger:
   'saldoPendiente', 'statusPago', 'totalCentavos', 'montoPagadoCentavos', 'saldoCentavos', 'saldoAFavorCentavos', 'abierta', 'esquemaDinero',

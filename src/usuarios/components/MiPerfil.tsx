@@ -1,10 +1,18 @@
 // src/usuarios/components/MiPerfil.tsx
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { updateDoc, doc } from 'firebase/firestore';
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
 import { auth, db } from '../../config/firebase';
 import { registrarLog } from '../../utils/logger';
+import AdjuntosArchivos from '../../shared/components/AdjuntosArchivos'; // ✅ V00451
+import { cambioAdjuntos, desdeGuardados } from '../../shared/archivos/adjuntos';
+import type { Adjunto, ArchivoGuardado } from '../../shared/archivos/adjuntos';
+import { useUrlArchivo } from '../../shared/hooks/useUrlArchivo';
 import './MiPerfil.css';
+
+// ✅ V00451: la foto guardada (base64 en usuarios.fotoPerfil) como adjunto ya guardado.
+const fotoGuardadaLista = (foto: unknown): ArchivoGuardado[] =>
+  typeof foto === 'string' && foto ? [{ url: foto, nombre: 'Foto actual' }] : [];
 
 interface MiPerfilProps {
   usuario: any;                       // documento del usuario (id, email, nombre, fotoPerfil, ...)
@@ -42,9 +50,15 @@ const procesarImagen = (file: File, maxLado = 256): Promise<string> =>
   });
 
 export const MiPerfil: React.FC<MiPerfilProps> = ({ usuario, onClose, onActualizado }) => {
-  const [foto, setFoto] = useState<string>(usuario?.fotoPerfil || '');
+  // ✅ V00451: la foto con la carga compartida (una imagen: Ver, Reemplazar, ×). La nueva se
+  //   reduce a base64 al guardar (las reglas solo permiten ese campo); quitarla también se guarda.
+  const [fotoGuardada, setFotoGuardada] = useState<string>(usuario?.fotoPerfil || '');
+  const [adjuntosFoto, setAdjuntosFoto] = useState<Adjunto[]>(() => desdeGuardados(fotoGuardadaLista(usuario?.fotoPerfil)));
   const [guardandoFoto, setGuardandoFoto] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const fotoElegida = adjuntosFoto[0];
+  const urlFotoNueva = useUrlArchivo(fotoElegida?.estado === 'nuevo' ? fotoElegida.file : null);
+  const foto = !fotoElegida ? '' : fotoElegida.estado === 'nuevo' ? urlFotoNueva : fotoElegida.archivo.url;
+  const fotoCambio = cambioAdjuntos(adjuntosFoto, fotoGuardadaLista(fotoGuardada));
 
   const [passActual, setPassActual] = useState('');
   const [passNueva, setPassNueva] = useState('');
@@ -56,27 +70,6 @@ export const MiPerfil: React.FC<MiPerfilProps> = ({ usuario, onClose, onActualiz
 
   const iniciales = usuario?.nombre ? usuario.nombre.substring(0, 2).toUpperCase() : 'US';
 
-  const elegirFoto = () => fileRef.current?.click();
-
-  const onArchivo = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setError('');
-    setMensaje('');
-    if (!file.type.startsWith('image/')) {
-      setError('Selecciona un archivo de imagen (JPG, PNG, etc.).');
-      return;
-    }
-    try {
-      const dataUrl = await procesarImagen(file);
-      setFoto(dataUrl);
-    } catch (err: any) {
-      setError(err?.message || 'No se pudo procesar la imagen.');
-    } finally {
-      if (fileRef.current) fileRef.current.value = '';
-    }
-  };
-
   const guardarFoto = async () => {
     if (!usuario?.id) {
       setError('No hay un usuario válido para actualizar la foto.');
@@ -85,32 +78,25 @@ export const MiPerfil: React.FC<MiPerfilProps> = ({ usuario, onClose, onActualiz
     setGuardandoFoto(true);
     setError('');
     setMensaje('');
+    let nueva = '';
     try {
-      await updateDoc(doc(db, 'usuarios', usuario.id), { fotoPerfil: foto });
-      await registrarLog('Usuarios', 'Edición', 'Actualizó su foto de perfil.');
-      onActualizado({ ...usuario, fotoPerfil: foto });
-      setMensaje('Foto de perfil actualizada.');
-    } catch (err: any) {
+      // ✅ V00451: la nueva se reduce a base64 aquí (antes al elegirla); sin ninguna = quitarla.
+      nueva = !fotoElegida ? '' : fotoElegida.estado === 'nuevo' ? await procesarImagen(fotoElegida.file) : fotoElegida.archivo.url;
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'No se pudo procesar la imagen.');
+      setGuardandoFoto(false);
+      return;
+    }
+    try {
+      await updateDoc(doc(db, 'usuarios', usuario.id), { fotoPerfil: nueva });
+      await registrarLog('Usuarios', 'Edición', nueva ? 'Actualizó su foto de perfil.' : 'Quitó su foto de perfil.');
+      onActualizado({ ...usuario, fotoPerfil: nueva });
+      setFotoGuardada(nueva);
+      setAdjuntosFoto(desdeGuardados(fotoGuardadaLista(nueva)));
+      setMensaje(nueva ? 'Foto de perfil actualizada.' : 'Foto de perfil eliminada.');
+    } catch (err: unknown) {
       console.error(err);
       setError('No se pudo guardar la foto. Intenta de nuevo.');
-    } finally {
-      setGuardandoFoto(false);
-    }
-  };
-
-  const quitarFoto = async () => {
-    if (!usuario?.id) return;
-    setGuardandoFoto(true);
-    setError('');
-    setMensaje('');
-    try {
-      await updateDoc(doc(db, 'usuarios', usuario.id), { fotoPerfil: '' });
-      setFoto('');
-      onActualizado({ ...usuario, fotoPerfil: '' });
-      setMensaje('Foto de perfil eliminada.');
-    } catch (err: any) {
-      console.error(err);
-      setError('No se pudo quitar la foto.');
     } finally {
       setGuardandoFoto(false);
     }
@@ -188,16 +174,13 @@ export const MiPerfil: React.FC<MiPerfilProps> = ({ usuario, onClose, onActualiz
             <div className="mp-x11">
               {foto ? <img className="mp-x12" src={foto} alt="Perfil" /> : iniciales}
             </div>
+            {/* ✅ V00451: carga compartida (una imagen); se guarda con "Guardar Foto" */}
             <div className="mp-x13">
-              <input className="mp-x14" ref={fileRef} type="file" accept="image/*" onChange={onArchivo} />
-              <button className="mp-x15" type="button" onClick={elegirFoto}>Elegir imagen</button>
-              {foto && (
-                <button className="mp-x16" type="button" onClick={quitarFoto} disabled={guardandoFoto}>Quitar foto</button>
-              )}
+              <AdjuntosArchivos etiqueta="" max={1} tipos="imagen" previaCerrada adjuntos={adjuntosFoto} onCambiar={setAdjuntosFoto} deshabilitado={guardandoFoto} />
             </div>
           </div>
           <p className="mp-x17">La imagen se ajusta automáticamente a un tamaño pequeño antes de guardarse.</p>
-          <button type="button" onClick={guardarFoto} disabled={guardandoFoto} style={{ padding: '10px 20px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: guardandoFoto ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}>
+          <button className="mp-guardar-foto" type="button" onClick={guardarFoto} disabled={guardandoFoto || !fotoCambio}>
             {guardandoFoto ? 'Guardando...' : 'Guardar Foto'}
           </button>
 

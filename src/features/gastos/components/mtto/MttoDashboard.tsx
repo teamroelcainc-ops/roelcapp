@@ -13,6 +13,7 @@ import CargandoDatos from '../../../../shared/components/CargandoDatos';
 import { useCatalogos } from '../../../../shared/data/catalogos';
 import type { DocCatalogo } from '../../../../shared/data/catalogos';
 import { queryClient } from '../../../../lib/queryClient';
+import { archivosDeDocumento } from '../../../../shared/archivos/adjuntos'; // ✅ V00451
 
 type VistaMaestra = 'tabla' | 'agrupado' | 'refacciones';
 
@@ -743,6 +744,8 @@ const MttoDashboard = () => {
   const labelStyle = { color:'#8b949e', display:'block', fontSize:'0.8rem', marginBottom: '4px', textTransform: 'uppercase' as const, fontWeight: 'bold' };
   const valStyle = { color: '#c9d1d9', fontSize: '0.95rem', fontWeight: '500' };
   const boxStyle = { backgroundColor:'#161b22', padding:'12px', borderRadius:'6px', color: '#c9d1d9', border: '1px solid #30363d', marginTop: '4px', minHeight: '60px' };
+  // ✅ V00451: archivos del gasto que se está viendo.
+  const archivosViendo = mttoViendo ? archivosDeDocumento(mttoViendo, 'archivos', { url: 'archivoPdfUrl', nombre: 'archivoPdfNombre' }) : [];
 
   return (
     <div className="module-container md-x8">
@@ -755,8 +758,9 @@ const MttoDashboard = () => {
       `}</style>
 
       {estadoFormulario !== 'cerrado' && (
-        <FormularioMtto 
-          estado={estadoFormulario} 
+        <FormularioMtto
+          key={mttoEditando?.id ?? 'nuevo'} /* ✅ V00451: un formulario (y sus archivos) por registro */
+          estado={estadoFormulario}
           initialData={mttoEditando}
           onClose={() => { setEstadoFormulario('cerrado'); setMttoEditando(null); }}
           catalogos={catalogosCacheados} 
@@ -1283,9 +1287,14 @@ const MttoDashboard = () => {
                    <div><label style={labelStyle}>FECHA FACTURA</label><span style={valStyle}>{mttoViendo.fechaFactura || '-'}</span></div>
                    <div><label style={labelStyle}>DESCRIPCIÓN FACTURA</label><span style={valStyle}>{mttoViendo.descripcionFactura || '-'}</span></div>
                    
-                   <div><label style={labelStyle}>ARCHIVO (PDF)</label>
-                      {mttoViendo.archivoPdfUrl ? (
-                          <a className="md-x94" href={mttoViendo.archivoPdfUrl} target="_blank" rel="noreferrer">Ver Documento</a>
+                   {/* ✅ V00451: todos los archivos del gasto (la lista nueva o el archivoPdfUrl de siempre) */}
+                   <div><label style={labelStyle}>ARCHIVOS</label>
+                      {archivosViendo.length > 0 ? (
+                          <ul className="md-archivos">
+                            {archivosViendo.map((a) => (
+                              <li key={a.url}><a className="md-x94" href={a.url} target="_blank" rel="noreferrer">{a.nombre || 'Ver documento'}</a></li>
+                            ))}
+                          </ul>
                       ) : <span style={valStyle}>Sin archivo</span>}
                    </div>
 

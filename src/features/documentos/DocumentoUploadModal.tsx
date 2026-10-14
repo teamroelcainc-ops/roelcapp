@@ -3,19 +3,26 @@
 // Modal REUTILIZABLE para subir documentos desde cualquier módulo
 // (empleados, clientes, proveedores, unidades, etc.).
 //
-// • Sube el archivo a Firebase Storage en:
+// • Sube los archivos a Firebase Storage en:
 //     <coleccionOrigen>/<nombre del registro>/<nombre del documento>/<archivo>
-// • Registra la metadata en la colección UNIFICADA "documentos", LIGADA al
-//   registro de origen mediante { coleccionOrigen, registroId }.
+// • Registra la metadata en la colección UNIFICADA "documentos" (un documento por archivo),
+//   LIGADA al registro de origen mediante { coleccionOrigen, registroId }.
 //
-// ✅ NUEVO — Integración con el catálogo `catalogo_tipo_archivo`:
-//   1. Al abrir el modal se carga el catálogo de Tipo de Archivo y el
-//      dropdown mezcla la lista fija del módulo con los tipos del catálogo
+// ✅ V00451 — EXPEDIENTE SIN LÍMITE DE ARCHIVOS (misma carga que Pagos: AdjuntosArchivos):
+//   · Al elegir el tipo se ven los archivos YA guardados de ese tipo, con Ver, Reemplazar y ×.
+//   · Se pueden agregar VARIOS archivos (sin límite). Cada uno es un documento: el primero toma
+//     el id de siempre (`col__registro__tipo`) si está libre; los demás, uno con sufijo único y
+//     el tipo "Tipo (2)", "Tipo (3)"… (como la Carga Masiva).
+//   · "Subir Documento" aplica todo: quita, reemplaza (el mismo documento, archivo nuevo; se borra
+//     el viejo) y sube los nuevos. Las fechas/vence/observaciones del modal van a los archivos
+//     nuevos o reemplazados. Antes: UN archivo y subir el mismo tipo sustituía al anterior.
+//   La lógica pura está en expediente.ts y la de Storage/Firestore en expedienteServicio.ts.
+//
+// ✅ Integración con el catálogo `catalogo_tipo_archivo`:
+//   1. El dropdown mezcla la lista fija del módulo con los tipos del catálogo
 //      cuyo Módulo corresponda (Empleado, Empresa, Unidad, Operación, etc.).
-//   2. El apartado "¿Vence?" YA NO es un toggle manual: se muestra únicamente
-//      si el tipo seleccionado tiene Vence = "Sí" en el catálogo. Si el
-//      catálogo dice "No" o no tiene nada marcado, el apartado NO aparece y
-//      el documento se guarda con vence=false.
+//   2. El apartado "¿Vence?" se muestra únicamente si el tipo seleccionado tiene
+//      Vence = "Sí" en el catálogo; si no, el documento se guarda con vence=false.
 //   3. Botón "+" junto al select para dar de alta un tipo de archivo nuevo
 //      DIRECTO en `catalogo_tipo_archivo` sin salir del formulario.
 //
@@ -23,12 +30,21 @@
 //   <DocumentoUploadModal coleccionOrigen="empleados" registroId={emp.id} registroNombre="Juan Pérez" ... />
 //   <DocumentoUploadModal coleccionOrigen="empresas"  registroId={cli.id} registroNombre="ACME SA de CV" ... />
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { addDoc, collection, doc, setDoc } from 'firebase/firestore';
-import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage, auth } from '../../config/firebase';
+import { useEffect, useEffectEvent, useMemo, useState } from 'react';
+import { addDoc, collection } from 'firebase/firestore';
+import { db } from '../../config/firebase';
 import { SelectBuscable } from '../catalogos/components/SelectBuscable';
 import { idReal, useCatalogo } from '../../shared/data/catalogos';
+import AdjuntosArchivos from '../../shared/components/AdjuntosArchivos';
+import CargandoDatos from '../../shared/components/CargandoDatos';
+import { SIN_LIMITE } from '../../shared/archivos/adjuntos';
+import type { Adjunto } from '../../shared/archivos/adjuntos';
+import {
+  SIN_CAMBIOS, aplicarCambioLista, cambiosAlCambiarTipo, esDelTipo, listaVisible, mensajeError, nombreSubcarpetaDoc,
+  normTexto, planGuardado, sanitizarRuta, totalPlan,
+} from './expediente';
+import type { CambiosExpediente, DocumentoExpediente } from './expediente';
+import { guardarCambiosExpediente, leerDocumentosDeRegistro } from './expedienteServicio';
 import './DocumentoUploadModal.css';
 
 // Catálogo por defecto (genérico). Cada módulo puede pasar su propia lista por props.
@@ -55,20 +71,11 @@ const MODULOS_POR_COLECCION: Record<string, string[]> = {
   unidades: ['Unidad'],
   bodegas: ['Bodega'],
 };
-
-// Quita caracteres no válidos para rutas de Storage
-const sanitizarRuta = (s: string) =>
-  String(s || '').trim().replace(/[\/\\:*?"<>|#]+/g, '').replace(/\s+/g, ' ').trim();
-// Subcarpeta = nombre del documento sin el prefijo numérico ("16. " -> "Contrato Laboral")
-const nombreSubcarpetaDoc = (label: string) => sanitizarRuta(String(label).replace(/^\d+\.\s*/, ''));
-
-// Normaliza texto para comparar (sin acentos, minúsculas, espacios simples).
-const normTexto = (s: any): string =>
-  String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase().replace(/\s+/g, ' ');
+const MODULOS_OTRO = ['Otro'];
 
 // Interpreta el campo `vence` del catálogo: SOLO "Sí" (o equivalentes) activa
 // el apartado de vencimiento; "No", vacío o sin marcar => NO se muestra.
-const esVenceSi = (valor: any): boolean => {
+const esVenceSi = (valor: unknown): boolean => {
   if (valor === true || valor === 1) return true;
   const v = normTexto(valor);
   return v === 'si' || v === '1' || v === 'true';
@@ -76,7 +83,7 @@ const esVenceSi = (valor: any): boolean => {
 
 // El campo `modulo` del catálogo puede venir como string, string con comas
 // ("Cliente , Proveedor , Empleado") o array. Devuelve la lista normalizada.
-const modulosDeRegistro = (valor: any): string[] => {
+const modulosDeRegistro = (valor: unknown): string[] => {
   if (Array.isArray(valor)) return valor.map(normTexto).filter(Boolean);
   return String(valor ?? '').split(',').map(normTexto).filter(Boolean);
 };
@@ -112,17 +119,55 @@ interface DocumentoUploadModalProps {
   onUploaded?: () => void;
 }
 
-export const DocumentoUploadModal: React.FC<DocumentoUploadModalProps> = ({
+/** Botones Sí/No del alta de tipo (estado finito → clases). */
+function SiNo({ valor, onCambiar }: { valor: 'Sí' | 'No'; onCambiar: (v: 'Sí' | 'No') => void }) {
+  return (
+    <div className="dum-x13">
+      <button type="button" className={`dsub-seg${valor === 'No' ? ' dsub-seg--no' : ''}`} onClick={() => onCambiar('No')}>No</button>
+      <button type="button" className={`dsub-seg${valor === 'Sí' ? ' dsub-seg--si' : ''}`} onClick={() => onCambiar('Sí')}>Sí</button>
+    </div>
+  );
+}
+
+export function DocumentoUploadModal({
   isOpen, onClose, coleccionOrigen, registroId, registroNombre, tiposDocumento, onUploaded,
-}) => {
+}: DocumentoUploadModalProps) {
   const tiposBase = (tiposDocumento && tiposDocumento.length > 0) ? tiposDocumento : TIPOS_DOCUMENTO_DEFAULT;
   const [tipoDoc, setTipoDoc] = useState(tiposBase[0]);
-  const [archivo, setArchivo] = useState<File | null>(null);
-  const [arrastrando, setArrastrando] = useState(false);
   const [fechaExpedicion, setFechaExpedicion] = useState('');
   const [fechaVencimiento, setFechaVencimiento] = useState('');
   const [observaciones, setObservaciones] = useState('');
-  const [subiendo, setSubiendo] = useState(false);
+  // ✅ V00451: documentos ya guardados del registro (lectura única al abrir) y cambios pendientes.
+  const [carga, setCarga] = useState<{ docs: DocumentoExpediente[] | null; error: string }>({ docs: null, error: '' });
+  const [cambios, setCambios] = useState<CambiosExpediente>(SIN_CAMBIOS);
+  const [progreso, setProgreso] = useState<{ hechas: number; total: number } | null>(null);
+  const subiendo = progreso !== null;
+
+  // ✅ V00451: cada vez que se abre (o cambia el registro) empieza limpio.
+  const claveApertura = isOpen ? `${coleccionOrigen}|${registroId}` : '';
+  const [aperturaPrevia, setAperturaPrevia] = useState(claveApertura);
+  if (claveApertura !== aperturaPrevia) {
+    setAperturaPrevia(claveApertura);
+    if (claveApertura) {
+      setCarga({ docs: null, error: '' });
+      setCambios(SIN_CAMBIOS);
+      setObservaciones('');
+      setFechaExpedicion('');
+      setFechaVencimiento('');
+    }
+  }
+
+  useEffect(() => {
+    if (!isOpen || !registroId) return;
+    let vivo = true;
+    leerDocumentosDeRegistro(registroId, coleccionOrigen)
+      .then((docs) => { if (vivo) setCarga({ docs, error: '' }); })
+      .catch((e: unknown) => {
+        console.error('Error leyendo los documentos guardados:', e);
+        if (vivo) setCarga({ docs: [], error: 'No se pudieron leer los documentos guardados. Cierra y vuelve a abrir.' });
+      });
+    return () => { vivo = false; };
+  }, [isOpen, registroId, coleccionOrigen]);
 
   // ✅ V00439 (Fase 3.x): catálogo de Tipo de Archivo del listener compartido,
   //   solo mientras el modal está abierto (antes getDocs en cada apertura).
@@ -137,7 +182,7 @@ export const DocumentoUploadModal: React.FC<DocumentoUploadModalProps> = ({
   const cargandoCatalogo = isOpen && !tiposArchivoListos;
 
   // ✅ NUEVO: mini-formulario para dar de alta un tipo de archivo desde aquí.
-  const modulosSugeridos = MODULOS_POR_COLECCION[normTexto(coleccionOrigen)] || ['Otro'];
+  const modulosSugeridos = useMemo(() => MODULOS_POR_COLECCION[normTexto(coleccionOrigen)] || MODULOS_OTRO, [coleccionOrigen]);
   const [mostrarNuevoTipo, setMostrarNuevoTipo] = useState(false);
   const [nuevoTipoNombre, setNuevoTipoNombre] = useState('');
   const [nuevoTipoModulo, setNuevoTipoModulo] = useState(modulosSugeridos[0]);
@@ -175,12 +220,20 @@ export const DocumentoUploadModal: React.FC<DocumentoUploadModalProps> = ({
     return resultado.sort(ordenarTipos);
   }, [tiposBase, tiposCatalogoModulo]);
 
+  // ✅ V00451: cambiar de tipo conserva los archivos elegidos (como nuevos del tipo nuevo);
+  //   quitar/reemplazar eran de los guardados del tipo anterior y se descartan.
+  const cambiarTipo = (nuevo: string) => {
+    if (nuevo === tipoDoc) return;
+    setTipoDoc(nuevo);
+    setCambios(cambiosAlCambiarTipo);
+  };
+
   // Si el tipo seleccionado desapareció de la lista (cambio de módulo), se
-  // regresa al primero disponible.
-  useEffect(() => {
-    if (tipos.length > 0 && !tipos.includes(tipoDoc)) setTipoDoc(tipos[0]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tipos]);
+  // regresa al primero disponible. ✅ V00451: Effect Event (antes eslint-disable).
+  const ajustarTipo = useEffectEvent(() => {
+    if (tipos.length > 0 && !tipos.includes(tipoDoc)) cambiarTipo(tipos[0]);
+  });
+  useEffect(() => { ajustarTipo(); }, [tipos]);
 
   // Registro del catálogo que corresponde al tipo seleccionado (por nombre,
   // tolerante a acentos y al prefijo numérico).
@@ -202,17 +255,16 @@ export const DocumentoUploadModal: React.FC<DocumentoUploadModalProps> = ({
 
   const carpeta = sanitizarRuta(registroNombre) || sanitizarRuta(registroId) || 'sin_nombre';
   const subcarpeta = nombreSubcarpetaDoc(tipoDoc);
-  const extPreview = archivo ? (archivo.name.lastIndexOf('.') >= 0 ? archivo.name.slice(archivo.name.lastIndexOf('.')) : '') : '';
-  const nombreFinalPreview = `${subcarpeta}${extPreview}`;
 
-  const labelStyle: React.CSSProperties = { color: '#8b949e', fontSize: '0.9rem' };
-  const inputStyle: React.CSSProperties = { width: '100%', padding: '10px 12px', backgroundColor: '#010409', border: '1px solid #30363d', borderRadius: '8px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' };
-  const filaStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '160px 1fr', alignItems: 'center', gap: '16px' };
-  const segBtn = (activo: boolean, colorActivo: string): React.CSSProperties => ({
-    padding: '10px 30px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem',
-    backgroundColor: activo ? colorActivo : 'transparent',
-    color: activo ? '#fff' : '#8b949e', transition: 'all 0.15s ease',
-  });
+  // ✅ V00451: lista del tipo elegido = guardados (o su reemplazo) + nuevos.
+  const docsGuardados = registroId ? carga.docs : [];
+  const cargandoDocs = docsGuardados === null;
+  const guardadosDelTipo = (docsGuardados ?? []).filter((d) => esDelTipo(d, tipoDoc));
+  const adjuntos = listaVisible(guardadosDelTipo, cambios);
+  const plan = planGuardado(guardadosDelTipo, cambios);
+  const subeArchivos = plan.nuevos.length + plan.reemplazar.length > 0;
+  const alCambiarAdjuntos = (siguiente: Adjunto[]) =>
+    setCambios((c) => aplicarCambioLista(c, listaVisible(guardadosDelTipo, c), siguiente));
 
   // ✅ NUEVO (punto 4): alta de un Tipo de Archivo directo en el catálogo.
   const handleGuardarNuevoTipo = async () => {
@@ -234,128 +286,128 @@ export const DocumentoUploadModal: React.FC<DocumentoUploadModalProps> = ({
         creadoDesde: `formulario_documentos_${coleccionOrigen}`,
       });
       // El alta llega sola por el listener compartido del catálogo.
-      setTipoDoc(nombre);
+      cambiarTipo(nombre);
       setMostrarNuevoTipo(false);
       setNuevoTipoNombre('');
       setNuevoTipoObligatorio('No');
       setNuevoTipoVence('No');
       setNuevoTipoModulo(modulosSugeridos[0]);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('Error creando tipo de archivo:', e);
-      alert('No se pudo crear el tipo de archivo.\n\nDetalle: ' + (e?.message || e));
+      alert('No se pudo crear el tipo de archivo.\n\nDetalle: ' + mensajeError(e));
     }
     setGuardandoTipo(false);
   };
 
+  // ✅ V00451: aplica quitar / reemplazar / subir nuevos y avisa de TODO lo que falle.
   const handleSubir = async () => {
-    if (!archivo) { alert('Selecciona un archivo.'); return; }
     if (!registroId) { alert('No se puede ligar el documento: falta el identificador del registro de origen.'); return; }
-    if (vence && (!fechaExpedicion || !fechaVencimiento)) {
+    if (cargandoDocs) return;
+    if (carga.error) { alert(carga.error); return; }
+    const total = totalPlan(plan);
+    if (total === 0) { alert('Agrega al menos un archivo (o reemplaza o quita uno guardado).'); return; }
+    if (vence && subeArchivos && (!fechaExpedicion || !fechaVencimiento)) {
       alert('Este tipo de documento vence (según el catálogo): debes indicar la fecha de expedición y la de vencimiento.');
       return;
     }
-    setSubiendo(true);
+    setProgreso({ hechas: 0, total });
     try {
-      // El nombre del archivo se reescribe con el TIPO de documento (conservando la extensión)
-      const punto = archivo.name.lastIndexOf('.');
-      const extension = punto >= 0 ? archivo.name.slice(punto) : '';
-      const nombreFinal = `${subcarpeta}${extension}`;
-
-      const ruta = `${sanitizarRuta(coleccionOrigen)}/${carpeta}/${subcarpeta}/${nombreFinal}`;
-      const r = storageRef(storage, ruta);
-      await uploadBytes(r, archivo, archivo.type ? { contentType: archivo.type } : undefined);
-      const url = await getDownloadURL(r);
-
-      // Un documento por (registro + tipo): si se vuelve a subir el mismo tipo, se reemplaza
-      const docId = sanitizarRuta(`${coleccionOrigen}__${registroId}__${subcarpeta}`).replace(/\s+/g, '_');
-
-      // Colección UNIFICADA "documentos" + liga al registro de origen
-      await setDoc(doc(db, 'documentos', docId), {
-        coleccionOrigen,
-        registroId,
-        registroNombre: registroNombre || '',
-        tipoDocumento: tipoDoc,
-        carpeta,
-        subcarpeta,
-        nombreArchivo: nombreFinal,
-        path: ruta,
-        url,
-        vence,
-        fechaExpedicion: vence ? fechaExpedicion : '',
-        fechaVencimiento: vence ? fechaVencimiento : '',
-        observaciones: observaciones || '',
-        subidoPor: auth.currentUser?.email || '', // ✅ V00283: quién subió el documento
-        createdAt: new Date().toISOString(),
-      }, { merge: true });
-
-      alert('Documento subido correctamente.');
-      setArchivo(null);
-      setObservaciones('');
-      setFechaExpedicion('');
-      setFechaVencimiento('');
-      onUploaded?.();
-      onClose();
-    } catch (e: any) {
-      console.error('Error subiendo documento:', e);
-      alert('No se pudo subir el documento.\n\nVerifica que Firebase Storage esté habilitado y que las reglas permitan la escritura.\n\nDetalle: ' + (e?.message || e));
+      const r = await guardarCambiosExpediente(
+        { coleccionOrigen, registroId, registroNombre, tipoDocumento: tipoDoc, carpeta, subcarpeta, vence, fechaExpedicion, fechaVencimiento, observaciones },
+        plan, guardadosDelTipo, docsGuardados ?? [],
+        (hechas) => setProgreso({ hechas, total }),
+      );
+      const partes = [
+        r.subidos ? `${r.subidos} subido(s)` : '',
+        r.reemplazados ? `${r.reemplazados} reemplazado(s)` : '',
+        r.quitados ? `${r.quitados} quitado(s)` : '',
+      ].filter(Boolean).join(', ');
+      if (r.errores.length === 0) {
+        alert(`Documentos guardados: ${partes}.`);
+        setCambios(SIN_CAMBIOS);
+        setObservaciones('');
+        setFechaExpedicion('');
+        setFechaVencimiento('');
+        onUploaded?.();
+        onClose();
+        return;
+      }
+      // Algo falló: se queda abierto con lo pendiente para reintentar, y se releen los guardados.
+      if (partes) onUploaded?.();
+      setCambios(r.pendientes);
+      setCarga({ docs: null, error: '' });
+      try {
+        setCarga({ docs: await leerDocumentosDeRegistro(registroId, coleccionOrigen), error: '' });
+      } catch (e: unknown) {
+        console.error('Error releyendo los documentos guardados:', e);
+        setCarga({ docs: [], error: 'No se pudieron leer los documentos guardados. Cierra y vuelve a abrir.' });
+      }
+      alert(`${partes ? `Se guardó: ${partes}.\n\n` : ''}No se pudo (${r.errores.length} de ${total}):\n• ${r.errores.join('\n• ')}\n\nLo que falló sigue pendiente en la lista: vuelve a guardar para reintentar.\nVerifica la conexión y que las reglas de Firebase permitan la escritura.`);
+    } catch (e: unknown) {
+      console.error('Error subiendo documentos:', e);
+      alert('No se pudieron guardar los documentos.\n\nDetalle: ' + mensajeError(e));
+    } finally {
+      setProgreso(null);
     }
-    setSubiendo(false);
   };
+
+  const textoBoton = progreso
+    ? `Guardando ${progreso.hechas}/${progreso.total}…`
+    : subeArchivos || totalPlan(plan) === 0
+      ? (plan.nuevos.length + plan.reemplazar.length > 1 ? 'Subir Documentos' : 'Subir Documento')
+      : 'Guardar cambios';
 
   return (
     <div className="modal-overlay dum-x1">
       <div className="form-card dum-x2">
         <div className="form-header dum-x3">
           <h3 className="dum-x4">Subir Documento{registroNombre ? ` — ${registroNombre}` : ''}</h3>
-          <button className="dum-x5" type="button" onClick={onClose}>✕</button>
+          <button className="dum-x5" type="button" onClick={onClose} disabled={subiendo}>✕</button>
         </div>
 
         <div className="dum-x6">
           <div className="dum-x7">
-            Se guardará en: <span className="dum-x8">{sanitizarRuta(coleccionOrigen)} / {carpeta} / {subcarpeta} / {nombreFinalPreview}</span>
+            Se guardará en: <span className="dum-x8">{sanitizarRuta(coleccionOrigen)} / {carpeta} / {subcarpeta} /</span>
             <span className="dum-x9"> · ligado a {coleccionOrigen} ({registroId || '—'})</span>
           </div>
 
-          <div style={filaStyle}>
-            <label style={labelStyle}>Tipo de archivo</label>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <div className="dsub-fila">
+            <label className="dsub-etq">Tipo de archivo</label>
+            <div className="dsub-tipo">
               {/* ✅ Lista desplegable CON BÚSQUEDA (convención de toda la app) */}
-              <SelectBuscable
-                opciones={tipos.map((t) => ({ value: t, label: t }))}
-                value={tipoDoc}
-                onChange={setTipoDoc}
-                placeholder="Buscar tipo de archivo..."
-                estiloContenedor={{ flex: 1 }}
-              />
+              <div className="dsub-tipo-select">
+                <SelectBuscable
+                  opciones={tipos.map((t) => ({ value: t, label: t }))}
+                  value={tipoDoc}
+                  onChange={cambiarTipo}
+                  placeholder="Buscar tipo de archivo..."
+                  disabled={subiendo}
+                />
+              </div>
               {/* ✅ NUEVO: alta de tipo de archivo directo desde el formulario */}
               <button
                 type="button"
+                className={`dsub-mas${mostrarNuevoTipo ? ' dsub-mas--activo' : ''}`}
                 title="Agregar un tipo de archivo nuevo al catálogo"
                 onClick={() => setMostrarNuevoTipo(v => !v)}
-                style={{
-                  flexShrink: 0, width: '38px', height: '38px', borderRadius: '8px', cursor: 'pointer',
-                  border: mostrarNuevoTipo ? '1px solid #D84315' : '1px solid #30363d',
-                  backgroundColor: mostrarNuevoTipo ? 'rgba(216,67,21,0.15)' : '#161b22',
-                  color: mostrarNuevoTipo ? '#D84315' : '#c9d1d9', fontSize: '1.15rem', fontWeight: 700,
-                }}
               >+</button>
             </div>
           </div>
 
           {cargandoCatalogo && (
-            <div className="dum-x9" style={{ fontSize: '0.75rem', marginTop: '-12px' }}>Cargando catálogo de tipos de archivo…</div>
+            <div className="dum-x9 dsub-nota-catalogo">Cargando catálogo de tipos de archivo…</div>
           )}
 
           {/* ✅ NUEVO: mini-formulario de alta en catalogo_tipo_archivo */}
           {mostrarNuevoTipo && (
-            <div style={{ border: '1px dashed #D84315', borderRadius: '10px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '12px', backgroundColor: 'rgba(216,67,21,0.05)' }}>
-              <div style={{ color: '#f0f6fc', fontWeight: 600, fontSize: '0.9rem' }}>Nuevo tipo de archivo (se guarda en el catálogo)</div>
-              <div style={filaStyle}>
-                <label style={labelStyle}>Nombre</label>
-                <input style={inputStyle} type="text" value={nuevoTipoNombre} onChange={(e) => setNuevoTipoNombre(e.target.value)} placeholder='Ej. "21. Carta Responsiva"' />
+            <div className="dsub-nuevo">
+              <div className="dsub-nuevo-titulo">Nuevo tipo de archivo (se guarda en el catálogo)</div>
+              <div className="dsub-fila">
+                <label className="dsub-etq">Nombre</label>
+                <input className="dsub-input" type="text" value={nuevoTipoNombre} onChange={(e) => setNuevoTipoNombre(e.target.value)} placeholder='Ej. "21. Carta Responsiva"' />
               </div>
-              <div style={filaStyle}>
-                <label style={labelStyle}>Módulo</label>
+              <div className="dsub-fila">
+                <label className="dsub-etq">Módulo</label>
                 <SelectBuscable
                   opciones={MODULOS_TIPO_ARCHIVO.map((m) => ({ value: m, label: m }))}
                   value={nuevoTipoModulo}
@@ -363,88 +415,84 @@ export const DocumentoUploadModal: React.FC<DocumentoUploadModalProps> = ({
                   placeholder="Buscar módulo..."
                 />
               </div>
-              <div style={filaStyle}>
-                <label style={labelStyle}>Obligatorio</label>
-                <div className="dum-x13">
-                  <button type="button" onClick={() => setNuevoTipoObligatorio('No')} style={segBtn(nuevoTipoObligatorio === 'No', '#30363d')}>No</button>
-                  <button type="button" onClick={() => setNuevoTipoObligatorio('Sí')} style={segBtn(nuevoTipoObligatorio === 'Sí', '#D84315')}>Sí</button>
-                </div>
+              <div className="dsub-fila">
+                <label className="dsub-etq">Obligatorio</label>
+                <SiNo valor={nuevoTipoObligatorio} onCambiar={setNuevoTipoObligatorio} />
               </div>
-              <div style={filaStyle}>
-                <label style={labelStyle}>¿Vence?</label>
-                <div className="dum-x13">
-                  <button type="button" onClick={() => setNuevoTipoVence('No')} style={segBtn(nuevoTipoVence === 'No', '#30363d')}>No</button>
-                  <button type="button" onClick={() => setNuevoTipoVence('Sí')} style={segBtn(nuevoTipoVence === 'Sí', '#D84315')}>Sí</button>
-                </div>
+              <div className="dsub-fila">
+                <label className="dsub-etq">¿Vence?</label>
+                <SiNo valor={nuevoTipoVence} onCambiar={setNuevoTipoVence} />
               </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <div className="dsub-acciones-tipo">
                 <button type="button" className="btn btn-outline dum-x15" disabled={guardandoTipo} onClick={() => setMostrarNuevoTipo(false)}>Cancelar</button>
-                <button
-                  type="button"
-                  onClick={handleGuardarNuevoTipo}
-                  disabled={guardandoTipo}
-                  style={{ padding: '10px 20px', borderRadius: '6px', border: 'none', backgroundColor: guardandoTipo ? '#21262d' : '#D84315', color: guardandoTipo ? '#6e7681' : '#fff', fontWeight: 'bold', cursor: guardandoTipo ? 'not-allowed' : 'pointer' }}
-                >
+                <button type="button" className="dsub-btn-primario" onClick={handleGuardarNuevoTipo} disabled={guardandoTipo}>
                   {guardandoTipo ? 'Guardando…' : 'Guardar Tipo'}
                 </button>
               </div>
             </div>
           )}
 
-          <div style={filaStyle}>
-            <label style={labelStyle}>Archivo</label>
-            <label
-              onDragOver={(e) => { e.preventDefault(); if (!arrastrando) setArrastrando(true); }}
-              onDragLeave={(e) => { e.preventDefault(); setArrastrando(false); }}
-              onDrop={(e) => { e.preventDefault(); setArrastrando(false); const f = e.dataTransfer?.files?.[0]; if (f) setArchivo(f); }}
-              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px', minHeight: '90px', padding: '16px', borderRadius: '8px', cursor: 'pointer', backgroundColor: arrastrando ? 'rgba(216,67,21,0.1)' : '#010409', border: arrastrando ? '1px dashed #D84315' : (archivo ? '1px solid rgba(63,185,80,0.5)' : '1px solid #30363d') }}
-            >
-              {archivo ? (
-                <span className="dum-x10">✓ {archivo.name}</span>
+          {/* ✅ V00451: los archivos de este tipo (guardados + nuevos), sin límite. */}
+          <div className="dsub-fila dsub-fila--arriba">
+            <label className="dsub-etq dsub-etq--arriba">Archivos</label>
+            <div className="dsub-archivos">
+              {cargandoDocs ? (
+                <CargandoDatos compacto texto="Cargando documentos guardados…" />
               ) : (
                 <>
-                  <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-                  <span className="dum-x11">Haz clic o arrastra un archivo aquí</span>
+                  {carga.error && <div className="dsub-error">{carga.error}</div>}
+                  <AdjuntosArchivos
+                    key={subcarpeta}
+                    etiqueta={subcarpeta || 'Archivos'}
+                    adjuntos={adjuntos}
+                    onCambiar={alCambiarAdjuntos}
+                    max={SIN_LIMITE}
+                    tipos="pdf-imagen"
+                    deshabilitado={subiendo || !!carga.error}
+                    previaCerrada={guardadosDelTipo.length > 0}
+                  />
+                  <p className="dsub-ayuda">
+                    Los archivos nuevos se AGREGAN a este tipo. Para renovar uno guardado usa «Reemplazar» en su renglón.
+                  </p>
                 </>
               )}
-              <input className="dum-x12" type="file" accept=".pdf,image/*" onChange={(e) => setArchivo(e.target.files?.[0] || null)} />
-            </label>
+            </div>
           </div>
 
           {/* ✅ REGLA NUEVA: el apartado de vencimiento se muestra SOLO si el
               catálogo marca Vence = "Sí" para el tipo seleccionado. */}
           {vence && (
             <>
-              <div style={{ ...filaStyle, alignItems: 'center' }}>
-                <label style={labelStyle}>Vencimiento</label>
-                <span style={{ color: '#D84315', fontSize: '0.8rem', fontWeight: 600 }}>
-                  Este tipo de documento vence (definido en el catálogo de Tipo de Archivo).
+              <div className="dsub-fila">
+                <label className="dsub-etq">Vencimiento</label>
+                <span className="dsub-aviso-vence">
+                  Este tipo de documento vence (definido en el catálogo de Tipo de Archivo). Las fechas se aplican a los archivos nuevos o reemplazados.
                 </span>
               </div>
-              <div style={filaStyle}>
-                <label style={labelStyle}>Fecha de expedición</label>
-                <input type="date" value={fechaExpedicion} onChange={(e) => setFechaExpedicion(e.target.value)} style={inputStyle} />
+              <div className="dsub-fila">
+                <label className="dsub-etq">Fecha de expedición</label>
+                <input type="date" className="dsub-input" value={fechaExpedicion} onChange={(e) => setFechaExpedicion(e.target.value)} disabled={subiendo} />
               </div>
-              <div style={filaStyle}>
-                <label style={labelStyle}>Fecha de vencimiento</label>
-                <input type="date" value={fechaVencimiento} onChange={(e) => setFechaVencimiento(e.target.value)} style={inputStyle} />
+              <div className="dsub-fila">
+                <label className="dsub-etq">Fecha de vencimiento</label>
+                <input type="date" className="dsub-input" value={fechaVencimiento} onChange={(e) => setFechaVencimiento(e.target.value)} disabled={subiendo} />
               </div>
             </>
           )}
 
-          <div style={{ ...filaStyle, alignItems: 'flex-start' }}>
-            <label style={{ ...labelStyle, paddingTop: '8px' }}>Observaciones</label>
-            <textarea value={observaciones} onChange={(e) => setObservaciones(e.target.value)} rows={3} style={{ ...inputStyle, resize: 'vertical' }} placeholder="Notas opcionales sobre el documento..." />
+          <div className="dsub-fila dsub-fila--arriba">
+            <label className="dsub-etq dsub-etq--arriba">Observaciones</label>
+            <textarea className="dsub-input dsub-textarea" value={observaciones} onChange={(e) => setObservaciones(e.target.value)} rows={3} placeholder="Notas opcionales sobre el documento..." disabled={subiendo} />
           </div>
         </div>
 
         <div className="dum-x14">
           <button type="button" onClick={onClose} disabled={subiendo} className="btn btn-outline dum-x15">Cancelar</button>
-          <button type="button" onClick={handleSubir} disabled={subiendo} style={{ padding: '10px 24px', borderRadius: '6px', border: 'none', backgroundColor: subiendo ? '#21262d' : '#D84315', color: subiendo ? '#6e7681' : '#fff', fontWeight: 'bold', cursor: subiendo ? 'not-allowed' : 'pointer' }}>
-            {subiendo ? 'Subiendo...' : 'Subir Documento'}
+          <button type="button" className="dsub-btn-primario dsub-btn-subir" onClick={handleSubir} disabled={subiendo || cargandoDocs}>
+            {textoBoton}
           </button>
         </div>
       </div>
     </div>
   );
-};
+}

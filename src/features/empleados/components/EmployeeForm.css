@@ -79,15 +79,13 @@
 }
 
 /* ✅ V00287: foto del colaborador + pestaña Firmas + alta rápida a catálogos */
-.ef-foto-bloque { grid-column: 1 / -1; display: flex; align-items: center; gap: 18px; background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px 18px; margin-bottom: 24px; }
+.ef-foto-bloque { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 18px; background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px 18px; margin-bottom: 24px; }
 .ef-foto-marco { width: 86px; height: 86px; border-radius: 50%; overflow: hidden; border: 2px solid #30363d; background: #0d1117; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .ef-foto-img { width: 100%; height: 100%; object-fit: cover; }
 .ef-foto-vacia { color: #6e7681; font-size: 0.72rem; }
-.ef-foto-controles { display: flex; flex-direction: column; gap: 6px; }
+/* ✅ V00451: los controles ocupan el resto del renglón (la carga compartida necesita ancho) */
+.ef-foto-controles { display: flex; flex: 1 1 220px; flex-direction: column; gap: 6px; min-width: 0; }
 .ef-foto-label { margin: 0; }
-.ef-foto-input { color: #c9d1d9; font-size: 0.85rem; }
-.ef-foto-quitar { align-self: flex-start; background: transparent; border: 1px solid #da3633; color: #f85149; border-radius: 6px; padding: 3px 10px; cursor: pointer; font-size: 0.78rem; }
-.ef-foto-quitar:hover { background: rgba(218, 54, 51, 0.15); }
 .ef-foto-nota { color: #6e7681; font-size: 0.72rem; }
 .ef-select-con-mas { display: flex; align-items: center; gap: 8px; }
 .ef-select-con-mas > :first-child { flex: 1; }
