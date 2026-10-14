@@ -1,5 +1,7 @@
 // src/utils/pdfGenerator.ts
-import html2pdf from 'html2pdf.js';
+// ✅ V00452: html2pdf (~1 MB con jsPDF y html2canvas) se carga al generar el PDF, no al arrancar la
+//   app: este archivo lo importa el inicio de sesión (LOGO_DEFAULT) y lo metía en la carga inicial.
+const cargarHtml2pdf = async () => (await import('html2pdf.js')).default;
 
 // ============================================================================
 // LOGO DE LA EMPRESA PARA LOS PDF
@@ -182,7 +184,12 @@ export const generarSolicitudRetiroPDF = (datosCrudos: DatosSolicitudRetiro) => 
       ? Promise.resolve()
       : new Promise<void>(res => { im.onload = () => res(); im.onerror = () => res(); })));
     try {
+      const html2pdf = await cargarHtml2pdf();
       await html2pdf().set(opt).from(elementoTemporal).save();
+    } catch (e) {
+      // ✅ V00452: antes el error se perdía (y ahora también puede fallar la carga del generador).
+      console.error('[PDF] No se pudo generar:', e);
+      alert('No se pudo generar el PDF. Revisa la conexión e intenta de nuevo.');
     } finally {
       if (elementoTemporal.parentNode) document.body.removeChild(elementoTemporal);
     }
@@ -324,7 +331,12 @@ export const generarInstruccionesServicioPDF = (datosCrudos: DatosInstruccionesS
       ? Promise.resolve()
       : new Promise<void>(res => { im.onload = () => res(); im.onerror = () => res(); })));
     try {
+      const html2pdf = await cargarHtml2pdf();
       await html2pdf().set(opt).from(elementoTemporal).save();
+    } catch (e) {
+      // ✅ V00452: antes el error se perdía (y ahora también puede fallar la carga del generador).
+      console.error('[PDF] No se pudo generar:', e);
+      alert('No se pudo generar el PDF. Revisa la conexión e intenta de nuevo.');
     } finally {
       if (elementoTemporal.parentNode) document.body.removeChild(elementoTemporal);
     }
@@ -454,7 +466,12 @@ export const generarCheckListPDF = (datosCrudos: DatosCheckList) => {
       ? Promise.resolve()
       : new Promise<void>(res => { im.onload = () => res(); im.onerror = () => res(); })));
     try {
+      const html2pdf = await cargarHtml2pdf();
       await html2pdf().set(opt).from(elementoTemporal).save();
+    } catch (e) {
+      // ✅ V00452: antes el error se perdía (y ahora también puede fallar la carga del generador).
+      console.error('[PDF] No se pudo generar:', e);
+      alert('No se pudo generar el PDF. Revisa la conexión e intenta de nuevo.');
     } finally {
       if (elementoTemporal.parentNode) document.body.removeChild(elementoTemporal);
     }
@@ -683,7 +700,12 @@ export const generarPruebaEntregaPDF = (datosCrudos: DatosPruebaEntrega) => {
       ? Promise.resolve()
       : new Promise<void>(res => { im.onload = () => res(); im.onerror = () => res(); })));
     try {
+      const html2pdf = await cargarHtml2pdf();
       await html2pdf().set(opt).from(elementoTemporal).save();
+    } catch (e) {
+      // ✅ V00452: antes el error se perdía (y ahora también puede fallar la carga del generador).
+      console.error('[PDF] No se pudo generar:', e);
+      alert('No se pudo generar el PDF. Revisa la conexión e intenta de nuevo.');
     } finally {
       if (elementoTemporal.parentNode) document.body.removeChild(elementoTemporal);
     }
@@ -977,7 +999,12 @@ export const generarCartaInstruccionesPDF = (datosCrudos: DatosCartaInstruccione
       ? Promise.resolve()
       : new Promise<void>(res => { im.onload = () => res(); im.onerror = () => res(); })));
     try {
+      const html2pdf = await cargarHtml2pdf();
       await html2pdf().set(opt).from(elementoTemporal).save();
+    } catch (e) {
+      // ✅ V00452: antes el error se perdía (y ahora también puede fallar la carga del generador).
+      console.error('[PDF] No se pudo generar:', e);
+      alert('No se pudo generar el PDF. Revisa la conexión e intenta de nuevo.');
     } finally {
       if (elementoTemporal.parentNode) document.body.removeChild(elementoTemporal);
     }

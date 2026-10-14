@@ -63,6 +63,12 @@ interface Entrada {
   permanente: boolean;
   /** ✅ V00448: el próximo snapshot es el primero de un listener (re)abierto: se publica siempre. */
   primerSnapshot: boolean;
+  /**
+   * ✅ V00452: alguna vista necesita saber cuándo el SERVIDOR confirmó (p. ej. Pagos habilita
+   * "Guardar" con saldos al día): la confirmación sin cambios se publica (una vez). Los catálogos no
+   * lo piden y siguen sin repintar por eso.
+   */
+  avisarConfirmacion: boolean;
 }
 
 const entradas = new Map<string, Entrada>();
@@ -73,6 +79,7 @@ export const entradaViva = (clave: string): Entrada => {
     e = {
       estado: ESTADO_VACIO, demanda: 0, crear: null, cancelar: null, temporizador: null, oyentes: new Set(),
       esperandoServidor: new Set(), esperandoDatos: new Set(), confirmado: false, permanente: false, primerSnapshot: false,
+      avisarConfirmacion: false,
     };
     entradas.set(clave, e);
   }
@@ -142,6 +149,8 @@ const abrir = (clave: string, e: Entrada): void => {
       // al servidor (obtenerCatalogo fresco). ✅ V00448: el primer snapshot de un listener
       // reabierto se publica siempre (si ahora viene vacío, no deben quedar las filas viejas).
       if (!primero && e.estado.listo && snap.docChanges().length === 0) {
+        // ✅ V00452: quien pidió la confirmación la recibe (una vez); los demás no repintan.
+        if (e.confirmado && e.avisarConfirmacion && !e.estado.delServidor) { publicar(e, { ...e.estado, delServidor: true }); return; }
         if (e.confirmado) resolverEspera(e.esperandoServidor);
         return;
       }
@@ -187,6 +196,13 @@ export const soltarVivo = (clave: string): void => {
 };
 
 export const estadoVivo = (clave: string): EstadoVivo => entradas.get(clave)?.estado ?? ESTADO_VACIO;
+
+/** ✅ V00452: vuelve a abrir un listener que murió por un error (si alguien lo sigue usando). */
+export const reintentarVivo = (clave: string): void => {
+  const e = entradas.get(clave);
+  if (!e || e.cancelar || e.demanda === 0) return;
+  abrir(clave, e);
+};
 
 /**
  * Datos de una clave para servicios fuera de React: abre (o reutiliza) el listener.
@@ -240,7 +256,9 @@ export const reiniciarVivas = (): void => {
  * `crear` arma la consulta; solo se usa al abrir el listener (la clave manda).
  * Por defecto solo escucha mientras el módulo está a la vista (MantenerVivo).
  */
-export function useColeccionViva(clave: string | null, crear: () => Query, opciones: { soloVisible?: boolean; activo?: boolean } = {}): EstadoVivo {
+export function useColeccionViva(
+  clave: string | null, crear: () => Query, opciones: { soloVisible?: boolean; activo?: boolean; avisarConfirmacion?: boolean } = {},
+): EstadoVivo {
   const visible = useModuloVivoActivo();
   const activo = (opciones.activo ?? true) && (opciones.soloVisible === false || visible) && clave !== null;
   // `crear` puede ser una función nueva en cada render: la clave identifica la
@@ -250,16 +268,22 @@ export function useColeccionViva(clave: string | null, crear: () => Query, opcio
   // ✅ V00446: oculto (MantenerVivo) no recibe avisos: no se repinta en segundo plano;
   //   al volver a verse se vuelve a suscribir y React toma el estado más reciente.
   const avisos = opciones.soloVisible === false || visible;
+  const avisarConfirmacion = opciones.avisarConfirmacion ?? false;
   const suscribir = useCallback((aviso: () => void) => {
     if (clave === null) return () => {};
     const e = entradaViva(clave);
+    if (avisarConfirmacion) {
+      e.avisarConfirmacion = true;
+      // Si el servidor ya confirmó (sin cambios) antes de que esta vista lo pidiera, se publica ya.
+      if (e.confirmado && e.estado.listo && !e.estado.delServidor && !e.estado.error) publicar(e, { ...e.estado, delServidor: true });
+    }
     if (avisos) e.oyentes.add(aviso);
     if (activo) pedirVivo(clave, () => crearRef.current());
     return () => {
       e.oyentes.delete(aviso);
       if (activo) soltarVivo(clave);
     };
-  }, [clave, activo, avisos]);
+  }, [clave, activo, avisos, avisarConfirmacion]);
   const leer = useCallback(() => (clave === null ? ESTADO_VACIO : estadoVivo(clave)), [clave]);
   return useSyncExternalStore(suscribir, leer, leer);
 }

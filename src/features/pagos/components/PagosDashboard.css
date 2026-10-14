@@ -427,6 +427,9 @@
 
 /* ✅ NUEVO — icono girando del botón Recargar */
 .pg-girando { animation: pg-girar 0.9s linear infinite; }
+/* ✅ V00452: aviso mientras el servidor confirma los saldos (la lista está en vivo). */
+.pg-actualizando { display: inline-flex; align-items: center; gap: 6px; color: #8b949e; font-size: 0.78rem; white-space: nowrap; }
+.pg-actualizando--error { color: #f85149; white-space: normal; }
 @keyframes pg-girar { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 /* ✅ V00126: acciones en línea, moneda de la empresa, hilo */

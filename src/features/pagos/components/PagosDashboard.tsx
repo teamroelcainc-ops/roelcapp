@@ -10,29 +10,25 @@
 //     statusPago (PAGADA / PARCIAL), sin tocar su statusFactura.
 //   · Eliminar un pago REVIERTE la aplicación en sus facturas.
 // ---------------------------------------------------------------------------
-import { useState, useEffect, useEffectEvent, useMemo, useRef } from 'react';
+import { Suspense, useState, useEffect, useEffectEvent, useMemo, useRef } from 'react';
 import { suscribirOperacionGuardada } from '../../../utils/operacionesBus';
-import { HiloModal } from '../../hilo/HiloModal';
-import { EditorOperacionEmbebido } from '../../operaciones/components/EditorOperacionEmbebido';
+import { lazyWithRetry } from '../../../utils/lazyWithRetry';
 import { useCatalogo } from '../../../shared/data/catalogos'; // ✅ V00439 (Fase 3.x)
 import { ID_MXN, ID_USD } from '../../../shared/dominio/constantes';
-import { monedaCanonica as monedaCanonicaComun } from '../../../shared/dominio/moneda';
 import {
-  collection, query, where, getDocs, onSnapshot, writeBatch, doc, arrayUnion, arrayRemove, limit,
+  collection, query, where, getDocs, writeBatch, doc, arrayUnion, arrayRemove, limit,
   orderBy, startAfter, documentId, runTransaction, updateDoc,
 } from 'firebase/firestore';
+import type { QueryDocumentSnapshot, QuerySnapshot } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { aCentavos, r2, sumarMontos } from '../../../shared/dominio/numeros';
 import {
-  ErrorPago, aplicadoPorFactura, calcularAbono, calcularReversion, totalNativoFactura, validarLimiteFacturas,
+  ErrorPago, aplicadoPorFactura, calcularAbono, calcularReversion, validarLimiteFacturas,
 } from '../services/aplicarPagos';
 import type { CambiosPagoFactura } from '../services/aplicarPagos';
 import { llamarDinero, mensajeDinero } from '../../facturacion/services/dineroServidor'; // ✅ V00441
-import { totalNativoFactura as totalNativoFacturaUnica } from '../../../shared/dominio/dinero';
-import { useFlags } from '../../../shared/data/flags';
-import { paginaFacturasAbiertas, porIds, todasLasPaginas } from '../../../shared/data/consultas';
-import * as XLSX from 'xlsx';
-import html2pdf from 'html2pdf.js';
+import { useFlags, useFlagsCargadas } from '../../../shared/data/flags';
+import { porIds } from '../../../shared/data/consultas';
 import { useUsuarioStore } from '../../../stores/useUsuarioStore';
 import { registrarLog } from '../../../utils/logger';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
@@ -43,32 +39,35 @@ import AdjuntosArchivos from '../../../shared/components/AdjuntosArchivos'; // �
 import { archivosDeDocumento, cambioAdjuntos, desdeGuardados } from '../../../shared/archivos/adjuntos';
 import type { Adjunto, ArchivoGuardado } from '../../../shared/archivos/adjuntos';
 import { subirAdjuntos } from '../../../shared/archivos/subirAdjuntos';
+import { armarDoc, idReal, useColeccionViva } from '../../../shared/data/coleccionesVivas';
+import type { DocVivo } from '../../../shared/data/coleccionesVivas';
+import {
+  claveEntidad, claveFecha, crearMonedaEmpresa, facturasPagablesDe, mapearFacturaPagable as mapearFacturaBase,
+  monedaDeFactura as monedaDeFacturaBase, totalGastoMtto,
+} from '../services/facturasPagables';
+import type { FacturaPagable as FacturaPagableBase, PagoAplicado } from '../services/facturasPagables';
+import { obtenerFacturasPagables, useFacturasPagables } from '../hooks/useFacturasPagables';
 import './PagosDashboard.css';
 
-type TipoPago = 'cliente' | 'proveedor' | 'mtto';
+// ✅ V00452: lo que solo se usa al hacer clic se carga en ese momento (antes, entrar a Pagos
+//   descargaba y ejecutaba el formulario completo de operaciones, Excel y el generador de PDF:
+//   ~1.6 MB de código).
+const HiloModal = lazyWithRetry(() => import('../../hilo/HiloModal').then((m) => ({ default: m.HiloModal })), 'HiloModal');
+const EditorOperacionEmbebido = lazyWithRetry(
+  () => import('../../operaciones/components/EditorOperacionEmbebido').then((m) => ({ default: m.EditorOperacionEmbebido })),
+  'EditorOperacionEmbebido',
+);
+/** Pagos de la pestaña MTTO cuando la pestaña es otra (referencia fija: no recalcula las facturas). */
+const SIN_PAGOS_MTTO: readonly PagoAplicado[] = [];
+
+type TipoPago = 'cliente' | 'proveedor' | 'mtto'; // = TipoPago de services/facturasPagables
 
 const METODOS_PAGO = ['Transferencia', 'ACH', 'Efectivo', 'Cheque', 'Depósito', 'Tarjeta', 'Otro'];
 
-// ✅ V00126: TOTAL FINAL de un gasto MTTO = el mismo que muestra el formulario de
-//   Gastos: total guardado, o importe + IVA − RET IVA − RET ISR. Antes Pagos
-//   sumaba solo importe + IVA (ignoraba las retenciones) y el saldo salía de más.
-const totalGastoMtto = (g: any): number => {
-  const guardado = Number(g?.total);
-  if (Number.isFinite(guardado) && guardado > 0) return guardado;
-  return (Number(g?.importe) || 0) + (Number(g?.ivaMonto) || 0) - (Number(g?.retIva) || 0) - (Number(g?.retIsr) || 0);
-};
-
-interface FacturaPagable {
-  id: string;
-  invoice: string;
-  fecha: string;          // ISO o dd/mm — se ordena normalizada
-  entidadId: string;
-  entidadNombre: string;
-  total: number;
-  montoPagado: number;
-  saldo: number;
-  moneda: string;
-  raw?: any;              // ✅ NUEVO: doc completo (status, CCP, operaciones…)
+// ✅ V00452: el tipo vive en services/facturasPagables.ts; aquí `raw` (el documento completo:
+//   status, CCP, operaciones…) se sigue leyendo libremente, como antes.
+interface FacturaPagable extends Omit<FacturaPagableBase, 'raw'> {
+  raw?: any;
 }
 
 interface FacturaAplicada {
@@ -109,23 +108,7 @@ const comprobantesDe = (p: { comprobantes?: unknown; pdfUrl?: unknown; pdfNombre
 const money = (n: number, moneda = '') =>
   `$${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${moneda ? ` ${moneda}` : ''}`; // ✅ V00274: 2 decimales
 
-// ✅ FIX DUPLICADOS FANTASMA: las facturas guardan el nombre de la entidad
-//   como texto y algunas traen diferencias invisibles (espacio al final,
-//   doble espacio, acentos o mayúsculas distintas). Para agrupar, comparar y
-//   filtrar se usa SIEMPRE esta clave normalizada — así "HC FLEET SERVICES"
-//   y "HC FLEET SERVICES " son la misma entidad.
-const claveEntidad = (s: any): string =>
-  String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().replace(/\s+/g, ' ').toLowerCase();
-
-// Normaliza fechas dd/mm/aaaa o ISO a una clave ordenable AAAA-MM-DD.
-const claveFecha = (f: string): string => {
-  const s = String(f || '').trim();
-  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
-  const dmy = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
-  if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
-  return s;
-};
+// claveEntidad / claveFecha: services/facturasPagables.ts (✅ V00452).
 
 // ✅ FIX: fecha local (antes usaba UTC y por la tarde/noche proponía la fecha de mañana).
 const hoyISO = () => hoyLocalISO();
@@ -142,7 +125,15 @@ export function PagosDashboard() {
 
   const PAGOS_POR_PAGINA = 50;
   useEffect(() => { setPaginaPagos(1); }, [tab]);
-  const [pagos, setPagos] = useState<PagoDoc[]>([]);
+  // ── Lista de pagos del tab activo, en vivo ──
+  // ✅ V00452: listener compartido (useColeccionViva): sigue abierto 15 min al salir de Pagos o al
+  //   cambiar de pestaña, así que volver no vuelve a descargar ni a esperar los pagos.
+  // ✅ V00449: mientras no llegue la primera lista de ESTA pestaña, animación (no "Aún no hay pagos").
+  const pagosVivos = useColeccionViva(`pagos:${tab}`, () => query(collection(db, 'pagos'), where('tipo', '==', tab)), { avisarConfirmacion: true });
+  const cargandoPagos = !pagosVivos.listo;
+  const pagos = useMemo<PagoDoc[]>(() => pagosVivos.datos
+    .map((d) => ({ ...(d as unknown as Omit<PagoDoc, 'id'>), id: idReal(d) }))
+    .sort((a, b) => claveFecha(b.fecha).localeCompare(claveFecha(a.fecha))), [pagosVivos.datos]);
   const [busqueda, setBusqueda] = useState('');
   const [pagoViendo, setPagoViendo] = useState<PagoDoc | null>(null);
 
@@ -171,17 +162,10 @@ export function PagosDashboard() {
   //   cargarCatalogo con copia en localStorage y TTL).
   const { datos: empresasCat } = useCatalogo('empresas');
   const { datos: monedasCat } = useCatalogo('catalogo_moneda');
-  const monedaEmpresaDe = (p: { entidadNombre?: string } & Record<string, any>): string => {
-    const raw: any = p;
-    const id = String(raw.entidadId || raw.clienteId || raw.proveedorId || raw.empresaId || '');
-    const norm = (t: any) => String(t || '').trim().toLowerCase();
-    const emp = (id && empresasCat.find((e: any) => String(e.id) === id)) || empresasCat.find((e: any) => norm(e.nombre || e.empresa || e.razonSocial) === norm(p.entidadNombre));
-    if (!emp) return '';
-    const m = String(emp.monedaId || emp.moneda || '');
-    if (!m) return '';
-    const cat = monedasCat.find((x: any) => String(x.id) === m);
-    return String(cat?.moneda || (m.length < 12 ? m : '') || '');
-  };
+  // ✅ V00452: índice por id y por nombre (antes recorría el catálogo de empresas en cada llamada:
+  //   una vez por factura al armar la lista del modal, miles de veces).
+  const monedaEmpresa = useMemo(() => crearMonedaEmpresa(empresasCat, monedasCat), [empresasCat, monedasCat]);
+  const monedaEmpresaDe = (p: { entidadNombre?: string } & Record<string, any>): string => monedaEmpresa(p);
   const [editandoFactura, setEditandoFactura] = useState(false);
   const [fEditInvoice, setFEditInvoice] = useState('');
   const [fEditFecha, setFEditFecha] = useState('');
@@ -332,10 +316,7 @@ export function PagosDashboard() {
       }
       registrarLog('Pagos', 'Edición', `Editó la factura ${cambios.invoice} de ${facturaViendo.entidadNombre} desde Pagos.`).catch(() => {});
 
-      // Refresco EN MEMORIA de la lista del modal (sin recargar todo).
-      setFacturasPendientes((prev) => prev.map((f) => f.id === facturaViendo.id
-        ? { ...f, invoice: cambios.invoice, fecha: fEditFecha, total: totalNuevo, saldo: saldoFinal, moneda: fEditMoneda, raw: { ...(f.raw || {}), ...cambios } }
-        : f));
+      // ✅ V00452: la lista del modal está en vivo (el listener trae el cambio); ya no se parcha aquí.
       // Si estaba seleccionada con un monto capturado mayor al nuevo saldo, se acota.
       setPagosPorFactura((pp) => {
         if (!(facturaViendo.id in pp)) return pp;
@@ -441,8 +422,6 @@ export function PagosDashboard() {
   // ✅ NUEVO — AGREGAR FACTURAS A UN PAGO EXISTENTE (clientes y proveedores):
   //   al editar un pago se listan las facturas CON SALDO de la misma entidad
   //   que aún no están en el pago, para aplicarles monto sin re-capturarlo.
-  const [editFacturasDisp, setEditFacturasDisp] = useState<FacturaPagable[]>([]);
-  const [cargandoEditFacturas, setCargandoEditFacturas] = useState(false);
   const [editFacturasSel, setEditFacturasSel] = useState<string[]>([]);
   const [editPagoPorFactura, setEditPagoPorFactura] = useState<Record<string, string>>({});
   const [editBusquedaFactura, setEditBusquedaFactura] = useState('');
@@ -507,7 +486,6 @@ export function PagosDashboard() {
         const nueva = r.facturas[fv.id] ?? {};
         const totalN = Number(nueva.subtotalMonedaFactura) || 0;
         const saldoN = Number(nueva.saldoPendiente) || 0;
-        setFacturasPendientes((prev) => prev.map((f) => f.id === fv.id ? { ...f, total: totalN, saldo: saldoN, raw: { ...(f.raw || {}), ...nueva } } : f));
         setPagosPorFactura((pp) => {
           if (!(fv.id in pp)) return pp;
           const cap = Number(pp[fv.id]);
@@ -570,10 +548,7 @@ export function PagosDashboard() {
       await batch.commit();
       registrarLog('Pagos', 'Edición', `Recalculó los montos de la factura ${fv.invoice} (regla de monedas): total ${money(totalNativoNuevo)} ${monedaCanon}.`).catch(() => {});
 
-      // Refresco en memoria.
-      setFacturasPendientes((prev) => prev.map((f) => f.id === fv.id
-        ? { ...f, total: totalNativoNuevo, saldo: saldoNuevo, raw: { ...(f.raw || {}), ...cambios } }
-        : f));
+      // ✅ V00452: la lista del modal está en vivo (el listener trae el cambio).
       setPagosPorFactura((pp) => {
         if (!(fv.id in pp)) return pp;
         const cap = Number(pp[fv.id]);
@@ -600,20 +575,8 @@ export function PagosDashboard() {
     setEditAdjuntos(desdeGuardados(comprobantesDe(p))); // ✅ V00451
     setEditFacturasSel([]);
     setEditPagoPorFactura({});
-    setEditFacturasDisp([]);
     setEditBusquedaFactura('');
-    // Carga perezosa de las facturas pendientes de la entidad (según el TIPO
-    // del pago — cliente o proveedor — no la pestaña actual).
-    setCargandoEditFacturas(true);
-    cargarFacturasPendientes(p.tipo)
-      .then((lista) => {
-        const yaEnPago = new Set((p.facturas || []).map((fa) => String(fa.facturaId)));
-        setEditFacturasDisp(lista.filter((fx) =>
-          claveEntidad(fx.entidadNombre) === claveEntidad(p.entidadNombre) && fx.saldo > 0.009 && !yaEnPago.has(String(fx.id))
-        ).sort((a, b) => claveFecha(a.fecha).localeCompare(claveFecha(b.fecha))));
-      })
-      .catch(() => setEditFacturasDisp([]))
-      .finally(() => setCargandoEditFacturas(false));
+    // ✅ V00452: las facturas pendientes de la entidad salen de la lista en vivo (editFacturasDisp).
   };
 
   const toggleEditFactura = (id: string) => {
@@ -636,6 +599,15 @@ export function PagosDashboard() {
     if (!pagoEditando) return;
     if (!editFecha) { alert('Captura la fecha del pago.'); return; }
     if (!editNumero.trim()) { alert('Captura el número del pago.'); return; }
+    // ✅ V00452: lista en vivo: una factura elegida que ya no tiene saldo se quita y se avisa.
+    const sinSaldoEdicion = editFacturasSel.filter((id) => !editFacturasDisp.some((fx) => fx.id === id));
+    if (sinSaldoEdicion.length > 0) {
+      const nombres = sinSaldoEdicion.map((id) => facturasPendientes.find((f) => f.id === id)?.invoice || id).join(', ');
+      setEditFacturasSel((prev) => prev.filter((id) => !sinSaldoEdicion.includes(id)));
+      setEditPagoPorFactura((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => !sinSaldoEdicion.includes(id))));
+      alert(`Estas facturas ya no tienen saldo y se quitaron de las que se agregan: ${nombres}.\n\nRevisa y vuelve a guardar.`);
+      return;
+    }
     const pago = pagoEditando;
     setGuardandoEdicion(true);
     try {
@@ -676,10 +648,6 @@ export function PagosDashboard() {
           pagoId: pago.id, ...cambios,
           agregadas: agregadas.map(({ fac, monto: m }) => ({ facturaId: fac.id, invoice: fac.invoice, fecha: fac.fecha, total: fac.total, saldoAnterior: fac.saldo, aplicado: m, saldoNuevo: Math.max(0, fac.saldo - m) })),
         });
-        setFacturasPendientes((prev) => prev.map((fx) => {
-          const n = r.facturas[fx.id];
-          return n ? { ...fx, montoPagado: Number(n.montoPagado) || 0, saldo: Number(n.saldoPendiente) || 0 } : fx;
-        }));
         // La callable no conoce la lista: se escribe aparte (no es un campo de dinero; las reglas lo permiten).
         if (lista !== antes) await updateDoc(doc(db, 'pagos', pago.id), { comprobantes: lista });
         registrarLog('Pagos', 'Edición', `Editó el pago ${cambios.numeroPago} de ${pago.entidadNombre}.`).catch(() => {});
@@ -739,18 +707,7 @@ export function PagosDashboard() {
         return { datos, nuevas, escrituras };
       });
 
-      // Refleja los saldos en la lista del modal de registro sin recargar.
-      if (guardado.nuevas.length > 0) {
-        const frescos = new Map(guardado.escrituras.map((w) => [w.id, w.cambios]));
-        setFacturasPendientes((prev) => prev.map((fx) => {
-          const ag = guardado.nuevas.find((x) => x.facturaId === fx.id);
-          if (!ag) return fx;
-          const fresco = frescos.get(fx.id);
-          if (fresco) return { ...fx, total: ag.total, montoPagado: fresco.montoPagado, saldo: fresco.saldoPendiente };
-          const pagadoNuevo = fx.montoPagado + ag.aplicado;
-          return { ...fx, montoPagado: pagadoNuevo, saldo: Math.max(0, fx.total - pagadoNuevo) };
-        }));
-      }
+      // ✅ V00452: los saldos de la lista llegan solos (facturas en vivo).
       registrarLog('Pagos', 'Edición', `Editó el pago ${cambios.numeroPago} de ${pago.entidadNombre}.`).catch(() => {});
       // El onSnapshot refresca la lista; si el detalle está abierto se actualiza al vuelo.
       setPagoViendo((prev) => prev && prev.id === pago.id ? { ...prev, ...guardado.datos } : prev);
@@ -767,30 +724,42 @@ export function PagosDashboard() {
     }
   };
 
-  // ✅ NUEVO — RECARGAR: fuerza la relectura de las facturas (clientes o
-  //   proveedores según la pestaña) para que aparezcan las recién creadas
-  //   sin esperar a reabrir el modal. La lista de pagos ya es en vivo
-  //   (onSnapshot), así que este botón cubre el lado de facturas/saldos.
-  const [recargando, setRecargando] = useState(false);
-  const recargarFacturas = async () => {
-    if (recargando) return;
-    setRecargando(true);
-    try {
-      const lista = await cargarFacturasPendientes(tab);
-      setFacturasPendientes(lista);
-    } catch (e) {
-      console.error('No se pudieron recargar las facturas:', e);
-      alert('No se pudieron recargar las facturas. Intenta de nuevo.');
-    } finally {
-      setRecargando(false);
-    }
-  };
-
   // ── Modal Registrar Pago ──
   const [modalAbierto, setModalAbierto] = useState(false);
   const pagoPendienteRef = useRef<string | null>(null); // ✅ V00441: id del pago en captura (reintentos)
-  const [facturasPendientes, setFacturasPendientes] = useState<FacturaPagable[]>([]);
-  const [cargandoFacturas, setCargandoFacturas] = useState(false);
+  // ✅ V00452: facturas EN VIVO (hooks/useFacturasPagables.ts). Antes se descargaban todas al abrir
+  //   "Registrar Pago" (8–10 s cada vez). Empiezan a llegar en segundo plano en cuanto se ve la
+  //   lista de pagos; al abrir el modal ya están.
+  const flagsCargadas = useFlagsCargadas();
+  const opcionesFacturas = {
+    soloAbiertas: flags.consultasCanonicas && flags.dineroPorServidor,
+    reglaUnica: flags.dineroPorServidor,
+    monedaEmpresa,
+    pagosMtto: tab === 'mtto' ? pagos : SIN_PAGOS_MTTO,
+  };
+  const facturasVivas = useFacturasPagables(tab, {
+    ...opcionesFacturas,
+    activo: flagsCargadas && (!cargandoPagos || modalAbierto || pagoEditando !== null),
+  });
+  const facturasPendientes: FacturaPagable[] = facturasVivas.facturas;
+  const cargandoFacturas = !facturasVivas.listo;
+  /** Saldos confirmados por el servidor (mientras no, lo que había en la caché del navegador). En MTTO
+   *  el saldo sale de los pagos: también deben estar confirmados. */
+  const facturasAlDia = facturasVivas.alDia && (tab !== 'mtto' || pagosVivos.delServidor);
+  // Edición de un pago: facturas con saldo de la MISMA entidad que no están ya en el pago, de la más
+  //   antigua a la más reciente (los pagos de la lista son de la pestaña actual: mismo tipo).
+  const editFacturasDisp = useMemo<FacturaPagable[]>(() => {
+    if (!pagoEditando) return [];
+    const yaEnPago = new Set((pagoEditando.facturas || []).map((fa) => String(fa.facturaId)));
+    const entidad = claveEntidad(pagoEditando.entidadNombre);
+    return facturasPendientes
+      .filter((fx) => claveEntidad(fx.entidadNombre) === entidad && fx.saldo > 0.009 && !yaEnPago.has(String(fx.id)))
+      .sort((a, b) => claveFecha(a.fecha).localeCompare(claveFecha(b.fecha)));
+  }, [pagoEditando, facturasPendientes]);
+  const cargandoEditFacturas = pagoEditando !== null && cargandoFacturas;
+  /** Reportes: la lista en vivo ya confirmada por el servidor o, si todavía no, se espera la confirmación. */
+  const facturasParaReporte = (): Promise<FacturaPagable[]> =>
+    facturasAlDia ? Promise.resolve(facturasPendientes) : obtenerFacturasPagables(tab, opcionesFacturas);
   const [entidadSel, setEntidadSel] = useState('');       // nombre de la entidad
   const [busquedaEntidad, setBusquedaEntidad] = useState('');
   const [facturasSel, setFacturasSel] = useState<string[]>([]);
@@ -826,7 +795,7 @@ export function PagosDashboard() {
       const kOri = claveEntidad(origen);
       // ✅ V00443: con las facturas abiertas por servidor, la lista en memoria ya no trae las
       //   pagadas; para renombrarlas TODAS se leen completas (acción rara, de administración).
-      const fuente = flags.consultasCanonicas && flags.dineroPorServidor ? await cargarFacturasPendientes(tab, true) : facturasPendientes;
+      const fuente = flags.consultasCanonicas && flags.dineroPorServidor && tab !== 'mtto' ? await leerFacturasCompletas(tab) : facturasPendientes;
       const factIds = fuente.filter((fx) => claveEntidad(fx.entidadNombre) === kOri).map((fx) => fx.id);
       const pagosIdsUnir = pagos.filter((p) => p.tipo === tab && claveEntidad(p.entidadNombre) === kOri).map((p) => p.id);
       let n = 0;
@@ -840,7 +809,6 @@ export function PagosDashboard() {
         pagosIdsUnir.slice(i, i + 400).forEach((id) => batch.set(doc(db, 'pagos', id), { entidadNombre: destino }, { merge: true }));
         await batch.commit(); n += Math.min(400, pagosIdsUnir.length - i);
       }
-      setFacturasPendientes((prev) => prev.map((fx) => claveEntidad(fx.entidadNombre) === kOri ? { ...fx, entidadNombre: destino } : fx));
       if (entidadSel && claveEntidad(entidadSel) === kOri) setEntidadSel(destino);
       alert(`Unión completada. ✅\n\n${n} registro(s) pasaron de "${origen}" a "${destino}".`);
     } catch (e) {
@@ -851,89 +819,15 @@ export function PagosDashboard() {
     }
   };
 
-  // ✅ NUEVO — RECARGA DENTRO DEL MODAL DE REGISTRO (sin salir):
-  //   vuelve a leer las facturas y CONSERVA la selección y los montos
-  //   capturados (acotándolos al saldo nuevo; las que quedaron pagadas se
-  //   quitan solas). Se dispara con el botón ↻ y AUTOMÁTICAMENTE al volver
-  //   a la pestaña del navegador (p. ej. después de recalcular una factura
-  //   o editarla en Facturación).
-  const [recargandoModal, setRecargandoModal] = useState(false);
-  const ultimaRecargaModal = useRef<number>(0);
-
-  const recargarFacturasModal = async (silencioso = false) => {
-    if (recargandoModal) return;
-    setRecargandoModal(true);
-    try {
-      const lista = await cargarFacturasPendientes(tab);
-      setFacturasPendientes(lista);
-      ultimaRecargaModal.current = Date.now();
-      // Conserva la selección: solo facturas que siguen con saldo.
-      const porId: Record<string, FacturaPagable> = {};
-      lista.forEach((fx) => { porId[fx.id] = fx; });
-      setFacturasSel((prev) => prev.filter((id) => porId[id] && porId[id].saldo > 0.009));
-      setPagosPorFactura((prev) => {
-        const nuevo: Record<string, string> = {};
-        Object.entries(prev).forEach(([id, txtMonto]) => {
-          const fx = porId[id];
-          if (!fx || fx.saldo <= 0.009) return; // pagada o eliminada: fuera
-          const cap = Number(txtMonto);
-          nuevo[id] = isNaN(cap) ? txtMonto : Math.min(cap, fx.saldo).toFixed(2);
-        });
-        return nuevo;
-      });
-    } catch (e) {
-      console.error('No se pudieron recargar las facturas del modal:', e);
-      if (!silencioso) alert('No se pudieron recargar las facturas. Intenta de nuevo.');
-    } finally {
-      setRecargandoModal(false);
-    }
-  };
-
-  // Recarga automática al volver el foco a la pestaña (máx. 1 vez cada 10 s).
-  // ✅ V00443 (Fase 7.4): con `consultasCanonicas` ya no se recarga sola al volver el foco (el botón ↻
-  //   sigue; con `dineroPorServidor` el servidor rechaza aplicar más que el saldo actual).
-  const alVolver = useEffectEvent(() => {
-    if (document.visibilityState !== 'visible') return;
-    if (Date.now() - ultimaRecargaModal.current < 10000) return;
-    recargarFacturasModal(true);
-  });
-  useEffect(() => {
-    if (!modalAbierto || !entidadSel || flags.consultasCanonicas) return;
-    const escuchar = () => alVolver();
-    window.addEventListener('focus', escuchar);
-    document.addEventListener('visibilitychange', escuchar);
-    return () => {
-      window.removeEventListener('focus', escuchar);
-      document.removeEventListener('visibilitychange', escuchar);
-    };
-  }, [modalAbierto, entidadSel, tab, flags.consultasCanonicas]);
+  // ✅ V00452: ya no hay "recargar" en el modal ni recarga al volver a la pestaña del navegador:
+  //   las facturas llegan EN VIVO (lo que cambie en Facturación o en otro pago se ve solo). Lo
+  //   seleccionado que quede pagado sale solo de la lista y lo capturado se acota al saldo nuevo.
 
 
   const [observaciones, setObservaciones] = useState('');
   const [adjuntosPago, setAdjuntosPago] = useState<Adjunto[]>([]); // ✅ V00451: comprobantes (hasta 10)
   const [guardando, setGuardando] = useState(false);
 
-  // ── Lista de pagos del tab activo, en vivo ──
-  // ✅ V00449: de qué pestaña son los pagos que hay en memoria. Al entrar, la tabla decía "Aún no
-  //   hay pagos registrados" hasta que llegaba el primer snapshot, y al cambiar de pestaña seguía
-  //   mostrando los pagos (y totales) de la pestaña anterior: mientras no coincidan, animación.
-  const [pagosDeTab, setPagosDeTab] = useState<TipoPago | null>(null);
-  const cargandoPagos = pagosDeTab !== tab;
-  useEffect(() => {
-    const q = query(collection(db, 'pagos'), where('tipo', '==', tab));
-    const unsubscribe = onSnapshot(q, (snap) => {
-      const lista = snap.docs
-        .map((d) => ({ ...(d.data() as Omit<PagoDoc, 'id'>), id: d.id }))
-        .sort((a, b) => claveFecha(b.fecha).localeCompare(claveFecha(a.fecha)));
-      setPagos(lista);
-      setPagosDeTab(tab);
-    }, (e) => {
-      // ✅ V00449: si el listener falla, se apaga la animación (antes el error no se atendía).
-      console.error('[Pagos] Error al escuchar los pagos:', e);
-      setPagosDeTab(tab);
-    });
-    return () => unsubscribe();
-  }, [tab]);
 
   // ✅ NUEVO — ORDEN POR COLUMNA (mismo patrón que Operaciones Activas):
   //   clic en el encabezado ordena asc, segundo clic desc.
@@ -988,7 +882,7 @@ export function PagosDashboard() {
   };
 
   // Reporte 1: PAGOS REALIZADOS (respeta pestaña y búsqueda actuales).
-  const exportarPagosExcel = () => {
+  const exportarPagosExcel = async () => {
     if (pagosFiltrados.length === 0) { alert('No hay pagos que exportar.'); return; }
     const hojaPagos = pagosFiltrados.map((p) => ({
       'Fecha': p.fecha,
@@ -1016,10 +910,16 @@ export function PagosDashboard() {
         'Moneda': p.moneda || '',
       }))
     );
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaPagos), 'Pagos');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaDetalle), 'Detalle por Factura');
-    XLSX.writeFile(wb, `Pagos_${etiquetaTab}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    try {
+      const XLSX = await import('xlsx'); // ✅ V00452: Excel se carga al exportar, no al entrar a Pagos
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaPagos), 'Pagos');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaDetalle), 'Detalle por Factura');
+      XLSX.writeFile(wb, `Pagos_${etiquetaTab}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (e) {
+      console.error('No se pudo generar el Excel de pagos:', e);
+      alert('No se pudo generar el Excel. Revisa la conexión e intenta de nuevo.');
+    }
     setMenuReportes(false);
   };
 
@@ -1050,6 +950,7 @@ export function PagosDashboard() {
     cont.innerHTML = html;
     document.body.appendChild(cont);
     try {
+      const { default: html2pdf } = await import('html2pdf.js'); // ✅ V00452: al exportar
       await html2pdf().set({
         margin: 8,
         filename: nombreArchivo,
@@ -1076,6 +977,9 @@ export function PagosDashboard() {
         totalesPorMoneda(pagosFiltrados.map(p => ({ moneda: p.moneda, monto: Number(p.monto) || 0 }))),
         `Pagos_${etiquetaTab}_${new Date().toISOString().slice(0, 10)}.pdf`
       );
+    } catch (e) {
+      console.error('No se pudo generar el PDF de pagos:', e); // ✅ V00452
+      alert('No se pudo generar el PDF. Revisa la conexión e intenta de nuevo.');
     } finally {
       setGenerandoReporte(false);
       setMenuReportes(false);
@@ -1086,7 +990,7 @@ export function PagosDashboard() {
   const exportarPendientesExcel = async () => {
     setGenerandoReporte(true);
     try {
-      const lista = (await cargarFacturasPendientes(tab))
+      const lista = (await facturasParaReporte())
         .filter((f) => f.saldo > 0.009) // el reporte sigue siendo SOLO de pendientes
         .sort((a, b) => a.entidadNombre.localeCompare(b.entidadNombre) || claveFecha(a.fecha).localeCompare(claveFecha(b.fecha)));
       if (lista.length === 0) { alert('No hay facturas pendientes.'); return; }
@@ -1099,6 +1003,7 @@ export function PagosDashboard() {
         'Saldo Pendiente': f.saldo,
         'Moneda': f.moneda || '',
       }));
+      const XLSX = await import('xlsx'); // ✅ V00452: al exportar
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hoja), 'Facturas Pendientes');
       XLSX.writeFile(wb, `Facturas_Pendientes_${etiquetaTab}_${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -1114,7 +1019,7 @@ export function PagosDashboard() {
   const exportarPendientesPDF = async () => {
     setGenerandoReporte(true);
     try {
-      const lista = (await cargarFacturasPendientes(tab))
+      const lista = (await facturasParaReporte())
         .filter((f) => f.saldo > 0.009) // el reporte sigue siendo SOLO de pendientes
         .sort((a, b) => a.entidadNombre.localeCompare(b.entidadNombre) || claveFecha(a.fecha).localeCompare(claveFecha(b.fecha)));
       if (lista.length === 0) { alert('No hay facturas pendientes.'); return; }
@@ -1134,187 +1039,40 @@ export function PagosDashboard() {
     }
   };
 
-  // ── Cargador de facturas con saldo pendiente (modal Y reportes) ──
-  //
-  // ✅ FIX "no aparecen todas las facturas":
-  //   1. ANTES se consultaba where('statusFactura','==','Facturado'), pero las
-  //      facturas antiguas NO tienen ese campo (Facturación las trata como
-  //      'Facturado' por respaldo) y una igualdad de Firestore NO devuelve
-  //      documentos donde el campo no existe → esas facturas nunca aparecían
-  //      en Pagos. Ahora el status se filtra EN CLIENTE con la misma regla
-  //      tolerante que usan los dashboards de Facturación.
-  //   2. ANTES había un limit(1000) plano: si la colección supera 1000
-  //      documentos se cortaba en silencio. Ahora se pagina por cursor igual
-  //      que Facturación (lotes de 1000, tope 12,000).
+  // ── Facturas: moneda y total ──
+  // ✅ V00452: la regla vive en services/facturasPagables.ts (pura y probada): moneda canónica de la
+  //   factura (la de la EMPRESA manda, V00148), facturas cobrables (sin status = 'Facturado') y total
+  //   en la MONEDA de la factura. Aquí, atajos con la moneda de la empresa y la regla de total vigentes.
+  const monedaDeFactura = (raw: Record<string, unknown> | null | undefined): string => monedaDeFacturaBase(raw || {}, monedaEmpresa);
+  const mapearFacturaPagable = (id: string, raw: Record<string, unknown>, tipo: TipoPago): FacturaPagable =>
+    mapearFacturaBase(id, raw, tipo, { reglaUnica: flags.dineroPorServidor, monedaEmpresa });
+
+  // "Unir duplicados" con las facturas abiertas por servidor necesita TODAS (pagadas incluidas): se
+  //   leen en ese momento (acción rara, de administración), por cursor como Facturación (lotes de
+  //   1,000, tope 12,000).
   const PAG_FACT_PAGOS = 1000;
-  const LIMITE_FACT_PAGOS = 12000; // mismo criterio que Facturación
-
-  // ✅ FIX MONEDA INCONSISTENTE: las facturas guardan la moneda de formas
-  //   distintas según la época/módulo — a veces el ID del catálogo, a veces
-  //   'USD'/'MXN', a veces el nombre 'Dólares'/'Dolares'/'Pesos'. Antes cada
-  //   representación se mostraba tal cual (la misma factura salía "USD" en
-  //   Facturación y "Dolares"/"Pesos" en Pagos) y hasta bloqueaba pagos por
-  //   "monedas distintas" cuando en realidad eran la misma. Este normalizador
-  //   convierte CUALQUIER representación a 'USD' o 'MXN'.
-  // ✅ V00439 (Fase 3.x): helper compartido (acepta las mismas formas y algunas
-  //   más: 'DLL', 'M.N.', 'MXP'…).
-  const monedaCanonica = (val: unknown): string => monedaCanonicaComun(val) ?? '';
-
-  // Resuelve la moneda canónica de un doc de factura probando TODOS los
-  // campos donde puede vivir; si ninguno se reconoce, devuelve el primer
-  // texto no vacío tal cual (para no ocultar monedas raras).
-  const monedaDeFactura = (raw: any): string => {
-    // ✅ V00148: la MONEDA de la EMPRESA (tabla Empresas) manda SIEMPRE — la
-    //   moneda y sus cálculos siguen a la empresa en todas partes; los campos
-    //   guardados en la factura son solo respaldo para empresas sin moneda.
-    const canonEmp = monedaCanonica(monedaEmpresaDe({
-      entidadId: raw?.clienteId || raw?.proveedorId || raw?.entidadId || '',
-      entidadNombre: raw?.clienteNombre || raw?.proveedorNombre || raw?.entidadNombre || '',
-    }));
-    if (canonEmp) return canonEmp;
-    const candidatos = [raw?.monedaFacturacion, raw?.monedaProveedor, raw?.moneda, raw?.monedaId];
-    for (const c of candidatos) {
-      const canon = monedaCanonica(c);
-      if (canon) return canon;
-    }
-    for (const c of candidatos) {
-      const s = String(c ?? '').trim();
-      if (s) return s;
-    }
-    return '';
-  };
-
-  // Mismo criterio que Facturación: sin campo/vacío => 'Facturado'. Solo se
-  // excluyen las canceladas y las marcadas explícitamente como 'No Facturado'.
-  const esFacturaCobrable = (raw: any): boolean => {
-    const s = String(raw?.statusFactura || 'Facturado')
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
-    if (!s) return true;
-    if (s.includes('cancel')) return false;
-    if (s.startsWith('no ')) return false; // "No Facturado"
-    return true;
-  };
-
-
-  // ✅ FIX MONEDA — TOTAL NATIVO DE LA FACTURA (en SU moneda, no la conversión):
-  //   `totalNativoFactura` vive en ../services/aplicarPagos.ts (Fase 1.8a) para
-  //   que la tabla y la transacción que aplica/revierte pagos usen la MISMA regla.
-
-  // ✅ NUEVO: mapeo de un doc de factura a FacturaPagable (reutilizado por la
-  //   carga masiva y por la apertura individual desde los chips de pagos).
-  const mapearFacturaPagable = (id: string, raw: any, tipo: TipoPago): FacturaPagable => {
-    // ✅ FIX MONEDA: total a pagar en la MONEDA de la factura (no la conversión).
-    // ✅ V00441: con la bandera, la regla ÚNICA (la que valida el servidor).
-    const total = flags.dineroPorServidor ? totalNativoFacturaUnica(raw) : totalNativoFactura(raw);
-    const pagado = Number(raw.montoPagado) || 0;
-    return {
-      id,
-      invoice: String(raw.invoice || raw.folio || id),
-      fecha: String(raw.fecha || raw.fechaFactura || ''),
-      entidadId: String((tipo === 'cliente' ? raw.clienteId : raw.proveedorId) || ''),
-      entidadNombre: String((tipo === 'cliente' ? (raw.clienteNombre || raw.cliente) : (raw.proveedorNombre || raw.proveedor)) || 'Sin nombre'),
-      total,
-      montoPagado: pagado,
-      saldo: Math.max(0, total - pagado),
-      moneda: monedaDeFactura(raw), // ✅ canónica: 'USD' / 'MXN'
-      raw,
-    };
-  };
-
-  /** `completas`: todas las facturas cobrables (pagadas incluidas), aunque haya consultas acotadas. */
-  const cargarFacturasPendientes = async (tipo: TipoPago, completas = false): Promise<FacturaPagable[]> => {
-    // ✅ MTTO: los "pendientes" son los GRUPOS POR INVOICE de gastos_mtto,
-    //   agrupados por PROVEEDOR. El saldo se DERIVA de los pagos tipo mtto
-    //   (no se tocan los documentos de gastos).
-    if (tipo === 'mtto') {
-      const snapG = await getDocs(query(collection(db, 'gastos_mtto'), orderBy('createdAt', 'desc'), limit(3000)));
-      const grupos = new Map<string, any>();
-      snapG.docs.forEach((d) => {
-        const g: any = { id: d.id, ...(d.data() as any) };
-        const inv = String(g.invoice || '').trim();
-        if (!inv) return; // sin invoice no es pagable por grupo
-        const clave = inv.toLowerCase();
-        const prev = grupos.get(clave) || { invoice: inv, total: 0, fecha: '', entidad: '', gastos: [] as any[] };
-        prev.total += totalGastoMtto(g); // ✅ V00126: usa el TOTAL FINAL (con retenciones)
-        const fg = String(g.fecha || g.fechaGasto || '').slice(0, 10);
-        if (fg > prev.fecha) prev.fecha = fg;
-        if (!prev.entidad) prev.entidad = String(g.proveedorNombre || g.proveedor || '').trim() || 'VARIOS';
-        prev.gastos.push(g);
-        grupos.set(clave, prev);
-      });
-      // Pagado por invoice: derivado de los pagos tipo mtto ya registrados.
-      const pagadoPor: Record<string, number> = {};
-      pagos.filter((p) => p.tipo === 'mtto').forEach((p) => {
-        (Array.isArray(p.facturas) ? p.facturas : []).forEach((fa: any) => {
-          pagadoPor[String(fa.facturaId)] = (pagadoPor[String(fa.facturaId)] || 0) + (Number(fa.aplicado) || 0);
-        });
-      });
-      return Array.from(grupos.entries()).map(([clave, gr]) => {
-        const id = `MTTO__${clave}`;
-        const pagado = pagadoPor[id] || 0;
-        return {
-          id,
-          invoice: gr.invoice,
-          fecha: gr.fecha,
-          total: gr.total,
-          montoPagado: pagado,
-          saldo: Math.max(0, gr.total - pagado),
-          moneda: 'MXN',
-          entidadNombre: gr.entidad,
-          raw: { gastos: gr.gastos, operacionesIds: [] },
-        } as FacturaPagable;
-      });
-    }
-
+  const LIMITE_FACT_PAGOS = 12000;
+  const leerFacturasCompletas = async (tipo: 'cliente' | 'proveedor'): Promise<FacturaPagable[]> => {
     const coleccion = tipo === 'cliente' ? 'facturas_clientes' : 'facturas_proveedores';
-
-    // Descarga paginada por cursor (misma técnica que Facturación).
-    const docs: { id: string; raw: any }[] = [];
-    // ✅ V00443 (Fase 7.4): con `consultasCanonicas` + `dineroPorServidor` (el servidor mantiene
-    //   `abierta`), SOLO las facturas abiertas — el modal, la edición y los reportes se quedan con
-    //   saldo > 0; "Unir entidades" pide `completas` —
-    //   en lugar de descargar hasta 12,000 facturas para filtrarlas aquí.
-    if (!completas && flags.consultasCanonicas && flags.dineroPorServidor) {
-      const r = await todasLasPaginas((c) => paginaFacturasAbiertas(coleccion, PAG_FACT_PAGOS, c), LIMITE_FACT_PAGOS);
-      if (r.truncado) console.error(`[Pagos] más de ${LIMITE_FACT_PAGOS} facturas abiertas: la lista se cortó.`);
-      return r.docs
-        // `raw` como antes (d.data()): sin el `id` que agrega armarDoc cuando el documento no lo guarda.
-        .map((x) => {
-          if (x.id !== x._docId) return { id: String(x._docId), raw: x };
-          const raw: Record<string, unknown> = { ...x };
-          delete raw.id;
-          return { id: String(x._docId), raw };
-        })
-        .filter(({ raw }) => esFacturaCobrable(raw))
-        .map(({ id, raw }) => mapearFacturaPagable(id, raw, tipo))
-        .filter((f) => f.total > 0);
-    }
-    let cursor: any = null;
+    const docs: DocVivo[] = [];
+    let cursor: QueryDocumentSnapshot | null = null;
     for (let i = 0; i < Math.ceil(LIMITE_FACT_PAGOS / PAG_FACT_PAGOS); i++) {
-      const cons: any[] = [orderBy(documentId()), limit(PAG_FACT_PAGOS)];
-      if (cursor) cons.splice(1, 0, startAfter(cursor));
-      const snap = await getDocs(query(collection(db, coleccion), ...cons));
+      const snap: QuerySnapshot = await getDocs(cursor
+        ? query(collection(db, coleccion), orderBy(documentId()), startAfter(cursor), limit(PAG_FACT_PAGOS))
+        : query(collection(db, coleccion), orderBy(documentId()), limit(PAG_FACT_PAGOS)));
       if (snap.empty) break;
-      snap.docs.forEach((d) => docs.push({ id: d.id, raw: d.data() }));
+      snap.docs.forEach((d) => docs.push(armarDoc(d.id, d.data())));
       cursor = snap.docs[snap.docs.length - 1];
       if (snap.docs.length < PAG_FACT_PAGOS) break;
     }
-
-    return docs
-      .filter(({ raw }) => esFacturaCobrable(raw))
-      .map(({ id, raw }) => mapearFacturaPagable(id, raw, tipo))
-      // ✅ CAMBIO: ya NO se excluyen las facturas pagadas — el usuario pidió ver
-      //   TODAS las facturas del cliente/proveedor (las pagadas se muestran
-      //   bloqueadas en el modal). Solo se descartan documentos sin monto
-      //   (docs secundarios de facturas agrupadas que traen subtotal 0).
-      .filter((f) => f.total > 0);
+    return facturasPagablesDe(docs, tipo, { reglaUnica: flags.dineroPorServidor, monedaEmpresa });
   };
 
-  // ── Cargar facturas con saldo pendiente al abrir el modal ──
-  const abrirModal = async () => {
+  // ── Abrir "Registrar Pago" ──
+  // ✅ V00452: ya no descarga nada: las facturas están (o están llegando) en vivo.
+  const abrirModal = () => {
     pagoPendienteRef.current = null;
     setModalAbierto(true);
-    setCargandoFacturas(true);
     setEntidadSel('');
     setBusquedaEntidad('');
     setFacturasSel([]);
@@ -1327,15 +1085,6 @@ export function PagosDashboard() {
     setMontoEditado(false);
     setObservaciones('');
     setAdjuntosPago([]);
-    try {
-      const lista = await cargarFacturasPendientes(tab);
-      setFacturasPendientes(lista);
-    } catch (e) {
-      console.error('No se pudieron cargar las facturas pendientes:', e);
-      alert('No se pudieron cargar las facturas pendientes.');
-    } finally {
-      setCargandoFacturas(false);
-    }
   };
 
   // Entidades (clientes/proveedores) con facturas.
@@ -1490,6 +1239,23 @@ export function PagosDashboard() {
   // ── Guardar el pago ──
   const guardarPago = async () => {
     if (!usuario) return;
+    // ✅ V00452: la lista está EN VIVO. Si una factura elegida ya no tiene saldo (otro pago, otra persona)
+    //   o su saldo bajó de lo capturado, se avisa y se corrige la selección antes de guardar (antes la
+    //   lista estaba congelada y la transacción lo rechazaba al guardar).
+    const sinSaldo = facturasSel.filter((id) => !facturasDeEntidad.some((f) => f.id === id));
+    if (sinSaldo.length > 0) {
+      const nombres = sinSaldo.map((id) => facturasPendientes.find((f) => f.id === id)?.invoice || id).join(', ');
+      setFacturasSel((prev) => prev.filter((id) => !sinSaldo.includes(id)));
+      setPagosPorFactura((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => !sinSaldo.includes(id))));
+      alert(`Estas facturas ya no tienen saldo (se registró otro pago o cambió la factura) y se quitaron de la selección: ${nombres}.\n\nRevisa el monto recibido y vuelve a guardar.`);
+      return;
+    }
+    const bajaron = seleccionadasOrdenadas.filter((f) => (Number(pagosPorFactura[f.id]) || 0) > f.saldo + 0.009);
+    if (bajaron.length > 0) {
+      setPagosPorFactura((prev) => ({ ...prev, ...Object.fromEntries(bajaron.map((f) => [f.id, f.saldo.toFixed(2)])) }));
+      alert(`El saldo de ${bajaron.map((f) => `${f.invoice} (ahora ${money(f.saldo)})`).join(', ')} bajó (se registró otro pago o cambió la factura). Se ajustó el monto a aplicar.\n\nRevisa los montos y vuelve a guardar.`);
+      return;
+    }
     if (seleccionadasOrdenadas.length === 0) { alert('Selecciona al menos una factura.'); return; }
     if (totalAplicado <= 0) { alert('Captura el monto a aplicar en al menos una factura.'); return; }
     if (monto <= 0) { alert('Captura el monto recibido del pago.'); return; }
@@ -1664,10 +1430,14 @@ export function PagosDashboard() {
   return (
     <div className="pg-contenedor">
       {hiloPago && (
+        <Suspense fallback={null}>
         <HiloModal tipo={hiloPago.tipo === 'proveedor' ? 'proveedor' : 'cliente'} pago={{ id: hiloPago.id, numeroPago: hiloPago.numeroPago, monto: hiloPago.monto, moneda: hiloPago.moneda, facturas: hiloPago.facturas || [] }} onClose={() => setHiloPago(null)} onEditarOperacion={(id) => setOpEditandoId(id)} />
+        </Suspense>
       )}
       {opEditandoId && (
-        <EditorOperacionEmbebido operacionId={opEditandoId} onClose={() => setOpEditandoId(null)} />
+        <Suspense fallback={<CargandoDatos texto="Abriendo la operación…" />}>
+          <EditorOperacionEmbebido operacionId={opEditandoId} onClose={() => setOpEditandoId(null)} />
+        </Suspense>
       )}
       <div className="pg-encabezado">
         <h1 className="pg-titulo">Pagos</h1>
@@ -1690,9 +1460,6 @@ export function PagosDashboard() {
               </>
             )}
           </div>
-          <button className="pg-btn-secundario" onClick={recargarFacturas} disabled={recargando} title="Actualizar facturas y saldos">
-            <RefreshCw size={14} className={recargando ? 'pg-girando' : undefined} /> {recargando ? 'Actualizando…' : 'Recargar'}
-          </button>
           <button className="pg-btn-nuevo" onClick={abrirModal}>
             <Plus size={16} /> Registrar Pago
           </button>
@@ -2121,7 +1888,7 @@ export function PagosDashboard() {
               <div className="pg-campo">
                 <label>Agregar facturas a este pago (con saldo abierto de {pagoEditando.entidadNombre})</label>
                 {cargandoEditFacturas ? (
-                  <p className="pg-vacio">Buscando facturas con saldo…</p>
+                  <CargandoDatos texto="Buscando facturas con saldo…" compacto />
                 ) : editFacturasDisp.length === 0 ? (
                   <p className="pg-vacio">No hay más facturas con saldo abierto de esta entidad.</p>
                 ) : (() => {
@@ -2217,7 +1984,12 @@ export function PagosDashboard() {
 
             <div className="pg-modal-cuerpo">
               {cargandoFacturas ? (
-                <p className="pg-vacio">Cargando facturas…</p>
+                <CargandoDatos texto="Cargando facturas…" />
+              ) : facturasVivas.error && facturasPendientes.length === 0 ? (
+                <div className="pg-vacio">
+                  No se pudieron cargar las facturas. Revisa la conexión.{' '}
+                  <button type="button" className="pg-btn-secundario" onClick={facturasVivas.reintentar}>Reintentar</button>
+                </div>
               ) : !entidadSel ? (
                 <>
                   {/* PASO 1: elegir cliente/proveedor con facturas pendientes */}
@@ -2315,12 +2087,17 @@ export function PagosDashboard() {
                   {/* ═══ Transacciones pendientes ═══ */}
                   <div className="pg-trans-encabezado">
                     <label className="pg-etq">Transacciones pendientes</label>
-                    {/* ✅ NUEVO: recarga sin salir (conserva selección y montos) */}
-                    <button type="button" className="pg-btn-secundario" style={{ padding: '6px 12px' }}
-                      onClick={() => recargarFacturasModal(false)} disabled={recargandoModal}
-                      title="Actualizar facturas y saldos sin perder lo seleccionado">
-                      <RefreshCw size={13} className={recargandoModal ? 'pg-girando' : undefined} /> {recargandoModal ? 'Actualizando…' : 'Recargar'}
-                    </button>
+                    {/* ✅ V00452: la lista está en vivo; mientras el servidor confirma los saldos, se avisa. */}
+                    {facturasVivas.error ? (
+                      <span className="pg-actualizando pg-actualizando--error">
+                        No se pudieron actualizar los saldos.{' '}
+                        <button type="button" className="pg-btn-liga" onClick={facturasVivas.reintentar}>Reintentar</button>
+                      </span>
+                    ) : !facturasAlDia && (
+                      <span className="pg-actualizando" title="Se muestran los saldos guardados en este equipo mientras llegan los del servidor">
+                        <RefreshCw size={13} className="pg-girando" /> Actualizando saldos…
+                      </span>
+                    )}
                     <div className="pg-buscador pg-buscador-factura">
                       <Search size={14} />
                       <input
@@ -2432,8 +2209,9 @@ export function PagosDashboard() {
             <div className="pg-modal-pie">
               <button className="pg-btn-secundario" onClick={() => setModalAbierto(false)} disabled={guardando}>Cancelar</button>
               {entidadSel && (
-                <button className="pg-btn-primario" onClick={guardarPago} disabled={guardando || seleccionadasOrdenadas.length === 0}>
-                  {guardando ? 'Guardando…' : 'Guardar Pago'}
+                <button className="pg-btn-primario" onClick={guardarPago} disabled={guardando || seleccionadasOrdenadas.length === 0 || !facturasAlDia}
+                  title={facturasAlDia ? undefined : 'Esperando los saldos del servidor'}>
+                  {guardando ? 'Guardando…' : facturasAlDia ? 'Guardar Pago' : 'Actualizando saldos…'}
                 </button>
               )}
             </div>

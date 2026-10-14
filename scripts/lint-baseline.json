@@ -62,7 +62,7 @@
     "src/features/operaciones/config/statusRules.ts": 21,
     "src/features/operaciones/context/FormularioOperacionContext.tsx": 8,
     "src/features/operaciones/services/operacionesService.ts": 10,
-    "src/features/pagos/components/PagosDashboard.tsx": 46,
+    "src/features/pagos/components/PagosDashboard.tsx": 28,
     "src/features/panelControl/PanelControlDashboard.tsx": 10,
     "src/features/proveedoresUnidad/components/FormularioProveedorUnidad.tsx": 3,
     "src/features/proveedoresUnidad/components/ProveedoresUnidadDashboard.tsx": 5,
@@ -85,6 +85,6 @@
     "src/utils/lazyWithRetry.ts": 2,
     "functions/src/index.ts": 13
   },
-  "anyTotal": 2302,
+  "anyTotal": 2284,
   "desactivadosDeps": 90
 }

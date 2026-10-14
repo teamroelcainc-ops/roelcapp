@@ -174,3 +174,12 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - **No escritos más**: `tienePdfDoda`/`cantPdfsEntrys` (nadie los lee en web ni functions; se reiniciaban mal al editar). Si Roelca Móvil los usara, quedan con su último valor.
 - **PENDIENTE**: búsqueda de folio sin importar mayúsculas en el servidor (campo normalizado escrito por functions); portal con todos los documentos de la factura.
 
+## V00452 (Pagos: "Registrar Pago" al instante)
+- **Facturas de Pagos en vivo** (`features/pagos/hooks/useFacturasPagables.ts`): listener compartido por colección; se activa cuando ya se ve la lista de pagos (o al abrir el modal/edición). Antes: descarga completa por cursor en CADA apertura. Trade-off de lecturas documentado en CAMBIOS-V00452 (entrar a Pagos solo a mirar también descarga; quien registra lee mucho menos).
+- **`avisarConfirmacion`** (`coleccionesVivas.ts`): la confirmación del servidor SIN cambios no se publicaba (V00446, para no repintar catálogos); una vista que decide con "al día" (Guardar Pago) la pide y se publica una vez (también si ya había llegado antes de suscribirse). `reintentarVivo(clave)` reabre un listener muerto por error.
+- **Sin parches locales** de la lista de facturas en Pagos: las escrituras (batch/transacción) llegan por el listener (compensación de latencia del SDK); las callables (con `dineroPorServidor`) tardan lo que tarde el servidor en avisar.
+- **Selección contra la lista en vivo**: al guardar, lo elegido que ya no tiene saldo se quita y lo capturado por encima del saldo nuevo se ajusta, con aviso (antes la lista estaba congelada y la transacción abortaba). La transacción sigue siendo la protección real.
+- **Moneda de empresa** por índice (`crearMonedaEmpresa`): mismo resultado que el `find` viejo salvo valores no-texto falsy (0/false) en id/nombre.
+- **Carga perezosa**: xlsx y html2pdf con `import()`; `HiloModal`/`EditorOperacionEmbebido` con `lazyWithRetry` + `Suspense`. `pdfGenerator` ya no mete html2pdf en la carga inicial (lo importaba Login por `LOGO_DEFAULT`). Otros generadores de PDF (remisión, tarifario, diésel…) siguen con import estático: van en módulos perezosos y cargan el PDF al abrir esos módulos; candidato a cambiar después.
+- **PENDIENTE**: Pagos no está en MantenerVivo (al volver se re-monta; los datos ya no se re-descargan por la permanencia de 15 min).
+
