@@ -12,6 +12,14 @@
       "collectionGroup": "operaciones",
       "queryScope": "COLLECTION",
       "fields": [
+        { "fieldPath": "operador", "order": "ASCENDING" },
+        { "fieldPath": "fechaServicioISO", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "operaciones",
+      "queryScope": "COLLECTION",
+      "fields": [
         { "fieldPath": "clientePaga", "order": "ASCENDING" },
         { "fieldPath": "status", "order": "ASCENDING" }
       ]

@@ -21,6 +21,12 @@
  *                                         facturas por pagar, pagos, totales.
  *   { accion: 'operacion', opId }       → detalle + bitácora de status +
  *                                         trayecto GPS (rastreo_operaciones).
+ *   { accion: 'historial', desde, hasta } → ✅ V00453: TODAS las operaciones de
+ *                                         sus empresas con fecha de servicio en el
+ *                                         rango (máx. 93 días; la app pide un mes).
+ *                                         Usa el índice existente
+ *                                         operaciones(empresasIds CONTAINS,
+ *                                         fechaServicioISO DESC).
  *
  * ▶ ÍNDICES (opcionales, aceleran y abaratan): ver firestore.indexes.json de la
  *   entrega. Sin ellos la función usa la consulta simple por cliente y filtra
@@ -37,7 +43,7 @@ import { getFirestore, type Query, type QueryDocumentSnapshot } from 'firebase-a
 if (getApps().length === 0) initializeApp();
 const db = getFirestore();
 
-const FN_VERSION = 'portal-v1';
+const FN_VERSION = 'portal-v2'; // ✅ V00453: + accion 'historial'
 
 // Mismos ids que la web (OperacionesDashboard / Facturación).
 const STATUS_FINALES = ['c2d57403', 'f557b751', '7607f692'];
@@ -46,6 +52,8 @@ const DIAS_RECIENTES = 60;
 const MESES_PAGOS = 12;
 const MAX_EMPRESAS = 10;
 const MAX_PUNTOS_RUTA = 1500;
+const MAX_DIAS_HISTORIAL = 93;
+const MAX_OPS_HISTORIAL = 600;
 
 // ───────────────────────── Contrato de respuesta ─────────────────────────
 // (La app móvil tiene una copia en src/features/cliente/tipos.ts — mantener iguales.)
@@ -121,6 +129,15 @@ export interface ResumenPortal {
   facturasPagadas: FacturaPortal[];
   pagos: PagoPortal[];
   totales: { USD: TotalesMoneda; MXN: TotalesMoneda };
+}
+
+export interface HistorialPortal {
+  version: string;
+  desde: string;
+  hasta: string;
+  operaciones: OperacionPortal[];
+  /** true si el rango traía más de MAX_OPS_HISTORIAL operaciones (se muestran las más recientes). */
+  truncado: boolean;
 }
 
 export interface DetallePortal {
@@ -202,6 +219,7 @@ const CAMPOS_OP = [
   'ref', 'refCliente', 'fechaServicio', 'status', 'statusNombre', 'tipoOperacionNombre', 'trafico', 'carga',
   'origenNombre', 'destinoNombre', 'aduanaNombre', 'numeroRemolqueNombre', 'remolqueNombre', 'numeroRemolque',
   'clientePaga', 'clienteMercancia', 'esPrueba', 'operador',
+  'clientePagaId', 'clienteMercanciaId', 'fechaServicioISO', // ✅ V00453: canónicos (papel y orden)
 ];
 
 const etapaDe = (op: Doc): OperacionPortal['etapa'] => {
@@ -226,9 +244,14 @@ const aUbicacion = (u: unknown): UbicacionPortal | null => {
 const rastreoVisible = (op: Doc, rastreo: Doc | undefined): boolean =>
   !!rastreo && etapaDe(op) === 'enProceso' && (!rastreo.operadorId || String(rastreo.operadorId) === String(op.operador ?? ''));
 
+/** ✅ V00453: el papel también se reconoce por el ID canónico (operaciones de AppSheet guardan el nombre en clientePaga). */
+const esDe = (empresas: string[], ...valores: unknown[]): boolean => valores.some((v) => empresas.includes(String(v ?? '')));
+const pagaLa = (op: Doc, empresas: string[]): boolean => esDe(empresas, op.clientePaga, op.clientePagaId);
+const mercanciaDe = (op: Doc, empresas: string[]): boolean => esDe(empresas, op.clienteMercancia, op.clienteMercanciaId);
+
 const aOperacion = (id: string, op: Doc, empresas: string[], rastreo: Doc | undefined): OperacionPortal => {
-  const paga = empresas.includes(String(op.clientePaga ?? ''));
-  const merc = empresas.includes(String(op.clienteMercancia ?? ''));
+  const paga = pagaLa(op, empresas);
+  const merc = mercanciaDe(op, empresas);
   const vivo = rastreoVisible(op, rastreo);
   return {
     id,
@@ -245,7 +268,9 @@ const aOperacion = (id: string, op: Doc, empresas: string[], rastreo: Doc | unde
     aduana: txt(op.aduanaNombre),
     remolque: txt(op.numeroRemolqueNombre, op.remolqueNombre, op.numeroRemolque),
     papel: paga && merc ? 'ambos' : paga ? 'paga' : 'mercancia',
-    empresaId: paga ? String(op.clientePaga) : String(op.clienteMercancia ?? ''),
+    empresaId: paga
+      ? (empresas.find((e) => e === String(op.clientePaga ?? '') || e === String(op.clientePagaId ?? '')) ?? String(op.clientePaga))
+      : (empresas.find((e) => e === String(op.clienteMercancia ?? '') || e === String(op.clienteMercanciaId ?? '')) ?? String(op.clienteMercancia ?? '')),
     rastreo: vivo && rastreo
       ? { activo: rastreo.activo === true, ultima: aUbicacion(rastreo.ultimaUbicacion), actualizadoEn: txt(rastreo.actualizadoEn) }
       : null,
@@ -439,6 +464,70 @@ const resumen = async (empresas: string[]): Promise<ResumenPortal> => {
   };
 };
 
+// ✅ V00453 — Historial completo del cliente por rango de fechas (la app pide un mes).
+const ISO_DIA = /^\d{4}-\d{2}-\d{2}$/;
+
+const historial = async (empresas: string[], desdeRaw: unknown, hastaRaw: unknown): Promise<HistorialPortal> => {
+  const desde = String(desdeRaw ?? '').trim();
+  const hasta = String(hastaRaw ?? '').trim();
+  if (!ISO_DIA.test(desde) || !ISO_DIA.test(hasta) || desde > hasta) throw new HttpsError('invalid-argument', 'Rango de fechas inválido.');
+  const dias = (Date.parse(`${hasta}T00:00:00Z`) - Date.parse(`${desde}T00:00:00Z`)) / 86400000;
+  if (!Number.isFinite(dias) || dias > MAX_DIAS_HISTORIAL) throw new HttpsError('invalid-argument', `El rango no puede pasar de ${MAX_DIAS_HISTORIAL} días.`);
+
+  const enRango = (op: Doc): boolean => {
+    const f = fechaISO(op.fechaServicioISO) || fechaISO(op.fechaServicio);
+    return !!f && f >= desde && f <= hasta;
+  };
+
+  const opsMap = new Map<string, Doc>();
+  const agregar = (docs: QueryDocumentSnapshot[]) =>
+    docs.forEach((d) => {
+      const x = d.data();
+      if (esPrueba(x) || !enRango(x)) return;
+      if (!pagaLa(x, empresas) && !mercanciaDe(x, empresas)) return; // empresasIds incluye otros papeles (proveedor, origen…)
+      opsMap.set(d.id, x);
+    });
+
+  let truncado = false;
+  try {
+    const snaps = await Promise.all(
+      empresas.map((E) =>
+        db.collection('operaciones')
+          .where('empresasIds', 'array-contains', E)
+          .where('fechaServicioISO', '>=', desde)
+          .where('fechaServicioISO', '<=', hasta)
+          .orderBy('fechaServicioISO', 'desc')
+          .limit(MAX_OPS_HISTORIAL)
+          .select(...CAMPOS_OP)
+          .get(),
+      ),
+    );
+    snaps.forEach((s) => {
+      if (s.size >= MAX_OPS_HISTORIAL) truncado = true;
+      agregar(s.docs);
+    });
+  } catch (e) {
+    if (!esCodigo(e, 9, 'failed_precondition') && !esCodigo(e, 9, 'failed-precondition')) throw e;
+    // Sin el índice: los índices por cliente + fechaServicio (texto) que ya usa el resumen.
+    logger.warn('[portalCliente] Falta índice operaciones(empresasIds, fechaServicioISO); se usa clientePaga/clienteMercancia + fechaServicio.');
+    const respaldo = await Promise.all(
+      empresas.flatMap((E) =>
+        (['clientePaga', 'clienteMercancia'] as const).map((campo) =>
+          db.collection('operaciones').where(campo, '==', E).where('fechaServicio', '>=', desde).where('fechaServicio', '<=', `${hasta}\uf8ff`).select(...CAMPOS_OP).get(),
+        ),
+      ),
+    );
+    respaldo.forEach((s) => agregar(s.docs));
+  }
+
+  const operaciones = [...opsMap.entries()]
+    .map(([id, op]) => aOperacion(id, op, empresas, undefined))
+    .sort((a, b) => fechaISO(b.fechaServicio).localeCompare(fechaISO(a.fechaServicio)) || b.ref.localeCompare(a.ref))
+    .slice(0, MAX_OPS_HISTORIAL);
+
+  return { version: FN_VERSION, desde, hasta, operaciones, truncado };
+};
+
 /** Reduce una ruta larga a `max` puntos conservando el primero y el último. */
 const reducir = <T>(puntos: T[], max: number): T[] => {
   if (puntos.length <= max) return puntos;
@@ -450,7 +539,7 @@ const detalle = async (empresas: string[], opId: string): Promise<DetallePortal>
   if (!opId || opId.includes('/') || opId.length > 200) throw new HttpsError('invalid-argument', 'Operación inválida.');
   const snap = await db.doc(`operaciones/${opId}`).get();
   const op = (snap.data() ?? {}) as Doc;
-  const suya = empresas.includes(String(op.clientePaga ?? '')) || empresas.includes(String(op.clienteMercancia ?? ''));
+  const suya = pagaLa(op, empresas) || mercanciaDe(op, empresas); // ✅ V00453: también por ID canónico
   // Mismo mensaje si no existe o no es suya (no se revela qué existe).
   if (!snap.exists || !suya || esPrueba(op)) throw new HttpsError('not-found', 'No encontramos esa operación.');
 
@@ -541,6 +630,9 @@ export const portalCliente = onCall({ region: 'us-central1', memory: '512MiB', t
     if (accion === 'operacion') {
       const opId = String(datos.opId ?? '');
       return await desdeCache(`${base}|${opId}`, () => detalle(empresas, opId));
+    }
+    if (accion === 'historial') {
+      return await desdeCache(`${base}|${String(datos.desde ?? '')}|${String(datos.hasta ?? '')}`, () => historial(empresas, datos.desde, datos.hasta));
     }
     throw new HttpsError('invalid-argument', `Acción desconocida: ${accion}`);
   } catch (e) {

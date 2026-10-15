@@ -105,6 +105,8 @@ export const UsuariosDashboard = () => {
   const [esCliente, setEsCliente] = useState(false);
   const [empresasCliente, setEmpresasCliente] = useState<{ id: string; nombre: string }[]>([]);
   const [busquedaEmpresa, setBusquedaEmpresa] = useState('');
+  // ✅ V00453: ver Todos / Personal / Clientes (app móvil) en la lista.
+  const [filtroTipo, setFiltroTipo] = useState<'todos' | 'personal' | 'clientes'>('todos');
   // ✅ V00435: catálogo de empresas — solo cuando se marca "Acceso de cliente"
   //   (la mayoría de los usuarios son personal). ✅ V00439 (Fase 3.x): desde el
   //   catálogo compartido, bajo demanda; null mientras no ha llegado.
@@ -236,6 +238,13 @@ export const UsuariosDashboard = () => {
       setHorarioTrabajo({ ...HORARIO_VACIO }); // ✅ NUEVO
     }
     setModalAbierto(true);
+  };
+
+  // ✅ V00453: atajo para dar acceso a la app móvil a un usuario de una empresa
+  //   (el mismo formulario, con "Acceso de CLIENTE" ya marcado).
+  const abrirNuevoCliente = () => {
+    handleAbrirModal();
+    setEsCliente(true);
   };
 
   const handleAbrirHistorial = (user: any) => {
@@ -430,6 +439,13 @@ export const UsuariosDashboard = () => {
 
   const inicialesDe = (user: any) => (user?.nombre ? user.nombre.substring(0, 2).toUpperCase() : 'US');
 
+  // ✅ V00453: filtro por tipo de acceso.
+  const esUsuarioCliente = (u: { tipoUsuario?: unknown }) => String(u.tipoUsuario || '').trim().toLowerCase() === 'cliente';
+  const totalClientes = usuarios.filter(esUsuarioCliente).length;
+  const usuariosVisibles = filtroTipo === 'todos'
+    ? usuarios
+    : usuarios.filter((u) => (filtroTipo === 'clientes') === esUsuarioCliente(u));
+
   return (
     <div className="module-container usd-x1">
       <div className="usd-x2">
@@ -448,8 +464,32 @@ export const UsuariosDashboard = () => {
               {sincronizando ? '🔐 Sincronizando…' : '🔐 Sincronizar permisos'}
             </button>
           )}
+          {/* ✅ V00453: acceso de una EMPRESA a la app móvil (operaciones, facturas y pagos) */}
+          <button type="button" className="btn-outline ud-nuevo-cliente" onClick={abrirNuevoCliente} title="Crea un usuario para una empresa cliente: entra solo a la app móvil y ve sus operaciones, facturas pendientes y pagos">
+            📱 Nuevo acceso de cliente
+          </button>
           <button className="btn-primary" onClick={() => handleAbrirModal()}>+ Nuevo Usuario</button>
         </div>
+      </div>
+
+      {/* ✅ V00453: filtro por tipo de acceso */}
+      <div className="ud-tipo-tabs" role="tablist" aria-label="Tipo de acceso">
+        {([
+          ['todos', `Todos (${usuarios.length})`],
+          ['personal', `Personal (${usuarios.length - totalClientes})`],
+          ['clientes', `📱 Clientes app móvil (${totalClientes})`],
+        ] as const).map(([clave, texto]) => (
+          <button
+            key={clave}
+            type="button"
+            role="tab"
+            aria-selected={filtroTipo === clave}
+            className={`ud-tipo-tab${filtroTipo === clave ? ' activa' : ''}`}
+            onClick={() => setFiltroTipo(clave)}
+          >
+            {texto}
+          </button>
+        ))}
       </div>
 
       <div className="table-container usd-x5">
@@ -467,10 +507,10 @@ export const UsuariosDashboard = () => {
           <tbody>
             {!usuariosListos && usuarios.length === 0 ? (
               <tr><td colSpan={6}><CargandoDatos texto="Cargando usuarios…" /></td></tr>
-            ) : usuarios.length === 0 ? (
-              <tr><td className="usd-x10" colSpan={6}>No hay usuarios registrados.</td></tr>
+            ) : usuariosVisibles.length === 0 ? (
+              <tr><td className="usd-x10" colSpan={6}>{filtroTipo === 'clientes' ? 'Aún no hay usuarios de clientes. Usa "📱 Nuevo acceso de cliente".' : 'No hay usuarios registrados.'}</td></tr>
             ) : (
-              usuarios.map(user => (
+              usuariosVisibles.map(user => (
                 <tr className="usd-x11 ud-fila-clicable" key={user.id} onClick={() => setUsuarioFicha(user)} title="Ver detalle del usuario">
                   <td className="usd-x12" onClick={(e) => e.stopPropagation()}>
                     <div className="usd-x13">
@@ -511,6 +551,10 @@ export const UsuariosDashboard = () => {
                       {user.tipoUsuario === 'cliente' && (
                         <span className="ud-cli-badge" title={(user.empresasClienteNombres || []).join(', ')}>Cliente · App móvil</span>
                       )}
+                      {/* ✅ V00453: las empresas a las que da acceso, a la vista */}
+                      {user.tipoUsuario === 'cliente' && Array.isArray(user.empresasClienteNombres) && user.empresasClienteNombres.length > 0 && (
+                        <span className="ud-cli-empresas-lista">{user.empresasClienteNombres.join(' · ')}</span>
+                      )}
                       {user.roles?.map((r: string) => (
                         <span className="usd-x28" key={r}>{r}</span>
                       ))}
@@ -532,7 +576,7 @@ export const UsuariosDashboard = () => {
         <div className="modal-overlay usd-x30">
           <div className="form-card usd-x31">
             <div className="form-header usd-x32">
-              <h2 className="usd-x33">{usuarioActual ? 'Editar Usuario' : 'Nuevo Usuario'}</h2>
+              <h2 className="usd-x33">{usuarioActual ? 'Editar Usuario' : esCliente ? '📱 Nuevo acceso de cliente (app móvil)' : 'Nuevo Usuario'}</h2>
               <button className="usd-x34" onClick={() => setModalAbierto(false)}>✕</button>
             </div>
             
