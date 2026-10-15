@@ -20,7 +20,7 @@ import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 import { esOperacionPrueba } from '../../../utils/operacionPrueba';
 import { cargarCtxCobroPuente, cobroPuenteDeOperacion } from '../../../utils/puenteColombia';
-import { COL_REF_AUTO, filaDeOperacion, grupoDeFila, quitarOperacionDeReferenciaAuto, upsertReferenciaAuto } from '../../../utils/historialCalculadoPuentes';
+import { COL_REF_AUTO, filaDeOperacion, grupoDeFila, grupoDeNombresPuente, quitarOperacionDeReferenciaAuto, upsertReferenciaAuto } from '../../../utils/historialCalculadoPuentes';
 import { FormularioOperacion } from '../../operaciones/components/FormularioOperacion';
 import { idReal, obtenerCatalogo, useCatalogos } from '../../../shared/data/catalogos';
 import { ID_MXN, ID_USD } from '../../../shared/dominio/constantes';
@@ -97,11 +97,14 @@ export const ReferenciasPuentesDashboard = () => {
     const importe = Number(p.importe) || 0;
     const monedaC = monedaDeCat(p.moneda);
     const esCol = sinAcentos(nombre).includes('colombia');
-    if (!window.confirm(`¿Cambiar el puente de ${String(op.ref || op.id)} a ${nombre} (${formatoMoneda(importe)} ${monedaC})?${esCol ? '\n\nColombia: también se agrega el Puente Mx Colombia.' : ''}`)) return;
+    // ✅ V00454: se cambia directo, SIN preguntar ni avisar, al puente elegido (AVI, Puente III,
+    //   Colombia… el que sea). `saldoPuenteManual` = lo eligió el usuario: "Asignar monto del
+    //   puente" ya no lo toca y la operación va a la referencia de ESE puente (grupoPuenteOp).
     const campos: Record<string, unknown> = {
       saldoPuente: importe, saldoPuentePuente: nombre, saldoPuenteMoneda: monedaC,
       saldoPuenteFecha: String(op.saldoPuenteFecha || op.fechaServicio || hoyLocalISO()).slice(0, 10),
       saldoPuenteEvento: String(op.saldoPuenteEvento || 'Cambio manual (Referencias de Puentes)'),
+      saldoPuenteManual: true,
     };
     if (esCol) {
       const piso = puentesCatalogo.find(x => sinAcentos(nombrePuente(x)) === 'puente mx colombia');
@@ -705,7 +708,6 @@ export const ReferenciasPuentesDashboard = () => {
               {puentesCatalogo.filter(p => !sinAcentos(nombrePuente(p)).includes('puente mx colombia')).map(p => <option key={p.id} value={p.id}>{String(nombrePuente(p))}</option>)}
             </select>
             {Number(op.saldoPuentePiso) > 0 && <div className="rpd-moneda">+ {String(op.saldoPuentePisoPuente || 'Puente Mx Colombia')}</div>}
-            {colombiaMalCobrada(op) && <div className="rpd-chip-mal" title="La aduana es Colombia: debe cruzar por Puente Colombia (caseta + puente). Usa 'Asignar monto del puente' o elige la caseta de Colombia.">Debe ser Colombia</div>}
           </td>
         );
       }
@@ -784,14 +786,18 @@ export const ReferenciasPuentesDashboard = () => {
 
   // ✅ V00392: ASIGNAR el monto correcto del puente a las operaciones que no lo
   //   tienen (caseta de la tarifa / por tráfico; Colombia = caseta + puente).
+  // ✅ V00454: el puente que ya tiene una operación NO se cambia (antes, V00416, las de
+  //   aduana Colombia con otra caseta se recalculaban a Colombia). Solo: las que no
+  //   tienen puente y las de caseta de Colombia a las que les falta el Puente Mx
+  //   Colombia. Las que el usuario eligió a mano (saldoPuenteManual) no se tocan.
+  const faltaPisoColombia = (op: OpPuente) => Number(op.saldoPuente) > 0 && !(Number(op.saldoPuentePiso) > 0) && sinAcentos(op.saldoPuentePuente).includes('colombia');
   const asignarMontosPuente = async () => {
-    const candidatas = operacionesBaseFiltro.filter(op => !tieneMontoPuente(op) || colombiaMalCobrada(op) || (Number(op.saldoPuente) > 0 && !(Number(op.saldoPuentePiso) > 0)));
+    const candidatas = operacionesBaseFiltro.filter(op => op.saldoPuenteManual !== true && (!tieneMontoPuente(op) || faltaPisoColombia(op)));
     if (candidatas.length === 0) { alert('Todas las operaciones del filtro ya tienen su monto de puente.'); return; }
     setAsignandoMontos(true);
     try {
       const ctx = await cargarCtxCobroPuente();
-      // ✅ V00416: las de aduana Colombia con otra caseta se recalculan (caseta + puente de Colombia)
-      const cambios = candidatas.map(op => ({ op, campos: colombiaMalCobrada(op) ? cobroPuenteDeOperacion(ctx, { ...op, saldoPuente: 0, saldoPuentePiso: 0 }) : cobroPuenteDeOperacion(ctx, op) })).filter(x => Object.keys(x.campos).length > 0);
+      const cambios = candidatas.map(op => ({ op, campos: cobroPuenteDeOperacion(ctx, op) })).filter(x => Object.keys(x.campos).length > 0);
       const sinRegla = candidatas.filter(op => !tieneMontoPuente(op)).length - cambios.filter(x => x.campos.saldoPuente !== undefined).length;
       if (cambios.length === 0) { alert(`No se pudo determinar el puente de ${candidatas.filter(op => !tieneMontoPuente(op)).length} operación(es): revisa su convenio (caseta en Gastos Incluidos) o su tráfico.`); return; }
       const casetas = cambios.filter(x => x.campos.saldoPuente !== undefined).length;
@@ -828,16 +834,13 @@ export const ReferenciasPuentesDashboard = () => {
   //   La fecha del consecutivo es la de GENERACIÓN.
   type GrupoRef = 'AVI' | 'PT3' | 'PTC';
   const NOMBRE_GRUPO: Record<GrupoRef, string> = { AVI: 'Puente AVI', PT3: 'Puente III', PTC: 'Puente Colombia' };
-  // ✅ V00416: aduana Colombia (por su convenio) → Puente Colombia; la caseta cobrada debe ser de Colombia
+  // ✅ V00416: aduana Colombia (por su convenio) → Puente Colombia, mientras aún no tenga puente.
   const esColombiaOp = (op: OpPuente) => sinAcentos(getConvenio(op)).includes('colombia');
-  const colombiaMalCobrada = (op: OpPuente) => esColombiaOp(op) && Number(op.saldoPuente) > 0 && !sinAcentos(op.saldoPuentePuente).includes('colombia');
+  // ✅ V00454: con puente, la operación va a la referencia de SU puente (el elegido o el
+  //   cobrado), aunque el convenio sea de Colombia. Misma regla que filaDeOperacion.
   const grupoPuenteOp = (op: OpPuente): GrupoRef | null => {
-    if (esColombiaOp(op)) return 'PTC';
-    if (!(Number(op.saldoPuente) > 0)) return null;
-    const n = sinAcentos(`${String(op.saldoPuentePuente || '')} ${String(op.saldoPuentePisoPuente || '')}`);
-    if (n.includes('colombia')) return 'PTC';
-    if (n.includes('avi')) return 'AVI';
-    return 'PT3';
+    if (Number(op.saldoPuente) > 0) return grupoDeNombresPuente(op.saldoPuentePuente, Number(op.saldoPuentePiso) > 0 ? op.saldoPuentePisoPuente : '');
+    return esColombiaOp(op) ? 'PTC' : null;
   };
   const ddmmyyDe = (iso: string) => { const [y, m, d] = (iso || hoyLocalISO()).split('-'); return `${d}${m}${y.slice(2)}`; };
   const consecutivoPorPuente = (grupo: GrupoRef, usados: string[] = [], fechaIso?: string) => {
@@ -1595,8 +1598,8 @@ export const ReferenciasPuentesDashboard = () => {
             </span>
             <div className="rpd-x17">
               <button type="button" className="rpd-btn-asignar" onClick={asignarMontosPuente} disabled={asignandoMontos}
-                title="Pone el monto correcto del puente a las operaciones del filtro que no lo tienen (Colombia: caseta + puente)">
-                {asignandoMontos ? 'Asignando…' : `Asignar monto del puente (${operacionesBaseFiltro.filter(op => !tieneMontoPuente(op)).length} sin monto${operacionesBaseFiltro.some(colombiaMalCobrada) ? ` · ${operacionesBaseFiltro.filter(colombiaMalCobrada).length} de Colombia por corregir` : ''})`}
+                title="Pone el monto del puente a las operaciones del filtro que no lo tienen (Colombia: caseta + puente). No cambia el puente que ya tienen.">
+                {asignandoMontos ? 'Asignando…' : `Asignar monto del puente (${operacionesBaseFiltro.filter(op => !tieneMontoPuente(op)).length} sin monto)`}
               </button>
               <button onClick={() => setModalColumnasOps(true)} style={btnDirStyle} title="Elegir y reordenar columnas">⚙ Configurar Columnas</button>
               <button onClick={exportarExcelOps} disabled={operacionesMostradas.length === 0}

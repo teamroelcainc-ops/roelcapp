@@ -35,24 +35,36 @@ const esPuenteRoelca = (op: Record<string, unknown>) => {
 //   vienen del listener compartido (siempre en vivo, sin releer por llamada).
 const ctxCobro = (): Promise<CtxCobroPuente> => cargarCtxCobroPuente();
 
+/**
+ * ✅ V00454: grupo de puente (AVI / PT3 / PTC) por el NOMBRE del puente cobrado
+ * (caseta y, si hay, el piso de Colombia). Única regla para Referencias de
+ * Puentes: la operación va al puente que tiene (el que se eligió a mano o el que
+ * se cobró), sea AVI, Puente III o Colombia; el convenio ya no lo cambia.
+ */
+export const grupoDeNombresPuente = (...nombres: unknown[]): GrupoRef => {
+  const n = norm(nombres.map((x) => String(x ?? '')).join(' '));
+  return n.includes('colombia') ? 'PTC' : n.includes('avi') ? 'AVI' : 'PT3';
+};
+
 /** Montos de puente de la operación (los ya cobrados o, si aún no, los calculados). */
 const montosPuente = async (op: Record<string, unknown>) => {
-  // ✅ V00416: si la ADUANA es COLOMBIA se cruza por Puente Colombia (PTC) con
-  //   caseta + puente de Colombia — aunque la operación trajera cobrada otra
-  //   caseta (se recalcula). Las demás: el puente lo decide la caseta cobrada.
-  const ctx = await ctxCobro();
-  const esCol = esAduanaColombia(aduanaDeOperacionCtx(ctx, op)) || norm(op.convenioNombre).includes('colombia');
-  const nomActual = norm(String(op.saldoPuentePuente || ''));
+  // ✅ V00454: el puente que ya tiene la operación MANDA (el elegido en Referencias
+  //   de Puentes o el cobrado), sea AVI, Puente III o Colombia. Antes (V00416),
+  //   con aduana Colombia se recalculaba a Colombia aunque se hubiera elegido otro.
+  //   Solo si aún no tiene puente se calcula con la regla de siempre (aduana
+  //   Colombia → caseta + puente de Colombia, en PTC).
   let x: Record<string, unknown> = op;
-  if (!(Number(op.saldoPuente) > 0) || (esCol && !nomActual.includes('colombia'))) {
+  let colombiaCalculada = false;
+  if (!(Number(op.saldoPuente) > 0)) {
+    const ctx = await ctxCobro();
     const limpio = { ...op, saldoPuente: 0, saldoPuentePiso: 0 };
     x = { ...limpio, ...cobroPuenteDeOperacion(ctx, limpio) };
+    colombiaCalculada = esAduanaColombia(aduanaDeOperacionCtx(ctx, op)) || norm(op.convenioNombre).includes('colombia');
   }
   if (!(Number(x.saldoPuente) > 0)) return null;
   const casetaNom = String(x.saldoPuentePuente || '');
   const pisoNom = Number(x.saldoPuentePiso) > 0 ? String(x.saldoPuentePisoPuente || '') : '';
-  const n = norm(`${casetaNom} ${pisoNom}`);
-  const grupo: GrupoRef = esCol || n.includes('colombia') ? 'PTC' : n.includes('avi') ? 'AVI' : 'PT3';
+  const grupo: GrupoRef = colombiaCalculada ? 'PTC' : grupoDeNombresPuente(casetaNom, pisoNom);
   return {
     grupo,
     caseta: Number(x.saldoPuente) || 0, casetaMoneda: String(x.saldoPuenteMoneda || ''),
@@ -191,9 +203,8 @@ export const quitarOperacionDeReferenciaAuto = async (docId: string, opId: strin
   return 'quitada';
 };
 
-/** Grupo de puente que le corresponde a una fila guardada (por su puente / convenio). */
-export const grupoDeFila = (o: Record<string, unknown>): GrupoRef => {
-  // ✅ V00416: aduana Colombia (convenio) o caseta de Colombia → PTC; si no, por la caseta
-  const n = `${norm(String(o.puenteNombre || ''))} ${norm(String(o.convenio || '')).includes('colombia') ? 'colombia' : ''}`;
-  return n.includes('colombia') ? 'PTC' : n.includes('avi') ? 'AVI' : 'PT3';
-};
+/** Grupo de puente que le corresponde a una fila guardada (por su puente). */
+// ✅ V00454: solo por el puente de la fila (antes V00416 también el convenio de
+//   Colombia): una operación de convenio Colombia que se mandó por Caseta AVI ya
+//   no se marca "Otro puente" en su referencia AVI.
+export const grupoDeFila = (o: Record<string, unknown>): GrupoRef => grupoDeNombresPuente(o.puenteNombre);
