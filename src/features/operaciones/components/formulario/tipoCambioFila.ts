@@ -5,6 +5,7 @@
 // FormularioOperacion.tsx). El respaldo cuando no viene en catalogosCacheados
 // está en services/tipoCambioPorFecha (V00438).
 // ---------------------------------------------------------------------------
+import { tipoCambioAplicable, tipoCambioDeFecha, valorDeTipoCambio } from '../../../../shared/dominio/tipoCambio';
 
 /** Fecha a AAAA-MM-DD (Timestamp, {seconds}, Date, ISO, D/M/AAAA, epoch). '' si no se entiende. */
 export const normalizarFechaISO = (valor: unknown): string => {
@@ -48,38 +49,15 @@ export const normalizarFechaISO = (valor: unknown): string => {
   return '';
 };
 
+// ✅ V00461: el renglón de una fecha se reconoce por su campo `fecha` (regla compartida en
+//   shared/dominio/tipoCambio.ts). Antes valía CUALQUIER campo con fecha, y el createdAt en UTC
+//   de un T.C. capturado en la noche lo hacía pasar por el del día siguiente.
 /** Valor del T.C. de un renglón (columna dof/valor/tc/cambio/monto, o un número entre 5 y 60). */
-export const extraerRateDeFilaTC = (row: unknown): number | null => {
-  if (!row || typeof row !== 'object') return null;
-  const fila = row as Record<string, unknown>;
-  const keys = Object.keys(fila);
-  const valKey = keys.find((k) => {
-    const kk = String(k).toLowerCase();
-    return kk.includes('dof') || kk.includes('valor') || kk === 'tc' ||
-           kk.includes('cambio') || kk.includes('monto') || kk.includes('t.c');
-  });
-  if (valKey) {
-    const n = Number(String(fila[valKey]).replace(/[^0-9.-]+/g, ''));
-    if (!isNaN(n) && n > 0) return n;
-  }
-  const posibles = Object.values(fila)
-    .map((v) => parseFloat(String(v).replace(/[^0-9.-]+/g, '')))
-    .filter((n) => !isNaN(n) && n > 5 && n < 60);
-  return posibles.length > 0 ? posibles[0] : null;
-};
+export const extraerRateDeFilaTC = valorDeTipoCambio;
 
-export const filaTCEsDeLaFecha = (row: unknown, objetivoISO: string): boolean => {
-  if (!objetivoISO || !row || typeof row !== 'object') return false;
-  return Object.values(row as Record<string, unknown>).some((v) => normalizarFechaISO(v) === objetivoISO);
-};
+/** ✅ V00439 (Fase 3.6) · V00461: T.C. de una fecha en una lista de renglones de tipo_cambio. */
+export const buscarTCDeFecha = (fuente: unknown, objetivoISO: string): number | null => tipoCambioDeFecha(fuente, objetivoISO);
 
-/** ✅ V00439 (Fase 3.6): T.C. de una fecha en una lista de renglones de tipo_cambio. */
-export const buscarTCDeFecha = (fuente: unknown, objetivoISO: string): number | null => {
-  for (const row of (Array.isArray(fuente) ? fuente : [])) {
-    if (filaTCEsDeLaFecha(row, objetivoISO)) {
-      const r = extraerRateDeFilaTC(row);
-      if (r !== null) return r;
-    }
-  }
-  return null;
-};
+/** ✅ V00461: el T.C. que le toca a la fecha (sábado/domingo sin registro → el del viernes) y de qué día es. */
+export const buscarTCAplicable = (fuente: unknown, objetivoISO: string): { valor: number; fecha: string } | null =>
+  tipoCambioAplicable((f) => tipoCambioDeFecha(fuente, f), objetivoISO);

@@ -207,6 +207,16 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - Modales con `createPortal` a `document.body` (la tarjeta usa `transform` al pasar el mouse) y perezosos desde la tarjeta (`lazyWithRetry`): la carga inicial crece 0.3 KB (sin eso, ~20 KB por FormularioConfigurable).
 - Se quitaron las reglas `.rd-dos*` de App.css (solo las usaba la tarjeta TC · Diesel).
 
+## V00461 (Tipo de cambio de la operación = el de su fecha de servicio)
+- Reporte de Facturación: TR-151026-019 (servicio del 15) con el T.C. del 16. Tres causas, reproducidas en el banco de pruebas:
+  1. Al abrir una operación guardada, el efecto del T.C. corría primero con la fecha POR DEFECTO del formulario (hoy) y escribía el T.C. de hoy; al cargar su fecha ya no lo cambiaba (fecha = la inicial). Guardar dejaba el de hoy. Pasa en cualquier módulo que edita operaciones (Activas, Completados, Cancelados, editor embebido).
+  2. Al cambiar la fecha a un día sin registro se quedaba el T.C. anterior y se mostraba como "TC Oficial".
+  3. `buscarTCDeFecha` aceptaba un renglón si CUALQUIER campo tenía la fecha: el `createdAt` (UTC) de un T.C. capturado después de las ~7 p. m. lo hacía pasar por el del día siguiente. Lo mismo en la etiqueta de la tarjeta Tipo de cambio ("DOF de hoy" con el de ayer).
+- Regla única en `shared/dominio/tipoCambio.ts`: el renglón de un día es el de su campo `fecha`; `tipoCambioAplicable`: sábado/domingo sin registro → el del viernes (misma regla con la que Tipo de Cambio crea esos días al capturar el viernes; la captura rápida de la tarjeta no los crea). Un día hábil sin registro → ninguno (no se toma otro día).
+- Formulario: una operación GUARDADA no toma el T.C. de otra fecha hasta que el usuario cambia la fecha (`fechaServicioTocada`, se reinicia al cargar otra operación porque el formulario se reusa minimizado). Nueva o con fecha cambiada → el de esa fecha o 0; volver a la fecha original → su T.C. guardado. Guardada con 0 → se completa con el de su fecha. Guardada con otro → NO se cambia solo (pudo ajustarse a mano): `AvisoTipoCambio` lo marca en amarillo con "Usar el oficial" (oculto si Autorizaciones bloquea el campo).
+- Operaciones ya guardadas con otro T.C.: `npm run revisar:tc` (functions/, solo lee) → distintos.csv y sin-tc.csv. Corregirlas cambia dinero (y las facturadas, su factura): decisión del negocio, se revisa el reporte antes.
+- Pendiente (no se hizo): operaciones guardadas con 0 porque se crearon antes de capturar el T.C. del día siguen en 0 hasta que alguien las abre; completar el T.C. en el servidor al capturarlo sería otra versión (con bandera).
+
 ## V00460 (Últimas capturas de diesel: descuento y costo real)
 - Columnas Descuento y Costo real en `ModalHistorialResumen` (tarjeta Diesel). Regla en `filasDiesel` (`resumenDia.ts`) con `DESCUENTO_MURPHY_POR_GALON` y `esCargaMurphy` de `shared/dominio/cobroDiesel.ts` (Murphy por el nombre guardado en `combustibles.proveedor`).
 - El descuento se muestra en TODAS las fechas (a diferencia del estimado de las cargas, que empieza el 17-oct): aquí es información de precio y no mueve saldos.

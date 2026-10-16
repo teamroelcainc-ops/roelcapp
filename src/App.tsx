@@ -100,6 +100,7 @@ import './App.css';
 import { almacenSesion } from './utils/cacheMemoria';
 // ✅ V00456: reglas y lecturas del Resumen del día en su servicio (antes sueltas aquí)
 import { contarDelDia, extraerTipoCambio, mejorFechaRegistro, normalizarFechaResumen } from './features/operaciones/services/resumenDia';
+import { fechaDeTipoCambio } from './shared/dominio/tipoCambio'; // ✅ V00461
 import { CLAVE_ULTIMOS_DIESEL, CLAVE_ULTIMOS_TC, leerOperacionesDeHoy } from './features/operaciones/services/resumenDiaDatos';
 import { pedirCompletadasHoy } from './features/operaciones/services/pestanaCompletadas';
 import { queryClient } from './lib/queryClient';
@@ -503,7 +504,7 @@ const ResumenDelDia = memo(function ResumenDelDia() {
         const snapUlt = await getDocs(query(colTC, where('fecha', '<=', hoyISO), orderBy('fecha', 'desc'), limit(1)));
         if (!snapUlt.empty) {
           fila = { id: snapUlt.docs[0].id, ...snapUlt.docs[0].data() };
-          nuevo.tcFecha = mejorFechaRegistro(fila) || String(fila.fecha || '');
+          nuevo.tcFecha = fechaDeTipoCambio(fila) || mejorFechaRegistro(fila); // ✅ V00461: su `fecha`, no el createdAt (UTC)
         }
       }
       if (fila) nuevo.tc = extraerTipoCambio(fila);

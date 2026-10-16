@@ -16,6 +16,7 @@
     "saldos:diesel": "npm run build:scripts && node lib-scripts/scripts/reconstruirSaldosDiesel.js",
     "usos": "npm run build:scripts && node lib-scripts/scripts/recontarUsos.js",
     "nombres": "npm run build:scripts && node lib-scripts/scripts/propagarNombres.js",
+    "revisar:tc": "npm run build:scripts && node lib-scripts/scripts/revisarTipoCambio.js",
     "prebuild": "node ../scripts/sincronizar-dominio.mjs"
   },
   "engines": {
