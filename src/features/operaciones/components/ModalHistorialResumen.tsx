@@ -65,15 +65,18 @@ function TablaDiesel({ tcActual }: { tcActual: number | null }) {
   if (filas.length === 0) return <p className="mhr-vacio">Aún no hay capturas de diesel.</p>;
   return (
     <table className="mhr-tabla">
-      <thead><tr><th>Fecha</th><th>Proveedor</th><th className="mhr-num">Por galón</th><th className="mhr-num">Por litro</th><th className="mhr-num">Capturado</th></tr></thead>
+      <thead><tr><th>Fecha</th><th>Proveedor</th><th className="mhr-num">Por galón</th><th className="mhr-num">Descuento</th><th className="mhr-num">Costo real</th><th className="mhr-num">Por litro</th><th className="mhr-num">Capturado</th></tr></thead>
       <tbody>
         {filas.map((f) => {
           const litroUsd = f.costo / LITROS_POR_GALON;
           return (
             <tr key={f.id} className={f.fecha === hoy ? 'mhr-fila--hoy' : ''}>
               <td>{fechaLarga(f.fecha)}{f.fecha === hoy && <span className="mhr-chip">hoy</span>}</td>
-              <td>{f.proveedor || '—'}{f.masBajoDelDia && <span className="mhr-chip mhr-chip--bajo" title="La captura más baja de ese día">más bajo</span>}</td>
+              <td>{f.proveedor || '—'}{f.masBajoDelDia && <span className="mhr-chip mhr-chip--bajo" title="El costo real más bajo de ese día">más bajo</span>}</td>
               <td className="mhr-num mhr-valor mhr-valor--diesel">${f.costo.toFixed(2)}</td>
+              {/* ✅ V00460: descuento por galón (Murphy) y lo que de verdad cuesta el galón. */}
+              <td className={`mhr-num ${f.descuento > 0 ? 'mhr-desc' : 'mhr-tenue'}`}>{f.descuento > 0 ? `−$${f.descuento.toFixed(2)}` : '—'}</td>
+              <td className="mhr-num mhr-valor">${f.costoReal.toFixed(2)}</td>
               <td className="mhr-num mhr-tenue">${litroUsd.toFixed(2)} USD{tcActual != null ? ` · $${(litroUsd * tcActual).toFixed(2)} MXN` : ''}</td>
               <td className="mhr-num mhr-tenue">{horaDe(f.creadoEn)}</td>
             </tr>
@@ -98,7 +101,7 @@ export default function ModalHistorialResumen({ tipo, tcActual, onCerrar }: Prop
     return () => { window.removeEventListener('keydown', escuchar); previo?.focus?.(); };
   }, []);
   const titulo = tipo === 'tc' ? 'Últimos tipos de cambio' : 'Últimas capturas de diesel';
-  const nota = tipo === 'tc' ? 'Los 30 registros más recientes (pesos por dólar).' : 'Las 40 capturas más recientes. El precio por litro en pesos usa el tipo de cambio vigente.';
+  const nota = tipo === 'tc' ? 'Los 30 registros más recientes (pesos por dólar).' : 'Las 40 capturas más recientes. Costo real = por galón − descuento (Murphy descuenta $0.20 por galón). El precio por litro es sin descuento, en pesos con el tipo de cambio vigente.';
   return createPortal(
     <div className="modal-overlay mhr-fondo" onClick={onCerrar}>
       <div className={`mhr-caja mhr-caja--${tipo}`} role="dialog" aria-modal="true" aria-label={titulo} onClick={(e) => e.stopPropagation()}>

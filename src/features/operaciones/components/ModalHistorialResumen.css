@@ -1,7 +1,7 @@
 /* src/features/operaciones/components/ModalHistorialResumen.css — ✅ V00456 (prefijo mhr-) */
 .mhr-fondo { position: fixed; inset: 0; z-index: 3000; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(1, 4, 9, 0.78); backdrop-filter: blur(6px); }
 .mhr-caja { --mhr-color: #e3b341; width: 100%; max-width: 640px; max-height: 88vh; display: flex; flex-direction: column; box-sizing: border-box; padding: 20px 22px; border-radius: 14px; border: 1px solid #2a323d; border-top: 3px solid var(--mhr-color); background: #0d1117; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55); }
-.mhr-caja--diesel { --mhr-color: #fb923c; max-width: 920px; }
+.mhr-caja--diesel { --mhr-color: #fb923c; max-width: 1080px; } /* ✅ V00460: + Descuento y Costo real */
 .mhr-enc { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 12px; }
 .mhr-titulo { margin: 0; color: #f0f6fc; font-size: 1.2rem; font-weight: 700; }
 .mhr-nota { margin: 4px 0 0; color: #8d97a3; font-size: 0.82rem; }
@@ -21,6 +21,7 @@
 .mhr-tabla .mhr-valor { color: #f0f6fc; font-weight: 700; }
 .mhr-tabla .mhr-valor--diesel { color: #fdba74; }
 .mhr-tabla .mhr-tenue { color: #8d97a3; }
+.mhr-tabla .mhr-desc { color: #56d364; } /* ✅ V00460 */
 .mhr-tabla .mhr-sube { color: #ff9b95; }
 .mhr-tabla .mhr-baja { color: #56d364; }
 .mhr-tabla .mhr-igual { color: #8d97a3; }

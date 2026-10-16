@@ -4,6 +4,7 @@
 //   "Completadas hoy" del tablero y los modales de tipo de cambio y diesel, para
 //   que el número de la tarjeta y la lista digan lo mismo.
 import { STATUS_CANCELADO, STATUS_COMPLETADOS } from '../../../shared/dominio/constantes';
+import { DESCUENTO_MURPHY_POR_GALON, esCargaMurphy } from '../../../shared/dominio/cobroDiesel';
 
 type Datos = Record<string, unknown>;
 
@@ -103,20 +104,32 @@ export const filasTipoCambio = (regs: readonly (Datos & { id: string })[]): Fila
   return base.map((r, i) => ({ ...r, variacion: i + 1 < base.length ? Math.round((r.tc - base[i + 1].tc) * 10000) / 10000 : null }));
 };
 
-/** Captura de diesel para el modal. */
-export interface FilaDiesel { id: string; fecha: string; proveedor: string; costo: number; creadoEn: string; masBajoDelDia: boolean; }
+/**
+ * Captura de diesel para el modal.
+ * ✅ V00460: `descuento` por galón (Murphy descuenta $0.20, los demás 0) y `costoReal` = costo − descuento.
+ */
+export interface FilaDiesel { id: string; fecha: string; proveedor: string; costo: number; descuento: number; costoReal: number; creadoEn: string; masBajoDelDia: boolean; }
 
-/** Capturas de diesel del más reciente al más antiguo; marca la más baja de cada día. */
+/**
+ * Capturas de diesel del más reciente al más antiguo; marca la más baja de cada día.
+ * ✅ V00460: la más baja por COSTO REAL (lo que de verdad se paga por galón). El descuento
+ *   vale para todas las fechas: aquí solo se muestra, no mueve ningún saldo.
+ */
 export const filasDiesel = (regs: readonly (Datos & { id: string })[]): FilaDiesel[] => {
   const base = regs
-    .map((r) => ({ id: r.id, fecha: normalizarFechaResumen(r.fecha), proveedor: String(r.proveedor ?? ''), costo: Number(r.costo) || 0, creadoEn: String(r.createdAt ?? '') }))
+    .map((r) => {
+      const costo = Number(r.costo) || 0;
+      const proveedor = String(r.proveedor ?? '');
+      const descuento = esCargaMurphy({ proveedorNombre: proveedor }) ? DESCUENTO_MURPHY_POR_GALON : 0;
+      return { id: r.id, fecha: normalizarFechaResumen(r.fecha), proveedor, costo, descuento, costoReal: Math.round((costo - descuento) * 10000) / 10000, creadoEn: String(r.createdAt ?? '') };
+    })
     .filter((r) => r.costo > 0)
     .sort((a, b) => b.fecha.localeCompare(a.fecha) || b.creadoEn.localeCompare(a.creadoEn));
   const minimo = new Map<string, number>();
-  base.forEach((r) => { if (!minimo.has(r.fecha) || r.costo < (minimo.get(r.fecha) ?? Infinity)) minimo.set(r.fecha, r.costo); });
+  base.forEach((r) => { if (!minimo.has(r.fecha) || r.costoReal < (minimo.get(r.fecha) ?? Infinity)) minimo.set(r.fecha, r.costoReal); });
   const marcado = new Set<string>();
   return base.map((r) => {
-    const esMin = r.costo === minimo.get(r.fecha) && !marcado.has(r.fecha);
+    const esMin = r.costoReal === minimo.get(r.fecha) && !marcado.has(r.fecha);
     if (esMin) marcado.add(r.fecha);
     return { ...r, masBajoDelDia: esMin };
   });

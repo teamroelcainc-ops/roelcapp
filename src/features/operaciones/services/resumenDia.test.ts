@@ -53,4 +53,16 @@ describe('resumen del día', () => {
     ]);
     expect(f.map((x) => [x.id, x.masBajoDelDia])).toEqual([['b', false], ['a', true], ['c', true]]);
   });
+
+  // ✅ V00460
+  it('diesel: Murphy descuenta $0.20 por galón y el más bajo es por costo real', () => {
+    const f = filasDiesel([
+      { id: 'm', fecha: '2026-10-16', proveedor: 'Murphy International', costo: 5.59, createdAt: '2026-10-16T08:00:00Z' },
+      { id: 'n', fecha: '2026-10-16', proveedor: 'La Noria', costo: 5.5, createdAt: '2026-10-16T09:00:00Z' },
+      { id: 'v', fecha: '2026-10-01', proveedor: 'MURPHY INTERNATIONAL', costo: 5.7 },
+    ]);
+    expect(f.map((x) => [x.id, x.descuento, x.costoReal, x.masBajoDelDia])).toEqual([
+      ['n', 0, 5.5, false], ['m', 0.2, 5.39, true], ['v', 0.2, 5.5, true],
+    ]);
+  });
 });

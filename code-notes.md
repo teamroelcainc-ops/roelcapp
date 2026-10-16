@@ -207,6 +207,11 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - Modales con `createPortal` a `document.body` (la tarjeta usa `transform` al pasar el mouse) y perezosos desde la tarjeta (`lazyWithRetry`): la carga inicial crece 0.3 KB (sin eso, ~20 KB por FormularioConfigurable).
 - Se quitaron las reglas `.rd-dos*` de App.css (solo las usaba la tarjeta TC · Diesel).
 
+## V00460 (Últimas capturas de diesel: descuento y costo real)
+- Columnas Descuento y Costo real en `ModalHistorialResumen` (tarjeta Diesel). Regla en `filasDiesel` (`resumenDia.ts`) con `DESCUENTO_MURPHY_POR_GALON` y `esCargaMurphy` de `shared/dominio/cobroDiesel.ts` (Murphy por el nombre guardado en `combustibles.proveedor`).
+- El descuento se muestra en TODAS las fechas (a diferencia del estimado de las cargas, que empieza el 17-oct): aquí es información de precio y no mueve saldos.
+- "más bajo" del modal pasa a ser por costo real. La tarjeta Diesel sigue mostrando el precio de lista más bajo de hoy (no se cambió: es el costo que se usa al capturar). Por litro sigue sin descuento.
+
 ## V00459 (Diesel: cobro real y descuento de Murphy)
 - **Decisiones del usuario** (16-oct): el Descuento y el Monto cobrado se CAPTURAN del reporte de Murphy; mientras no, se estima $0.20 × galones (solo Murphy); el saldo descuenta lo cobrado; el estimado aplica desde `INICIO_DESCUENTO_MURPHY` = 2026-10-17 (las cargas anteriores quedan igual); Dif. monto = galones cargados × precio − cobrado. En el reporte real el descuento no siempre es 0.20 × todos los galones (DIESEL-151026-003: 81.29 gal, descuento $10.65 = 0.20 × 53.29), por eso manda lo capturado.
 - **Regla en `shared/dominio/cobroDiesel.ts`** y `cargadoDiesel` (saldosCorrientes) la usa: así la tarjeta, la pestaña Saldos, el historial y el servidor descuentan lo mismo. Requiere desplegar `functions:referenciaDieselEscrita` (la única función que usa `cargadoDiesel`); con `saldosCorrientes` encendida, además correr `saldos:diesel`. Sin bandera nueva a propósito: para las referencias existentes (sin captura y con fecha < 17-oct, o en formato no ISO) el resultado es idéntico, así que el orden de deploy no cambia cifras actuales.
