@@ -15,44 +15,6 @@
 .od-x11 { color: #10b981; font-weight: bold; }
 .od-x12 { color: #8b949e; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
 .od-x13 { padding: 24px; animation: fadeIn 0.3s ease; width: 100%; box-sizing: border-box; }
-.od-x14 { width: 100%; margin: 0 auto; }
-.od-x15 { display: flex; align-items: center; gap: 14px; margin: 0 0 24px 0; }
-.od-x16 { font-size: 1.5rem; color: #f0f6fc; margin: 0; font-weight: bold; }
-.od-x17 { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 16px; width: 100%; }
-.od-x18 { flex: 2 1 250px; display: flex; justify-content: flex-start; }
-.od-x19 { position: relative; width: 100%; max-width: 500px; }
-.od-x20 { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #8b949e; }
-.od-x21 { width: 100%; padding: 10px 10px 10px 40px; background-color: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; font-size: 0.95rem; box-sizing: border-box; }
-.od-x22 { flex: 1 1 auto; display: flex; gap: 12px; justify-content: flex-end; min-width: 280px; }
-.od-x23 { font-size: 0.9rem; padding: 8px 12px; display: flex; align-items: center; gap: 6px; }
-.od-x24 { display: flex; align-items: center; padding: 8px 12px; }
-.od-x25 { display: flex; align-items: center; padding: 8px 16px; gap: 6px; }
-.od-x26 { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 20px; width: 100%; }
-.od-x27 { display: flex; flex-direction: column; }
-.od-x28 { padding: 9px 14px; border-radius: 6px; border: 1px solid #30363d; background: transparent; color: #8b949e; cursor: pointer; font-size: 0.85rem; height: fit-content; }
-.od-x29 { color: #8b949e; font-size: 0.82rem; margin-left: auto; align-self: center; }
-.od-x30 { display: block; width: 100%; }
-.od-x31 { border: 1px solid #30363d; border-radius: 8px; overflow-x: auto; overflow-y: auto; max-height: calc(100vh - 280px); width: 100%; }
-.od-x33 { width: 100%; min-width: 1300px; border-collapse: collapse; text-align: left; }
-.od-x34 { background-color: #161b22; position: sticky; top: 0; z-index: 10; }
-.od-x35 { padding: 16px; width: 100px; text-align: center; color: #8b949e; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; position: sticky; left: 0; background-color: #161b22; z-index: 12; border-right: 1px solid #30363d; border-bottom: 1px solid #30363d; }
-.od-x36 { margin-left: 6px; color: #58a6ff; font-size: 0.7rem; }
-.od-x37 { text-align: center; padding: 40px; color: #8b949e; }
-.od-x38 { padding: 16px; text-align: center; position: sticky; left: 0; background-color: inherit; z-index: 5; border-right: 1px solid #30363d; }
-.od-x39 { display: flex; gap: 8px; justify-content: center; }
-.od-x40 { background: transparent; border: 1px solid #3b82f6; border-radius: 4px; color: #3b82f6; cursor: pointer; padding: 6px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
-.od-x41 { background: transparent; border: 1px solid #ef4444; border-radius: 4px; color: #ef4444; cursor: pointer; padding: 6px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
-.od-x42 { padding: 16px; white-space: nowrap; }
-/* ✅ V00438 (Fase 2.3): hover de la fila por CSS (antes estado hoveredRowId →
-   2 renders del módulo por cada fila cruzada). `.data-table` sube la
-   especificidad sobre `.data-table tr:hover` global (App.css). */
-.data-table .od-fila-op { border-bottom: 1px solid #21262d; background-color: #0d1117; transition: background-color 0.2s; cursor: pointer; }
-.data-table .od-fila-op:hover { background-color: #21262d; }
-.od-x43 { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding: 0 8px; flex-wrap: wrap; gap: 10px; }
-.od-x44 { color: #8b949e; font-size: 0.9rem; }
-.od-x45 { color: #8b949e; margin-left: 8px; font-style: italic; }
-.od-x46 { display: flex; gap: 8px; align-items: center; }
-.od-x47 { padding: 6px 12px; color: #f0f6fc; font-weight: bold; }
 .od-x48 { z-index: 2000; position: fixed; top: 0; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; align-items: center; backdrop-filter: blur(4px); }
 .od-x49 { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; width: 1000px; max-width: 95%; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
 .od-x50 { display: flex; justify-content: space-between; margin-bottom: 16px; border-bottom: 1px solid #30363d; padding-bottom: 12px; }
@@ -185,19 +147,6 @@
 /* Reglas de densidad móvil generadas automáticamente. */
 @media (max-width: 640px) {
   .od-x13 { padding: 14px 12px; }
-  .od-x15 { flex-wrap: wrap; }
-  .od-x16 { font-size: 1.3rem; }
-  .od-x18 { flex-wrap: wrap; }
-  .od-x22 { flex-wrap: wrap; min-width: 0; }
-  .od-x23 { flex-wrap: wrap; }
-  .od-x24 { flex-wrap: wrap; }
-  .od-x25 { flex-wrap: wrap; }
-  .od-x33 { min-width: 0; }
-  .od-x37 { padding: 14px 12px; }
-  .od-x39 { flex-wrap: wrap; }
-  .od-x40 { flex-wrap: wrap; }
-  .od-x41 { flex-wrap: wrap; }
-  .od-x46 { flex-wrap: wrap; }
   .od-x48 { flex-wrap: wrap; }
   .od-x49 { padding: 14px 12px; }
   .od-x50 { flex-wrap: wrap; }
@@ -237,21 +186,7 @@
   .od-x173 { flex-wrap: wrap; }
 }
 
-/* ✅ Botón de acceso a filtros + drawer lateral derecho (patrón de la app) */
-.od-btn-filtros {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 16px;
-  background-color: #161b22;
-  border: 1px solid #30363d;
-  border-radius: 8px;
-  color: #c9d1d9;
-  font-weight: bold;
-  font-size: 0.88rem;
-  cursor: pointer;
-}
-
+/* ✅ Drawer lateral derecho de filtros (patrón de la app) */
 .od-badge-filtros {
   background-color: #D84315;
   color: #fff;
@@ -356,14 +291,7 @@
   cursor: pointer;
 }
 
-/* ✅ V00132: botón Actualizar monedas (masivo) */
-.od-btn-monedas { font-size: 0.9rem; padding: 8px 12px; display: flex; align-items: center; gap: 6px; border-color: #3fb950; color: #3fb950; }
-.od-btn-monedas:hover { background-color: rgba(63, 185, 80, 0.12); }
-.od-btn-monedas:disabled { opacity: 0.6; cursor: wait; }
 
-/* ✅ V00162: botón reparar consecutivos */
-.od-btn-reparar { border-color: #f59e0b !important; color: #fbbf24 !important; }
-.od-btn-reparar:hover { background-color: rgba(245, 158, 11, 0.12) !important; }
 
 /* ✅ V00344: documentos de la operación, editar vista y manual */
 /* ✅ V00345: modal de documentos de la operación (sobre la ficha) */
@@ -374,9 +302,6 @@
 .od-docs-modal-cerrar { border: 1px solid #30363d; background: transparent; color: #8b949e; border-radius: 8px; padding: 4px 10px; cursor: pointer; font-size: 0.9rem; }
 .od-docs-modal-cerrar:hover { border-color: #f85149; color: #f85149; }
 .od-docs-modal-cuerpo { padding: 14px 18px; overflow-y: auto; }
-.od-btn-manual { white-space: nowrap; }
-.od-btn-vista { white-space: nowrap; }
-.od-btn-vista--activo { border-color: #d29922; color: #d29922; }
 .od-vista-panel { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border: 1px dashed #d29922; border-radius: 8px; padding: 6px 10px; background: rgba(210, 153, 34, 0.06); }
 .od-vista-item { display: flex; align-items: center; gap: 5px; color: #c9d1d9; font-size: 0.78rem; cursor: pointer; }
 .od-vista-item--oculto { color: #f85149; text-decoration: line-through; }
@@ -398,21 +323,153 @@
 
 /* ✅ V00378: aviso de operación sin flujo de estatus */
 .od-sinflujo { margin-top: 8px; padding: 8px 10px; border: 1px solid #d29922; border-radius: 8px; color: #d29922; font-size: 0.78rem; background: rgba(210, 153, 34, 0.08); }
-/* ✅ V00422: pestañas por tipo de operación */
-.od-tabs-tipo { display: flex; gap: 4px; flex-wrap: wrap; margin: 4px 0 10px; border-bottom: 1px solid #30363d; }
-.od-tab-tipo { display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px; border: none; border-bottom: 2px solid transparent; background: transparent; color: #8b949e; font-weight: 600; font-size: 0.9rem; cursor: pointer; margin-bottom: -1px; }
-.od-tab-tipo:hover { color: #f0f6fc; }
-.od-tab-tipo--activa { color: #f0f6fc; border-bottom-color: #D84315; }
-.od-tab-tipo__n { min-width: 20px; padding: 1px 7px; border-radius: 999px; background: #21262d; color: #c9d1d9; font-size: 0.72rem; font-weight: 700; text-align: center; }
-.od-tab-tipo--activa .od-tab-tipo__n { background: rgba(216, 67, 21, 0.2); color: #ffb08a; }
-/* ✅ V00450: pestaña Revisión (Ref Cliente duplicada) — en rojo cuando tiene operaciones */
-.od-tab-revision { margin-left: auto; }
-.od-tab-revision--con { color: #f85149; }
-.od-tab-revision--con .od-tab-tipo__n { background: rgba(248, 81, 73, 0.18); color: #ff7b72; }
-.od-tab-revision--con.od-tab-tipo--activa { color: #ff7b72; border-bottom-color: #f85149; }
 
 /* ✅ V00430: cancelar la referencia cuando la operación no tiene reglas de estatus */
 .od-btn-cancelar-ref { margin-left: 10px; padding: 8px 14px; border-radius: 999px; border: 1px solid #da3633; background: rgba(248, 81, 73, 0.1); color: #ff7b72; font-weight: 700; font-size: 0.82rem; cursor: pointer; font-family: inherit; }
 .od-btn-cancelar-ref:hover:not(:disabled) { background: rgba(248, 81, 73, 0.22); color: #ffa198; }
 .od-btn-cancelar-ref:disabled { opacity: 0.6; cursor: wait; }
 .od-btn-cancelar-ref--modal { margin: 10px 0 0; width: 100%; border-radius: 6px; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ✅ V00456: TABLERO DE OPERACIONES ACTIVAS — rediseño.
+   Encabezado con la acción principal · una barra de herramientas · un panel con
+   pestañas, tabla y pie. El color del TIPO de operación (Transfer naranja,
+   Cruces azul, Fletes verde, Rentas morado) marca la pestaña, el riel izquierdo
+   de cada fila, la referencia y el tipo. Lo demás, en grises.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.od-tablero { --od-linea: #232b36; --od-linea-suave: #1a212b; --od-panel: #0f141b; --od-cabeza-tabla: #131a23; --od-hover: #151c26; --od-texto: #e6edf3; --od-tenue: #8d97a3; --od-marca: #D84315; width: 100%; }
+@keyframes od-giro { to { transform: rotate(360deg); } }
+
+/* Encabezado */
+.od-cabeza { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 0 14px; }
+.od-cabeza__titulo { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.od-titulo { margin: 0; font-size: 1.45rem; font-weight: 700; color: #f0f6fc; letter-spacing: -0.01em; }
+.od-cabeza__conteo { color: var(--od-tenue); font-size: 0.86rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.od-btn-nueva { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 16px 0 12px; border: none; border-radius: 10px; background: var(--od-marca); color: #fff; font: inherit; font-size: 0.9rem; font-weight: 700; white-space: nowrap; cursor: pointer; box-shadow: 0 6px 18px rgba(216, 67, 21, 0.28); }
+.od-btn-nueva:hover { background: #c23b11; }
+.od-btn-nueva:focus { outline: none; }
+.od-btn-nueva:focus-visible { outline: 2px solid #ffb08a; outline-offset: 2px; }
+
+/* Barra de herramientas */
+.od-barra { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+.od-buscar { position: relative; flex: 1 1 280px; max-width: 460px; }
+.od-buscar__icono { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--od-tenue); pointer-events: none; }
+.od-buscar__input { width: 100%; height: 36px; box-sizing: border-box; padding: 0 34px 0 38px; border-radius: 10px; border: 1px solid #2a323d; background: #0b1016; color: var(--od-texto); font: inherit; font-size: 0.9rem; }
+.od-buscar__input::placeholder { color: #6e7681; }
+.od-buscar__input:focus { outline: none; border-color: #4d5966; box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.12); }
+.od-buscar__borrar { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 24px; height: 24px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: none; border-radius: 6px; background: transparent; color: var(--od-tenue); cursor: pointer; }
+.od-buscar__borrar:hover { background: #1c242f; color: var(--od-texto); }
+.od-buscar__borrar:focus { outline: none; }
+.od-buscar__borrar:focus-visible, .od-btn-texto:focus-visible, .od-tab__cerrar:focus-visible { outline: 2px solid #58a6ff; outline-offset: 1px; }
+.od-btn { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 12px; box-sizing: border-box; border-radius: 9px; border: 1px solid #2a323d; background: #11171f; color: #c9d1d9; font: inherit; font-size: 0.85rem; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.od-btn:hover:not(:disabled) { border-color: #3d4856; background: #161e28; color: #f0f6fc; }
+.od-btn:disabled, .od-btn:disabled:hover { opacity: 0.55; cursor: wait; border-color: #2a323d; }
+.od-btn:focus { outline: none; }
+.od-btn:focus-visible { outline: 2px solid #58a6ff; outline-offset: 1px; }
+.od-btn--icono { width: 36px; padding: 0; justify-content: center; }
+.od-btn--activo { border-color: rgba(216, 67, 21, 0.6); color: #ffb08a; background: rgba(216, 67, 21, 0.08); }
+.od-btn--verde { color: #56d364; border-color: rgba(63, 185, 80, 0.45); }
+.od-btn--ambar { color: #fbbf24; border-color: rgba(245, 158, 11, 0.45); }
+.od-btn--chico { height: 30px; font-size: 0.8rem; }
+.od-btn-texto { height: 36px; padding: 0 6px; border: none; background: none; color: var(--od-tenue); font: inherit; font-size: 0.84rem; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+.od-btn-texto:hover { color: var(--od-texto); }
+.od-btn-texto:focus { outline: none; }
+.od-barra__resultados { color: var(--od-tenue); font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+.od-barra__acciones { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
+.od-barra__sep { width: 1px; height: 22px; margin: 0 4px; background: var(--od-linea); }
+.od-girando { animation: od-giro 1s linear infinite; }
+
+/* Panel: pestañas + tabla + pie */
+.od-panel { border: 1px solid var(--od-linea); border-radius: 14px; background: var(--od-panel); overflow: hidden; }
+.od-tabs { display: flex; flex-wrap: nowrap; align-items: stretch; gap: 2px; padding: 0 10px; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; border-bottom: 1px solid var(--od-linea); background: #0d1218; scroll-margin-top: 80px; }
+.od-tab { --od-tab-color: #8b949e; position: relative; flex: 0 0 auto; display: inline-flex; align-items: center; gap: 7px; padding: 11px 10px; border: none; background: none; color: var(--od-tenue); font: inherit; font-size: 0.86rem; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.od-tab::after { content: ''; position: absolute; left: 8px; right: 8px; bottom: 0; height: 2px; border-radius: 2px 2px 0 0; background: transparent; }
+.od-tab:hover { color: #f0f6fc; }
+.od-tab:focus { outline: none; }
+.od-tab:focus-visible { outline: 2px solid #58a6ff; outline-offset: -2px; border-radius: 6px; }
+.od-tab--activa { color: #f0f6fc; }
+.od-tab--activa::after { background: var(--od-tab-color); }
+.od-tab--todos { --od-tab-color: var(--od-marca); }
+.od-tab--transfer { --od-tab-color: #fb923c; }
+.od-tab--cruces { --od-tab-color: #58a6ff; }
+.od-tab--fletes { --od-tab-color: #3fb950; }
+.od-tab--rentas { --od-tab-color: #a371f7; }
+.od-tab--otros { --od-tab-color: #8b949e; }
+.od-tab--completadas { --od-tab-color: #3fb950; color: #7ee787; }
+.od-tab__punto { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--od-tab-color); }
+.od-tab__n { min-width: 20px; padding: 1px 7px; box-sizing: border-box; border-radius: 999px; background: #1a212b; color: #c9d1d9; font-size: 0.72rem; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; }
+.od-tab--activa .od-tab__n { background: color-mix(in srgb, var(--od-tab-color) 24%, transparent); color: #f0f6fc; }
+.od-tab-grupo { display: inline-flex; align-items: center; }
+.od-tab__cerrar { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; margin-left: -4px; border: none; border-radius: 6px; background: none; color: var(--od-tenue); cursor: pointer; }
+.od-tab__cerrar:hover { background: #1c242f; color: #f0f6fc; }
+.od-tab__cerrar:focus { outline: none; }
+/* ✅ V00450: pestaña Revisión (Ref Cliente duplicada) — en rojo cuando tiene operaciones */
+.od-tab-revision { margin-left: auto; }
+.od-tab-revision--con { --od-tab-color: #f85149; color: #ff7b72; }
+.od-tab-revision--con .od-tab__n { background: rgba(248, 81, 73, 0.18); color: #ff7b72; }
+.od-panel__revision { padding: 12px; }
+
+/* Tabla (los selectores llevan .od-tabla para ganarle a .data-table th/td de App.css) */
+.od-panel .od-tabla-marco { border: none; border-radius: 0; background: transparent; overflow: auto; max-height: calc(100vh - 300px); width: 100%; }
+.od-tabla { width: 100%; min-width: 1300px; border-collapse: separate; border-spacing: 0; font-size: 0.84rem; }
+.od-tabla .od-th, .od-tabla .od-th-acciones { position: sticky; top: 0; z-index: 3; padding: 11px 14px; background: var(--od-cabeza-tabla); color: var(--od-tenue); font-size: 0.76rem; font-weight: 600; text-transform: none; letter-spacing: 0; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--od-linea); }
+.od-tabla .od-th { cursor: pointer; user-select: none; }
+.od-tabla .od-th:hover { color: #c9d1d9; }
+.od-tabla .od-th--orden { color: #f0f6fc; }
+.od-th__flecha { margin-left: 6px; color: #58a6ff; font-size: 0.66rem; }
+.od-tabla .od-th-acciones { left: 0; z-index: 4; width: 84px; padding: 11px 10px; text-align: center; border-right: 1px solid var(--od-linea); }
+.data-table .od-fila-op { cursor: pointer; background: transparent; }
+.od-fila-op--transfer { --od-tipo: #fb923c; }
+.od-fila-op--cruces { --od-tipo: #58a6ff; }
+.od-fila-op--fletes { --od-tipo: #3fb950; }
+.od-fila-op--rentas { --od-tipo: #a371f7; }
+.od-fila-op--otros { --od-tipo: #8b949e; }
+.od-tabla .od-td { padding: 9px 14px; color: #c9d1d9; white-space: nowrap; border-bottom: 1px solid var(--od-linea-suave); }
+.od-tabla .od-td-acciones { position: sticky; left: 0; z-index: 2; padding: 6px 10px; border-bottom: 1px solid var(--od-linea-suave); border-right: 1px solid var(--od-linea); background: var(--od-panel); box-shadow: inset 3px 0 0 var(--od-tipo, #8b949e); }
+.data-table .od-fila-op:hover { background: transparent; }
+.data-table .od-fila-op:hover .od-td, .data-table .od-fila-op:hover .od-td-acciones { background: var(--od-hover); }
+.od-acciones { display: flex; justify-content: center; gap: 4px; }
+.od-accion { width: 28px; height: 28px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 7px; border: 1px solid transparent; background: transparent; color: #6e7681; cursor: pointer; }
+.od-fila-op:hover .od-accion { color: #9aa5b1; }
+.od-fila-op .od-accion--editar:hover { color: #58a6ff; border-color: rgba(88, 166, 255, 0.4); background: rgba(88, 166, 255, 0.1); }
+.od-fila-op .od-accion--borrar:hover { color: #ff7b72; border-color: rgba(248, 81, 73, 0.4); background: rgba(248, 81, 73, 0.1); }
+.od-accion:focus { outline: none; }
+.od-accion:focus-visible { outline: 2px solid #58a6ff; outline-offset: 1px; }
+.od-td .od-ref { color: var(--od-tipo, #c9d1d9); font-weight: 700; }
+.od-ref__peaje { margin-left: 6px; cursor: help; }
+.od-tipo { display: inline-flex; align-items: center; gap: 7px; color: var(--od-tipo, #c9d1d9); font-weight: 600; }
+.od-tipo__punto { width: 7px; height: 7px; border-radius: 50%; background: var(--od-tipo, #8b949e); }
+.od-chip-status { display: inline-block; max-width: 260px; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; padding: 3px 10px; border-radius: 999px; border: 1px solid rgba(63, 185, 80, 0.32); background: rgba(63, 185, 80, 0.1); color: #56d364; font-size: 0.76rem; font-weight: 600; }
+.od-dato-vacio { color: #6e7681; }
+.od-chip-trafico { display: inline-block; padding: 2px 9px; border-radius: 999px; border: 1px solid; font-size: 0.74rem; font-weight: 600; }
+.od-chip-trafico--imp { color: #79c0ff; border-color: rgba(88, 166, 255, 0.35); background: rgba(88, 166, 255, 0.1); }
+.od-chip-trafico--exp { color: #ffa463; border-color: rgba(243, 112, 33, 0.4); background: rgba(243, 112, 33, 0.1); }
+.od-chip-trafico--mov { color: #c297ff; border-color: rgba(163, 113, 247, 0.4); background: rgba(163, 113, 247, 0.1); }
+.od-chip-trafico--mix { color: #e3b341; border-color: rgba(210, 153, 34, 0.4); background: rgba(210, 153, 34, 0.1); }
+.od-vacio { padding: 44px 16px; text-align: center; color: var(--od-tenue); }
+.od-tabla td.od-vacio { padding: 44px 16px; color: var(--od-tenue); }
+div.od-vacio { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+div.od-vacio p { margin: 0; }
+
+/* Pie: cuántas se ven y páginas */
+.od-pie { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--od-linea); background: #0d1218; }
+.od-pie__texto { color: var(--od-tenue); font-size: 0.84rem; font-variant-numeric: tabular-nums; }
+.od-pie__texto b { color: var(--od-texto); font-weight: 600; }
+.od-pie__mas { margin-left: 10px; color: #6e7681; font-style: italic; }
+.od-pie__nav { display: flex; align-items: center; gap: 6px; }
+.od-pag { width: 32px; height: 30px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; border: 1px solid #2a323d; background: #11171f; color: #c9d1d9; cursor: pointer; }
+.od-pag:hover:not(:disabled) { border-color: #3d4856; color: #f0f6fc; }
+.od-pag:disabled, .od-pag:disabled:hover { background: transparent; color: #484f58; border-color: #2a323d; cursor: not-allowed; }
+.od-pag:focus { outline: none; }
+.od-pag:focus-visible { outline: 2px solid #58a6ff; outline-offset: 1px; }
+.od-pag__n { min-width: 48px; text-align: center; color: var(--od-texto); font-size: 0.84rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) { .od-girando { animation: none; } }
+@media (max-width: 640px) {
+  .od-cabeza { flex-wrap: wrap; }
+  .od-titulo { font-size: 1.25rem; }
+  .od-buscar { flex-basis: 100%; max-width: none; }
+  .od-barra__acciones { margin-left: 0; justify-content: flex-start; }
+  .od-tabla { min-width: 0; }
+  .od-tab-revision { margin-left: 0; }
+}

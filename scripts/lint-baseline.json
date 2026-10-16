@@ -1,6 +1,6 @@
 {
   "archivos": {
-    "src/App.tsx": 62,
+    "src/App.tsx": 55,
     "src/components/EditorEncabezados.tsx": 1,
     "src/features/auth/components/Login.tsx": 4,
     "src/features/autorizaciones/autorizaciones.ts": 12,
@@ -56,7 +56,7 @@
     "src/features/operaciones/components/EditorDetalleConvenioModal.tsx": 7,
     "src/features/operaciones/components/EditorOperacionEmbebido.tsx": 6,
     "src/features/operaciones/components/FormularioOperacion.tsx": 294,
-    "src/features/operaciones/components/OperacionesDashboard.tsx": 81,
+    "src/features/operaciones/components/OperacionesDashboard.tsx": 76,
     "src/features/operaciones/components/ServiciosCancelados.tsx": 97,
     "src/features/operaciones/components/ServiciosCompletados.tsx": 143,
     "src/features/operaciones/config/statusRules.ts": 21,
@@ -66,7 +66,7 @@
     "src/features/panelControl/PanelControlDashboard.tsx": 10,
     "src/features/proveedoresUnidad/components/FormularioProveedorUnidad.tsx": 3,
     "src/features/proveedoresUnidad/components/ProveedoresUnidadDashboard.tsx": 5,
-    "src/features/puentes/components/ReferenciasPuentesDashboard.tsx": 33,
+    "src/features/puentes/components/ReferenciasPuentesDashboard.tsx": 32,
     "src/features/remolques/components/FormularioRemolque.tsx": 3,
     "src/features/remolques/components/RemolquesDashboard.tsx": 1,
     "src/features/reportes/components/ReportesDashboard.tsx": 55,
@@ -85,6 +85,6 @@
     "src/utils/lazyWithRetry.ts": 2,
     "functions/src/index.ts": 13
   },
-  "anyTotal": 2284,
+  "anyTotal": 2271,
   "desactivadosDeps": 90
 }

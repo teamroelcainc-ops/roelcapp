@@ -4,13 +4,23 @@
 //   agregar, Saldo pendiente por puente y Total. Las recargas quedan en
 //   saldos_puentes y el saldo se consume al marcar Verde MX (exportación,
 //   Puente III en pesos) o Verde USA (importación, Caseta AVI en dólares).
-import React, { useEffect, useMemo, useState } from 'react';
-import { addDoc, collection, onSnapshot, query, where } from 'firebase/firestore';
+// ✅ V00455: "Actualizar saldo" abre el MISMO formulario de Referencias de Puentes →
+//   Saldo (ModalAgregarSaldoPuente) con la caseta de la tarjeta ya elegida, y al
+//   presionar la tarjeta se ven los movimientos de su saldo (ModalMovimientosPuente).
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { useModuloEscuchando } from '../../../utils/moduloVivoContexto';
 import { idReal, useCatalogo } from '../../../shared/data/catalogos';
 import { monedaCanonica, nombreMoneda as nombreMonedaCanonica } from '../../../shared/dominio/moneda';
+import type { TarjetaPuente } from '../../puentes/services/puentesCatalogo';
+import { movimientosDePuente, type OtroCruceMin, type RefPuente, type SaldoPuenteMin } from '../services/movimientosPuente';
+import { lazyWithRetry } from '../../../utils/lazyWithRetry';
 import './TarjetaCasetas.css';
+
+// ✅ V00455: los modales se cargan al abrirlos (la tarjeta va en la carga inicial de la app)
+const ModalAgregarSaldoPuente = lazyWithRetry(() => import('../../puentes/components/ModalAgregarSaldoPuente'), 'ModalAgregarSaldoPuente');
+const ModalMovimientosPuente = lazyWithRetry(() => import('./ModalMovimientosPuente'), 'ModalMovimientosPuente');
 
 const norm = (s: unknown): string => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 // ✅ V00439 (Fase 3.x): moneda con el helper compartido; lo no reconocido se deja tal cual.
@@ -21,14 +31,14 @@ const fmtMonto = (v: unknown): string => {
 };
 // ✅ V00398: fecha LOCAL (antes UTC: por la tarde-noche ya era "mañana")
 const hoyISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
-const horaAhora = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 
 interface Puente { id: string; nombre: string; moneda: string; }
-interface RecargaMin { puenteId: string; puenteNombre: string; fecha: string; saldo: number; }
 interface CruceMin { puenteNombre: string; fecha: string; fechaServicio: string; monto: number; moneda: string; ref: string; statusNombre: string; evento: string; }
+// ✅ V00455: la referencia guarda además la fecha de servicio y la hora del verde de cada fila (para "Cruces de hoy")
+type RefTarjeta = RefPuente & { filasHoy: { fechaServicio: string; horaVerde: string }[] };
 
 // ✅ V00389: a qué tarjeta pertenece cada puente del catálogo
-type GrupoPuente = 'avi' | 'p3' | 'colombia';
+type GrupoPuente = TarjetaPuente;
 const GRUPOS: { clave: GrupoPuente; titulo: string }[] = [
   { clave: 'avi', titulo: 'Puente AVI' },
   { clave: 'p3', titulo: 'Puente III' },
@@ -52,21 +62,28 @@ export const TarjetaCasetas: React.FC = () => {
     .filter((x) => norm(x.categoria_gasto) === 'puente')
     .map((x) => ({ id: idReal(x), nombre: String(x.nombre_gasto || ''), moneda: nombreMoneda(x.moneda) }))
     .sort((a, b) => a.nombre.localeCompare(b.nombre)), [tiposGastos]);
-  const [recargas, setRecargas] = useState<RecargaMin[]>([]);
-  const [crucesOps, setCruces] = useState<CruceMin[]>([]);
+  const [recargas, setRecargas] = useState<SaldoPuenteMin[]>([]);
+  // ✅ V00455: se guardan las referencias (para el modal de movimientos); los cruces salen de ellas
+  const [refs, setRefs] = useState<RefTarjeta[]>([]);
   // ✅ V00395: OTROS CRUCES (sin operación, registrados en Referencias de Puentes) también descuentan
-  const [crucesOtros, setCrucesOtros] = useState<CruceMin[]>([]);
+  const [otros, setOtros] = useState<OtroCruceMin[]>([]);
+  // ✅ V00455: primera respuesta de cada listener (el modal de movimientos espera con CargandoDatos)
+  const [listos, setListos] = useState({ saldos: false, refs: false, otros: false });
+  const crucesOps = useMemo<CruceMin[]>(() => refs.flatMap((r) => r.filas.flatMap((o, i) => {
+    const [nomCaseta, nomPiso] = String(o.puenteNombre || '').split(' + ');
+    const extra = r.filasHoy[i] || { fechaServicio: r.fecha, horaVerde: '' };
+    const base = { fecha: r.fecha, fechaServicio: extra.fechaServicio, ref: o.ref, statusNombre: r.consecutivo, evento: extra.horaVerde };
+    const filas: CruceMin[] = [{ ...base, puenteNombre: String(nomCaseta || ''), monto: o.caseta, moneda: o.casetaMoneda }];
+    if (nomPiso && o.piso > 0) filas.push({ ...base, puenteNombre: String(nomPiso), monto: o.piso, moneda: o.pisoMoneda });
+    return filas;
+  })), [refs]);
+  const crucesOtros = useMemo<CruceMin[]>(() => otros.map((x) => ({ puenteNombre: x.puenteNombre, fecha: x.fecha, fechaServicio: x.fecha, monto: x.monto, moneda: x.moneda, ref: x.consecutivo, statusNombre: 'Otro cruce', evento: x.unidad })), [otros]);
   const cruces = useMemo(() => [...crucesOps, ...crucesOtros], [crucesOps, crucesOtros]);
-  const [modalAbierto, setModalAbierto] = useState(false);
-  const [puenteId, setPuenteId] = useState('');
-  const [monto, setMonto] = useState('');
-  const [guardando, setGuardando] = useState(false);
   // ✅ V00362: clic en el gasto del día → operaciones que suman al saldo
   const [verGasto, setVerGasto] = useState<{ titulo: string; filtro: (nombre: string) => boolean; soloHoy?: boolean } | null>(null);
-  const [grupoRecarga, setGrupoRecarga] = useState<GrupoPuente | ''>('');
-  // ✅ V00398: fecha y HORA de la actualización del saldo
-  const [fechaRecarga, setFechaRecarga] = useState(hoyISO());
-  const [horaRecarga, setHoraRecarga] = useState(horaAhora());
+  // ✅ V00455: tarjeta cuyo saldo se actualiza / cuyos movimientos se ven
+  const [recargaDe, setRecargaDe] = useState<GrupoPuente | null>(null);
+  const [movimientosDe, setMovimientosDe] = useState<GrupoPuente | null>(null);
 
   // ✅ V00438 (Fase 2.7): la tarjeta vive dentro del módulo Operaciones (MantenerVivo):
   //   escucha solo mientras se ve; oculta conserva las cifras y al volver se re-suscribe.
@@ -76,62 +93,39 @@ export const TarjetaCasetas: React.FC = () => {
   const moduloVisible = useModuloEscuchando(); // ✅ V00446: sigue escuchando unos minutos oculto
   useEffect(() => {
     if (!moduloVisible) return;
+    const listo = (k: keyof typeof listos) => setListos((prev) => (prev[k] ? prev : { ...prev, [k]: true }));
     const u2 = onSnapshot(collection(db, 'saldos_puentes'), (snap) => {
       setRecargas(snap.docs.map((d) => {
         const x = d.data() as Record<string, unknown>;
-        return { puenteId: String(x.puenteId || ''), puenteNombre: String(x.puenteNombre || ''), fecha: String(x.fecha || ''), saldo: Number(x.saldo) || 0 };
+        return { id: d.id, puenteId: String(x.puenteId || ''), puenteNombre: String(x.puenteNombre || ''), fecha: String(x.fecha || ''), hora: String(x.hora || ''), saldo: Number(x.saldo) || 0, moneda: String(x.moneda || ''), registradoPor: String(x.registradoPor || '') };
       }));
-    }, () => {});
+      listo('saldos');
+    }, () => listo('saldos'));
     // ✅ V00410: las tarjetas cuadran con la pestaña SALDO de Referencias de Puentes —
     //   se descuenta lo que está en el HISTORIAL DE REFERENCIAS (calculado) + Otros Cruces.
     const u3 = onSnapshot(collection(db, 'referencias_puentes_auto'), (snap) => {
-      setCruces(snap.docs.flatMap((d) => {
+      setRefs(snap.docs.map((d) => {
         const r = d.data() as Record<string, unknown>;
         const fechaRef = String(r.fechaGeneracion || '');
         const ops = (Array.isArray(r.operacionesGuardadas) ? r.operacionesGuardadas : []) as Record<string, unknown>[];
-        return ops.flatMap((o) => {
-          const [nomCaseta, nomPiso] = String(o.puenteNombre || '').split(' + ');
-          const base = { fecha: fechaRef, fechaServicio: String(o.fecha || fechaRef).slice(0, 10), ref: String(o.ref || ''), statusNombre: String(r.consecutivo || ''), evento: String(o.horaVerde || '') };
-          const filas = [{ ...base, puenteNombre: String(nomCaseta || ''), monto: Number(o.caseta ?? o.puente) || 0, moneda: String(o.casetaMoneda || '') }];
-          if (nomPiso && Number(o.piso) > 0) filas.push({ ...base, puenteNombre: String(nomPiso), monto: Number(o.piso) || 0, moneda: String(o.pisoMoneda || '') });
-          return filas;
-        });
+        return {
+          id: d.id, consecutivo: String(r.consecutivo || ''), puenteNombre: String(r.puenteNombre || ''), fecha: fechaRef, hora: String(r.horaGeneracion || ''), automatico: r.automatico === true,
+          filas: ops.map((o) => ({ ref: String(o.ref || ''), puenteNombre: String(o.puenteNombre || ''), caseta: Number(o.caseta ?? o.puente) || 0, casetaMoneda: String(o.casetaMoneda || ''), piso: Number(o.piso) || 0, pisoMoneda: String(o.pisoMoneda || '') })),
+          filasHoy: ops.map((o) => ({ fechaServicio: String(o.fecha || fechaRef).slice(0, 10), horaVerde: String(o.horaVerde || '') })),
+        };
       }));
-    }, () => {});
+      listo('refs');
+    }, () => listo('refs'));
     const u4 = onSnapshot(query(collection(db, 'referencias_puentes'), where('tipo', '==', 'otroCruce')), (snap) => {
-      setCrucesOtros(snap.docs.map((d) => {
+      setOtros(snap.docs.map((d) => {
         const x = d.data() as Record<string, unknown>;
-        return { puenteNombre: String(x.puenteNombre || ''), fecha: String(x.fechaCruce || x.fechaGeneracion || ''), fechaServicio: String(x.fechaCruce || x.fechaGeneracion || ''), monto: Number(x.monto ?? x.subtotalPuentes) || 0, moneda: nombreMoneda(x.moneda), ref: String(x.consecutivo || d.id), statusNombre: 'Otro cruce', evento: String(x.unidad || '') };
+        const fecha = String(x.fechaCruce || x.fechaGeneracion || '');
+        return { id: d.id, consecutivo: String(x.consecutivo || d.id), puenteNombre: String(x.puenteNombre || ''), fecha, hora: String(x.horaCruce || x.horaGeneracion || ''), monto: Number(x.monto ?? x.subtotalPuentes) || 0, moneda: nombreMoneda(x.moneda), unidad: String(x.unidad || '') };
       }));
-    }, () => setCrucesOtros([]));
+      listo('otros');
+    }, () => { setOtros([]); listo('otros'); });
     return () => { u2(); u3(); u4(); };
   }, [moduloVisible]);
-
-  /** Saldo pendiente (disponible) del puente = Σ recargas − Σ cruces desde la 1ª recarga. */
-  const pendienteDe = (p: Puente | undefined): number => {
-    if (!p) return 0;
-    const recs = recargas.filter((r) => r.puenteId === p.id).sort((a, b) => a.fecha.localeCompare(b.fecha));
-    const primera = recs[0]?.fecha || '';
-    const inicial = recs.reduce((acc, r) => acc + r.saldo, 0);
-    const consumo = cruces.filter((x) => norm(x.puenteNombre) === norm(p.nombre) && (!primera || x.fecha >= primera)).reduce((acc, x) => acc + x.monto, 0);
-    return inicial - consumo;
-  };
-
-  const puenteSel = puentes.find((p) => p.id === puenteId);
-  const pendienteSel = pendienteDe(puenteSel);
-  const montoNum = Number(monto) || 0;
-
-  const guardar = async () => {
-    if (!puenteSel) { alert('Elige el PUENTE (viene del catálogo Tipos de Gastos).'); return; }
-    if (!Number.isFinite(Number(monto)) || Number(monto) <= 0) { alert('Captura el SALDO a agregar (mayor a cero).'); return; }
-    setGuardando(true);
-    try {
-      if (!fechaRecarga || !horaRecarga) { alert('Captura la fecha y la hora de la actualización.'); setGuardando(false); return; }
-      await addDoc(collection(db, 'saldos_puentes'), { fecha: fechaRecarga, hora: horaRecarga, puenteId: puenteSel.id, puenteNombre: puenteSel.nombre, moneda: puenteSel.moneda, saldo: Number(monto), creadoEn: new Date().toISOString() });
-      setModalAbierto(false); setPuenteId(''); setMonto('');
-    } catch (e) { alert(`No se pudo agregar el saldo: ${(e as Error)?.message || e}`); }
-    finally { setGuardando(false); }
-  };
 
   // ✅ V00389: TRES tarjetas separadas — Puente AVI, Puente III y Puente
   //   Colombia. Colombia muestra por separado la CASETA (cruzar) y el PUENTE
@@ -151,12 +145,14 @@ export const TarjetaCasetas: React.FC = () => {
   // ✅ V00392: CONTROL por cuenta — saldo agregado (recargas), cruces hechos,
   //   total consumido (la suma de esos cruces) y saldo restante = agregado − consumido.
   //   Los cruces cuentan desde la PRIMERA recarga del puente, igual que el saldo.
+  // ✅ V00422: el saldo es del PUENTE completo (por nombre o por el puente del catálogo)
+  const saldoEs = (filtroSaldo: (nombre: string) => boolean) => (r: SaldoPuenteMin) => filtroSaldo(r.puenteNombre) || puentes.some((p) => p.id === r.puenteId && filtroSaldo(p.nombre));
   const statsDe = (filtro: (nombre: string) => boolean, filtroSaldo: (nombre: string) => boolean = filtro) => {
     // ✅ V00418: IGUAL que la pestaña Saldo — el saldo es por PUENTE (grupo): los
     //   saldos agregados del grupo descuentan TODOS sus cobros (Puente III = caseta +
     //   trompo; Colombia = caseta + puente) desde el primer saldo del grupo.
     const recs = recargas
-      .filter((r) => filtroSaldo(r.puenteNombre) || puentes.some((p) => p.id === r.puenteId && filtroSaldo(p.nombre))) // ✅ V00422: el saldo es del PUENTE completo
+      .filter(saldoEs(filtroSaldo))
       .sort((a, b) => a.fecha.localeCompare(b.fecha));
     const primera = recs[0]?.fecha || '';
     const agregado = recs.reduce((acc, r) => acc + r.saldo, 0);
@@ -170,8 +166,7 @@ export const TarjetaCasetas: React.FC = () => {
     return { agregado, cruces: mios.length, consumido, restante, crucesHoy: delDia.length, consumidoHoy, recargasHoy, inicioDia: restante + consumidoHoy - recargasHoy };
   };
 
-  const abrirRecarga = (g: GrupoPuente) => { setGrupoRecarga(g); setPuenteId(''); setMonto(''); setFechaRecarga(hoyISO()); setHoraRecarga(horaAhora()); setModalAbierto(true); };
-  const puentesRecarga = puentes.filter((p) => !grupoRecarga || grupoDePuente(p.nombre) === grupoRecarga);
+  const filtroDeGrupo = (g: GrupoPuente) => { const lineas = lineasGrupo(g); return (n: string) => lineas.some((l) => l.filtro(n)); };
 
   return (
     <>
@@ -179,12 +174,14 @@ export const TarjetaCasetas: React.FC = () => {
         // ✅ V00411: diseño renovado — cifra grande = saldo restante (igual que la
         //   pestaña Saldo); filas compactas; Colombia en dos bloques (caseta / puente).
         const lineas = lineasGrupo(g.clave);
-        const filtroTodo = (n: string) => lineas.some((l) => l.filtro(n));
+        const filtroTodo = filtroDeGrupo(g.clave);
         const total = statsDe(filtroTodo);
         const mon = monedaDe(filtroTodo);
         const partes = lineas.map((l) => ({ ...l, st: statsDe(l.filtro, filtroTodo) })); // ✅ V00422: cada concepto contra el saldo del puente
         return (
-          <div key={g.clave} className="rd-card rd-card--morado" title={`${g.titulo}: saldos agregados menos el Historial de referencias (Referencias de Puentes → Saldo)`}>
+          <div key={g.clave} className="rd-card rd-card--morado rd-card--clic" title={`${g.titulo}: saldos agregados menos el Historial de referencias. Presiona la tarjeta para ver los movimientos del saldo.`}>
+            {/* ✅ V00455: toda la tarjeta abre los movimientos de su saldo (los botones de adentro hacen lo suyo) · V00456: clases de App.css (rd-card--clic) */}
+            <button type="button" className="rd-card__abrir" onClick={() => setMovimientosDe(g.clave)} aria-label={`Ver los movimientos del saldo de ${g.titulo}`} />
             <div className="rd-card__head">
               <span className="rd-card__label">{g.titulo}</span>
               {mon && <span className="rd-card__chip">{mon === 'Dólares' ? 'USD' : mon === 'Pesos' ? 'MXN' : mon}</span>}
@@ -215,7 +212,7 @@ export const TarjetaCasetas: React.FC = () => {
               )}
             </div>
             <div className="rd-card__foot">
-              <button type="button" className="rd-btn rd-btn--ancho" onClick={() => abrirRecarga(g.clave)} title={`Agregar saldo a ${g.titulo} (queda en Referencias de Puentes → Saldo)`}>Actualizar saldo</button>
+              <button type="button" className="rd-btn rd-btn--ancho" onClick={() => setRecargaDe(g.clave)} title={`Agregar saldo a ${g.titulo} (queda en Referencias de Puentes → Saldo)`}>Actualizar saldo</button>
             </div>
           </div>
         );
@@ -252,39 +249,25 @@ export const TarjetaCasetas: React.FC = () => {
         );
       })()}
 
-      {modalAbierto && (
-        <div className="tcas-modal-fondo" onClick={() => !guardando && setModalAbierto(false)}>
-          <div className="tcas-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="tcas-modal-titulo">Actualizar saldo{grupoRecarga ? ` — ${GRUPOS.find((x) => x.clave === grupoRecarga)?.titulo}` : ''}</div>
-            <label className="tcas-modal-campo"><span>Puente (del catálogo)</span>
-              <select className="form-control" value={puenteId} onChange={(e) => setPuenteId(e.target.value)}>
-                <option value="">— Elegir puente —</option>
-                {puentesRecarga.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-              </select>
-            </label>
-            <label className="tcas-modal-campo"><span>Moneda (del catálogo)</span>
-              <input type="text" className="form-control" value={puenteSel?.moneda || ''} disabled readOnly placeholder="—" />
-            </label>
-            <div className="tcas-modal-fila">
-              <label className="tcas-modal-campo"><span>Fecha</span>
-                <input type="date" className="form-control" value={fechaRecarga} onChange={(e) => setFechaRecarga(e.target.value)} />
-              </label>
-              <label className="tcas-modal-campo"><span>Hora de la actualización</span>
-                <input type="time" className="form-control" value={horaRecarga} onChange={(e) => setHoraRecarga(e.target.value)} />
-              </label>
-            </div>
-            <label className="tcas-modal-campo"><span>Saldo a agregar</span>
-              <input type="number" step="0.01" min="0" className="form-control" value={monto} onChange={(e) => setMonto(e.target.value)} placeholder="0.00" />
-            </label>
-            <div className="tcas-modal-linea"><span>Saldo pendiente por puente</span><b>{puenteSel ? fmtMonto(pendienteSel) : '—'}</b></div>
-            <div className="tcas-modal-linea tcas-modal-linea--total"><span>Total (agregar + pendiente)</span><b>{puenteSel ? `${fmtMonto(pendienteSel + montoNum)} ${puenteSel.moneda}` : '—'}</b></div>
-            <div className="tcas-modal-pie">
-              <button type="button" className="tcas-btn" disabled={guardando} onClick={() => setModalAbierto(false)}>Cancelar</button>
-              <button type="button" className="tcas-btn tcas-btn--primario" disabled={guardando || !puenteSel} onClick={guardar}>{guardando ? 'Guardando…' : 'Agregar'}</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {recargaDe && <Suspense fallback={null}><ModalAgregarSaldoPuente tarjeta={recargaDe} onCerrar={() => setRecargaDe(null)} /></Suspense>}
+
+      {movimientosDe && (() => {
+        const g = GRUPOS.find((x) => x.clave === movimientosDe);
+        const filtro = filtroDeGrupo(movimientosDe);
+        const mon = monedaDe(filtro);
+        return (
+          <Suspense fallback={null}>
+          <ModalMovimientosPuente
+            titulo={g?.titulo || ''}
+            restante={statsDe(filtro).restante}
+            moneda={mon}
+            movimientos={movimientosDePuente({ refs, saldos: recargas, otros }, filtro, saldoEs(filtro))}
+            cargando={!(listos.saldos && listos.refs && listos.otros)}
+            onCerrar={() => setMovimientosDe(null)}
+          />
+          </Suspense>
+        );
+      })()}
     </>
   );
 };

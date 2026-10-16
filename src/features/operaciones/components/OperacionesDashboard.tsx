@@ -1,6 +1,7 @@
 // src/features/operaciones/components/OperacionesDashboard.tsx
-import React, { useState, useEffect, useMemo, useCallback, useEffectEvent } from 'react';
-import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
+import React, { useState, useEffect, useMemo, useCallback, useEffectEvent, useRef } from 'react';
+import { BookOpen, ChevronLeft, ChevronRight, CircleCheck, Coins, Columns3, Download, FileText, Funnel, ListChecks, ListOrdered, Pencil, Plus, RefreshCw, Search, SlidersHorizontal, Trash2, X } from 'lucide-react'; // ✅ V00456
+import { datosAAplicar, notificarOperacionGuardada, suscribirOperacionGuardada } from '../../../utils/operacionesBus';
 import { useModuloEscuchando } from '../../../utils/moduloVivoContexto';
 import { useHandlerEstable } from '../hooks/useHandlerEstable';
 import { esOperacionPrueba, sinPruebas } from '../../../utils/operacionPrueba';
@@ -26,7 +27,10 @@ import { pestanaAtendida, usePestanaPedida } from '../../../shared/data/avisos';
 import { claveRefCliente } from '../services/refClienteDuplicado'; // ✅ V00450
 import type { OpRefResumen } from '../services/refClienteDuplicado';
 import { olvidarRefsConsultadas, quitarOperacionDeRefs } from '../services/refClienteDuplicadoServidor'; // ✅ V00450
-import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
+import { ahoraLocalISOCorto, hoyLocalISO } from '../../../utils/fechaHoraLocal';
+import { esCompletadaDelDia } from '../services/resumenDia'; // ✅ V00456
+import { leerOperacionesDeHoy, type DocResumen } from '../services/resumenDiaDatos'; // ✅ V00456
+import { usePedidosCompletadasHoy } from '../services/pestanaCompletadas'; // ✅ V00456
 import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 import { ModalFechaStatus } from './ModalFechaStatus';
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
@@ -46,7 +50,7 @@ import { mostrarCartaPara, useConfigCarta } from '../../../utils/configCartaInst
 import { ConfigCartaModal } from './ConfigCartaModal';
 import { usePermisoFormularios } from '../../formularios/configFormularios';
 import { estadoGrupoDe } from '../../../shared/dominio/operacionCanonica';
-import { colorTipoOperacion, fmtFechaAuditoria, limpiarUndefined } from '../services/formatosOperacion'; // ✅ V00444 (Fase 8.3)
+import { fmtFechaAuditoria, limpiarUndefined } from '../services/formatosOperacion'; // ✅ V00444 (Fase 8.3) · V00456: el color del tipo sale del CSS de la fila
 import { leerParaDocumento } from '../../../utils/direccionPdf'; // ✅ V00448
 
 // ✅ V00439 (Fase 3.x): catálogos del módulo (alias → colección) desde el
@@ -575,6 +579,11 @@ const OperacionesDashboard = () => {
     olvidarRefsConsultadas(); // ✅ V00450: "Actualizar" también vuelve a buscar las Ref Cliente
     await actualizarLista();
   };
+  // ✅ V00456: con la pestaña "Completadas hoy" abierta, "Actualizar" también la vuelve a leer.
+  const alActualizar = () => {
+    void actualizarOperaciones();
+    if (verCompletadas) void cargarCompletadasHoy();
+  };
 
   useEffect(() => {
     const b64 = empresaConfig?.logoBase64;
@@ -630,6 +639,7 @@ const OperacionesDashboard = () => {
         await eliminarRegistro('operaciones', docId); 
         quitarOperacionDeRefs(String(docId)); // ✅ V00450: ya no cuenta como duplicada
         setOperacionesGlobales(prev => prev.filter((o: any) => String(o.id) !== String(op.id)));
+        setCompletadasHoy(prev => prev.filter((o) => String(o.id) !== String(op.id))); // ✅ V00456
         setOperacionViendo(null);
       } catch (error: any) {
         console.error("Error al eliminar:", error);
@@ -1221,6 +1231,7 @@ const OperacionesDashboard = () => {
     // ✅ V00439 (Fase 3.x): los catálogos (clientes, proveedores y bodegas recién
     //   creados) llegan solos por el listener compartido; ya no se re-hidratan.
     descargarOperaciones();
+    if (verCompletadas) void cargarCompletadasHoy(); // ✅ V00456
     setEstadoFormulario('cerrado');
     setOperacionEditando(null);
   };
@@ -1595,8 +1606,60 @@ const OperacionesDashboard = () => {
 
   // ✅ V00422: PESTAÑAS por tipo de operación (Todos · Transfer · Logística Cruces · Logística Fletes · Rentas)
   // ✅ V00450: + "Revisión" — las de Ref Cliente duplicada salen de las demás pestañas.
-  type TabTipoOp = 'todos' | 'transfer' | 'cruces' | 'fletes' | 'rentas' | 'otros' | 'revision';
+  // ✅ V00456: + "completadas" — servicios completados HOY (se abre desde la tarjeta Operaciones del día).
+  type TabTipoOp = 'todos' | 'transfer' | 'cruces' | 'fletes' | 'rentas' | 'otros' | 'revision' | 'completadas';
   const [tabTipoOp, setTabTipoOp] = useState<TabTipoOp>('todos');
+  const [verCompletadas, setVerCompletadas] = useState(false);
+  const [completadasHoy, setCompletadasHoy] = useState<DocResumen[]>([]);
+  const [cargandoCompletadas, setCargandoCompletadas] = useState(false);
+  const [errorCompletadas, setErrorCompletadas] = useState(false);
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const lecturaCompletadasRef = useRef(0); // solo la ÚLTIMA lectura se aplica (dos clics seguidos, Actualizar…)
+  // Misma consulta y regla que la tarjeta (fecha de servicio de hoy, status completado).
+  const cargarCompletadasHoy = async () => {
+    const n = ++lecturaCompletadasRef.current;
+    setCargandoCompletadas(true);
+    setErrorCompletadas(false);
+    try {
+      const ops = (await leerOperacionesDeHoy(hoyLocalISO())).filter(esCompletadaDelDia);
+      if (n === lecturaCompletadasRef.current) setCompletadasHoy(ops);
+    } catch (e) {
+      console.error('[Operaciones] completadas de hoy:', e);
+      if (n === lecturaCompletadasRef.current) setErrorCompletadas(true);
+    } finally { if (n === lecturaCompletadasRef.current) setCargandoCompletadas(false); }
+  };
+  // Con la pestaña abierta, un cambio de status (detalle, horarios, otro módulo) la mantiene al día
+  // sin volver a leer: entra la que se completa hoy, sale la que deja de estar completada.
+  useEffect(() => {
+    if (!verCompletadas) return;
+    return suscribirOperacionGuardada((d) => {
+      const hoy = hoyLocalISO();
+      setCompletadasHoy((prev) => {
+        const i = prev.findIndex((o) => String(o._docId || o.id) === d.id || String(o.id) === d.id);
+        const actual: DocResumen = i >= 0 ? { ...prev[i], ...datosAAplicar(d) } : { ...d.data, id: d.id, _docId: d.id };
+        const va = String(actual.fechaServicio ?? '').slice(0, 10) === hoy && esCompletadaDelDia(actual);
+        if (i >= 0) return va ? prev.map((o, j) => (j === i ? actual : o)) : prev.filter((_, j) => j !== i);
+        return va ? [actual, ...prev] : prev;
+      });
+    });
+  }, [verCompletadas]);
+  const pedidosCompletadas = usePedidosCompletadasHoy();
+  const pedidosVistosRef = useRef(pedidosCompletadas); // los pedidos de antes de montar no abren la pestaña
+  const abrirCompletadas = useEffectEvent(() => {
+    setVerCompletadas(true);
+    setTabTipoOp('completadas');
+    setPaginaActual(1);
+    void cargarCompletadasHoy();
+    tabsRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  });
+  useEffect(() => {
+    if (pedidosCompletadas > pedidosVistosRef.current) { pedidosVistosRef.current = pedidosCompletadas; abrirCompletadas(); }
+  }, [pedidosCompletadas]);
+  const cerrarCompletadas = () => {
+    setVerCompletadas(false);
+    if (tabTipoOp === 'completadas') { setTabTipoOp('todos'); setPaginaActual(1); }
+  };
+  const cargandoTabla = tabTipoOp === 'completadas' ? cargandoCompletadas : cargandoOperaciones;
   const dupRef = useRefClienteDuplicados(operacionesGlobales, { modulo: 'operaciones', activo: !cargandoOperaciones });
   const enRevisionRef = dupRef.enRevision;
   const estaEnRevision = (op: Record<string, unknown>): boolean => enRevisionRef.has(idDeLista(op));
@@ -1644,8 +1707,10 @@ const OperacionesDashboard = () => {
     const tokens = b.split(/\s+/).filter(Boolean);
 
     // ✅ V00450: "Revisión" solo trae las de Ref Cliente duplicada; las demás pestañas, sin ellas.
-    let base = tabTipoOp === 'revision' ? opsEnRevision : operacionesGlobales.filter(op => !estaEnRevision(op));
-    if (tabTipoOp !== 'todos' && tabTipoOp !== 'revision') base = base.filter(op => grupoTipoOp(op) === tabTipoOp); // ✅ V00422: pestaña por tipo
+    let base = tabTipoOp === 'revision' ? opsEnRevision
+      : tabTipoOp === 'completadas' ? [...completadasHoy] // ✅ V00456
+      : operacionesGlobales.filter(op => !estaEnRevision(op));
+    if (tabTipoOp !== 'todos' && tabTipoOp !== 'revision' && tabTipoOp !== 'completadas') base = base.filter(op => grupoTipoOp(op) === tabTipoOp); // ✅ V00422: pestaña por tipo
     if (filtroTipoOperacion) base = base.filter(op => valorTextoColumna(op, 'tipoOperacion') === filtroTipoOperacion);
     if (filtroStatus)   base = base.filter(op => valorTextoColumna(op, 'status')   === filtroStatus);
     if (filtroUnidad)   base = base.filter(op => valorTextoColumna(op, 'unidad')   === filtroUnidad);
@@ -1667,7 +1732,7 @@ const OperacionesDashboard = () => {
       if (ta !== tb) return tb - ta;
       return obtenerConsecutivoRef(b2) - obtenerConsecutivoRef(a);
     });
-  }, [busqueda, operacionesGlobales, catalogosGlobales, columnasTabla, filtroTipoOperacion, filtroStatus, filtroUnidad, filtroRemolque, tabTipoOp, opsEnRevision, enRevisionRef]);
+  }, [busqueda, operacionesGlobales, catalogosGlobales, columnasTabla, filtroTipoOperacion, filtroStatus, filtroUnidad, filtroRemolque, tabTipoOp, opsEnRevision, enRevisionRef, completadasHoy]);
 
   // ✅ NUEVO: valor de una celda para ORDENAR. Reusa valorTextoColumna, pero las
   //   fechas se convierten a un valor cronológico real (timestamp) para que el
@@ -1762,13 +1827,14 @@ const OperacionesDashboard = () => {
         // ✅ V00367: alerta en la fila si el cruce aún no cobra su peaje (sin Verde marcado)
         const trafSP = String(op.trafico || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
         const faltaPeaje = aplicaPeajeSP(op) && (trafSP.includes('import') || trafSP.includes('export')) && !(Number(op.saldoPuente) > 0);
-        return <span className="font-mono" style={{ color: colorTipoOperacion(mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)), fontWeight: 'bold' }}>{op.ref || op.id?.substring(0,6)}{esOperacionPrueba(op) && <span className="op-prueba-chip" title="Operación de PRUEBA: no entra a Facturación, Pagos, Nómina, Estadísticas, Reportes ni Saldos de Puentes">🧪 PRUEBA</span>}{faltaPeaje && <span title="Esta operación aún NO ha descontado el saldo del puente — falta marcar Verde MX / Verde USA" style={{ marginLeft: '6px', cursor: 'help' }}>🌉⚠</span>}</span>;
+        // ✅ V00456: el color sale de la fila (od-fila-op--<tipo> → --od-tipo), sin estilos en línea
+        return <span className="font-mono od-ref">{op.ref || op.id?.substring(0,6)}{esOperacionPrueba(op) && <span className="op-prueba-chip" title="Operación de PRUEBA: no entra a Facturación, Pagos, Nómina, Estadísticas, Reportes ni Saldos de Puentes">🧪 PRUEBA</span>}{faltaPeaje && <span className="od-ref__peaje" title="Esta operación aún NO ha descontado el saldo del puente — falta marcar Verde MX / Verde USA">🌉⚠</span>}</span>;
       }
       case 'fechaServicio': return <span className="od-x1">{mostrarDato(op.fechaServicio)}</span>;
       case 'fechaCita': return <span className="od-x1">{formatearFechaHora(op.fechaCita)}</span>;
       case 'tipoOperacion': {
         const nombreTipoOp = mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre);
-        return <span style={{ color: colorTipoOperacion(nombreTipoOp), fontWeight: 'bold' }}>{nombreTipoOp}</span>;
+        return <span className="od-tipo"><span className="od-tipo__punto" aria-hidden="true" />{nombreTipoOp}</span>; // ✅ V00456
       }
       case 'status': {
         // ✅ Respaldo doble: primero el catálogo (por id, con statusNombre como
@@ -1778,9 +1844,14 @@ const OperacionesDashboard = () => {
         if (!nombreStatus || nombreStatus === '-') {
           nombreStatus = resolverStatus(op.status || op.statusNombre).nombre || '-';
         }
-        return <span style={{ color: nombreStatus === '-' ? '#8b949e' : '#10b981', fontWeight: 'bold' }}>{nombreStatus}</span>;
+        return nombreStatus === '-' ? <span className="od-dato-vacio">-</span> : <span className="od-chip-status">{nombreStatus}</span>; // ✅ V00456
       }
-      case 'trafico': return <span className="od-x1">{mostrarDato(op.trafico)}</span>;
+      case 'trafico': { // ✅ V00456: chip por tráfico (mismos colores que Referencias de Puentes)
+        const tr = mostrarDato(op.trafico);
+        const n = String(tr || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        const clase = n.includes('import') ? 'imp' : n.includes('export') ? 'exp' : n.includes('movim') ? 'mov' : n.includes('mixto') ? 'mix' : '';
+        return clase ? <span className={`od-chip-trafico od-chip-trafico--${clase}`}>{tr}</span> : <span className="od-x1">{tr}</span>;
+      }
       case 'cliente': return <span className="od-x2">{mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente)}</span>;
       case 'convenioTarifa': {
         // ✅ V00236: la TARIFA del convenio va al final de la leyenda.
@@ -1968,44 +2039,92 @@ const OperacionesDashboard = () => {
         />
       )}
 
-     <div className="od-x14">
-        <div className="od-x15">
-          <h1 className="module-title od-x16">
-            Operaciones Activas
-          </h1>
-        </div>
-
-        <div className="od-x17">
-          <div className="od-x18">
-            <div className="od-x19">
-              <svg className="od-x20" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-              <input className="od-x21" type="text" placeholder="Buscar en todas las columnas..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
-            </div>
+     {/* ✅ V00456: tablero rediseñado — encabezado con la acción principal, una sola barra de
+         herramientas (búsqueda + filtros + acciones) y un panel con pestañas, tabla y pie. */}
+     <div className="od-tablero">
+        <header className="od-cabeza">
+          <div className="od-cabeza__titulo">
+            <h1 className="module-title od-titulo">Operaciones Activas</h1>
+            {!cargandoOperaciones && (
+              <span className="od-cabeza__conteo">{conteoTabsTipo.todos + conteoTabsTipo.revision} {conteoTabsTipo.todos + conteoTabsTipo.revision === 1 ? 'activa' : 'activas'}{hayMasOperaciones ? ' cargadas' : ''}</span>
+            )}
           </div>
-          <div className="od-x22">
-            <button className="btn btn-outline" onClick={actualizarOperaciones} disabled={cargandoOperaciones || cargandoMas} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px', cursor: (cargandoOperaciones || cargandoMas) ? 'wait' : 'pointer' }} title="Actualizar operaciones (vuelve a leer la colección desde Firestore)">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: cargandoOperaciones ? 'spin 1s linear infinite' : 'none' }}><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-              <span>{cargandoOperaciones ? 'Actualizando...' : 'Actualizar'}</span>
+          <button type="button" className="od-btn-nueva" onClick={handleNuevo} title="Crear una operación nueva">
+            <Plus size={17} strokeWidth={2.4} aria-hidden="true" />
+            <span>Nueva operación</span>
+          </button>
+        </header>
+
+        <div className="od-barra">
+          <div className="od-buscar">
+            <Search className="od-buscar__icono" size={16} aria-hidden="true" />
+            <input className="od-buscar__input" type="text" placeholder="Buscar en todas las columnas…" aria-label="Buscar en todas las columnas" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
+            {busqueda && <button type="button" className="od-buscar__borrar" onClick={() => setBusqueda('')} aria-label="Borrar la búsqueda"><X size={14} /></button>}
+          </div>
+          {/* ✅ Los filtros viven en el drawer derecho; aquí solo el acceso. */}
+          <button type="button" className={`od-btn${hayFiltrosActivos ? ' od-btn--activo' : ''}`} onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros">
+            <Funnel size={15} aria-hidden="true" />
+            <span>Filtros</span>
+            {hayFiltrosActivos && (
+              <span className="od-badge-filtros">{[filtroTipoOperacion, filtroStatus, filtroUnidad, filtroRemolque].filter(Boolean).length}</span>
+            )}
+          </button>
+          {hayFiltrosActivos && (
+            <button type="button" className="od-btn-texto" onClick={limpiarFiltros} title="Quitar todos los filtros">Limpiar filtros</button>
+          )}
+          {hayFiltrosActivos && (
+            <span className="od-barra__resultados">
+              {operacionesFiltradas.length} {operacionesFiltradas.length === 1 ? 'resultado' : 'resultados'}
+            </span>
+          )}
+
+          <div className="od-barra__acciones">
+            <button type="button" className="od-btn" onClick={alActualizar} disabled={cargandoOperaciones || cargandoMas || cargandoCompletadas} title="Actualizar operaciones (vuelve a leer la colección desde Firestore)">
+              <RefreshCw size={15} className={cargandoOperaciones || cargandoCompletadas ? 'od-girando' : ''} aria-hidden="true" />
+              <span>{cargandoOperaciones || cargandoCompletadas ? 'Actualizando…' : 'Actualizar'}</span>
             </button>
             {/* ✅ NUEVO (V00113): re-resuelve los nombres guardados en cada
                 operación contra los catálogos actuales (repara renombres) */}
-            {!btnOculto('sincronizarNombres') && !flags.propagacionEnServidor && <button className="btn btn-outline" onClick={sincronizarNombresOperaciones} disabled={sincronizandoNombres || cargandoOperaciones} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px', cursor: sincronizandoNombres ? 'wait' : 'pointer' }} title="Sincronizar nombres: actualiza registro por registro los nombres (tipo de operación, status, empresas, carga) que quedaron viejos tras renombrar en Catálogos">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
-              <span>{sincronizandoNombres ? 'Sincronizando...' : 'Sincronizar nombres'}</span>
-            </button>}
+            {!btnOculto('sincronizarNombres') && !flags.propagacionEnServidor && (
+              <button type="button" className="od-btn" onClick={sincronizarNombresOperaciones} disabled={sincronizandoNombres || cargandoOperaciones} title="Sincronizar nombres: actualiza registro por registro los nombres (tipo de operación, status, empresas, carga) que quedaron viejos tras renombrar en Catálogos">
+                <ListChecks size={15} aria-hidden="true" />
+                <span>{sincronizandoNombres ? 'Sincronizando…' : 'Sincronizar nombres'}</span>
+              </button>
+            )}
             {/* ✅ V00132: forzar la moneda de Empresas en TODAS las operaciones */}
-            {!btnOculto('actualizarMonedas') && <button className="btn btn-outline od-btn-monedas" onClick={sincronizarMonedasOperaciones} disabled={sincronizandoMonedas || cargandoOperaciones} title="Coloca en TODAS las operaciones (cliente y proveedor) la moneda que cada empresa tiene guardada en la tabla Empresas">
-              <span>{sincronizandoMonedas ? '⏳ Actualizando monedas…' : '⟳ Actualizar monedas'}</span>
-            </button>}
+            {!btnOculto('actualizarMonedas') && (
+              <button type="button" className="od-btn od-btn--verde" onClick={sincronizarMonedasOperaciones} disabled={sincronizandoMonedas || cargandoOperaciones} title="Coloca en TODAS las operaciones (cliente y proveedor) la moneda que cada empresa tiene guardada en la tabla Empresas">
+                <Coins size={15} aria-hidden="true" />
+                <span>{sincronizandoMonedas ? 'Actualizando monedas…' : 'Actualizar monedas'}</span>
+              </button>
+            )}
             {/* ✅ V00162: cierra brincos/duplicados de folios ya guardados */}
-            {!btnOculto('repararConsecutivos') && <button type="button" className="btn btn-outline od-btn-reparar" disabled={reparandoConsec} onClick={repararConsecutivos} title="Renumera los folios de un día en 1..N por orden de creación: cierra brincos (006 → 024) y duplicados que dejó la numeración vieja, y re-sincroniza los contadores">
-              <span>{reparandoConsec ? '⏳ Reparando…' : '🔢 Reparar consecutivos'}</span>
-            </button>}
+            {!btnOculto('repararConsecutivos') && (
+              <button type="button" className="od-btn od-btn--ambar" disabled={reparandoConsec} onClick={repararConsecutivos} title="Renumera los folios de un día en 1..N por orden de creación: cierra brincos (006 → 024) y duplicados que dejó la numeración vieja, y re-sincroniza los contadores">
+                <ListOrdered size={15} aria-hidden="true" />
+                <span>{reparandoConsec ? 'Reparando…' : 'Reparar consecutivos'}</span>
+              </button>
+            )}
+            <span className="od-barra__sep" aria-hidden="true" />
+            <button type="button" className="od-btn" onClick={() => setMostrarResumenDiario(true)} title="Resúmenes diarios (Transfer / Logística / Fletes) en PDF">
+              <FileText size={15} aria-hidden="true" />
+              <span>Resúmenes</span>
+            </button>
+            <button type="button" className="od-btn od-btn--icono" onClick={exportarExcel} title="Exportar a Excel" aria-label="Exportar a Excel">
+              <Download size={16} aria-hidden="true" />
+            </button>
+            <button type="button" className="od-btn od-btn--icono" onClick={() => setModalColumnas(true)} title="Configurar columnas" aria-label="Configurar columnas">
+              <Columns3 size={16} aria-hidden="true" />
+            </button>
             {/* ✅ V00344: manual del módulo (HTML en otra pestaña) */}
-            <button className="btn btn-outline od-btn-manual" onClick={() => window.open('/manuales/operaciones.html', '_blank')} title="Abrir el manual del módulo en otra pestaña">📖 Manual</button>
+            <button type="button" className="od-btn od-btn--icono" onClick={() => window.open('/manuales/operaciones.html', '_blank')} title="Abrir el manual del módulo en otra pestaña" aria-label="Manual del módulo">
+              <BookOpen size={16} aria-hidden="true" />
+            </button>
             {/* ✅ V00344: personalizar la vista (ocultar/mostrar los botones agregados) */}
             {puedePersonalizarVista && (
-              <button className={`btn btn-outline od-btn-vista${editandoVista ? ' od-btn-vista--activo' : ''}`} onClick={() => setEditandoVista(v => !v)} title="Editar la vista: ocultar o mostrar los botones agregados de este módulo (aplica para todos)">✎ Vista</button>
+              <button type="button" className={`od-btn od-btn--icono${editandoVista ? ' od-btn--activo' : ''}`} onClick={() => setEditandoVista(v => !v)} title="Editar la vista: ocultar o mostrar los botones agregados de este módulo (aplica para todos)" aria-label="Editar la vista" aria-pressed={editandoVista}>
+                <SlidersHorizontal size={16} aria-hidden="true" />
+              </button>
             )}
             {editandoVista && (
               <div className="od-vista-panel" title="Marca los botones que quieres OCULTAR de la vista (se guarda para todos los usuarios)">
@@ -2018,99 +2137,86 @@ const OperacionesDashboard = () => {
                 <button type="button" className="od-vista-listo" onClick={() => setEditandoVista(false)}>Listo</button>
               </div>
             )}
-            <button className="btn btn-outline od-x23" onClick={() => setModalColumnas(true)} title="Configurar Columnas">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg></button>
-            <button className="btn btn-outline od-x24" onClick={exportarExcel} title="Exportar a Excel">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-            </button>
-            <button className="btn btn-outline od-x23" onClick={() => setMostrarResumenDiario(true)} title="Resúmenes diarios (Transfer / Logística / Fletes) en PDF">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="9" y1="13" x2="15" y2="13"></line><line x1="9" y1="17" x2="13" y2="17"></line></svg>
-              <span>Resúmenes</span>
-            </button>
-            <button className="btn btn-primary od-x25" onClick={handleNuevo}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            </button>
           </div>
         </div>
 
-        <div className="od-x26">
-          {/* ✅ Los filtros viven en el drawer derecho; aquí solo el acceso. */}
-          <button className="od-btn-filtros" onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-            Filtros
-            {hayFiltrosActivos && (
-              <span className="od-badge-filtros">{[filtroTipoOperacion, filtroStatus, filtroUnidad, filtroRemolque].filter(Boolean).length}</span>
+        <section className="od-panel">
+          {/* ✅ V00422: pestañas por tipo de operación · ✅ V00456: + "Completadas hoy" (se abre desde la tarjeta) */}
+          <div className="od-tabs" role="group" aria-label="Pestañas de operaciones" ref={tabsRef}>
+            {([['todos', 'Todos'], ['transfer', 'Transfer'], ['cruces', 'Logística Cruces'], ['fletes', 'Logística Fletes'], ['rentas', 'Rentas']] as [TabTipoOp, string][]).map(([k, et]) => (
+              <button key={k} type="button" aria-pressed={tabTipoOp === k}
+                className={`od-tab od-tab--${k}${tabTipoOp === k ? ' od-tab--activa' : ''}`}
+                onClick={() => { setTabTipoOp(k); setPaginaActual(1); }}>
+                {k !== 'todos' && <span className="od-tab__punto" aria-hidden="true" />}
+                {et}<span className="od-tab__n">{conteoTabsTipo[k] || 0}</span>
+              </button>
+            ))}
+            {verCompletadas && (
+              <span className="od-tab-grupo">
+                <button type="button" aria-pressed={tabTipoOp === 'completadas'}
+                  className={`od-tab od-tab--completadas${tabTipoOp === 'completadas' ? ' od-tab--activa' : ''}`}
+                  title="Servicios completados con fecha de servicio de hoy"
+                  onClick={() => { setTabTipoOp('completadas'); setPaginaActual(1); }}>
+                  <CircleCheck size={14} aria-hidden="true" />
+                  Completadas hoy<span className="od-tab__n">{cargandoCompletadas ? '…' : completadasHoy.length}</span>
+                </button>
+                <button type="button" className="od-tab__cerrar" onClick={cerrarCompletadas} aria-label="Cerrar la pestaña Completadas hoy" title="Cerrar la pestaña">
+                  <X size={13} aria-hidden="true" />
+                </button>
+              </span>
             )}
-          </button>
-          {hayFiltrosActivos && (
-            <button className="od-x28" onClick={limpiarFiltros} title="Quitar todos los filtros">
-              ✕ Limpiar filtros
+            {conteoTabsTipo.otros > 0 && (
+              <button type="button" aria-pressed={tabTipoOp === 'otros'} className={`od-tab od-tab--otros${tabTipoOp === 'otros' ? ' od-tab--activa' : ''}`} onClick={() => { setTabTipoOp('otros'); setPaginaActual(1); }}>
+                <span className="od-tab__punto" aria-hidden="true" />
+                Otros<span className="od-tab__n">{conteoTabsTipo.otros}</span>
+              </button>
+            )}
+            {/* ✅ V00450: Ref Cliente duplicada */}
+            <button type="button" aria-pressed={tabTipoOp === 'revision'}
+              className={`od-tab od-tab-revision${conteoTabsTipo.revision > 0 ? ' od-tab-revision--con' : ''}${tabTipoOp === 'revision' ? ' od-tab--activa' : ''}`}
+              title="Operaciones con una Ref Cliente que ya existe en otra operación"
+              onClick={() => { setTabTipoOp('revision'); setPaginaActual(1); }}>
+              Revisión<span className="od-tab__n">{conteoTabsTipo.revision}</span>
             </button>
-          )}
-          {hayFiltrosActivos && (
-            <span className="od-x29">
-              {operacionesFiltradas.length} {operacionesFiltradas.length === 1 ? 'resultado' : 'resultados'}
-            </span>
-          )}
-        </div>
+          </div>
 
-        {/* ✅ V00422: pestañas por tipo de operación */}
-        <div className="od-tabs-tipo" role="tablist">
-          {([['todos', 'Todos'], ['transfer', 'Transfer'], ['cruces', 'Logística Cruces'], ['fletes', 'Logística Fletes'], ['rentas', 'Rentas']] as [TabTipoOp, string][]).map(([k, et]) => (
-            <button key={k} type="button" role="tab" aria-selected={tabTipoOp === k}
-              className={`od-tab-tipo${tabTipoOp === k ? ' od-tab-tipo--activa' : ''}`}
-              onClick={() => { setTabTipoOp(k); setPaginaActual(1); }}>
-              {et}<span className="od-tab-tipo__n">{conteoTabsTipo[k] || 0}</span>
-            </button>
-          ))}
-          {conteoTabsTipo.otros > 0 && (
-            <button type="button" role="tab" aria-selected={tabTipoOp === 'otros'} className={`od-tab-tipo${tabTipoOp === 'otros' ? ' od-tab-tipo--activa' : ''}`} onClick={() => { setTabTipoOp('otros'); setPaginaActual(1); }}>
-              Otros<span className="od-tab-tipo__n">{conteoTabsTipo.otros}</span>
-            </button>
-          )}
-          {/* ✅ V00450: Ref Cliente duplicada */}
-          <button type="button" role="tab" aria-selected={tabTipoOp === 'revision'}
-            className={`od-tab-tipo od-tab-revision${conteoTabsTipo.revision > 0 ? ' od-tab-revision--con' : ''}${tabTipoOp === 'revision' ? ' od-tab-tipo--activa' : ''}`}
-            title="Operaciones con una Ref Cliente que ya existe en otra operación"
-            onClick={() => { setTabTipoOp('revision'); setPaginaActual(1); }}>
-            Revisión<span className="od-tab-tipo__n">{conteoTabsTipo.revision}</span>
-          </button>
-        </div>
-
-        <div className="content-body od-x30">
           {tabTipoOp === 'revision' ? (
-            <RevisionRefCliente
-              modulo="operaciones"
-              ops={opsEnRevision}
-              duplicados={dupRef.porOp}
-              cargando={cargandoOperaciones || dupRef.verificando}
-              nombreCliente={(_id, guardado) => guardado}
-              onVer={(op) => { setOperacionViendo(op); setPestañaDetalleActiva('general'); }}
-              onMarcadas={alMarcarNoDuplicado}
-            />
+            <div className="od-panel__revision">
+              <RevisionRefCliente
+                modulo="operaciones"
+                ops={opsEnRevision}
+                duplicados={dupRef.porOp}
+                cargando={cargandoOperaciones || dupRef.verificando}
+                nombreCliente={(_id, guardado) => guardado}
+                onVer={(op) => { setOperacionViendo(op); setPestañaDetalleActiva('general'); }}
+                onMarcadas={alMarcarNoDuplicado}
+              />
+            </div>
           ) : (
-          <div className="table-container od-x31">
-            {cargandoOperaciones ? (
-              <CargandoDatos texto="Cargando operaciones activas..." />
+          <div className="table-container od-tabla-marco">
+            {cargandoTabla ? (
+              <CargandoDatos texto={tabTipoOp === 'completadas' ? 'Cargando las completadas de hoy…' : 'Cargando operaciones activas…'} />
+            ) : tabTipoOp === 'completadas' && errorCompletadas ? (
+              <div className="od-vacio">
+                <p>No se pudieron leer las completadas de hoy. Revisa tu conexión.</p>
+                <button type="button" className="od-btn" onClick={() => { void cargarCompletadasHoy(); }}>Reintentar</button>
+              </div>
             ) : (
-              <table className="data-table od-x33">
-                <thead className="od-x34">
+              <table className="data-table od-tabla">
+                <thead className="od-tabla__cabeza">
                   <tr>
-                    <th className="od-x35">
-                      Acciones
-                    </th>
+                    <th className="od-th-acciones">Acciones</th>
                     {columnasTabla.filter(c => c.visible).map(col => (
                       <th
                         key={`th_${col.id}`}
+                        className={`od-th${ordenColumna === col.id ? ' od-th--orden' : ''}`}
+                        aria-sort={ordenColumna === col.id ? (ordenDireccion === 'asc' ? 'ascending' : 'descending') : 'none'}
                         onClick={() => manejarOrdenColumna(col.id)}
                         title={ordenColumna === col.id ? (ordenDireccion === 'asc' ? 'Clic: ordenar descendente' : 'Clic: quitar ordenamiento') : 'Clic: ordenar ascendente'}
-                        style={{ padding: '16px', color: ordenColumna === col.id ? '#f0f6fc' : '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d', cursor: 'pointer', userSelect: 'none' }}
                       >
                         {col.label}
                         {ordenColumna === col.id && (
-                          <span className="od-x36">
-                            {ordenDireccion === 'asc' ? '▲' : '▼'}
-                          </span>
+                          <span className="od-th__flecha" aria-hidden="true">{ordenDireccion === 'asc' ? '▲' : '▼'}</span>
                         )}
                       </th>
                     ))}
@@ -2118,28 +2224,28 @@ const OperacionesDashboard = () => {
                 </thead>
                 <tbody>
                   {operacionesEnPantalla.length === 0 ? (
-                    <tr><td className="od-x37" colSpan={columnasTabla.length + 1}>Sin resultados.</td></tr>
+                    <tr><td className="od-vacio" colSpan={columnasTabla.length + 1}>
+                      {hayFiltrosActivos || busqueda.trim()
+                        ? 'Ninguna operación coincide con la búsqueda o los filtros.'
+                        : tabTipoOp === 'completadas' ? 'Todavía no hay servicios completados hoy.' : 'No hay operaciones en esta pestaña.'}
+                    </td></tr>
                   ) : (
                     operacionesEnPantalla.map((op: any) => (
-                      <tr key={op.id} className="od-fila-op" onClick={() => { setOperacionViendo(op); setPestañaDetalleActiva('general'); }}>
-                        <td className="od-x38" onClick={(e: any) => e.stopPropagation()}>
-                          <div className="actions-cell od-x39">
-                            <button className="od-x40" type="button" title="Editar Operación"
-                              onClick={(e) => { e.stopPropagation(); editarOperacion(op); }} 
-                              onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'} 
-                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                      <tr key={op.id} className={`od-fila-op od-fila-op--${grupoTipoOp(op)}`} onClick={() => { setOperacionViendo(op); setPestañaDetalleActiva('general'); }}>
+                        <td className="od-td-acciones" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+                          <div className="od-acciones">
+                            <button className="od-accion od-accion--editar" type="button" title="Editar operación" aria-label="Editar operación"
+                              onClick={(e) => { e.stopPropagation(); editarOperacion(op); }}>
+                              <Pencil size={14} aria-hidden="true" />
                             </button>
-                            <button className="od-x41" type="button" title="Eliminar Operación"
-                              onClick={(e) => { e.stopPropagation(); eliminarOperacion(op); }} 
-                              onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'} 
-                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                            <button className="od-accion od-accion--borrar" type="button" title="Eliminar operación" aria-label="Eliminar operación"
+                              onClick={(e) => { e.stopPropagation(); eliminarOperacion(op); }}>
+                              <Trash2 size={14} aria-hidden="true" />
                             </button>
                           </div>
                         </td>
                         {columnasTabla.filter(c => c.visible).map(col => (
-                          <td className="od-x42" key={`cell_${op.id}_${col.id}`}>
+                          <td className="od-td" key={`cell_${op.id}_${col.id}`}>
                             {renderCellContent(op, col.id)}
                           </td>
                         ))}
@@ -2155,30 +2261,29 @@ const OperacionesDashboard = () => {
           {/* ✅ V00449: "Cargar más" descarga 50 más del servidor: animación debajo de la tabla (lo ya visible se queda). */}
           {cargandoMas && <CargandoDatos compacto texto="Cargando más…" />}
 
-          {operacionesFiltradas.length > 0 && !cargandoOperaciones && tabTipoOp !== 'revision' && (
-            <div className="od-x43">
-              <div className="od-x44">
-                Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, operacionesFiltradas.length)} de {operacionesFiltradas.length} operaciones activas
-                {hayMasOperaciones && <span className="od-x45">(hay más en el servidor)</span>}
-              </div>
-              <div className="od-x46">
-                {hayMasOperaciones && (
-                  <button
-                    onClick={cargarMasOperaciones}
-                    disabled={cargandoMas}
-                    style={{ padding: '6px 14px', backgroundColor: cargandoMas ? '#0d1117' : '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: cargandoMas ? 'wait' : 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}
-                    title="Descargar 50 operaciones más desde Firestore"
-                  >
-                    {cargandoMas ? 'Cargando...' : '+ Cargar más (50)'}
+          {operacionesFiltradas.length > 0 && !cargandoTabla && tabTipoOp !== 'revision' && (
+            <footer className="od-pie">
+              <span className="od-pie__texto">
+                Mostrando <b>{indicePrimerRegistro + 1}–{Math.min(indiceUltimoRegistro, operacionesFiltradas.length)}</b> de <b>{operacionesFiltradas.length}</b> {tabTipoOp === 'completadas' ? (operacionesFiltradas.length === 1 ? 'completada hoy' : 'completadas hoy') : 'operaciones activas'}
+                {hayMasOperaciones && tabTipoOp !== 'completadas' && <span className="od-pie__mas">Hay más en el servidor</span>}
+              </span>
+              <div className="od-pie__nav">
+                {hayMasOperaciones && tabTipoOp !== 'completadas' && (
+                  <button type="button" className="od-btn od-btn--chico" onClick={cargarMasOperaciones} disabled={cargandoMas} title="Descargar 50 operaciones más desde Firestore">
+                    {cargandoMas ? 'Cargando…' : '+ Cargar más (50)'}
                   </button>
                 )}
-                <button onClick={irPaginaAnterior} disabled={paginaActual === 1} style={{ padding: '6px 12px', backgroundColor: paginaActual === 1 ? '#0d1117' : '#21262d', color: paginaActual === 1 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === 1 ? 'not-allowed' : 'pointer' }}>Anterior</button>
-                <span className="od-x47">{paginaActual} / {totalPaginas || 1}</span>
-                <button onClick={irPaginaSiguiente} disabled={paginaActual === totalPaginas || totalPaginas === 0} style={{ padding: '6px 12px', backgroundColor: paginaActual === totalPaginas || totalPaginas === 0 ? '#0d1117' : '#21262d', color: paginaActual === totalPaginas || totalPaginas === 0 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === totalPaginas || totalPaginas === 0 ? 'not-allowed' : 'pointer' }}>Siguiente</button>
+                <button type="button" className="od-pag" onClick={irPaginaAnterior} disabled={paginaActual === 1} aria-label="Página anterior" title="Página anterior">
+                  <ChevronLeft size={16} aria-hidden="true" />
+                </button>
+                <span className="od-pag__n">{paginaActual} / {totalPaginas || 1}</span>
+                <button type="button" className="od-pag" onClick={irPaginaSiguiente} disabled={paginaActual === totalPaginas || totalPaginas === 0} aria-label="Página siguiente" title="Página siguiente">
+                  <ChevronRight size={16} aria-hidden="true" />
+                </button>
               </div>
-            </div>
+            </footer>
           )}
-        </div>
+        </section>
       </div>
 
       {modalColumnas && (

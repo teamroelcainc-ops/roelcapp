@@ -7,7 +7,7 @@ import BuscadorTopbar from './components/layout/BuscadorTopbar'; // ✅ V00263 �
 import CargandoModulo from './components/layout/CargandoModulo'; // ✅ V00438
 import AvisoRecargaPendiente from './components/AvisoRecargaPendiente'; // ✅ V00438
 import { MantenerVivo } from './utils/mantenerVivo'; // ✅ V00264: módulos que no se desmontan al navegar
-import { Bell } from 'lucide-react';
+import { Bell, Fuel } from 'lucide-react';
 import type { CSSProperties } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, updateDoc, getDoc, getDocFromCache, setDoc, collection, onSnapshot, query, where, getDocs, orderBy, limit, addDoc } from 'firebase/firestore'; 
@@ -51,6 +51,7 @@ const ReportesDashboard = lazyWithRetry(() => import('./features/reportes/compon
 // ✅ V00154: Reporte de Vencimiento (documentos vencidos / por vencer / sin fechas)
 const ReporteVencimientosDashboard = lazyWithRetry(() => import('./features/vencimientos/ReporteVencimientosDashboard').then(m => ({ default: m.ReporteVencimientosDashboard })), 'ReporteVencimientosDashboard');
 // ✅ V00329: Historial de Cambios (informe de actualizaciones para la gerencia)
+const ModalHistorialResumen = lazyWithRetry(() => import('./features/operaciones/components/ModalHistorialResumen'), 'ModalHistorialResumen'); // ✅ V00456
 const HistorialCambiosDashboard = lazyWithRetry(() => import('./features/historialCambios/HistorialCambiosDashboard').then(m => ({ default: m.HistorialCambiosDashboard })), 'HistorialCambiosDashboard');
 // ✅ V00170: Tablero (CRM) de prueba — drag & drop de status
 const TableroOperacionesDashboard = lazyWithRetry(() => import('./features/tablero/TableroOperacionesDashboard').then(m => ({ default: m.TableroOperacionesDashboard })), 'TableroOperacionesDashboard');
@@ -97,7 +98,11 @@ const AutorizacionesDashboard = lazyWithRetry(() => import('./features/autorizac
 
 import './App.css';
 import { almacenSesion } from './utils/cacheMemoria';
-import { STATUS_CANCELADO, STATUS_COMPLETADOS } from './shared/dominio/constantes';
+// ✅ V00456: reglas y lecturas del Resumen del día en su servicio (antes sueltas aquí)
+import { contarDelDia, extraerTipoCambio, mejorFechaRegistro, normalizarFechaResumen } from './features/operaciones/services/resumenDia';
+import { CLAVE_ULTIMOS_DIESEL, CLAVE_ULTIMOS_TC, leerOperacionesDeHoy } from './features/operaciones/services/resumenDiaDatos';
+import { pedirCompletadasHoy } from './features/operaciones/services/pestanaCompletadas';
+import { queryClient } from './lib/queryClient';
 import AvisosFlotantes from './shared/components/AvisosFlotantes'; // ✅ V00450
 import { irARevision, NOMBRE_MODULO_REVISION, useAvisos } from './shared/data/avisos'; // ✅ V00450
 import type { ModuloRevision } from './shared/data/avisos';
@@ -309,44 +314,8 @@ const ICON: Record<string, React.ReactNode> = {
 // consulta puntual por indicador, con botón ↻ para refrescar.
 // ============================================================================
 
-const resumenNormalizarISO = (v: any): string => {
-  if (v == null) return '';
-  if (typeof v === 'object' && typeof v.toDate === 'function') {
-    const d = v.toDate();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  }
-  const t = String(v).trim();
-  let m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
-  m = t.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
-  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
-  return '';
-};
-
-const resumenExtraerTC = (row: any): number | null => {
-  if (!row || typeof row !== 'object') return null;
-  const valKey = Object.keys(row).find((k) => {
-    const kk = String(k).toLowerCase();
-    return kk.includes('dof') || kk.includes('valor') || kk === 'tc' || kk.includes('cambio') || kk.includes('monto') || kk.includes('t.c');
-  });
-  if (valKey) {
-    const n = Number(String(row[valKey]).replace(/[^0-9.-]+/g, ''));
-    if (!isNaN(n) && n > 0) return n;
-  }
-  const posibles = Object.values(row)
-    .map((v: any) => parseFloat(String(v).replace(/[^0-9.-]+/g, '')))
-    .filter((n: any) => !isNaN(n) && n > 5 && n < 60);
-  return posibles.length > 0 ? posibles[0] : null;
-};
-
-const resumenMejorFechaFila = (row: any): string => {
-  let mejor = '';
-  Object.values(row || {}).forEach((v: any) => {
-    const iso = resumenNormalizarISO(v);
-    if (iso && iso > mejor) mejor = iso;
-  });
-  return mejor;
-};
+// ✅ V00456: normalizar fechas, extraer el TC y la regla de completadas viven en
+//   features/operaciones/services/resumenDia.ts.
 
 // ✅ V00438 (Fase 2.1): memo — vive dentro del MantenerVivo de Operaciones; sin
 //   memo se re-renderizaba (con sus tarjetas) con cada render de App.
@@ -374,6 +343,8 @@ const ResumenDelDia = memo(function ResumenDelDia() {
   // ✅ NUEVO: captura rápida del TC y del diesel del día desde la vista principal
   //   (los botones solo aparecen cuando el dato de HOY aún no existe).
   const [modalTCAbierto, setModalTCAbierto] = useState(false);
+  // ✅ V00456: últimos tipos de cambio / capturas de diesel (al presionar su tarjeta)
+  const [historialAbierto, setHistorialAbierto] = useState<'tc' | 'diesel' | null>(null);
   // ✅ V00137: METAS DE OPERACIONES POR DÍA (lunes…domingo) — doc configuracion/metas_operaciones
   const [metasDia, setMetasDia] = useState<Record<string, number> | null>(null);
   const [modalMetasAbierto, setModalMetasAbierto] = useState(false);
@@ -438,6 +409,7 @@ const ResumenDelDia = memo(function ResumenDelDia() {
       });
       registrarLog('Tipo de Cambio', 'Creación', `Capturó el tipo de cambio del día ${hoyISO}: $${valor.toFixed(4)} (desde Operaciones)`).catch(() => {});
       setModalTCAbierto(false); setNuevoTC('');
+      queryClient.invalidateQueries({ queryKey: [...CLAVE_ULTIMOS_TC] }); // ✅ V00456
       await cargar();
     } catch (e) {
       console.error('[Resumen del día] guardar TC:', e);
@@ -461,6 +433,7 @@ const ResumenDelDia = memo(function ResumenDelDia() {
       });
       registrarLog('Combustible', 'Creación', `Capturó el diesel del día ${hoyISO}: $${costo.toFixed(2)} — ${prov?.nombre || provDieselId} (desde Operaciones)`).catch(() => {});
       setModalDieselAbierto(false); setNuevoDieselCosto(''); setProvDieselId(''); setBuscarProvDiesel('');
+      queryClient.invalidateQueries({ queryKey: [...CLAVE_ULTIMOS_DIESEL] }); // ✅ V00456
       await cargar();
     } catch (e) {
       console.error('[Resumen del día] guardar diesel:', e);
@@ -507,26 +480,9 @@ const ResumenDelDia = memo(function ResumenDelDia() {
     const nuevo = { totalHoy: 0, completadasHoy: 0, canceladasHoy: 0, completadasPorTipo: { cruces: 0, transfer: 0, fletes: 0, renta: 0, otros: 0 }, tc: null as number | null, tcFecha: '', diesel: null as number | null, dieselFecha: '', dieselProveedores: 0, dieselProveedor: '', dieselCapturas: 0 };
 
     // 1) Operaciones con fecha de servicio de HOY, clasificadas por status.
+    // ✅ V00456: misma consulta y regla que la pestaña "Completadas hoy" del tablero.
     try {
-      const snap = await getDocs(query(collection(db, 'operaciones'), where('fechaServicio', '==', hoyISO)));
-      snap.docs.forEach((d: any) => {
-        const op = d.data() || {};
-        // ✅ V00440: IDs desde las constantes compartidas. La regla por nombre se
-        //   conserva tal cual (pasa a estadoGrupo con las consultas canónicas, Fase 7).
-        const nombre = String(op.statusNombre || '').toLowerCase();
-        nuevo.totalHoy += 1;
-        if (op.status === STATUS_CANCELADO || nombre.includes('cancel')) nuevo.canceladasHoy += 1;
-        else if (STATUS_COMPLETADOS.includes(op.status) || nombre.includes('complet')) {
-          nuevo.completadasHoy += 1;
-          // ✅ V00409: desglose por tipo de operación
-          const tipo = String(op.tipoOperacionNombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-          if (tipo.includes('flete')) nuevo.completadasPorTipo.fletes += 1;
-          else if (tipo.includes('logistica')) nuevo.completadasPorTipo.cruces += 1;
-          else if (tipo.includes('transfer')) nuevo.completadasPorTipo.transfer += 1;
-          else if (tipo.includes('renta')) nuevo.completadasPorTipo.renta += 1;
-          else nuevo.completadasPorTipo.otros += 1;
-        }
-      });
+      Object.assign(nuevo, contarDelDia(await leerOperacionesDeHoy(hoyISO)));
     } catch (e) { console.error('[Resumen del día] operaciones:', e); }
 
     // 2) Tipo de cambio del día (o el más reciente disponible).
@@ -547,10 +503,10 @@ const ResumenDelDia = memo(function ResumenDelDia() {
         const snapUlt = await getDocs(query(colTC, where('fecha', '<=', hoyISO), orderBy('fecha', 'desc'), limit(1)));
         if (!snapUlt.empty) {
           fila = { id: snapUlt.docs[0].id, ...snapUlt.docs[0].data() };
-          nuevo.tcFecha = resumenMejorFechaFila(fila) || String(fila.fecha || '');
+          nuevo.tcFecha = mejorFechaRegistro(fila) || String(fila.fecha || '');
         }
       }
-      if (fila) nuevo.tc = resumenExtraerTC(fila);
+      if (fila) nuevo.tc = extraerTipoCambio(fila);
     } catch (e) { console.error('[Resumen del día] tipo de cambio:', e); }
 
     // 3) Costo del diesel del día (promedio si hay varios proveedores) o el más reciente.
@@ -565,7 +521,7 @@ const ResumenDelDia = memo(function ResumenDelDia() {
         if (!snapUlt.empty) {
           const data = snapUlt.docs[0].data() as any;
           docsDiesel = [data];
-          nuevo.dieselFecha = resumenNormalizarISO(data.fecha) || '';
+          nuevo.dieselFecha = normalizarFechaResumen(data.fecha) || '';
         }
       }
       // ✅ V00411: el costo del diesel puede variar en el día y por proveedor →
@@ -610,6 +566,7 @@ const ResumenDelDia = memo(function ResumenDelDia() {
       {/* ✅ V00391: tarjetas del resumen con un solo diseño — mismo tamaño,
           etiqueta arriba, cifra principal, detalle y acción al pie. */}
       <div className="app-x9 rd-grid">
+        {/* ✅ V00455: Operaciones del día incluye las COMPLETADAS de hoy (antes su propia tarjeta, V00409) */}
         <div className="rd-card rd-card--azul">
           <div className="rd-card__head">
             <span className="rd-card__label">Operaciones del día</span>
@@ -629,66 +586,70 @@ const ResumenDelDia = memo(function ResumenDelDia() {
               <span className="rd-card__sub">Sin meta para {ETQ_DIA[claveDiaHoy()]}</span>
             )
           )}
+          {/* ✅ V00409: completadas por tipo de operación · ✅ V00456: al presionarlas se abre la
+              pestaña "Completadas hoy" del tablero; desglose en dos columnas (tarjeta más baja) */}
+          {!cargando && (
+            <button type="button" className="rd-control rd-control--btn" onClick={pedirCompletadasHoy} title="Ver los servicios completados hoy (pestaña Completadas hoy)">
+              <span className="rd-control__enc">
+                <span className="rd-control__et rd-control__et--fuerte">Completadas hoy</span>
+                <span className="rd-control__v rd-control__v--abono" title={datos.totalHoy > 0 ? `${datos.completadasHoy} de ${datos.totalHoy}` : ''}>{datos.completadasHoy}{datos.totalHoy > 0 ? ` · ${Math.round((datos.completadasHoy / datos.totalHoy) * 100)}%` : ''}</span>
+              </span>
+              {datos.totalHoy > 0 && (
+                <span className="rd-barra rd-barra--fila" title={`${datos.completadasHoy} de ${datos.totalHoy} completadas`}>
+                  <span className="rd-barra__lleno rd-barra__lleno--ok" style={{ '--rd-pct': `${Math.min(100, Math.round((datos.completadasHoy / datos.totalHoy) * 100))}%` } as CSSProperties} />
+                </span>
+              )}
+              <span className="rd-tipos">
+                <span className="rd-tipos__i" title="Logística Cruces"><span className="rd-control__v">{datos.completadasPorTipo.cruces}</span><span className="rd-control__et">Cruces</span></span>
+                <span className="rd-tipos__i" title="Transfer"><span className="rd-control__v">{datos.completadasPorTipo.transfer}</span><span className="rd-control__et">Transfer</span></span>
+                <span className="rd-tipos__i" title="Logística Fletes"><span className="rd-control__v">{datos.completadasPorTipo.fletes}</span><span className="rd-control__et">Fletes</span></span>
+                <span className="rd-tipos__i" title="Renta"><span className="rd-control__v">{datos.completadasPorTipo.renta}</span><span className="rd-control__et">Renta</span></span>
+                {datos.completadasPorTipo.otros > 0 && <span className="rd-tipos__i" title="Otros"><span className="rd-control__v">{datos.completadasPorTipo.otros}</span><span className="rd-control__et">Otros</span></span>}
+              </span>
+            </button>
+          )}
           <div className="rd-card__foot">
             <button type="button" className="rd-btn" onClick={abrirModalMetas} title="Configurar la meta de operaciones para cada día de la semana">Metas por día</button>
           </div>
         </div>
 
-        <div className="rd-card rd-card--verde">
+        {/* ✅ V00455: TIPO DE CAMBIO y DIESEL en tarjetas separadas (V00411 los juntaba) */}
+        <div className="rd-card rd-card--ambar rd-card--clic" title={`${datos.tcFecha && datos.tcFecha !== hoyISO ? `Último registro: ${fmtDia(datos.tcFecha)}` : 'Tipo de cambio del día (se captura una vez al día)'}. Presiona la tarjeta para ver los últimos tipos de cambio.`}>
+          {/* ✅ V00456: toda la tarjeta abre los últimos tipos de cambio (sus botones hacen lo suyo) */}
+          <button type="button" className="rd-card__abrir" onClick={() => setHistorialAbierto('tc')} aria-label="Ver los últimos tipos de cambio" />
           <div className="rd-card__head">
-            <span className="rd-card__label">Completadas hoy</span>
-            <svg className="rd-card__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-          </div>
-          <span className="rd-card__value">{cargando ? '…' : datos.completadasHoy}</span>
-          <span className="rd-card__sub">{cargando || datos.totalHoy === 0 ? '\u00a0' : `${Math.round((datos.completadasHoy / datos.totalHoy) * 100)}% del día`}</span>
-          {!cargando && datos.totalHoy > 0 && (
-            <div className="rd-barra" title={`${datos.completadasHoy} de ${datos.totalHoy}`}>
-              <div className="rd-barra__lleno" style={{ '--rd-pct': `${Math.min(100, Math.round((datos.completadasHoy / datos.totalHoy) * 100))}%` } as CSSProperties} />
-            </div>
-          )}
-          {/* ✅ V00409: completadas por tipo de operación */}
-          {!cargando && (
-            <div className="rd-control">
-              <span className="rd-control__et">Logística Cruces</span><span className="rd-control__v">{datos.completadasPorTipo.cruces}</span>
-              <span className="rd-control__et">Transfer</span><span className="rd-control__v">{datos.completadasPorTipo.transfer}</span>
-              <span className="rd-control__et">Logística Fletes</span><span className="rd-control__v">{datos.completadasPorTipo.fletes}</span>
-              <span className="rd-control__et">Renta</span><span className="rd-control__v">{datos.completadasPorTipo.renta}</span>
-              {datos.completadasPorTipo.otros > 0 && <><span className="rd-control__et">Otros</span><span className="rd-control__v">{datos.completadasPorTipo.otros}</span></>}
-            </div>
-          )}
-        </div>
-
-        {/* ✅ V00411: TIPO DE CAMBIO + DIESEL en una sola tarjeta */}
-        <div className="rd-card rd-card--ambar">
-          <div className="rd-card__head">
-            <span className="rd-card__label">Tipo de cambio · Diesel</span>
+            <span className="rd-card__label">Tipo de cambio</span>
             <svg className="rd-card__icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
           </div>
-          <div className="rd-dos">
-            <div className="rd-dos__col" title={datos.tcFecha && datos.tcFecha !== hoyISO ? `Último registro: ${fmtDia(datos.tcFecha)}` : 'Tipo de cambio del día (se captura una vez al día)'}>
-              <span className="rd-dos__et">Tipo de cambio</span>
-              <span className="rd-dos__v">{cargando ? '…' : (datos.tc != null ? `$${datos.tc.toFixed(4)}` : '—')}</span>
-              <span className={`rd-card__sub${!cargando && datos.tcFecha !== hoyISO ? ' rd-card__sub--alerta' : ''}`}>{cargando ? '\u00a0' : datos.tc == null ? 'Sin registro' : (datos.tcFecha === hoyISO ? 'DOF de hoy' : `al ${fmtDia(datos.tcFecha)}`)}</span>
-            </div>
-            <div className="rd-dos__col" title={datos.dieselCapturas > 1 ? `El más bajo de ${datos.dieselCapturas} capturas de hoy (${datos.dieselProveedores} proveedor/es)` : 'Costo del diesel por galón'}>
-              <span className="rd-dos__et">Diesel (más bajo)</span>
-              <span className="rd-dos__v rd-dos__v--diesel">{cargando ? '…' : (datos.diesel != null ? `$${datos.diesel.toFixed(2)}` : '—')}</span>
-              <span className={`rd-card__sub${!cargando && datos.dieselFecha !== hoyISO ? ' rd-card__sub--alerta' : ''}`}>
-                {cargando ? '\u00a0' : datos.diesel == null ? 'Sin captura' : `${datos.dieselProveedor || 'Por galón'}${datos.dieselFecha && datos.dieselFecha !== hoyISO ? ` · al ${fmtDia(datos.dieselFecha)}` : ''}`}
-              </span>
-            </div>
+          <span className="rd-card__value">{cargando ? '…' : (datos.tc != null ? `$${datos.tc.toFixed(4)}` : '—')}</span>
+          <span className={`rd-card__sub${!cargando && datos.tcFecha !== hoyISO ? ' rd-card__sub--alerta' : ''}`}>{cargando ? '\u00a0' : datos.tc == null ? 'Sin registro' : (datos.tcFecha === hoyISO ? 'DOF de hoy' : `al ${fmtDia(datos.tcFecha)}`)}</span>
+          <span className="rd-card__sub">Pesos por dólar</span>
+          <div className="rd-card__foot">
+            {!cargando && datos.tcFecha !== hoyISO && (
+              <button type="button" className="rd-btn rd-btn--ancho" onClick={() => setModalTCAbierto(true)} title="El tipo de cambio se captura una vez al día">Capturar TC</button>
+            )}
           </div>
+        </div>
+
+        <div className="rd-card rd-card--naranja rd-card--clic" title={`${datos.dieselCapturas > 1 ? `El más bajo de ${datos.dieselCapturas} capturas de hoy (${datos.dieselProveedores} proveedor/es)` : 'Costo del diesel por galón'}${datos.diesel != null ? (datos.tc != null ? `. Por litro: ${datos.diesel.toFixed(2)} ÷ 3.78541 × TC ${datos.tc.toFixed(4)}` : '. Captura el tipo de cambio del día para el precio por litro en pesos') : ''}. Presiona la tarjeta para ver las últimas capturas.`}>
+          {/* ✅ V00456: toda la tarjeta abre las últimas capturas de diesel */}
+          <button type="button" className="rd-card__abrir" onClick={() => setHistorialAbierto('diesel')} aria-label="Ver las últimas capturas de diesel" />
+          <div className="rd-card__head">
+            <span className="rd-card__label">Diesel</span>
+            <Fuel className="rd-card__icon" size={15} />
+          </div>
+          <span className="rd-card__value rd-card__value--diesel">{cargando ? '…' : (datos.diesel != null ? `$${datos.diesel.toFixed(2)}` : '—')}</span>
+          <span className={`rd-card__sub${!cargando && datos.dieselFecha !== hoyISO ? ' rd-card__sub--alerta' : ''}`}>
+            {cargando ? '\u00a0' : datos.diesel == null ? 'Sin captura' : `Más bajo · ${datos.dieselProveedor || 'por galón'}${datos.dieselFecha && datos.dieselFecha !== hoyISO ? ` · al ${fmtDia(datos.dieselFecha)}` : ''}`}
+          </span>
           {/* ✅ V00133: equivalencia por LITRO en pesos — $/galón ÷ 3.78541 × TC del día */}
           {!cargando && datos.diesel != null && (
             <span className="rd-card__sub" title={datos.tc != null ? `${datos.diesel.toFixed(2)} ÷ 3.78541 × TC ${datos.tc.toFixed(4)}` : 'Captura el tipo de cambio del día para calcular el precio por litro en pesos'}>
               {`≈ $${(datos.diesel / 3.78541).toFixed(2)} USD/L`}{datos.tc != null ? ` · $${((datos.diesel / 3.78541) * datos.tc).toFixed(2)} MXN/L` : ' · MXN/L: falta TC'}
             </span>
           )}
-          <div className="rd-card__foot rd-card__foot--fila">
-            {!cargando && datos.tcFecha !== hoyISO && (
-              <button type="button" className="rd-btn" onClick={() => setModalTCAbierto(true)} title="El tipo de cambio se captura una vez al día">Capturar TC</button>
-            )}
-            <button type="button" className="rd-btn" onClick={abrirModalDiesel} title="El costo del diesel puede cambiar en el día o por proveedor: se muestra el más bajo">{datos.dieselFecha === hoyISO ? 'Agregar diesel' : 'Capturar diesel'}</button>
+          <div className="rd-card__foot">
+            <button type="button" className="rd-btn rd-btn--ancho" onClick={abrirModalDiesel} title="El costo del diesel puede cambiar en el día o por proveedor: se muestra el más bajo">{datos.dieselFecha === hoyISO ? 'Agregar diesel' : 'Capturar diesel'}</button>
           </div>
         </div>
 
@@ -697,6 +658,11 @@ const ResumenDelDia = memo(function ResumenDelDia() {
         {/* ✅ V00411: saldo del DIESEL (Referencias del Diesel → Saldos) */}
         <TarjetaSaldoDiesel />
       </div>
+      {historialAbierto && (
+        <Suspense fallback={null}>
+          <ModalHistorialResumen tipo={historialAbierto} tcActual={datos.tc} onCerrar={() => setHistorialAbierto(null)} />
+        </Suspense>
+      )}
 
       {/* Modal: capturar TIPO DE CAMBIO de hoy */}
       {/* ✅ V00137: modal de METAS por día de la semana */}

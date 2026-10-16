@@ -1,0 +1,33 @@
+/* src/features/operaciones/components/ModalHistorialResumen.css — ✅ V00456 (prefijo mhr-) */
+.mhr-fondo { position: fixed; inset: 0; z-index: 3000; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(1, 4, 9, 0.78); backdrop-filter: blur(6px); }
+.mhr-caja { --mhr-color: #e3b341; width: 100%; max-width: 640px; max-height: 88vh; display: flex; flex-direction: column; box-sizing: border-box; padding: 20px 22px; border-radius: 14px; border: 1px solid #2a323d; border-top: 3px solid var(--mhr-color); background: #0d1117; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55); }
+.mhr-caja--diesel { --mhr-color: #fb923c; max-width: 920px; }
+.mhr-enc { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 12px; }
+.mhr-titulo { margin: 0; color: #f0f6fc; font-size: 1.2rem; font-weight: 700; }
+.mhr-nota { margin: 4px 0 0; color: #8d97a3; font-size: 0.82rem; }
+.mhr-x { background: none; border: none; color: #8b949e; font-size: 1.15rem; cursor: pointer; }
+.mhr-x:hover { color: #f0f6fc; }
+.mhr-x:focus, .mhr-btn:focus { outline: none; }
+.mhr-x:focus-visible, .mhr-btn:focus-visible { outline: 2px solid var(--mhr-color); outline-offset: 2px; border-radius: 6px; }
+.mhr-marco { flex: 1 1 auto; min-height: 0; overflow: auto; border: 1px solid #232b36; border-radius: 10px; background: #10151c; }
+.mhr-tabla { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+.mhr-tabla th { position: sticky; top: 0; z-index: 1; background: #141b24; color: #8d97a3; font-size: 0.76rem; font-weight: 600; text-align: left; padding: 10px 14px; border-bottom: 1px solid #232b36; white-space: nowrap; }
+.mhr-tabla td { padding: 9px 14px; color: #c9d1d9; border-bottom: 1px solid #1a212b; white-space: nowrap; }
+.mhr-tabla tbody tr:last-child td { border-bottom: none; }
+.mhr-tabla tbody tr:hover td { background: #141b24; }
+.mhr-fila--hoy td { background: color-mix(in srgb, var(--mhr-color) 7%, transparent); }
+.mhr-num { text-align: right; font-variant-numeric: tabular-nums; }
+.mhr-tabla th.mhr-num { text-align: right; }
+.mhr-tabla .mhr-valor { color: #f0f6fc; font-weight: 700; }
+.mhr-tabla .mhr-valor--diesel { color: #fdba74; }
+.mhr-tabla .mhr-tenue { color: #8d97a3; }
+.mhr-tabla .mhr-sube { color: #ff9b95; }
+.mhr-tabla .mhr-baja { color: #56d364; }
+.mhr-tabla .mhr-igual { color: #8d97a3; }
+.mhr-chip { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; font-size: 0.68rem; font-weight: 700; color: var(--mhr-color); border: 1px solid color-mix(in srgb, var(--mhr-color) 45%, transparent); vertical-align: middle; }
+.mhr-chip--bajo { color: #56d364; border-color: rgba(86, 211, 100, 0.45); }
+.mhr-vacio { margin: 0; padding: 32px 16px; text-align: center; color: #8d97a3; }
+.mhr-pie { display: flex; justify-content: flex-end; padding-top: 12px; }
+.mhr-btn { padding: 8px 22px; border-radius: 8px; border: 1px solid #30363d; background: none; color: #c9d1d9; cursor: pointer; font-family: inherit; }
+.mhr-btn:hover { border-color: var(--mhr-color); color: #f0f6fc; }
+@media (max-width: 640px) { .mhr-caja { padding: 14px 12px; } }

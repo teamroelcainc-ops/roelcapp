@@ -23,7 +23,8 @@ import { cargarCtxCobroPuente, cobroPuenteDeOperacion } from '../../../utils/pue
 import { COL_REF_AUTO, filaDeOperacion, grupoDeFila, grupoDeNombresPuente, quitarOperacionDeReferenciaAuto, upsertReferenciaAuto } from '../../../utils/historialCalculadoPuentes';
 import { FormularioOperacion } from '../../operaciones/components/FormularioOperacion';
 import { idReal, obtenerCatalogo, useCatalogos } from '../../../shared/data/catalogos';
-import { ID_MXN, ID_USD } from '../../../shared/dominio/constantes';
+import ModalAgregarSaldoPuente from './ModalAgregarSaldoPuente';
+import { monedaDePuente, nombrePuenteCatalogo, puentesDelCatalogo } from '../services/puentesCatalogo';
 
 // ⚠ Si tu colección de convenios de clientes tiene otro nombre, cámbialo aquí.
 const COLECCION_CONVENIOS = 'convenios_clientes';
@@ -44,7 +45,8 @@ const CATALOGOS_FORMULARIO = {
   unidades_proveedor: 'unidades_proveedor', proveedores_unidad: 'proveedores_unidad', catalogoMoneda: 'catalogo_moneda',
 } as const;
 // Nombre de moneda para el saldo del puente (por ID; cualquier otro valor se deja tal cual).
-const monedaDeCatalogo = (m: unknown) => (String(m || '') === ID_USD ? 'Dólares' : String(m || '') === ID_MXN ? 'Pesos' : String(m || ''));
+// ✅ V00455: regla compartida con las tarjetas de Operaciones Activas (puentesCatalogo.ts).
+const monedaDeCatalogo = monedaDePuente;
 
 // ✅ V00392: columnas pedidas — Ref, Fecha, Unidad, Convenio, Puente, Monto
 const COLUMNAS_OPS_PUENTES_BASE = [
@@ -258,12 +260,8 @@ export const ReferenciasPuentesDashboard = () => {
   // ✅ V00396: AGREGAR SALDO — saldo inicial por puente (colección saldos_puentes,
   //   la misma que usan Saldos de Puentes y las tarjetas de Operaciones Activas)
   const [saldosLista, setSaldosLista] = useState<Record<string, unknown>[]>([]);
+  // ✅ V00455: el formulario "Agregar saldo" es ModalAgregarSaldoPuente (lo comparte con Operaciones Activas)
   const [modalSaldo, setModalSaldo] = useState(false);
-  const [saldoFecha, setSaldoFecha] = useState(hoyLocalISO());
-  const [saldoHora, setSaldoHora] = useState('');
-  const [saldoPuenteId, setSaldoPuenteId] = useState('');
-  const [saldoMonto, setSaldoMonto] = useState('');
-  const [guardandoSaldo, setGuardandoSaldo] = useState(false);
   // ✅ V00397: cruces que descuentan de los saldos (operaciones con peaje + otros cruces)
   const [saldoViendo, setSaldoViendo] = useState<Record<string, unknown> | null>(null);
 
@@ -820,13 +818,9 @@ export const ReferenciasPuentesDashboard = () => {
   };
 
   // Puentes del catálogo de tipos de gasto (categoria_gasto = "Puente")
-  const nombrePuente = (c: any) => c?.nombre ?? c?.concepto ?? c?.tipo_gasto ?? c?.tipoGasto ?? c?.descripcion ?? c?.nombre_gasto ?? c?.id ?? '-';
+  const nombrePuente = nombrePuenteCatalogo; // ✅ V00455: regla compartida (puentesCatalogo.ts)
 
-  const puentesCatalogo = useMemo(() =>
-    tiposGastoList
-      .filter(c => String(c.categoria_gasto ?? c.categoriaGasto ?? c.categoria ?? '').toLowerCase().includes('puente'))
-      .sort((a, b) => String(nombrePuente(a)).localeCompare(String(nombrePuente(b)), 'es', { sensitivity: 'base' })),
-  [tiposGastoList]);
+  const puentesCatalogo = useMemo(() => puentesDelCatalogo(tiposGastoList), [tiposGastoList]); // ✅ V00455: misma lista que Operaciones Activas
 
 
   // ✅ V00394: UNA referencia por PUENTE con su propio consecutivo:
@@ -921,30 +915,7 @@ export const ReferenciasPuentesDashboard = () => {
     }
   };
 
-  const abrirSaldo = () => { setSaldoFecha(hoyLocalISO()); setSaldoHora(horaAhora()); setSaldoPuenteId(''); setSaldoMonto(''); setModalSaldo(true); };
-  const guardarSaldo = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const p = puentesCatalogo.find(x => x.id === saldoPuenteId);
-    if (!p) return alert('Elige el puente.');
-    const n = Number(saldoMonto);
-    if (!(n > 0)) return alert('Captura el saldo inicial.');
-    if (!saldoFecha || !saldoHora) return alert('Captura la fecha y la hora.');
-    setGuardandoSaldo(true);
-    try {
-      const batch = writeBatch(db);
-      batch.set(doc(collection(db, 'saldos_puentes')), {
-        fecha: saldoFecha, hora: saldoHora,
-        puenteId: p.id, puenteNombre: String(nombrePuente(p)),
-        moneda: monedaCatalogo(p.moneda), saldo: n,
-        registradoPor: usuarioActual(),
-        creadoEn: new Date().toISOString(),
-      });
-      await batch.commit();
-      setModalSaldo(false);
-    } catch (err) {
-      alert(`No se pudo guardar el saldo: ${(err as Error)?.message || err}`);
-    } finally { setGuardandoSaldo(false); }
-  };
+  const abrirSaldo = () => setModalSaldo(true);
   const eliminarSaldo = async (r: Record<string, unknown>) => {
     if (!window.confirm(`¿Eliminar el saldo de ${String(r.puenteNombre || '')} del ${formatearFechaSpanish(String(r.fecha || ''))} por ${formatoMoneda(Number(r.saldo) || 0)}?`)) return;
     try { const batch = writeBatch(db); batch.delete(doc(db, 'saldos_puentes', String(r.id))); await batch.commit(); }
@@ -1413,45 +1384,7 @@ export const ReferenciasPuentesDashboard = () => {
             );
           })()}
 
-          {modalSaldo && (
-            <div className="modal-overlay rpd-x68" onClick={() => !guardandoSaldo && setModalSaldo(false)}>
-              <div className="rpd-x69" onClick={(e) => e.stopPropagation()}>
-                <div className="rpd-x70">
-                  <h2 className="rpd-x71">Agregar saldo</h2>
-                  <button className="rpd-x62" onClick={() => setModalSaldo(false)}>✕</button>
-                </div>
-                <FormularioConfigurable modulo="referenciasPuentes">
-                <form onSubmit={guardarSaldo} className="rpd-otro-form">
-                  <div className="rpd-otro-grid">
-                    <div className="rpd-otro-campo">
-                      <label className="rpd-otro-label">Fecha</label>
-                      <input className="rpd-otro-input" type="date" required value={saldoFecha} onChange={(e) => setSaldoFecha(e.target.value)} />
-                    </div>
-                    <div className="rpd-otro-campo">
-                      <label className="rpd-otro-label">Hora</label>
-                      <input className="rpd-otro-input" type="time" required value={saldoHora} onChange={(e) => setSaldoHora(e.target.value)} />
-                    </div>
-                    <div className="rpd-otro-campo">
-                      <label className="rpd-otro-label">Puente</label>
-                      <select className="rpd-otro-input" required value={saldoPuenteId} onChange={(e) => setSaldoPuenteId(e.target.value)}>
-                        <option value="">Seleccionar puente…</option>
-                        {puentesCatalogo.map(p => <option key={p.id} value={p.id}>{String(nombrePuente(p))}</option>)}
-                      </select>
-                    </div>
-                    <div className="rpd-otro-campo">
-                      <label className="rpd-otro-label">Saldo inicial{(() => { const p = puentesCatalogo.find(x => x.id === saldoPuenteId); return p ? ` (${monedaCatalogo(p.moneda)})` : ''; })()}</label>
-                      <input className="rpd-otro-input" type="number" step="0.01" min="0" required value={saldoMonto} onChange={(e) => setSaldoMonto(e.target.value)} placeholder="0.00" />
-                    </div>
-                  </div>
-                  <div className="rpd-x83">
-                    <button className="rpd-x84" type="button" onClick={() => setModalSaldo(false)} disabled={guardandoSaldo}>Cancelar</button>
-                    <button className="rpd-x85" type="submit" disabled={guardandoSaldo}>{guardandoSaldo ? 'Guardando…' : 'Guardar saldo'}</button>
-                  </div>
-                </form>
-                </FormularioConfigurable>
-              </div>
-            </div>
-          )}
+          {modalSaldo && <ModalAgregarSaldoPuente onCerrar={() => setModalSaldo(false)} />}
         </div>
       ) : activeTab === 'otros' ? (
         <div className="animation-fade-in">

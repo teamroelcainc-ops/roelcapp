@@ -1368,14 +1368,43 @@ body {
 .rd-filas__v--cargo { color: #ff9b95; }
 .rd-filas__v--abono { color: #56d364; }
 
-/* Tipo de cambio + Diesel: dos columnas */
-.rd-dos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; }
-.rd-dos__col { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.rd-dos__col + .rd-dos__col { padding-left: 10px; border-left: 1px solid #1f2630; }
-.rd-dos__et { color: #8d97a3; font-size: 0.64rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rd-dos__v { color: #f0f6fc; font-size: clamp(1rem, 1.05vw, 1.3rem); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.rd-dos__v--diesel { color: #fdba74; }
+/* ✅ V00455: Tipo de cambio y Diesel en tarjetas separadas (antes .rd-dos); completadas dentro de Operaciones del día */
+.rd-card__value--diesel { color: #fdba74; }
+.rd-control__et--fuerte { color: #c3ccd6; font-weight: 700; text-transform: uppercase; font-size: 0.64rem; letter-spacing: 0.05em; }
+.rd-control__enc { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; column-gap: 8px; }
+.rd-barra--fila { grid-column: 1 / -1; margin: 1px 0 3px; }
+.rd-barra__lleno--ok { background: #3fb950; }
+
+/* ✅ V00456: TARJETAS MÁS BAJAS (antes min-height 200px y rellenos amplios) */
+.rd-grid { gap: 12px; }
+.rd-card { min-height: 0; padding: 10px 12px 10px 14px; gap: 1px; border-radius: 12px; }
+.rd-card::before { top: 10px; bottom: 10px; }
+.rd-card__head { min-height: 16px; }
+.rd-card__value { margin-top: 2px; font-size: clamp(1.05rem, 1.15vw, 1.35rem); }
+.rd-card__sub { font-size: 0.7rem; line-height: 1.3; }
+.rd-filas { margin-top: 5px; padding-top: 5px; gap: 1px; }
+.rd-filas__f { padding: 0; }
+.rd-control { margin-top: 5px; padding-top: 5px; row-gap: 1px; }
+.rd-card__foot { padding-top: 6px; }
+.rd-btn { height: 26px; }
+/* Completadas hoy dentro de Operaciones del día: botón (abre su pestaña) con el desglose en una línea que se acomoda sola */
+.rd-control--btn { width: 100%; margin: 5px 0 0; padding: 5px 0 0; border: none; border-top: 1px solid #21262d; border-radius: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.rd-control--btn:hover { border-color: transparent; border-top-color: #21262d; }
+.rd-control--btn:hover .rd-control__et--fuerte { color: var(--rd-color); }
+.rd-control--btn:focus { outline: none; }
+.rd-control--btn:focus-visible { outline: 2px solid var(--rd-color); outline-offset: 2px; }
+.rd-control--btn .rd-barra { display: block; }
+.rd-control--btn .rd-barra__lleno { display: block; }
+.rd-tipos { grid-column: 1 / -1; display: flex; flex-wrap: wrap; column-gap: 10px; row-gap: 1px; }
+.rd-tipos__i { display: inline-flex; align-items: baseline; gap: 4px; white-space: nowrap; }
+/* Tarjeta que se abre al presionarla: botón absoluto debajo del contenido; sus botones quedan encima */
+.rd-card--clic { cursor: pointer; }
+.rd-card--clic > :not(.rd-card__abrir) { position: relative; z-index: 1; pointer-events: none; }
+.rd-card--clic button:not(.rd-card__abrir) { pointer-events: auto; }
+.rd-card--clic > .rd-card__abrir { position: absolute; inset: 0; z-index: 0; margin: 0; padding: 0; border: 0; border-radius: inherit; background: transparent; cursor: pointer; }
+.rd-card--clic > .rd-card__abrir:focus { outline: none; }
+.rd-card--clic > .rd-card__abrir:focus-visible { outline: 2px solid var(--rd-color); outline-offset: -2px; }
 
 @media (max-width: 1200px) { .rd-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-@media (max-width: 900px) { .rd-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .rd-card { min-height: 170px; } }
+@media (max-width: 900px) { .rd-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .rd-card { min-height: 0; } } /* ✅ V00456: antes 170px */
 @media (max-width: 420px) { .rd-grid { grid-template-columns: 1fr; } }
