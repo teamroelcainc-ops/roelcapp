@@ -207,6 +207,9 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - Modales con `createPortal` a `document.body` (la tarjeta usa `transform` al pasar el mouse) y perezosos desde la tarjeta (`lazyWithRetry`): la carga inicial crece 0.3 KB (sin eso, ~20 KB por FormularioConfigurable).
 - Se quitaron las reglas `.rd-dos*` de App.css (solo las usaba la tarjeta TC · Diesel).
 
+## V00458 (Otros Cruces: Caseta AVI predeterminada, puente seleccionable)
+- El usuario pidió que la Caseta AVI sea solo el puente **predeterminado** de Otros Cruces (en la V00457 quedó fijo). `otroPuenteElegido` en null = `casetaAviOtrosCruces(puentesCatalogo)` (aunque el catálogo llegue después de abrir); al elegir otro se toma su `importe` y se limpia la referencia destino, porque la lista depende del grupo del puente (AVI / PT3 / PTC). Mismo patrón que `ModalAgregarSaldoPuente` (V00455).
+
 ## V00457 (TAG en Unidades, Acumulado en Puentes, Saldo Diesel)
 - **TAG de puentes**: `tagAvi`, `tagPuente3`, `tagPuenteColombia` (opcionales en el tipo; las unidades viejas no los traen). `tagAvc` se quedó a pedido del usuario (no es el mismo dato).
 - **"Completadas" en Operaciones sin asignar** = `esGrupoTerminado(estadoGrupoDe(op))`: completada **o falso**, la misma regla de Servicios Completados (`estados: ['completada','falso']`). Si el negocio quiere dejar fuera los Falsos, cambia a `estadoGrupoDe(op) === 'completada'` en `esCompletadaOp`.
@@ -217,6 +220,7 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - **Banderas al montar** en TarjetaSaldoDiesel: espera `useFlagsCargadas()` (regla de CLAUDE.md que no cumplía desde V00441).
 - `ModalMovimientosDiesel.css` reutiliza las clases `tmov-` importando `ModalMovimientosPuente.css` (no las redefine) y agrega las suyas con `tmd-`.
 - Pendiente (sin pedir): el formulario de saldo de puentes (`ModalAgregarSaldoPuente`) no cierra con Escape; el de diesel sí.
+- **16-oct, build de GitHub caído (V00457)**: entraron otra vez archivos de ServiExpress en `src/components/crud`, `src/components/ui` y `src/components/layout/*.tsx` (igual que el 29-sep, commit dfa0c40d); `verificar-imports` los detuvo en el prebuild. Se quitan comparando el árbol con la V00457 (`arreglar-build-V00457.sh`). También se quitaron los 5 CSS de ServiExpress que quedaron aquel día en `src/components/layout` (AppLayout, Sidebar, Topbar, UpdateNotice, ViewAsModal; nadie los importa). Causa probable: un zip de ServiExpress descomprimido dentro de Roelca-app y `git add src` en el Paso 1, que agrega todo lo que haya en src. La guía ahora corre `verificar-imports` antes del commit.
 
 ## V00456 (Operaciones Activas: tarjetas, completadas, TC/diesel y tablero)
 - **Reglas del Resumen del día en un servicio** (`features/operaciones/services/resumenDia.ts`, puro + pruebas): fechas, tipo de cambio, completadas/canceladas, desglose por tipo. Antes vivían sueltas en App.tsx (`resumenNormalizarISO`, `resumenExtraerTC`, `resumenMejorFechaFila` y el ciclo de conteo); se movieron sin cambiar la regla.

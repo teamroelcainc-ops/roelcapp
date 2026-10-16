@@ -255,6 +255,8 @@ export const ReferenciasPuentesDashboard = () => {
   const [otroFecha, setOtroFecha] = useState(hoyLocalISO());
   const [otroHora, setOtroHora] = useState('');
   const [otroDestino, setOtroDestino] = useState(''); // ✅ V00415: referencia elegida para el otro cruce
+  // ✅ V00458: puente elegido; null = el de siempre (Caseta AVI), aunque el catálogo llegue después
+  const [otroPuenteElegido, setOtroPuenteElegido] = useState<string | null>(null);
   const [otroMonto, setOtroMonto] = useState('');
   const [otroUnidad, setOtroUnidad] = useState('');
   const [guardandoOtro, setGuardandoOtro] = useState(false);
@@ -819,8 +821,10 @@ export const ReferenciasPuentesDashboard = () => {
   const nombrePuente = nombrePuenteCatalogo; // ✅ V00455: regla compartida (puentesCatalogo.ts)
 
   const puentesCatalogo = useMemo(() => puentesDelCatalogo(tiposGastoList), [tiposGastoList]); // ✅ V00455: misma lista que Operaciones Activas
-  // ✅ V00457: los OTROS CRUCES son solo por la Caseta AVI (la misma caseta que viene elegida en la tarjeta AVI)
-  const puenteOtro = casetaAviOtrosCruces(puentesCatalogo);
+  // ✅ V00457 · V00458: en los OTROS CRUCES el puente viene en Caseta AVI (la misma caseta que viene elegida
+  //   en la tarjeta AVI) y se puede cambiar por cualquier otro puente del catálogo.
+  const puenteOtroPredeterminado = casetaAviOtrosCruces(puentesCatalogo);
+  const puenteOtro = otroPuenteElegido !== null ? (puentesCatalogo.find(p => String(p.id) === otroPuenteElegido) || null) : puenteOtroPredeterminado;
 
 
   // ✅ V00394: UNA referencia por PUENTE con su propio consecutivo:
@@ -876,7 +880,7 @@ export const ReferenciasPuentesDashboard = () => {
     return [...dentro, ...referenciasGlobales.filter(r => r.tipo === 'otroCruce')];
   }, [referenciasGlobales, refsAuto]);
   const abrirOtroCruce = () => {
-    setOtroFecha(hoyLocalISO()); setOtroHora(horaAhora()); setOtroMonto(puenteOtro ? String(Number(puenteOtro.importe) || '') : ''); setOtroUnidad(''); setOtroDestino('');
+    setOtroFecha(hoyLocalISO()); setOtroHora(horaAhora()); setOtroPuenteElegido(null); setOtroMonto(puenteOtroPredeterminado ? String(Number(puenteOtroPredeterminado.importe) || '') : ''); setOtroUnidad(''); setOtroDestino('');
     setModalOtro(true);
   };
   // ✅ V00415: el OTRO CRUCE entra a la referencia del Historial que el usuario ELIJA
@@ -884,7 +888,7 @@ export const ReferenciasPuentesDashboard = () => {
   const refsDestinoOtro = puenteOtro ? refsAuto.filter(r => String((r as { grupoPuente?: string }).grupoPuente || '') === grupoDeNombrePuente(String(nombrePuente(puenteOtro)))) : [];
   const guardarOtroCruce = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!puenteOtro) return alert('No se encontró la Caseta AVI en el catálogo de Tipos de Gastos (categoría Puente).');
+    if (!puenteOtro) return alert('Elige el puente por donde cruzó.');
     const monto = Number(otroMonto);
     if (!(monto > 0)) return alert('Captura el monto del cruce.');
     if (!otroFecha || !otroHora) return alert('Captura la fecha y la hora del cruce.');
@@ -1323,7 +1327,7 @@ export const ReferenciasPuentesDashboard = () => {
         <div className="animation-fade-in">
           {/* ✅ V00395: OTROS CRUCES */}
           <div className="rpd-otros-barra">
-            <span className="rpd-otros-nota">Cruces por la Caseta AVI que no son de una operación (por ejemplo, carros particulares). Cada registro va a una referencia AVI del Acumulado y descuenta del saldo del Puente AVI.</span>
+            <span className="rpd-otros-nota">Cruces que no son de una operación (por ejemplo, carros particulares). El puente viene en Caseta AVI y se puede cambiar. Cada registro va a una referencia de su puente en el Acumulado y descuenta del saldo de ese puente.</span>
             <button type="button" className="rpd-btn-otro" onClick={abrirOtroCruce}>+ Agregar cruce</button>
           </div>
           <div className="table-container rpd-x41">
@@ -1376,16 +1380,17 @@ export const ReferenciasPuentesDashboard = () => {
                     <div className="rpd-otro-campo">
                       <label className="rpd-otro-label">Enviar a la referencia</label>
                       <select className="rpd-otro-input" required value={otroDestino} onChange={(e) => setOtroDestino(e.target.value)} disabled={!puenteOtro}>
-                        <option value="">{puenteOtro ? 'Elegir referencia…' : 'Falta la Caseta AVI en el catálogo'}</option>
+                        <option value="">{puenteOtro ? 'Elegir referencia…' : 'Primero elige el puente'}</option>
                         {refsDestinoOtro.map(r => <option key={r.id} value={r.id}>{r.consecutivo} · {formatearFechaSpanish(r.fechaGeneracion || '')} · {(r.operacionesIds || []).length} op.</option>)}
                         {puenteOtro && <option value="__nuevo__">+ Crear referencia nueva ({consecutivoPorPuente(grupoDeNombrePuente(String(nombrePuente(puenteOtro))), [], otroFecha)})</option>}
                       </select>
                     </div>
                     <div className="rpd-otro-campo">
                       <label className="rpd-otro-label">Puente</label>
-                      {/* ✅ V00457: solo la Caseta AVI */}
-                      <select className="rpd-otro-input" value={puenteOtro ? String(puenteOtro.id) : ''} disabled title="Los otros cruces van por la Caseta AVI">
-                        {puenteOtro ? <option value={String(puenteOtro.id)}>{String(nombrePuente(puenteOtro))}</option> : <option value="">Caseta AVI (no está en el catálogo)</option>}
+                      {/* ✅ V00458: viene en Caseta AVI; al cambiarlo se toma el monto de ese puente y se vuelve a elegir la referencia */}
+                      <select className="rpd-otro-input" required value={puenteOtro ? String(puenteOtro.id) : ''} onChange={(e) => { setOtroPuenteElegido(e.target.value); setOtroDestino(''); const p = puentesCatalogo.find(x => String(x.id) === e.target.value); setOtroMonto(p ? String(Number(p.importe) || '') : ''); }}>
+                        <option value="">Seleccionar puente…</option>
+                        {puentesCatalogo.map(p => <option key={String(p.id)} value={String(p.id)}>{String(nombrePuente(p))}</option>)}
                       </select>
                     </div>
                     <div className="rpd-otro-campo">
