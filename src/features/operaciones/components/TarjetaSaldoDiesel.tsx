@@ -66,7 +66,7 @@ export const TarjetaSaldoDiesel: React.FC = () => {
 
   return (
     <>
-      <div className="rd-card rd-card--naranja rd-card--clic" title="Saldo de diesel (Referencias del Diesel → Saldos): saldos agregados menos el total cargado por día. Presiona la tarjeta para ver los movimientos del saldo.">
+      <div className="rd-card rd-card--naranja rd-card--clic" title="Saldo de diesel (Referencias del Diesel → Saldos): saldos agregados menos lo cobrado por día (Monto cobrado confirmado o estimado con el descuento de Murphy). Presiona la tarjeta para ver los movimientos del saldo.">
         {/* ✅ V00457: toda la tarjeta abre el historial del saldo (el botón de abajo hace lo suyo) */}
         <button type="button" className="rd-card__abrir" onClick={() => setVerMovimientos(true)} aria-label="Ver los movimientos del saldo de diesel" />
         <div className="rd-card__head">

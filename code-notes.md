@@ -207,6 +207,14 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - Modales con `createPortal` a `document.body` (la tarjeta usa `transform` al pasar el mouse) y perezosos desde la tarjeta (`lazyWithRetry`): la carga inicial crece 0.3 KB (sin eso, ~20 KB por FormularioConfigurable).
 - Se quitaron las reglas `.rd-dos*` de App.css (solo las usaba la tarjeta TC · Diesel).
 
+## V00459 (Diesel: cobro real y descuento de Murphy)
+- **Decisiones del usuario** (16-oct): el Descuento y el Monto cobrado se CAPTURAN del reporte de Murphy; mientras no, se estima $0.20 × galones (solo Murphy); el saldo descuenta lo cobrado; el estimado aplica desde `INICIO_DESCUENTO_MURPHY` = 2026-10-17 (las cargas anteriores quedan igual); Dif. monto = galones cargados × precio − cobrado. En el reporte real el descuento no siempre es 0.20 × todos los galones (DIESEL-151026-003: 81.29 gal, descuento $10.65 = 0.20 × 53.29), por eso manda lo capturado.
+- **Regla en `shared/dominio/cobroDiesel.ts`** y `cargadoDiesel` (saldosCorrientes) la usa: así la tarjeta, la pestaña Saldos, el historial y el servidor descuentan lo mismo. Requiere desplegar `functions:referenciaDieselEscrita` (la única función que usa `cargadoDiesel`); con `saldosCorrientes` encendida, además correr `saldos:diesel`. Sin bandera nueva a propósito: para las referencias existentes (sin captura y con fecha < 17-oct, o en formato no ISO) el resultado es idéntico, así que el orden de deploy no cambia cifras actuales.
+- `null` en `descuentoDiesel` / `montoCobrado` = no capturado (0 sí cuenta). El estimado solo con fecha AAAA-MM-DD (los registros viejos d/m/aaaa nunca lo reciben).
+- **Confirmar cobro** escribe en transacción (es dinero) y solo reescribe galones/total/status si cambiaron los galones; sin costo por galón los galones quedan de solo lectura (se corrigen en Editar referencia).
+- Murphy por nombre (`proveedorNombre` contiene "murphy"): limitación conocida, solo afecta al estimado. Si se renombra, poner su ID en una constante.
+- El modal no va dentro de `FormularioConfigurable`: su etiqueta "Galones cargados" compartiría la llave de configuración con los otros formularios del módulo.
+
 ## V00458 (Otros Cruces: Caseta AVI predeterminada, puente seleccionable)
 - El usuario pidió que la Caseta AVI sea solo el puente **predeterminado** de Otros Cruces (en la V00457 quedó fijo). `otroPuenteElegido` en null = `casetaAviOtrosCruces(puentesCatalogo)` (aunque el catálogo llegue después de abrir); al elegir otro se toma su `importe` y se limpia la referencia destino, porque la lista depende del grupo del puente (AVI / PT3 / PTC). Mismo patrón que `ModalAgregarSaldoPuente` (V00455).
 

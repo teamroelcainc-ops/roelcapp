@@ -12,6 +12,7 @@
 // Se recalcula el día completo (no se incrementa): repetir un evento no duplica.
 // ---------------------------------------------------------------------------
 import { aCentavos, aNumero, deCentavos } from './numeros.js';
+import { cobroDiesel } from './cobroDiesel.js';
 
 type Datos = Record<string, unknown>;
 
@@ -32,9 +33,13 @@ export interface SaldoCorrienteDiesel {
 
 const normNombre = (v: unknown): string => String(v ?? '').trim().toLowerCase();
 
-/** Total Cargado de una referencia (misma aritmética de la pantalla: Number y respaldo galones × costo). */
-export const cargadoDiesel = (r: Datos): number =>
-  Number(r.totalCargado) || ((Number(r.galonesCargados) || 0) * (Number(r.costoDiesel) || 0));
+/**
+ * Lo que una referencia descuenta del saldo.
+ * ✅ V00459: lo COBRADO (el Monto cobrado capturado o, mientras no se captura, el total
+ * menos el descuento estimado de Murphy; ver cobroDiesel.ts). Las cargas sin descuento ni
+ * captura dan EXACTO el Total Cargado de siempre (galones × costo).
+ */
+export const cargadoDiesel = (r: Datos): number => cobroDiesel(r).cobrado;
 
 /** Clave del proveedor de una referencia: su ID; sin ID, su nombre normalizado. */
 export const claveProveedorDiesel = (r: Datos): string => {

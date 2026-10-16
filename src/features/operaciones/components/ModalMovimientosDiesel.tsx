@@ -56,7 +56,7 @@ function DetalleCargas({ fecha, cuenta, cuentaNombre, version, refsLocales }: { 
   return (
     <table className="tmd-tabla">
       <thead>
-        <tr><th>Referencia</th><th>Unidad</th><th>Proveedor</th><th className="tmd-num">Galones</th><th className="tmd-num">Costo / gal</th><th className="tmd-num">Total cargado</th></tr>
+        <tr><th>Referencia</th><th>Unidad</th><th>Proveedor</th><th className="tmd-num">Galones</th><th className="tmd-num">Costo / gal</th><th className="tmd-num" title="Lo que descuenta del saldo: el Monto cobrado confirmado o el estimado">Cobrado</th></tr>
       </thead>
       <tbody>
         {lista.map((c) => (
@@ -66,7 +66,7 @@ function DetalleCargas({ fecha, cuenta, cuentaNombre, version, refsLocales }: { 
             <td>{c.proveedor}</td>
             <td className="tmd-num">{fmtGal(c.galones)}</td>
             <td className="tmd-num">{c.costo > 0 ? fmt(c.costo) : '—'}</td>
-            <td className="tmd-num tmov-cargo">−{fmt(c.total)}</td>
+            <td className="tmd-num tmov-cargo">−{fmt(c.total)}{c.estimado && <span className="tmd-est">est.</span>}</td>
           </tr>
         ))}
       </tbody>
@@ -108,7 +108,7 @@ export default function ModalMovimientosDiesel({ restante, moneda, saldos, carga
         <div className="tmov-enc">
           <div>
             <h2 className="tmov-titulo">Saldo Diesel · movimientos del saldo</h2>
-            <span className="tmov-sub">Saldo restante: {cargando ? <CargandoDatos texto="Calculando…" enLinea /> : <><b className={restante < 0 ? 'tmov-neg' : ''}>{fmt(restante)}</b>{moneda ? ` ${moneda}` : ''}</>} · saldos agregados menos lo cargado por día (Referencias del Diesel → Saldos)</span>
+            <span className="tmov-sub">Saldo restante: {cargando ? <CargandoDatos texto="Calculando…" enLinea /> : <><b className={restante < 0 ? 'tmov-neg' : ''}>{fmt(restante)}</b>{moneda ? ` ${moneda}` : ''}</>} · saldos agregados menos lo cobrado por día (Referencias del Diesel → Saldos)</span>
           </div>
           <button type="button" className="tmov-x" onClick={onCerrar} aria-label="Cerrar" ref={cerrarRef}>✕</button>
         </div>

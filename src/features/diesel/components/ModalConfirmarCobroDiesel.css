@@ -1,0 +1,47 @@
+/* src/features/diesel/components/ModalConfirmarCobroDiesel.css — ✅ V00459 (prefijo mcd-) */
+.mcd-fondo { position: fixed; inset: 0; z-index: 3000; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(1, 4, 9, 0.75); backdrop-filter: blur(4px); }
+.mcd-caja { --mcd-color: #fb923c; width: min(620px, 96vw); max-height: 92vh; overflow-y: auto; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px; padding: 20px 22px; border-radius: 12px; border: 1px solid #30363d; border-top: 3px solid var(--mcd-color); background: #0d1117; }
+.mcd-enc { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.mcd-titulo { margin: 0; color: #f0f6fc; font-size: 1.15rem; }
+.mcd-ref { margin-left: 6px; color: #ff8a5b; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.95rem; }
+.mcd-sub { margin: 4px 0 0; color: #8b949e; font-size: 0.84rem; }
+.mcd-x { margin: 0; padding: 0; border: none; background: none; color: #8b949e; font-size: 1.1rem; cursor: pointer; }
+.mcd-x:hover { color: #f0f6fc; border-color: transparent; }
+.mcd-caja button:focus { outline: none; }
+.mcd-caja button:focus-visible { outline: 2px solid var(--mcd-color); outline-offset: 2px; }
+
+.mcd-form { display: flex; flex-direction: column; gap: 14px; }
+.mcd-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 14px; }
+.mcd-campo { display: flex; flex-direction: column; gap: 5px; }
+.mcd-campo label { color: #8b949e; font-size: 0.74rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
+.mcd-campo input { width: 100%; box-sizing: border-box; padding: 9px 10px; border-radius: 6px; border: 1px solid #30363d; background: #161b22; color: #f0f6fc; font-size: 0.95rem; font-variant-numeric: tabular-nums; color-scheme: dark; }
+.mcd-campo input:focus { outline: none; border-color: var(--mcd-color); }
+.mcd-campo input::placeholder { color: #6e7681; }
+.mcd-campo output { padding: 9px 0; color: #c9d1d9; font-size: 0.95rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.mcd-ayuda { margin: -4px 0 0; color: #8b949e; font-size: 0.8rem; line-height: 1.45; }
+.mcd-ayuda b { color: #c9d1d9; }
+
+.mcd-cuenta { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; margin: 0; border: 1px solid #30363d; border-radius: 8px; background: #161b22; overflow: hidden; }
+.mcd-cuenta div { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-right: 1px solid #21262d; }
+.mcd-cuenta div:last-child { border-right: none; }
+.mcd-cuenta dt { color: #8b949e; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; }
+.mcd-cuenta dd { margin: 0; color: #f0f6fc; font-weight: 700; font-size: 0.92rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mcd-cuenta .mcd-cuenta__total { background: rgba(63, 185, 80, 0.08); }
+.mcd-cuenta .mcd-cuenta__total dd { color: #3fb950; }
+.mcd-cuenta .mcd-menos { color: #ff9b95; }
+.mcd-cuenta .mcd-aviso { color: #f59e0b; }
+.mcd-nota { margin: 0; color: #d29922; font-size: 0.8rem; }
+.mcd-error { margin: 0; color: #ff7b72; font-size: 0.84rem; }
+
+.mcd-pie { display: flex; justify-content: flex-end; gap: 10px; }
+.mcd-btn { padding: 9px 20px; border-radius: 6px; border: 1px solid #30363d; background: transparent; color: #c9d1d9; font-weight: 600; cursor: pointer; font-family: inherit; }
+.mcd-btn:hover:not(:disabled) { border-color: #8b949e; }
+.mcd-btn--guardar { border-color: #D84315; background: #D84315; color: #fff; font-weight: 700; }
+.mcd-btn--guardar:hover:not(:disabled) { border-color: #e4521f; background: #e4521f; }
+.mcd-btn:disabled { opacity: 0.6; cursor: wait; }
+
+@media (max-width: 640px) {
+  .mcd-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mcd-cuenta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mcd-cuenta div { border-bottom: 1px solid #21262d; }
+}

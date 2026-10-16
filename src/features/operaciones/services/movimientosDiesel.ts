@@ -8,6 +8,7 @@
 //   saldosCorrientes) o de las referencias. Lógica pura: sin Firebase ni React.
 import { aCentavos, aNumero, deCentavos } from '../../../shared/dominio/numeros';
 import { CLAVE_TODOS_DIESEL, cargadoDiesel, type SaldoCorrienteDiesel } from '../../../shared/dominio/saldosCorrientes';
+import { cobroEstimado } from '../../../shared/dominio/cobroDiesel';
 
 type Datos = Record<string, unknown>;
 
@@ -57,7 +58,9 @@ export interface CargaDiesel {
   proveedor: string;
   galones: number;
   costo: number;
+  /** ✅ V00459: lo cobrado (lo que descuenta del saldo) y si todavía es un estimado (descuento estimado o por confirmar). */
   total: number;
+  estimado: boolean;
 }
 
 const norm = (v: unknown): string => String(v ?? '').trim().toLowerCase();
@@ -187,5 +190,6 @@ export const cargasDelDia = (refs: readonly Datos[], cuenta: Pick<CuentaDieselMo
       galones: Number(r.galonesCargados) || 0,
       costo: Number(r.costoDiesel) || 0,
       total: cargadoDiesel(r),
+      estimado: cobroEstimado(r).cobrado,
     }))
     .sort((a, b) => a.consecutivo.localeCompare(b.consecutivo, 'es', { numeric: true }));

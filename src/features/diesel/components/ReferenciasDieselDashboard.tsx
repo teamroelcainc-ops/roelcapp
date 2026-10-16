@@ -30,6 +30,9 @@ import { useCatalogos } from '../../../shared/data/catalogos';
 import { proveedoresDeDiesel } from '../services/proveedoresDiesel';
 import SelectorProveedorBuscable from './SelectorProveedorBuscable';
 import ModalAgregarSaldoDiesel from './ModalAgregarSaldoDiesel';
+import ModalConfirmarCobroDiesel from './ModalConfirmarCobroDiesel';
+import { cobroDiesel, cobroEstimado, cobroPorConfirmar } from '../../../shared/dominio/cobroDiesel';
+import { cargadoDiesel } from '../../../shared/dominio/saldosCorrientes';
 
 // ✅ V00451: fotos de una referencia (`fotos`: {url, path, nombre}[]), hasta 10 por referencia.
 const MAX_FOTOS_REFERENCIA = 10;
@@ -189,6 +192,8 @@ export const ReferenciasDieselDashboard = () => {
 
   // ✅ Edición del registro completo de la referencia (modal)
   const [editandoRef, setEditandoRef] = useState<any | null>(null);
+  // ✅ V00459: referencia cuyo cobro real (galones cargados, descuento y monto cobrado) se confirma
+  const [confirmandoCobro, setConfirmandoCobro] = useState<(Record<string, unknown> & { id: string }) | null>(null);
   const [formEditRef, setFormEditRef] = useState<any>({ consecutivo: '', fecha: '', proveedorId: '', galonesExtras: '', galonesCargados: '', costoDiesel: '', observaciones: '' });
   const [guardandoEdicionRef, setGuardandoEdicionRef] = useState(false);
 
@@ -849,7 +854,8 @@ export const ReferenciasDieselDashboard = () => {
     }, () => { setSaldosDiesel([]); setSaldosDListos(true); });
     return () => u();
   }, [activeTab]);
-  const montoCargadoRef = (r: Record<string, unknown>) => Number(r.totalCargado) || ((Number(r.galonesCargados) || 0) * (Number(r.costoDiesel) || 0));
+  // ✅ V00459: cada referencia descuenta lo COBRADO (capturado o estimado con el descuento de Murphy); misma regla que la tarjeta y el servidor
+  const montoCargadoRef = (r: Record<string, unknown>) => cargadoDiesel(r);
   const TODOS_PROV = '__todos__'; // ✅ V00422: saldo GENERAL — descuenta las cargas de todos los proveedores
   const mismoProveedor = (r: Record<string, unknown>, s0: Record<string, unknown>) => {
     if (String(s0.proveedorId || '') === TODOS_PROV) return true;
@@ -1214,19 +1220,30 @@ export const ReferenciasDieselDashboard = () => {
   }, [referenciasGlobales, busquedaRef, fechaDesdeHist, fechaHastaHist, unidadesList, operadoresList, proveedoresList]);
 
   // ✅ Resumen del historial: separa lo AUTORIZADO de lo CARGADO (galones y $).
+  // ✅ V00459: y el cobro real — sin descuento, descuento, cobrado y las diferencias.
   const resumenHistorial = useMemo(() => {
     let totalGalones = 0;             // cargados
-    let granTotalCargado = 0;
     let totalGalonesAutorizados = 0;
     let granTotalAutorizado = 0;
+    let sinDescuento = 0, descuento = 0, cobrado = 0, difGalones = 0, difMonto = 0, porConfirmar = 0;
     referenciasFiltradas.forEach(r => {
       totalGalones += Number(r.galonesCargados) || 0;
-      granTotalCargado += Number(r.totalCargado) || 0;
       totalGalonesAutorizados += Number(r.galonesAutorizados) || 0;
       granTotalAutorizado += Number(r.totalAutorizado) || 0;
+      const c = cobroDiesel(r);
+      sinDescuento += c.sinDescuento; descuento += c.descuento; cobrado += c.cobrado;
+      difGalones += c.difGalones; difMonto += c.difMonto;
+      if (cobroPorConfirmar(r)) porConfirmar += 1;
     });
-    return { totalGalones, granTotalCargado, totalGalonesAutorizados, granTotalAutorizado };
+    return { totalGalones, totalGalonesAutorizados, granTotalAutorizado, sinDescuento, descuento, cobrado, difGalones, difMonto, porConfirmar };
   }, [referenciasFiltradas]);
+  const conSignoD = (n: number, f: (x: number) => string) => `${n > 0.004 ? '+' : n < -0.004 ? '−' : ''}${f(Math.abs(n))}`;
+  const galD = (n: number) => `${n.toFixed(2)} Gal.`;
+  // ✅ V00459: refleja al instante lo confirmado (el listener lo trae también)
+  const aplicarConfirmacion = (id: string, campos: Record<string, unknown>) => {
+    setReferenciasGlobales((prev) => prev.map((r) => (r.id === id ? { ...r, ...campos } : r)));
+    setReferenciaViendo((prev: Record<string, unknown> | null) => (prev && prev.id === id ? { ...prev, ...campos } : prev));
+  };
 
   const totalPaginas = Math.ceil(referenciasFiltradas.length / registrosPorPagina);
   const indexLast = paginaActual * registrosPorPagina;
@@ -1251,7 +1268,22 @@ export const ReferenciasDieselDashboard = () => {
       'Galones Cargados': ref.galonesCargados,
       'Costo Diario Diesel': ref.costoDiesel,
       'Total Autorizado': ref.totalAutorizado,
-      'Total Cargado': ref.totalCargado,
+      'Total Cargado (sin descuento)': ref.totalCargado,
+      // ✅ V00459: cobro real
+      ...(() => {
+        const c = cobroDiesel(ref);
+        const r2x = (n: number) => Math.round(n * 100) / 100;
+        return {
+          'Descuento': r2x(c.descuento),
+          'Descuento (origen)': c.descuentoCapturado ? 'Reporte' : c.descuento ? 'Estimado' : '',
+          'Monto Cobrado': r2x(c.cobrado),
+          'Cobro': c.cobradoCapturado ? 'Confirmado' : cobroPorConfirmar(ref) ? 'Por confirmar' : '',
+          'Dif. Galones (cargados - autorizados)': r2x(c.difGalones),
+          'Dif. Monto (sin descuento - cobrado)': r2x(c.difMonto),
+          'Cobro confirmado por': ref.cobroConfirmadoPor || '',
+          'Cobro confirmado el': ref.cobroConfirmadoEn ? new Date(String(ref.cobroConfirmadoEn)).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : '',
+        };
+      })(),
       'Observaciones': ref.observaciones
     }));
 
@@ -1601,7 +1633,7 @@ export const ReferenciasDieselDashboard = () => {
         <div className="animation-fade-in">
           {/* ✅ V00400: SALDOS DE DIESEL */}
           <div className="rdd-saldos-barra">
-            <span className="rdd-saldos-nota">Saldo de diesel (general o de un proveedor). Se descuenta el Total Cargado de las referencias del Historial POR DÍA, a partir de la fecha del saldo.</span>
+            <span className="rdd-saldos-nota">Saldo de diesel (general o de un proveedor). Se descuenta lo cobrado de las referencias del Historial POR DÍA (el Monto cobrado confirmado o, mientras no se confirma, el estimado con el descuento de Murphy), a partir de la fecha del saldo.</span>
             <button type="button" className="rdd-btn-saldo" onClick={abrirSaldoD}>+ Agregar saldo</button>
           </div>
           <div className="rdd-saldos-marco">
@@ -1609,7 +1641,7 @@ export const ReferenciasDieselDashboard = () => {
               <thead>
                 <tr>
                   <th>Fecha</th><th>Hora</th><th>Proveedor</th><th className="rdd-num">Saldo inicial</th>
-                  <th className="rdd-num">Cargas</th><th className="rdd-num">Monto cargado</th><th className="rdd-num">Balance</th><th className="rdd-num">Alcanza para</th><th></th>
+                  <th className="rdd-num">Cargas</th><th className="rdd-num">Monto cobrado</th><th className="rdd-num">Balance</th><th className="rdd-num">Alcanza para</th><th></th>
                 </tr>
               </thead>
               <tbody>
@@ -1656,7 +1688,7 @@ export const ReferenciasDieselDashboard = () => {
                   <div className="rdd-asiento__resumen">
                     <div><span>Saldo inicial</span><b>{formatoMoneda(Number(saldoDViendo.saldo) || 0)} {String(saldoDViendo.moneda || '')}</b></div>
                     <div><span>Referencias · galones</span><b>{a.refs.length} · {a.galones.toLocaleString('es-MX', { maximumFractionDigits: 2 })}</b></div>
-                    <div><span>Monto cargado</span><b className="rdd-cargo">−{formatoMoneda(a.consumido)}</b></div>
+                    <div><span>Monto cobrado</span><b className="rdd-cargo">−{formatoMoneda(a.consumido)}</b></div>
                     <div><span>Balance</span><b className={a.balance < 0 ? 'rdd-balance--neg' : 'rdd-balance'}>{formatoMoneda(a.balance)}</b></div>
                   </div>
                   <div className="rdd-asiento__marco">
@@ -1682,7 +1714,7 @@ export const ReferenciasDieselDashboard = () => {
                               <React.Fragment key={dia}>
                                 <tr className="rdd-fila-clic rdd-asiento__cargo" title="Ver las referencias del día" onClick={() => setDiaDAbierto(diaAbierto ? '' : dia)}>
                                   <td>{diaAbierto ? '▾' : '▸'} {formatearFechaSpanish(dia)}</td>
-                                  <td>Total cargado del día</td>
+                                  <td>Cobrado del día</td>
                                   <td>{refsDia.length} {refsDia.length === 1 ? 'referencia' : 'referencias'}</td>
                                   <td className="rdd-num">{galDia.toLocaleString('es-MX', { maximumFractionDigits: 2 })}</td>
                                   <td className="rdd-num rdd-cargo">−{formatoMoneda(totalDia)}</td>
@@ -1799,9 +1831,27 @@ export const ReferenciasDieselDashboard = () => {
                   <span className="rdd-x59">Galones Cargados</span>
                   <span className="rdd-x60">{resumenHistorial.totalGalones.toFixed(2)}</span>
                 </div>
+                {/* ✅ V00459: COBRO REAL — sin descuento − descuento = cobrado, y las diferencias */}
+                <div className="rdd-x30">
+                  <span className="rdd-cob-etq">Sin descuento</span>
+                  <span className="rdd-cob-v">{formatoMoneda(resumenHistorial.sinDescuento)}</span>
+                </div>
+                <div className="rdd-x30">
+                  <span className="rdd-cob-etq">Descuento</span>
+                  <span className="rdd-cob-v rdd-cob-v--desc">−{formatoMoneda(resumenHistorial.descuento)}</span>
+                </div>
+                <div className="rdd-x30">
+                  <span className="rdd-x59">Cobrado</span>
+                  <span className="rdd-x61">{formatoMoneda(resumenHistorial.cobrado)}</span>
+                  {resumenHistorial.porConfirmar > 0 && <span className="rdd-cob-pend">{resumenHistorial.porConfirmar} por confirmar</span>}
+                </div>
+                <div className="rdd-x30">
+                  <span className="rdd-cob-etq" title="Galones cargados − galones autorizados">Dif. galones</span>
+                  <span className="rdd-cob-v rdd-cob-v--dif">{conSignoD(resumenHistorial.difGalones, (x) => x.toFixed(2))}</span>
+                </div>
                 <div>
-                  <span className="rdd-x59">Total Cargado</span>
-                  <span className="rdd-x61">{formatoMoneda(resumenHistorial.granTotalCargado)}</span>
+                  <span className="rdd-cob-etq" title="Sin descuento − cobrado">Dif. monto</span>
+                  <span className="rdd-cob-v rdd-cob-v--dif">{conSignoD(resumenHistorial.difMonto, formatoMoneda)}</span>
                 </div>
               </div>
             </div>
@@ -1818,15 +1868,20 @@ export const ReferenciasDieselDashboard = () => {
                   <th className="rdd-x63">OPERADOR</th>
                   <th className="rdd-x63">PROVEEDOR</th>
                   <th className="rdd-x64">GAL. AUTORIZADOS</th>
-                  <th className="rdd-x65">GAL. CARGADOS</th>
                   <th className="rdd-x64">TOTAL AUTORIZADO</th>
-                  <th className="rdd-x65">TOTAL CARGADO</th>
+                  <th className="rdd-x65">GAL. CARGADOS</th>
+                  {/* ✅ V00459: cobro real */}
+                  <th className="rdd-x65" title="Galones cargados × precio del día">SIN DESCUENTO</th>
+                  <th className="rdd-x65" title="Del reporte de Murphy (o estimado: $0.20 por galón)">DESCUENTO</th>
+                  <th className="rdd-x65" title="Lo que se cobró en la tarjeta: es lo que descuenta del Saldo">COBRADO</th>
+                  <th className="rdd-x63" title="Galones cargados − galones autorizados">DIF. GALONES</th>
+                  <th className="rdd-x63" title="Sin descuento − cobrado">DIF. MONTO</th>
                   <th className="rdd-x63">OBSERVACIONES</th>
                 </tr>
               </thead>
               <tbody>
                 {!busquedaRefHecha ? (
-                  <tr><td className="rdd-x44" colSpan={11}>
+                  <tr><td className="rdd-x44" colSpan={15}>
                     <div className="rdd-x45">
                       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.6"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
                       <span className="rdd-x46">Define tus filtros y presiona <b className="rdd-x48">Buscar</b> para ver las referencias.</span>
@@ -1835,9 +1890,9 @@ export const ReferenciasDieselDashboard = () => {
                   </td></tr>
                 ) : !referenciasListas ? (
                   /* ✅ V00449: animación mientras llega el listener de referencias (antes: estado vacío). */
-                  <tr><td colSpan={11}><CargandoDatos texto="Cargando referencias…" /></td></tr>
+                  <tr><td colSpan={15}><CargandoDatos texto="Cargando referencias…" /></td></tr>
                 ) : registrosVisibles.length === 0 ? (
-                  <tr><td className="rdd-x66" colSpan={11}>No hay referencias registradas.</td></tr>
+                  <tr><td className="rdd-x66" colSpan={15}>No hay referencias registradas.</td></tr>
                 ) : (
                   registrosVisibles.map(r => (
                     <tr className="rdd-x67" key={r.id}>
@@ -1861,6 +1916,14 @@ export const ReferenciasDieselDashboard = () => {
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                           </button>
                           
+                          {/* ✅ V00459: confirmar el cobro real (reporte de Murphy) */}
+                          <button type="button" className={`rdd-btn-cobro${cobroPorConfirmar(r) ? ' rdd-btn-cobro--pend' : ''}`}
+                            title={cobroDiesel(r).cobradoCapturado ? 'Cobro confirmado — ver o corregir' : 'Confirmar cobro (galones cargados, descuento y monto cobrado)'}
+                            aria-label={`Confirmar cobro de ${r.consecutivo || ''}`}
+                            onClick={() => setConfirmandoCobro(r)}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                          </button>
+
                           <button className="rdd-x71" 
                             title="Eliminar Referencia" 
                             onClick={(e) => handleEliminarReferencia(e, r)}
@@ -1886,9 +1949,20 @@ export const ReferenciasDieselDashboard = () => {
                       <td className="rdd-x75">{getNombreOperador(r.operadorNombre || r.operadorId || r.operador)}</td>
                       <td className="rdd-x75">{getNombreProveedor(r.proveedorNombre || r.proveedorId || r.proveedor)}</td>
                       <td className="rdd-x76">{Number(r.galonesAutorizados || 0).toFixed(2)} Gal.</td>
-                      <td className="rdd-x77">{Number(r.galonesCargados || 0).toFixed(2)} Gal.</td>
                       <td className="rdd-x78">{formatoMoneda(r.totalAutorizado)}</td>
-                      <td className="rdd-x10">{formatoMoneda(r.totalCargado)}</td>
+                      <td className="rdd-x77">{Number(r.galonesCargados || 0).toFixed(2)} Gal.</td>
+                      {(() => {
+                        const c = cobroDiesel(r);
+                        return (
+                          <>
+                            <td className="rdd-cob-td">{formatoMoneda(c.sinDescuento)}</td>
+                            <td className="rdd-cob-td rdd-cob-td--desc">{c.descuento ? <>−{formatoMoneda(c.descuento)}{cobroEstimado(r).descuento && <span className="rdd-cob-tag">estimado</span>}</> : '—'}</td>
+                            <td className="rdd-cob-td rdd-cob-td--cobrado">{formatoMoneda(c.cobrado)}{cobroPorConfirmar(r) && <span className="rdd-cob-tag rdd-cob-tag--pend">por confirmar</span>}</td>
+                            <td className={`rdd-cob-td rdd-cob-td--dif${c.difGalones > 0.004 ? ' rdd-cob-td--excede' : ''}`}>{conSignoD(c.difGalones, galD)}</td>
+                            <td className="rdd-cob-td rdd-cob-td--dif">{conSignoD(c.difMonto, formatoMoneda)}</td>
+                          </>
+                        );
+                      })()}
                       <td className="rdd-x79">{r.observaciones || '-'}</td>
                     </tr>
                   ))
@@ -2199,6 +2273,30 @@ export const ReferenciasDieselDashboard = () => {
                   })()}
                 </div>
 
+                {/* ✅ V00459: COBRO REAL — sin descuento − descuento = cobrado (lo que descuenta del Saldo) */}
+                {(() => {
+                  const c = cobroDiesel(referenciaViendo);
+                  const est = cobroEstimado(referenciaViendo);
+                  const pend = cobroPorConfirmar(referenciaViendo);
+                  return (
+                    <div className="rdd-x143 rdd-cob-ficha">
+                      <div className="rdd-cob-ficha__enc">
+                        <span className="rdd-x147">Cobro</span>
+                        <span className={`rdd-cob-estado${c.cobradoCapturado ? ' rdd-cob-estado--ok' : pend ? ' rdd-cob-estado--pend' : ''}`}>
+                          {c.cobradoCapturado ? `Confirmado${referenciaViendo.cobroConfirmadoPor ? ` por ${String(referenciaViendo.cobroConfirmadoPor)}` : ''}` : pend ? 'Por confirmar' : 'Sin confirmar'}
+                        </span>
+                        <button type="button" className="rdd-cob-btn" onClick={() => setConfirmandoCobro(referenciaViendo)}>{c.cobradoCapturado ? 'Corregir cobro' : 'Confirmar cobro'}</button>
+                      </div>
+                      <dl className="rdd-cob-cuenta">
+                        <div><dt>Sin descuento</dt><dd>{formatoMoneda(c.sinDescuento)}</dd></div>
+                        <div><dt>Descuento{est.descuento ? ' (estimado)' : ''}</dt><dd className="rdd-cob-menos">−{formatoMoneda(c.descuento)}</dd></div>
+                        <div className="rdd-cob-cuenta__total"><dt>Cobrado{est.cobrado ? ' (estimado)' : ''}</dt><dd>{formatoMoneda(c.cobrado)}</dd></div>
+                        <div><dt>Dif. monto</dt><dd>{conSignoD(c.difMonto, formatoMoneda)}</dd></div>
+                      </dl>
+                    </div>
+                  );
+                })()}
+
                 <div className="rdd-x143">
                   <span className="rdd-x138">Observaciones</span>
                   <div className="rdd-x157">
@@ -2400,6 +2498,17 @@ export const ReferenciasDieselDashboard = () => {
             </FormularioConfigurable>
           </div>
         </div>
+      )}
+
+      {/* ✅ V00459: CONFIRMAR COBRO */}
+      {confirmandoCobro && (
+        <ModalConfirmarCobroDiesel
+          referencia={confirmandoCobro}
+          unidad={getNombreUnidad(String(confirmandoCobro.unidadNombre || confirmandoCobro.unidadId || confirmandoCobro.unidad || ''))}
+          proveedor={getNombreProveedor(String(confirmandoCobro.proveedorNombre || confirmandoCobro.proveedorId || confirmandoCobro.proveedor || ''))}
+          onCerrar={() => setConfirmandoCobro(null)}
+          onGuardado={(campos) => aplicarConfirmacion(confirmandoCobro.id, campos)}
+        />
       )}
 
       {/* MODAL: EDICIÓN RÁPIDA DE OPERACIÓN */}

@@ -374,3 +374,40 @@
 .rdd-asiento__cargo td { background: rgba(248, 81, 73, 0.05); }
 .rdd-asiento__cargo td:first-child { box-shadow: inset 4px 0 0 #f85149; }
 .rdd-asiento__abono td:first-child { box-shadow: inset 4px 0 0 #3fb950; }
+
+/* ✅ V00459: cobro real (sin descuento − descuento = cobrado) en el historial, el resumen y la ficha */
+.rdd-cob-etq { display: block; color: #8b949e; font-size: 0.78rem; font-weight: bold; text-transform: uppercase; margin-bottom: 4px; }
+.rdd-cob-v { display: block; color: #f0f6fc; font-size: 1.6rem; font-weight: bold; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rdd-cob-v--desc { color: #ff9b95; }
+.rdd-cob-v--dif { color: #c9d1d9; font-size: 1.3rem; }
+.rdd-cob-pend { display: block; margin-top: 2px; color: #f59e0b; font-size: 0.74rem; font-weight: 700; }
+.rdd-cob-td { padding: 16px; color: #f0f6fc; font-weight: bold; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rdd-cob-td--desc { color: #ff9b95; }
+.rdd-cob-td--cobrado { color: #3fb950; }
+.rdd-cob-td--dif { color: #8b949e; font-weight: 600; }
+.rdd-cob-td--excede { color: #f59e0b; }
+.rdd-cob-tag { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; border: 1px solid #30363d; color: #8b949e; font-size: 0.66rem; font-weight: 700; vertical-align: middle; }
+.rdd-cob-tag--pend { border-color: rgba(245, 158, 11, 0.6); color: #f59e0b; }
+.rdd-btn-cobro { background: transparent; border: 1px solid #f59e0b; border-radius: 4px; color: #f59e0b; cursor: pointer; padding: 6px; display: flex; transition: background-color 0.2s; }
+.rdd-btn-cobro:hover { border-color: #f59e0b; background-color: rgba(245, 158, 11, 0.12); }
+.rdd-btn-cobro--pend { background-color: rgba(245, 158, 11, 0.14); }
+.rdd-btn-cobro:focus { outline: none; }
+.rdd-btn-cobro:focus-visible { outline: 2px solid #f59e0b; outline-offset: 2px; }
+.rdd-cob-ficha { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: 1px solid #30363d; border-top: 3px solid #fb923c; border-radius: 10px; background: #0d1117; }
+.rdd-cob-ficha__enc { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rdd-cob-estado { color: #8b949e; font-size: 0.8rem; font-weight: 600; }
+.rdd-cob-estado--ok { color: #3fb950; }
+.rdd-cob-estado--pend { color: #f59e0b; }
+.rdd-cob-btn { margin-left: auto; padding: 7px 14px; border-radius: 6px; border: 1px solid #fb923c; background: rgba(251, 146, 60, 0.1); color: #fdba74; font-weight: 700; font-size: 0.82rem; cursor: pointer; font-family: inherit; }
+.rdd-cob-btn:hover { border-color: #fb923c; background: rgba(251, 146, 60, 0.2); }
+.rdd-cob-btn:focus { outline: none; }
+.rdd-cob-btn:focus-visible { outline: 2px solid #fb923c; outline-offset: 2px; }
+.rdd-cob-cuenta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; border: 1px solid #21262d; border-radius: 8px; overflow: hidden; }
+.rdd-cob-cuenta div { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-right: 1px solid #21262d; }
+.rdd-cob-cuenta div:last-child { border-right: none; }
+.rdd-cob-cuenta dt { color: #8b949e; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; }
+.rdd-cob-cuenta dd { margin: 0; color: #f0f6fc; font-weight: 700; font-size: 1rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rdd-cob-cuenta .rdd-cob-cuenta__total { background: rgba(63, 185, 80, 0.08); }
+.rdd-cob-cuenta .rdd-cob-cuenta__total dd { color: #3fb950; }
+.rdd-cob-cuenta .rdd-cob-menos { color: #ff9b95; }
+@media (max-width: 640px) { .rdd-cob-cuenta { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
