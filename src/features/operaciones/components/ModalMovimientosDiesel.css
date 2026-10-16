@@ -1,0 +1,29 @@
+/* src/features/operaciones/components/ModalMovimientosDiesel.css — ✅ V00457 (prefijo tmd-)
+   Lo propio del historial del Saldo Diesel; la base (tmov-) es de ModalMovimientosPuente.css. */
+.tmd-caja { --tmd-color: #fb923c; border-top: 3px solid var(--tmd-color); }
+.tmd-input:focus { border-color: var(--tmd-color); }
+.tmd-chip:hover { border-color: var(--tmd-color); }
+.tmd-btn:hover { border-color: var(--tmd-color); }
+
+/* botones del modal: sin el anillo global de index.css (button:focus), con foco de teclado visible */
+.tmd-caja button:focus { outline: none; }
+.tmd-caja button:focus-visible { outline: 2px solid var(--tmd-color); outline-offset: 2px; }
+
+.tmd-caja .tmov-tabla > tbody > tr > td { vertical-align: middle; }
+.tmov-tabla .tmd-detalle { color: #8b949e; font-size: 0.8rem; }
+.tmov-tabla .tmd-saldo { color: #f0f6fc; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tmov-tabla .tmd-saldo.tmov-neg { color: #ff7b72; }
+.tmd-fila--cargas td { background: rgba(251, 146, 60, 0.04); }
+
+.tmd-abrir { display: inline-flex; align-items: center; gap: 6px; margin: 0; padding: 0; border: none; background: none; color: #c9d1d9; font: inherit; cursor: pointer; }
+.tmd-abrir:hover { border-color: transparent; color: var(--tmd-color); }
+.tmd-flecha { width: 1em; color: #8b949e; }
+
+.tmov-tabla .tmd-sub > td { padding: 4px 16px 14px 40px; background: #0b0f14; white-space: normal; }
+.tmd-tabla { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.tmov-tabla .tmd-tabla thead th { position: static; padding: 8px 10px; background: transparent; color: #8b949e; font-size: 0.7rem; border-bottom: 1px solid #21262d; }
+.tmov-tabla .tmd-tabla td { padding: 7px 10px; border-bottom: 1px solid #161b22; white-space: nowrap; }
+.tmov-tabla .tmd-tabla tbody tr:last-child td { border-bottom: none; }
+.tmd-tabla .tmd-num { text-align: right; font-variant-numeric: tabular-nums; }
+.tmov-tabla .tmd-ref { color: #58a6ff; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight: 700; }
+.tmd-vacio { margin: 0; padding: 10px 0; color: #8b949e; font-size: 0.82rem; }

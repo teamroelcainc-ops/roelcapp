@@ -24,7 +24,8 @@ import { COL_REF_AUTO, filaDeOperacion, grupoDeFila, grupoDeNombresPuente, quita
 import { FormularioOperacion } from '../../operaciones/components/FormularioOperacion';
 import { idReal, obtenerCatalogo, useCatalogos } from '../../../shared/data/catalogos';
 import ModalAgregarSaldoPuente from './ModalAgregarSaldoPuente';
-import { monedaDePuente, nombrePuenteCatalogo, puentesDelCatalogo } from '../services/puentesCatalogo';
+import { casetaAviOtrosCruces, monedaDePuente, nombrePuenteCatalogo, puentesDelCatalogo } from '../services/puentesCatalogo';
+import { estadoGrupoDe, esGrupoTerminado } from '../../../shared/dominio/operacionCanonica';
 
 // ⚠ Si tu colección de convenios de clientes tiene otro nombre, cámbialo aquí.
 const COLECCION_CONVENIOS = 'convenios_clientes';
@@ -63,17 +64,18 @@ const COLUMNAS_OPS_PUENTES_BASE = [
 ];
 
 export const ReferenciasPuentesDashboard = () => {
-  const [activeTab, setActiveTab] = useState<'operaciones' | 'otros' | 'saldos' | 'historial' | 'calculado'>('calculado');
+  // ✅ V00457: sin la pestaña "Historial manual (anterior)"; 'calculado' es el Acumulado
+  const [activeTab, setActiveTab] = useState<'operaciones' | 'otros' | 'saldos' | 'calculado'>('calculado');
 
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
   const [referenciasGlobales, setReferenciasGlobales] = useState<any[]>([]);
-  // ✅ V00439 (Fase 3.4): catálogos del listener compartido; fuera de la pestaña
-  //   Historial, igual que antes (convDetalles/tarifas/tipos tarifarios resuelven
-  //   el tráfico por la cadena de la tarifa, como el formulario de operación).
+  // ✅ V00439 (Fase 3.4): catálogos del listener compartido (convDetalles/tarifas/tipos
+  //   tarifarios resuelven el tráfico por la cadena de la tarifa, como el formulario de
+  //   operación). ✅ V00457: siempre (ya no existe la pestaña del historial manual).
   const { datos: {
     operadoresList, conveniosList, tiposGastoList, empresasList, traficoList,
     convDetallesList, tarifasRefList, tiposTarifariosList, unidadesList,
-  } } = useCatalogos(CATALOGOS_PUENTES, { activo: activeTab !== 'historial' });
+  } } = useCatalogos(CATALOGOS_PUENTES);
 
   // Filtros pestaña 1
   // ✅ V00402: por defecto se ven las operaciones de HOY
@@ -149,7 +151,7 @@ export const ReferenciasPuentesDashboard = () => {
     if (!ref) return [];
     const g = String(ref.grupoPuente || '');
     return operacionesGlobales.filter(op => {
-      if (!esPuenteRoelca(op) || esOperacionPrueba(op)) return false;
+      if (!esPuenteRoelca(op) || esOperacionPrueba(op) || !esCompletadaOp(op)) return false; // ✅ V00457: solo completadas
       if (idsEnHistorialCalculado.has(String(op._docId || op.id)) || idsEnHistorialCalculado.has(String(op.id))) return false;
       const tr = sinAcentos(getTrafico(op));
       if (tr !== 'importacion' && tr !== 'exportacion') return false;
@@ -252,7 +254,6 @@ export const ReferenciasPuentesDashboard = () => {
   const [modalOtro, setModalOtro] = useState(false);
   const [otroFecha, setOtroFecha] = useState(hoyLocalISO());
   const [otroHora, setOtroHora] = useState('');
-  const [otroPuenteId, setOtroPuenteId] = useState('');
   const [otroDestino, setOtroDestino] = useState(''); // ✅ V00415: referencia elegida para el otro cruce
   const [otroMonto, setOtroMonto] = useState('');
   const [otroUnidad, setOtroUnidad] = useState('');
@@ -285,15 +286,9 @@ export const ReferenciasPuentesDashboard = () => {
   const [columnasOps, setColumnasOps] = useState(COLUMNAS_OPS_PUENTES_BASE.map(c => ({ ...c })));
   const [draggedColOpsIndex, setDraggedColOpsIndex] = useState<number | null>(null);
 
-  // Historial
-  const [busquedaHistorial, setBusquedaHistorial] = useState('');
   // ✅ NUEVO: panel lateral derecho de filtros + tablas VACÍAS hasta presionar Buscar.
   const [drawerFiltrosAbierto, setDrawerFiltrosAbierto] = useState(false);
   const [busquedaOpsHecha, setBusquedaOpsHecha] = useState(true); // ✅ V00402: búsqueda de hoy al entrar
-  const [busquedaHistHecha, setBusquedaHistHecha] = useState(false);
-  const [filtroEstadoHist, setFiltroEstadoHist] = useState<'pendientes' | 'pagadas'>('pendientes');
-  const [paginaActual, setPaginaActual] = useState(1);
-  const registrosPorPagina = 50;
 
   // Modal generar referencia
   const [modalAbierto, setModalAbierto] = useState(false);
@@ -323,8 +318,9 @@ export const ReferenciasPuentesDashboard = () => {
     return () => unSubRefs();
   }, []);
 
+  // ✅ V00457: un solo listener mientras el módulo está montado (antes se volvía a abrir en cada
+  //   cambio de pestaña solo para cerrarlo en la del historial manual, que ya no existe).
   useEffect(() => {
-    if (activeTab === 'historial') return; // ✅ V00395 / V00404: el historial de referencias también necesita operaciones (para asignar)
     const subs: Array<() => void> = [];
     // ✅ V00392: las más recientes por fecha de servicio (antes 500 sin orden)
     const qOps = query(collection(db, 'operaciones'), orderBy('fechaServicio', 'desc'), limit(2500));
@@ -335,7 +331,7 @@ export const ReferenciasPuentesDashboard = () => {
       setOpsPuentesListas(true);
     }, (err) => { console.error('Error escuchando operaciones (puentes):', err); setOpsPuentesListas(true); })); // ✅ V00449
     return () => subs.forEach(u => u());
-  }, [activeTab]);
+  }, []);
 
   const getNombreOperador = (idOrName: string) => {
     if (!idOrName) return '-';
@@ -527,16 +523,18 @@ export const ReferenciasPuentesDashboard = () => {
     const esRoelca = String(op?.proveedorUnidadNombre || op?.proveedorUnidad || '').toLowerCase().includes('roelca');
     return isTransfer || (isLogistica && esRoelca);
   };
+  // ✅ V00457: "Operaciones sin asignar" solo muestra las COMPLETADAS (la misma regla de
+  //   Servicios Completados: status Servicio Completado, también los Falsos; nunca canceladas).
+  const esCompletadaOp = (op: OpPuente): boolean => esGrupoTerminado(estadoGrupoDe(op));
 
   const operacionesBaseFiltro = useMemo(() => {
     if (!filtrosCompletos) return [];
     return operacionesGlobales.filter(op => {
-      if (!esPuenteRoelca(op) || esOperacionPrueba(op)) return false;
+      if (!esPuenteRoelca(op) || esOperacionPrueba(op) || !esCompletadaOp(op)) return false; // ✅ V00457: solo completadas
       if (idsEnHistorialCalculado.has(String(op._docId || op.id)) || idsEnHistorialCalculado.has(String(op.id))) return false; // ✅ V00403
       // ✅ V00393: solo IMPORTACIÓN y EXPORTACIÓN (los movimientos no cruzan puente)
       const trOp = sinAcentos(getTrafico(op));
       if (trOp !== 'importacion' && trOp !== 'exportacion') return false;
-      if (sinAcentos(op.statusNombre).includes('cancel')) return false;
       // ✅ V00392: filtros Puente (caseta o piso) y Unidad
       if (filtroPuente !== 'todos') {
         if (filtroPuente === '__sin__') { if (tieneMontoPuente(op)) return false; }
@@ -547,7 +545,7 @@ export const ReferenciasPuentesDashboard = () => {
     });
   }, [operacionesGlobales, filtroPuente, filtroUnidad, fechaInicio, fechaFin, filtrosCompletos, unidadPorId, traficoPorId, detallePorId, tarifaRefPorId, tipoTarifarioPorId, idsEnHistorialCalculado]);
   const unidadesDisponibles = useMemo(() =>
-    Array.from(new Set(operacionesGlobales.filter(op => esPuenteRoelca(op) && dentroRangoFecha(op)).map(getUnidad).filter(u => u && u !== '-'))).sort((a, b) => a.localeCompare(b, 'es', { numeric: true })),
+    Array.from(new Set(operacionesGlobales.filter(op => esPuenteRoelca(op) && esCompletadaOp(op) && dentroRangoFecha(op)).map(getUnidad).filter(u => u && u !== '-'))).sort((a, b) => a.localeCompare(b, 'es', { numeric: true })),
   // eslint-disable-next-line react-hooks/exhaustive-deps
   [operacionesGlobales, fechaInicio, fechaFin, unidadPorId]);
 
@@ -821,6 +819,8 @@ export const ReferenciasPuentesDashboard = () => {
   const nombrePuente = nombrePuenteCatalogo; // ✅ V00455: regla compartida (puentesCatalogo.ts)
 
   const puentesCatalogo = useMemo(() => puentesDelCatalogo(tiposGastoList), [tiposGastoList]); // ✅ V00455: misma lista que Operaciones Activas
+  // ✅ V00457: los OTROS CRUCES son solo por la Caseta AVI (la misma caseta que viene elegida en la tarjeta AVI)
+  const puenteOtro = casetaAviOtrosCruces(puentesCatalogo);
 
 
   // ✅ V00394: UNA referencia por PUENTE con su propio consecutivo:
@@ -876,16 +876,15 @@ export const ReferenciasPuentesDashboard = () => {
     return [...dentro, ...referenciasGlobales.filter(r => r.tipo === 'otroCruce')];
   }, [referenciasGlobales, refsAuto]);
   const abrirOtroCruce = () => {
-    setOtroFecha(hoyLocalISO()); setOtroHora(horaAhora()); setOtroPuenteId(''); setOtroMonto(''); setOtroUnidad(''); setOtroDestino('');
+    setOtroFecha(hoyLocalISO()); setOtroHora(horaAhora()); setOtroMonto(puenteOtro ? String(Number(puenteOtro.importe) || '') : ''); setOtroUnidad(''); setOtroDestino('');
     setModalOtro(true);
   };
-  const puenteOtro = puentesCatalogo.find(p => p.id === otroPuenteId) || null;
   // ✅ V00415: el OTRO CRUCE entra a la referencia del Historial que el usuario ELIJA
   //   (de ese puente) o a una nueva; ya no se crea sola.
   const refsDestinoOtro = puenteOtro ? refsAuto.filter(r => String((r as { grupoPuente?: string }).grupoPuente || '') === grupoDeNombrePuente(String(nombrePuente(puenteOtro)))) : [];
   const guardarOtroCruce = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!puenteOtro) return alert('Elige el puente por donde cruzó.');
+    if (!puenteOtro) return alert('No se encontró la Caseta AVI en el catálogo de Tipos de Gastos (categoría Puente).');
     const monto = Number(otroMonto);
     if (!(monto > 0)) return alert('Captura el monto del cruce.');
     if (!otroFecha || !otroHora) return alert('Captura la fecha y la hora del cruce.');
@@ -1024,7 +1023,7 @@ export const ReferenciasPuentesDashboard = () => {
       if (omitidas) alert(`${omitidas} operación(es) no se agregaron: no se pudo determinar su puente (revisa su convenio o tráfico).`);
     } catch (error) {
       console.error(error);
-      alert(`Error al enviar al Historial de referencias: ${(error as Error)?.message || error}`);
+      alert(`Error al enviar al Acumulado: ${(error as Error)?.message || error}`);
     } finally {
       setGuardando(false);
     }
@@ -1053,69 +1052,6 @@ export const ReferenciasPuentesDashboard = () => {
     }
   };
 
-  const handleTogglePago = async (e: React.MouseEvent, refData: any) => {
-    e.stopPropagation();
-    const nuevoPagado = !refData.statusPagado;
-    const accion = nuevoPagado ? 'marcar como PAGADA' : 'regresar a PENDIENTE';
-    if (!window.confirm(`¿Deseas ${accion} la referencia ${refData.consecutivo}?`)) return;
-    try {
-      const batch = writeBatch(db);
-      batch.update(doc(db, 'referencias_puentes', refData.id), { statusPagado: nuevoPagado });
-      await batch.commit();
-      setReferenciasGlobales(prev => prev.map(r => r.id === refData.id ? { ...r, statusPagado: nuevoPagado } : r));
-    } catch (error) {
-      console.error('Error al actualizar estatus:', error);
-      alert('No se pudo actualizar el estatus.');
-    }
-  };
-
-  // ── Historial ──
-  const historialBusqueda = useMemo(() => {
-    const t = busquedaHistorial.toLowerCase();
-    return referenciasGlobales.filter(r =>
-      r.consecutivo?.toLowerCase().includes(t) ||
-      String(r.traficoPredominante || '').toLowerCase().includes(t) ||
-      String(r.puenteNombre || '').toLowerCase().includes(t) ||
-      String(r.unidad || '').toLowerCase().includes(t)
-    );
-  }, [referenciasGlobales, busquedaHistorial]);
-
-  const conteoHist = useMemo(() => {
-    const pagadas = historialBusqueda.filter(r => !!r.statusPagado).length;
-    return { pendientes: historialBusqueda.length - pagadas, pagadas };
-  }, [historialBusqueda]);
-
-  const historialFiltrado = useMemo(() =>
-    historialBusqueda.filter(r => filtroEstadoHist === 'pagadas' ? !!r.statusPagado : !r.statusPagado),
-  [historialBusqueda, filtroEstadoHist]);
-
-  const totalPaginas = Math.ceil(historialFiltrado.length / registrosPorPagina);
-  const indexLast = paginaActual * registrosPorPagina;
-  const indexFirst = indexLast - registrosPorPagina;
-  const registrosVisibles = historialFiltrado.slice(indexFirst, indexLast);
-  const irPaginaSiguiente = () => setPaginaActual(p => Math.min(p + 1, totalPaginas));
-  const irPaginaAnterior = () => setPaginaActual(p => Math.max(p - 1, 1));
-
-  useEffect(() => { setPaginaActual(1); }, [busquedaHistorial, filtroEstadoHist]);
-
-  const exportarHistorialExcel = () => {
-    if (historialFiltrado.length === 0) return alert('No hay datos para exportar.');
-    const datos = historialFiltrado.map(r => ({
-      'Consecutivo': r.consecutivo,
-      'Tráfico': r.traficoPredominante || '-',
-      'Fecha Pago': formatearFechaSpanish(r.fechaPago),
-      'Período': `${formatearFechaSpanish(r.fechaInicio)} al ${formatearFechaSpanish(r.fechaFin)}`,
-      'Status': r.statusPagado ? 'PAGADA' : 'PENDIENTE',
-      'Operaciones': Array.isArray(r.operacionesIds) ? r.operacionesIds.length : 0,
-      'Subtotal Puentes': Number(r.subtotalPuentes || 0),
-      'Observaciones': r.observaciones || ''
-    }));
-    const ws = XLSX.utils.json_to_sheet(datos);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Puentes');
-    XLSX.writeFile(wb, `Historial_Puentes_${hoyLocalISO()}.xlsx`);
-  };
-
   const tabStyle = (active: boolean) => ({
     padding: '12px 24px', background: 'none', border: 'none', cursor: 'pointer',
     color: active ? '#f0f6fc' : '#8b949e', borderBottom: active ? '2px solid #D84315' : '2px solid transparent',
@@ -1133,25 +1069,22 @@ export const ReferenciasPuentesDashboard = () => {
       <h1 className="rpd-x5">Referencias de Puentes</h1>
 
       <div className="rpd-x6">
-        {/* ✅ V00404: orden — Historial de referencias · Operaciones sin asignar · Saldo */}
-        <button onClick={() => setActiveTab('calculado')} style={tabStyle(activeTab === 'calculado')}>Historial de referencias</button>
+        {/* ✅ V00404: orden — Acumulado · Operaciones sin asignar · Saldo · Otros Cruces
+            ✅ V00457: "Historial de referencias" se llama Acumulado y se quitó "Historial manual (anterior)" */}
+        <button onClick={() => setActiveTab('calculado')} style={tabStyle(activeTab === 'calculado')}>Acumulado</button>
         <button onClick={() => setActiveTab('operaciones')} style={tabStyle(activeTab === 'operaciones')}>Operaciones sin asignar</button>
         <button onClick={() => setActiveTab('saldos')} style={tabStyle(activeTab === 'saldos')}>Saldo</button>
         <button onClick={() => setActiveTab('otros')} style={tabStyle(activeTab === 'otros')}>Otros Cruces</button>
-        <button onClick={() => setActiveTab('historial')} style={tabStyle(activeTab === 'historial')}>Historial manual (anterior)</button>
       </div>
 
       {activeTab === 'calculado' ? (
         <div className="animation-fade-in">
           {/* ✅ V00402: HISTORIAL CALCULADO */}
           <div className="rpd-otros-barra">
-            <span className="rpd-otros-nota">Una referencia por puente (AVI / PT3 / PTC). Las operaciones marcadas Verde quedan en Operaciones sin asignar y desde ahí se envían a la referencia que elijas. Es lo que descuenta del Saldo.</span>
+            <span className="rpd-otros-nota">Una referencia por puente (AVI / PT3 / PTC). Las operaciones completadas quedan en Operaciones sin asignar y desde ahí se envían a la referencia que elijas. Es lo que descuenta del Saldo.</span>
             <div className="rpd-acciones-hist">
               {selRefsAuto.length > 0 && (
                 <button type="button" className="rpd-btn-borrar" onClick={() => borrarRefsAuto(selRefsAuto)} disabled={borrandoRefs}>{borrandoRefs ? 'Eliminando…' : `Eliminar seleccionadas (${selRefsAuto.length})`}</button>
-              )}
-              {refsAuto.length > 0 && (
-                <button type="button" className="rpd-btn-borrar rpd-btn-borrar--todo" onClick={() => borrarRefsAuto(refsAuto.map(r => r.id))} disabled={borrandoRefs} title="Elimina todas las referencias; sus operaciones regresan a Operaciones sin asignar">Eliminar todas</button>
               )}
             </div>
           </div>
@@ -1211,7 +1144,7 @@ export const ReferenciasPuentesDashboard = () => {
         <div className="animation-fade-in">
           {/* ✅ V00396: AGREGAR SALDO */}
           <div className="rpd-otros-barra">
-            <span className="rpd-otros-nota">Saldo inicial de cada puente. Se descuenta con el Historial de referencias (y los Otros Cruces) de ese puente a partir de su fecha.</span>
+            <span className="rpd-otros-nota">Saldo inicial de cada puente. Se descuenta con el Acumulado (y los Otros Cruces) de ese puente a partir de su fecha.</span>
             <button type="button" className="rpd-btn-otro" onClick={abrirSaldo}>+ Agregar saldo</button>
           </div>
           {/* ✅ V00413: balance de los TRES puentes */}
@@ -1373,7 +1306,7 @@ export const ReferenciasPuentesDashboard = () => {
                             </React.Fragment>
                           );
                         })}
-                        {a.refs.length === 0 && <tr><td colSpan={6} className="rpd-x45">Aún no hay referencias en el Historial que descuenten de este saldo.</td></tr>}
+                        {a.refs.length === 0 && <tr><td colSpan={6} className="rpd-x45">Aún no hay referencias en el Acumulado que descuenten de este saldo.</td></tr>}
                       </tbody>
                       <tfoot><tr><td colSpan={3}>Totales</td><td className="rpd-num rpd-cargo">−{formatoMoneda(a.consumido)}</td><td className="rpd-num rpd-abono">+{formatoMoneda(Number(saldoViendo.saldo) || 0)}</td><td className="rpd-num">{formatoMoneda(a.balance)}</td></tr></tfoot>
                     </table>
@@ -1390,7 +1323,7 @@ export const ReferenciasPuentesDashboard = () => {
         <div className="animation-fade-in">
           {/* ✅ V00395: OTROS CRUCES */}
           <div className="rpd-otros-barra">
-            <span className="rpd-otros-nota">Cruces que no son de una operación (por ejemplo, carros particulares). Cada registro toma el consecutivo de su puente, pasa al Historial y descuenta del saldo del puente.</span>
+            <span className="rpd-otros-nota">Cruces por la Caseta AVI que no son de una operación (por ejemplo, carros particulares). Cada registro va a una referencia AVI del Acumulado y descuenta del saldo del Puente AVI.</span>
             <button type="button" className="rpd-btn-otro" onClick={abrirOtroCruce}>+ Agregar cruce</button>
           </div>
           <div className="table-container rpd-x41">
@@ -1443,16 +1376,16 @@ export const ReferenciasPuentesDashboard = () => {
                     <div className="rpd-otro-campo">
                       <label className="rpd-otro-label">Enviar a la referencia</label>
                       <select className="rpd-otro-input" required value={otroDestino} onChange={(e) => setOtroDestino(e.target.value)} disabled={!puenteOtro}>
-                        <option value="">{puenteOtro ? 'Elegir referencia…' : 'Primero elige el puente'}</option>
+                        <option value="">{puenteOtro ? 'Elegir referencia…' : 'Falta la Caseta AVI en el catálogo'}</option>
                         {refsDestinoOtro.map(r => <option key={r.id} value={r.id}>{r.consecutivo} · {formatearFechaSpanish(r.fechaGeneracion || '')} · {(r.operacionesIds || []).length} op.</option>)}
                         {puenteOtro && <option value="__nuevo__">+ Crear referencia nueva ({consecutivoPorPuente(grupoDeNombrePuente(String(nombrePuente(puenteOtro))), [], otroFecha)})</option>}
                       </select>
                     </div>
                     <div className="rpd-otro-campo">
                       <label className="rpd-otro-label">Puente</label>
-                      <select className="rpd-otro-input" required value={otroPuenteId} onChange={(e) => { setOtroPuenteId(e.target.value); setOtroDestino(''); const p = puentesCatalogo.find(x => x.id === e.target.value); if (p) setOtroMonto(String(Number(p.importe) || '')); }}>
-                        <option value="">Seleccionar puente…</option>
-                        {puentesCatalogo.map(p => <option key={p.id} value={p.id}>{String(nombrePuente(p))}</option>)}
+                      {/* ✅ V00457: solo la Caseta AVI */}
+                      <select className="rpd-otro-input" value={puenteOtro ? String(puenteOtro.id) : ''} disabled title="Los otros cruces van por la Caseta AVI">
+                        {puenteOtro ? <option value={String(puenteOtro.id)}>{String(nombrePuente(puenteOtro))}</option> : <option value="">Caseta AVI (no está en el catálogo)</option>}
                       </select>
                     </div>
                     <div className="rpd-otro-campo">
@@ -1485,7 +1418,7 @@ export const ReferenciasPuentesDashboard = () => {
             </div>
           )}
         </div>
-      ) : activeTab === 'operaciones' ? (
+      ) : (
         <div className="animation-fade-in">
           <div className="rpd-x7">
             <button onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros"
@@ -1518,7 +1451,7 @@ export const ReferenciasPuentesDashboard = () => {
                 disabled={seleccionadas.length === 0 || filtroEstadoOps === 'asignadas'}
                 onClick={abrirModalGenerar}
                 style={{ padding: '10px 20px', backgroundColor: (seleccionadas.length > 0 && filtroEstadoOps !== 'asignadas') ? '#D84315' : '#30363d', color: '#fff', border: 'none', borderRadius: '6px', cursor: (seleccionadas.length > 0 && filtroEstadoOps !== 'asignadas') ? 'pointer' : 'not-allowed', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
-                Enviar al Historial ({seleccionadas.length})
+                Enviar al Acumulado ({seleccionadas.length})
               </button>
             </div>
           </div>
@@ -1591,7 +1524,7 @@ export const ReferenciasPuentesDashboard = () => {
                   <tr><td colSpan={colsOpsVisibles}><CargandoDatos texto="Cargando operaciones…" /></td></tr>
                 ) : operacionesMostradas.length === 0 ? (
                   <tr><td className="rpd-x30" colSpan={colsOpsVisibles}>
-                    {filtroEstadoOps === 'pendientes' ? 'No hay operaciones pendientes con estos filtros.' : 'No hay operaciones asignadas a referencias con estos filtros.'}
+                    {filtroEstadoOps === 'pendientes' ? 'No hay operaciones completadas sin asignar con estos filtros.' : 'No hay operaciones asignadas a referencias con estos filtros.'}
                   </td></tr>
                 ) : (
                   operacionesMostradas.map(op => {
@@ -1626,107 +1559,6 @@ export const ReferenciasPuentesDashboard = () => {
           )}
         </div>
 
-      ) : (
-        <div className="animation-fade-in">
-          <div className="rpd-x7">
-            <button onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${busquedaHistorial ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-              Filtros
-              {busquedaHistorial && <span className="rpd-x8">1</span>}
-            </button>
-            {busquedaHistorial && (
-              <span className="rpd-x11">
-                "{busquedaHistorial}"
-                <button className="rpd-x12" onClick={() => setBusquedaHistorial('')}>✕</button>
-              </span>
-            )}
-            <span className="rpd-x13">
-              {busquedaHistHecha ? `${historialFiltrado.length} referencias` : 'Presiona Filtros y Buscar para ver el historial.'}
-            </span>
-            <button className="rpd-x40" title="Exportar a Excel" onClick={exportarHistorialExcel}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-            </button>
-          </div>
-
-          <div className="table-container rpd-x41">
-            <table className="rpd-x27">
-              <thead className="rpd-x28">
-                <tr>
-                  <th className="rpd-x42">ACCIONES</th>
-                  <th className="rpd-x43"># REFERENCIA</th>
-                  <th className="rpd-x43">PUENTE</th>
-                  <th className="rpd-x43">FECHA</th>
-                  <th className="rpd-x43">HORA</th>
-                  <th className="rpd-x43">REFERENCIAS SELECCIONADAS</th>
-                  <th className="rpd-x43">TOTAL A PAGAR</th>
-                  <th className="rpd-x43">STATUS</th>
-                </tr>
-              </thead>
-              <tbody>
-                {!busquedaHistHecha ? (
-                  <tr><td className="rpd-x44" colSpan={8}>
-                    <div className="rpd-x35">
-                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.6"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-                      <span className="rpd-x36">Define tus filtros y presiona <b className="rpd-x38">Buscar</b> para ver las referencias.</span>
-                      <button className="rpd-x39" onClick={() => setDrawerFiltrosAbierto(true)}>Abrir filtros</button>
-                    </div>
-                  </td></tr>
-                ) : !referenciasListas ? (
-                  <tr><td colSpan={8}><CargandoDatos texto="Cargando referencias…" /></td></tr>
-                ) : registrosVisibles.length === 0 ? (
-                  <tr><td className="rpd-x45" colSpan={8}>
-                    {filtroEstadoHist === 'pendientes' ? 'No hay referencias pendientes de pago.' : 'No hay referencias pagadas.'}
-                  </td></tr>
-                ) : (
-                  registrosVisibles.map(r => (
-                    <tr className="rpd-x46" key={r.id}>
-                      <td className="rpd-x31">
-                        <div className="rpd-x47">
-                          {r.statusPagado ? (
-                            <button className="rpd-x48" title="Regresar a Pendiente" onClick={(e) => handleTogglePago(e, r)}>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
-                            </button>
-                          ) : (
-                            <button className="rpd-x49" title="Marcar como Pagada" onClick={(e) => handleTogglePago(e, r)}>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                            </button>
-                          )}
-                          <button className="rpd-x50" title="Ver Detalle" onClick={() => setReferenciaViendo(r)}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                          </button>
-                          <button className="rpd-x51" title="Eliminar" onClick={(e) => handleEliminarReferencia(e, r)}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-                          </button>
-                        </div>
-                      </td>
-                      <td className="rpd-x52">{r.consecutivo}</td>
-                      <td className="rpd-celda">{r.puenteNombre || '—'}</td>
-                      <td className="rpd-celda">{formatearFechaSpanish(r.fechaGeneracion || String(r.createdAt || '').slice(0, 10))}</td>
-                      <td className="rpd-celda">{r.horaGeneracion || (r.createdAt ? new Date(r.createdAt).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) : '—')}</td>
-                      <td className="rpd-celda rpd-celda--refs" title={(Array.isArray(r.operaciones) ? r.operaciones : (r.operacionesGuardadas || []).map((o: { ref?: string }) => o.ref)).join(', ')}>
-                        {r.tipo === 'otroCruce'
-                          ? <><span className="rpd-chip-otro">Otro cruce</span> {r.unidad || '—'}</>
-                          : <><b>{Array.isArray(r.operacionesIds) ? r.operacionesIds.length : 0}</b> · {(Array.isArray(r.operaciones) ? r.operaciones : (r.operacionesGuardadas || []).map((o: { ref?: string }) => o.ref)).join(', ')}</>}
-                      </td>
-                      <td className="rpd-x3">{r.totalesPorMoneda && Object.keys(r.totalesPorMoneda).length ? Object.entries(r.totalesPorMoneda as Record<string, number>).map(([m, t]) => <div key={m}>{formatoMoneda(t)} <span className="rpd-moneda">{m}</span></div>) : formatoMoneda(r.subtotalPuentes)}</td>
-                      <td className="rpd-x2">
-                        <span className={`rpd-status ${r.statusPagado ? 'rpd-status--pagada' : 'rpd-status--pendiente'}`}>{r.statusPagado ? 'PAGADA' : 'PENDIENTE'}</span>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-          {busquedaHistHecha && totalPaginas > 1 && (
-            <div className="rpd-x56">
-              <button onClick={irPaginaAnterior} disabled={paginaActual === 1} style={{ padding: '8px 16px', cursor: paginaActual === 1 ? 'not-allowed' : 'pointer', background: 'none', border: 'none', color: '#c9d1d9' }}>Anterior</button>
-              <span className="rpd-x57">{paginaActual} / {totalPaginas}</span>
-              <button onClick={irPaginaSiguiente} disabled={paginaActual === totalPaginas} style={{ padding: '8px 16px', cursor: (paginaActual === totalPaginas) ? 'not-allowed' : 'pointer', background: 'none', border: 'none', color: '#c9d1d9' }}>Siguiente</button>
-            </div>
-          )}
-        </div>
       )}
 
       {/* MODAL CONFIGURAR COLUMNAS */}
@@ -1760,7 +1592,7 @@ export const ReferenciasPuentesDashboard = () => {
         <div className="modal-overlay rpd-x68">
           <div className="rpd-x69 rpd-modal--ancho">
             <div className="rpd-x70">
-              <h2 className="rpd-x71">Enviar al Historial de referencias</h2>
+              <h2 className="rpd-x71">Enviar al Acumulado</h2>
               <button className="rpd-x62" onClick={() => setModalAbierto(false)}>✕</button>
             </div>
 
@@ -1815,7 +1647,7 @@ export const ReferenciasPuentesDashboard = () => {
 
               <div className="rpd-x83">
                 <button className="rpd-x84" type="button" onClick={() => setModalAbierto(false)} disabled={guardando}>Cancelar</button>
-                <button className="rpd-x85" type="submit" disabled={guardando}>{guardando ? 'Enviando…' : 'Enviar al Historial'}</button>
+                <button className="rpd-x85" type="submit" disabled={guardando}>{guardando ? 'Enviando…' : 'Enviar al Acumulado'}</button>
               </div>
             </form>
             </FormularioConfigurable>
@@ -1875,13 +1707,6 @@ export const ReferenciasPuentesDashboard = () => {
                   <div><span>Unidad</span><b>{referenciaViendo.unidad || '—'}</b></div>
                   <div><span>Registrado por</span><b>{referenciaViendo.registradoPor || '—'}</b></div>
                 </div>
-              )}
-              {referenciaViendo.tipo !== 'otroCruce' && !referenciaViendo.automatico && (
-              <div className="rpd-x96">
-                <div><span className="rpd-x97">Fecha de pago: </span>{formatearFechaSpanish(referenciaViendo.fechaPago)}</div>
-                <div><span className="rpd-x97">Período: </span>{formatearFechaSpanish(referenciaViendo.fechaInicio)} al {formatearFechaSpanish(referenciaViendo.fechaFin)}</div>
-                {referenciaViendo.observaciones && <div><span className="rpd-x97">Obs.: </span>{referenciaViendo.observaciones}</div>}
-              </div>
               )}
 
               <div className="rpd-detalle-barra">
@@ -2022,12 +1847,11 @@ export const ReferenciasPuentesDashboard = () => {
         <div className="rpd-x109" onClick={() => setDrawerFiltrosAbierto(false)}>
           <div className="rpd-x110" onClick={(e) => e.stopPropagation()}>
             <div className="rpd-x111">
-              <h3 className="rpd-x112">Filtros · {activeTab === 'operaciones' ? 'Operaciones' : 'Historial'}</h3>
+              <h3 className="rpd-x112">Filtros · Operaciones sin asignar</h3>
               <button className="rpd-x62" onClick={() => setDrawerFiltrosAbierto(false)}>✕</button>
             </div>
 
-            {activeTab === 'operaciones' ? (
-              <>
+            <>
                 <div className="rpd-x113">
                   <div className="rpd-x114">
                     <label className="rpd-x115">FECHA INICIO <span className="rpd-x116">*</span></label>
@@ -2078,48 +1902,15 @@ export const ReferenciasPuentesDashboard = () => {
                 </div>
 
                 <div className="rpd-x122">
-                  Se requiere <b className="rpd-x37">al menos una fecha</b> de servicio; puente, unidad y estado son opcionales. Solo aparecen operaciones de Importación y Exportación de Transfer y de Logística con proveedor Roelca.
+                  Se requiere <b className="rpd-x37">al menos una fecha</b> de servicio; puente, unidad y estado son opcionales. Solo aparecen operaciones completadas de Importación y Exportación de Transfer y de Logística con proveedor Roelca.
                 </div>
               </>
-            ) : (
-              <>
-                <div className="rpd-x117">
-                  <label className="rpd-x115">BÚSQUEDA</label>
-                  <div className="rpd-x123">
-                    <svg className="rpd-x124" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                    <input className="rpd-x125" type="text" placeholder="Consecutivo, tráfico..." value={busquedaHistorial} onChange={e => setBusquedaHistorial(e.target.value)} />
-                    {busquedaHistorial && (
-                      <button className="rpd-x126" onClick={() => setBusquedaHistorial('')} title="Limpiar">✕</button>
-                    )}
-                  </div>
-                </div>
-
-                <div className="rpd-x117">
-                  <label className="rpd-x118">ESTADO</label>
-                  <div className="rpd-x120">
-                    <button onClick={() => setFiltroEstadoHist('pendientes')} style={{ flex: 1, padding: '9px 0', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem', backgroundColor: filtroEstadoHist === 'pendientes' ? 'rgba(245,158,11,0.15)' : 'transparent', color: filtroEstadoHist === 'pendientes' ? '#f59e0b' : '#8b949e' }}>● Pendientes ({conteoHist.pendientes})</button>
-                    <button onClick={() => setFiltroEstadoHist('pagadas')} style={{ flex: 1, padding: '9px 0', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem', backgroundColor: filtroEstadoHist === 'pagadas' ? 'rgba(16,185,129,0.15)' : 'transparent', color: filtroEstadoHist === 'pagadas' ? '#10b981' : '#8b949e' }}>● Pagadas ({conteoHist.pagadas})</button>
-                  </div>
-                </div>
-
-                <div className="rpd-x122">
-                  La búsqueda es <b className="rpd-x97">opcional</b>. Presiona <b className="rpd-x38">Buscar</b> para ver el historial.
-                </div>
-              </>
-            )}
 
             <div className="rpd-x127">
-              <button className="rpd-x128" onClick={() => {
-                if (activeTab === 'operaciones') { setFechaInicio(''); setFechaFin(''); setFiltroPuente('todos'); setFiltroUnidad('todas'); setSeleccionadas([]); setBusquedaOpsHecha(false); }
-                else { setBusquedaHistorial(''); setBusquedaHistHecha(false); }
-              }}>Limpiar</button>
+              <button className="rpd-x128" onClick={() => { setFechaInicio(''); setFechaFin(''); setFiltroPuente('todos'); setFiltroUnidad('todas'); setSeleccionadas([]); setBusquedaOpsHecha(false); }}>Limpiar</button>
               <button className="rpd-x129" onClick={() => {
-                if (activeTab === 'operaciones') {
-                  if (!fechaInicio && !fechaFin) { alert('Selecciona al menos una Fecha de Servicio (inicio o fin) para buscar.'); return; }
-                  setBusquedaOpsHecha(true);
-                } else {
-                  setBusquedaHistHecha(true);
-                }
+                if (!fechaInicio && !fechaFin) { alert('Selecciona al menos una Fecha de Servicio (inicio o fin) para buscar.'); return; }
+                setBusquedaOpsHecha(true);
                 setDrawerFiltrosAbierto(false);
               }}>Buscar</button>
             </div>

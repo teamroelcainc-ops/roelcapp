@@ -179,7 +179,7 @@ export const TarjetaCasetas: React.FC = () => {
         const mon = monedaDe(filtroTodo);
         const partes = lineas.map((l) => ({ ...l, st: statsDe(l.filtro, filtroTodo) })); // ✅ V00422: cada concepto contra el saldo del puente
         return (
-          <div key={g.clave} className="rd-card rd-card--morado rd-card--clic" title={`${g.titulo}: saldos agregados menos el Historial de referencias. Presiona la tarjeta para ver los movimientos del saldo.`}>
+          <div key={g.clave} className="rd-card rd-card--morado rd-card--clic" title={`${g.titulo}: saldos agregados menos el Acumulado de Referencias de Puentes. Presiona la tarjeta para ver los movimientos del saldo.`}>
             {/* ✅ V00455: toda la tarjeta abre los movimientos de su saldo (los botones de adentro hacen lo suyo) · V00456: clases de App.css (rd-card--clic) */}
             <button type="button" className="rd-card__abrir" onClick={() => setMovimientosDe(g.clave)} aria-label={`Ver los movimientos del saldo de ${g.titulo}`} />
             <div className="rd-card__head">

@@ -1,5 +1,5 @@
 // src/features/diesel/components/ReferenciasDieselDashboard.tsx
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   collection, 
   onSnapshot, 
@@ -13,7 +13,7 @@ import {
   getDoc,
   updateDoc
 } from 'firebase/firestore';
-import { db, auth } from '../../../config/firebase';
+import { db } from '../../../config/firebase';
 import { useEstadoPersistente } from '../../../hooks/useEstadoPersistente';
 import * as XLSX from 'xlsx';
 import { generarInstruccionesDieselPDF } from '../../../utils/pdfInstruccionesDiesel';
@@ -27,7 +27,9 @@ import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { SelectBuscable } from '../../catalogos/components/SelectBuscable';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 import { useCatalogos } from '../../../shared/data/catalogos';
-import { TIPO_EMPRESA } from '../../../shared/dominio/constantes';
+import { proveedoresDeDiesel } from '../services/proveedoresDiesel';
+import SelectorProveedorBuscable from './SelectorProveedorBuscable';
+import ModalAgregarSaldoDiesel from './ModalAgregarSaldoDiesel';
 
 // ✅ V00451: fotos de una referencia (`fotos`: {url, path, nombre}[]), hasta 10 por referencia.
 const MAX_FOTOS_REFERENCIA = 10;
@@ -52,122 +54,9 @@ const COLUMNAS_OPS_DIESEL_BASE = [
 // Si tus orígenes/destinos viven en otra colección, cambia solo este valor.
 const COLECCION_LUGARES = 'destinos';
 
-// ──────────────────────────────────────────────────────────────────
-// ✅ FILTRO ROBUSTO DE IDS
-// Verifica si un campo de Firestore contiene un ID, sin importar si está
-// guardado como array, como string separado por comas/espacios, o como
-// objeto. Así el filtrado de proveedores funciona aunque el dato venga
-// en distintos formatos heredados.
-// ──────────────────────────────────────────────────────────────────
-const incluyeId = (valor: any, id: string): boolean => {
-  if (!valor) return false;
-  if (Array.isArray(valor)) return valor.map(String).includes(id);
-  if (typeof valor === 'string') return valor.split(/[,\s]+/).map(s => s.trim()).includes(id);
-  if (typeof valor === 'object') {
-    return Object.values(valor).map(String).includes(id) || Object.keys(valor).includes(id);
-  }
-  return false;
-};
-
-// ──────────────────────────────────────────────────────────────────
-// ✅ SELECTOR DE PROVEEDOR BUSCABLE (combobox)
-// Reemplaza el <select> nativo que "costaba seleccionar":
-//  - Mantiene su propio estado, por lo que NO se cierra cuando el
-//    componente padre se re-renderiza (p. ej. al llegar datos de Firestore).
-//  - Permite filtrar escribiendo, ideal cuando hay muchos proveedores.
-//  - Cierra al hacer clic fuera.
-// ──────────────────────────────────────────────────────────────────
-interface SelectorProveedorProps {
-  proveedores: any[];
-  value: string;
-  onChange: (id: string) => void;
-  placeholder?: string;
-  resolverNombre?: (id: string) => string;
-}
-
-const SelectorProveedorBuscable: React.FC<SelectorProveedorProps> = ({
-  proveedores,
-  value,
-  onChange,
-  placeholder = 'Seleccionar proveedor...',
-  resolverNombre,
-}) => {
-  const [abierto, setAbierto] = useState(false);
-  const [busqueda, setBusqueda] = useState('');
-  const contenedorRef = useRef<HTMLDivElement>(null);
-
-  const seleccionado = proveedores.find(p => p.id === value) || null;
-  const nombreMostrado = seleccionado
-    ? (seleccionado.nombre || seleccionado.id)
-    : (value && resolverNombre ? resolverNombre(value) : '');
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (contenedorRef.current && !contenedorRef.current.contains(e.target as Node)) {
-        setAbierto(false);
-        setBusqueda('');
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
-  const filtrados = useMemo(() => {
-    const t = busqueda.trim().toLowerCase();
-    if (!t) return proveedores;
-    return proveedores.filter(p => String(p.nombre || '').toLowerCase().includes(t));
-  }, [proveedores, busqueda]);
-
-  return (
-    <div className="rdd-x1" ref={contenedorRef}>
-      <button className="rdd-x2"
-        type="button"
-        onClick={() => setAbierto(o => !o)}
-      >
-        <span style={{ color: nombreMostrado ? '#fff' : '#8b949e', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {nombreMostrado || placeholder}
-        </span>
-        <span className="rdd-x3">{abierto ? '▲' : '▼'}</span>
-      </button>
-
-      {abierto && (
-        <div className="rdd-x4">
-          <div className="rdd-x5">
-            <input className="rdd-x6"
-              autoFocus
-              type="text"
-              value={busqueda}
-              onChange={e => setBusqueda(e.target.value)}
-              placeholder="Buscar proveedor..."
-            />
-          </div>
-          <ul className="rdd-x7">
-            {filtrados.length === 0 ? (
-              <li className="rdd-x8">Sin resultados</li>
-            ) : (
-              filtrados.map(p => (
-                <li
-                  key={p.id}
-                  onClick={() => { onChange(p.id); setAbierto(false); setBusqueda(''); }}
-                  style={{
-                    padding: '10px 12px', cursor: 'pointer', fontSize: '0.9rem',
-                    color: p.id === value ? '#fff' : '#c9d1d9',
-                    backgroundColor: p.id === value ? 'rgba(216,67,21,0.15)' : 'transparent',
-                    borderLeft: p.id === value ? '3px solid #D84315' : '3px solid transparent',
-                  }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = '#161b22'; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = p.id === value ? 'rgba(216,67,21,0.15)' : 'transparent'; }}
-                >
-                  {p.nombre || p.id}
-                </li>
-              ))
-            )}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
-};
+// ✅ V00457: el filtro de proveedores (incluyeId) vive en services/proveedoresDiesel.ts y el
+//   selector buscable en components/SelectorProveedorBuscable.tsx (también los usa el
+//   formulario "Agregar saldo de diesel" que se abre desde Operaciones Activas).
 
 // ✅ Atributos de la caja de una operación, detectados desde el nombre del
 //   convenio/tarifa (ej. "Importación Caja Cargada Hazmat 240 - NLD"):
@@ -689,11 +578,7 @@ export const ReferenciasDieselDashboard = () => {
   // ✅ Solo proveedores con tipo de empresa "11894dfd" Y tipo de servicio
   //    "189a4573". El filtro es robusto a array/string/objeto y la lista se
   //    ordena alfabéticamente para que sea fácil encontrarlos.
-  const proveedoresFiltrados = useMemo(() => {
-    return proveedoresList
-      .filter(p => incluyeId(p.tiposEmpresa, TIPO_EMPRESA.proveedorServicios) && incluyeId(p.tiposServicio, '189a4573'))
-      .sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' }));
-  }, [proveedoresList]);
+  const proveedoresFiltrados = useMemo(() => proveedoresDeDiesel(proveedoresList), [proveedoresList]); // ✅ V00457: regla compartida
 
   const operacionesBaseUnidad = useMemo(() => {
     if (!filtroUnidad) return [];
@@ -947,12 +832,6 @@ export const ReferenciasDieselDashboard = () => {
   // ============================================================================
   const [saldosDiesel, setSaldosDiesel] = useState<Record<string, unknown>[]>([]);
   const [modalSaldoD, setModalSaldoD] = useState(false);
-  const [sdFecha, setSdFecha] = useState(hoyLocalISO());
-  const [sdHora, setSdHora] = useState('');
-  const [sdProveedor, setSdProveedor] = useState('');
-  const [sdMonto, setSdMonto] = useState('');
-  const [sdMoneda, setSdMoneda] = useState('Dólares');
-  const [guardandoSd, setGuardandoSd] = useState(false);
   const [saldoDViendo, setSaldoDViendo] = useState<Record<string, unknown> | null>(null);
   const [refDAbierta, setRefDAbierta] = useState('');
   const [diaDAbierto, setDiaDAbierto] = useState(''); // ✅ V00422
@@ -970,7 +849,6 @@ export const ReferenciasDieselDashboard = () => {
     }, () => { setSaldosDiesel([]); setSaldosDListos(true); });
     return () => u();
   }, [activeTab]);
-  const horaAhoraD = () => { const d = new Date(); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
   const montoCargadoRef = (r: Record<string, unknown>) => Number(r.totalCargado) || ((Number(r.galonesCargados) || 0) * (Number(r.costoDiesel) || 0));
   const TODOS_PROV = '__todos__'; // ✅ V00422: saldo GENERAL — descuenta las cargas de todos los proveedores
   const mismoProveedor = (r: Record<string, unknown>, s0: Record<string, unknown>) => {
@@ -1007,27 +885,8 @@ export const ReferenciasDieselDashboard = () => {
       .sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')))[0];
     return Number(ult?.costoDiesel) || 0;
   };
-  const abrirSaldoD = () => { setSdFecha(hoyLocalISO()); setSdHora(horaAhoraD()); setSdProveedor(TODOS_PROV); setSdMonto(''); setSdMoneda('Dólares'); setModalSaldoD(true); };
-  const guardarSaldoD = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!sdProveedor) return alert('Elige el proveedor de diesel.');
-    const n = Number(sdMonto);
-    if (!(n > 0)) return alert('Captura el saldo inicial.');
-    if (!sdFecha || !sdHora) return alert('Captura la fecha y la hora.');
-    setGuardandoSd(true);
-    try {
-      const batch = writeBatch(db);
-      batch.set(doc(collection(db, 'saldos_diesel')), {
-        fecha: sdFecha, hora: sdHora, proveedorId: sdProveedor, proveedorNombre: sdProveedor === TODOS_PROV ? 'Todos los proveedores' : getNombreProveedor(sdProveedor),
-        saldo: n, moneda: sdMoneda,
-        registradoPor: auth.currentUser?.displayName || auth.currentUser?.email || 'Usuario',
-        creadoEn: new Date().toISOString(),
-      });
-      await batch.commit();
-      setModalSaldoD(false);
-    } catch (err) { alert(`No se pudo guardar el saldo: ${(err as Error)?.message || err}`); }
-    finally { setGuardandoSd(false); }
-  };
+  // ✅ V00457: el formulario es ModalAgregarSaldoDiesel (lo comparte con la tarjeta Saldo Diesel de Operaciones Activas)
+  const abrirSaldoD = () => setModalSaldoD(true);
   const eliminarSaldoD = async (r: Record<string, unknown>) => {
     if (!window.confirm(`¿Eliminar el saldo de ${String(r.proveedorNombre || '')} del ${formatearFechaSpanish(r.fecha)} por ${formatoMoneda(Number(r.saldo) || 0)}?`)) return;
     try { const batch = writeBatch(db); batch.delete(doc(db, 'saldos_diesel', String(r.id))); await batch.commit(); }
@@ -1884,36 +1743,7 @@ export const ReferenciasDieselDashboard = () => {
             );
           })()}
 
-          {modalSaldoD && (
-            <div className="modal-overlay rdd-modal-fondo" onClick={() => !guardandoSd && setModalSaldoD(false)}>
-              <div className="rdd-saldo-modal" onClick={(e) => e.stopPropagation()}>
-                <div className="rdd-asiento__enc">
-                  <h2>Agregar saldo de diesel</h2>
-                  <button className="rdd-asiento__cerrar" onClick={() => setModalSaldoD(false)}>✕</button>
-                </div>
-                <FormularioConfigurable modulo="referenciasDiesel">
-                <form onSubmit={guardarSaldoD} className="rdd-saldo-form">
-                  <div className="rdd-saldo-grid">
-                    <div className="rdd-saldo-campo"><label>Fecha</label><input type="date" required value={sdFecha} onChange={(e) => setSdFecha(e.target.value)} /></div>
-                    <div className="rdd-saldo-campo"><label>Hora</label><input type="time" required value={sdHora} onChange={(e) => setSdHora(e.target.value)} /></div>
-                    <div className="rdd-saldo-campo rdd-saldo-campo--ancho"><label>Proveedor</label>
-                      <label className="rdd-saldo-todos"><input type="checkbox" checked={sdProveedor === TODOS_PROV} onChange={(e) => setSdProveedor(e.target.checked ? TODOS_PROV : '')} /> Todos los proveedores (saldo general)</label>
-                      {sdProveedor !== TODOS_PROV && <SelectorProveedorBuscable proveedores={proveedoresFiltrados} value={sdProveedor} onChange={setSdProveedor} resolverNombre={getNombreProveedor} />}
-                    </div>
-                    <div className="rdd-saldo-campo"><label>Saldo inicial</label><input type="number" step="0.01" min="0" required value={sdMonto} onChange={(e) => setSdMonto(e.target.value)} placeholder="0.00" /></div>
-                    <div className="rdd-saldo-campo"><label>Moneda</label>
-                      <select value={sdMoneda} onChange={(e) => setSdMoneda(e.target.value)}><option value="Dólares">Dólares</option><option value="Pesos">Pesos</option></select>
-                    </div>
-                  </div>
-                  <div className="rdd-asiento__pie">
-                    <button className="rdd-btn-sec" type="button" onClick={() => setModalSaldoD(false)} disabled={guardandoSd}>Cancelar</button>
-                    <button className="rdd-btn-saldo" type="submit" disabled={guardandoSd}>{guardandoSd ? 'Guardando…' : 'Guardar saldo'}</button>
-                  </div>
-                </form>
-                </FormularioConfigurable>
-              </div>
-            </div>
-          )}
+          {modalSaldoD && <ModalAgregarSaldoDiesel onCerrar={() => setModalSaldoD(false)} />}
         </div>
       ) : activeTab === 'referencias' ? (
         <div className="animation-fade-in">

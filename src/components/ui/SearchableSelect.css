@@ -1,0 +1,130 @@
+.sselect {
+  position: relative;
+  width: 100%;
+}
+
+.sselect-control {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13.5px;
+  color: var(--text);
+  text-align: left;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sselect-control:hover {
+  border-color: var(--primary-light);
+}
+
+.sselect-control:focus-visible {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-bg);
+}
+
+.sselect-invalid .sselect-control {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.sselect-placeholder {
+  color: var(--text-muted);
+}
+
+.sselect-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sselect-icons {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.sselect-clear {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 5px;
+}
+
+.sselect-clear:hover {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.sselect-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  z-index: 30;
+  overflow: hidden;
+}
+
+.sselect-search {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 10px 12px;
+  font-size: 13px;
+  /* Sin color propio heredaba el gris tenue del contenedor y lo escrito
+     apenas se leía: el texto va en el color normal sobre la superficie. */
+  background: var(--surface);
+  color: var(--text);
+}
+
+.sselect-search::placeholder {
+  color: var(--text-muted);
+}
+
+.sselect-search:focus {
+  outline: none;
+  background: var(--primary-bg);
+  color: var(--text);
+}
+
+.sselect-menu ul {
+  list-style: none;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.sselect-menu li button {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 9px 12px;
+  font-size: 13.5px;
+  color: var(--text);
+}
+
+.sselect-menu li button:hover {
+  background: var(--primary-bg);
+}
+
+.sselect-menu li button.is-selected {
+  background: var(--primary);
+  color: #fff;
+}
+
+.sselect-empty {
+  padding: 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+}

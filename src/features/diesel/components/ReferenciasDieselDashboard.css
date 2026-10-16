@@ -3,13 +3,6 @@
    son dinámicos (runtime) y por regla permanecen inline. */
 
 .rdd-x1 { position: relative; }
-.rdd-x2 { width: 100%; padding: 8px; background-color: #161b22; color: #fff; border: 1px solid #30363d; border-radius: 4px; box-sizing: border-box; cursor: pointer; text-align: left; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.rdd-x3 { color: #8b949e; font-size: 0.7rem; flex-shrink: 0; }
-.rdd-x4 { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 50; background-color: #0d1117; border: 1px solid #30363d; border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); overflow: hidden; }
-.rdd-x5 { padding: 8px; }
-.rdd-x6 { width: 100%; padding: 8px; background-color: #161b22; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; box-sizing: border-box; }
-.rdd-x7 { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto; }
-.rdd-x8 { padding: 12px; color: #8b949e; font-size: 0.85rem; text-align: center; }
 .rdd-x9 { padding: 16px; color: #58a6ff; font-weight: bold; font-family: monospace; white-space: nowrap; }
 .rdd-x10 { padding: 16px; color: #3fb950; font-weight: bold; white-space: nowrap; }
 .rdd-x11 { padding: 24px; animation: fadeIn 0.3s ease; }
@@ -217,7 +210,6 @@
 /* MOBILE-DENSITY-AUTO */
 /* Reglas de densidad móvil generadas automáticamente. */
 @media (max-width: 640px) {
-  .rdd-x2 { flex-wrap: wrap; }
   .rdd-x11 { padding: 14px 12px; }
   .rdd-x12 { font-size: 1.3rem; }
   .rdd-x13 { flex-wrap: wrap; }
@@ -364,7 +356,6 @@
 .rdd-fila-clic:hover td { background: rgba(88, 166, 255, 0.06); }
 .rdd-modal-fondo { position: fixed; inset: 0; background: rgba(1, 4, 9, 0.72); z-index: 3000; display: flex; align-items: center; justify-content: center; }
 .rdd-asiento { width: min(980px, 96vw); max-height: 88vh; display: flex; flex-direction: column; gap: 14px; background: #0d1117; border: 1px solid #30363d; border-radius: 12px; padding: 20px 22px; }
-.rdd-saldo-modal { width: min(520px, 94vw); display: flex; flex-direction: column; gap: 14px; background: #0d1117; border: 1px solid #30363d; border-radius: 12px; padding: 20px 22px; }
 .rdd-asiento__enc { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid #30363d; }
 .rdd-asiento__enc h2 { margin: 0; color: #f0f6fc; font-size: 1.1rem; }
 .rdd-asiento__cerrar { background: none; border: none; color: #8b949e; font-size: 1.1rem; cursor: pointer; }
@@ -378,15 +369,8 @@
 .rdd-asiento__sub > td { background: #0b0f14; padding: 8px 12px 10px 28px !important; }
 .rdd-asiento__sub td { padding: 5px 10px; border-top: 1px solid #21262d; color: #c9d1d9; font-size: 0.8rem; }
 .rdd-asiento__pie { display: flex; justify-content: flex-end; gap: 10px; }
-.rdd-saldo-form { display: flex; flex-direction: column; gap: 16px; }
-.rdd-saldo-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 14px; }
-.rdd-saldo-campo { display: flex; flex-direction: column; gap: 5px; }
-.rdd-saldo-campo--ancho { grid-column: 1 / -1; }
-.rdd-saldo-campo label { color: #8b949e; font-size: 0.78rem; font-weight: 700; text-transform: uppercase; }
-.rdd-saldo-campo input, .rdd-saldo-campo select { width: 100%; box-sizing: border-box; padding: 9px 10px; border-radius: 6px; border: 1px solid #30363d; background: #161b22; color: #f0f6fc; font-size: 0.9rem; color-scheme: dark; }
-@media (max-width: 640px) { .rdd-asiento__resumen { grid-template-columns: repeat(2, minmax(0, 1fr)); } .rdd-saldo-grid { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .rdd-asiento__resumen { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 /* ✅ V00422 */
-.rdd-saldo-todos { display: flex; align-items: center; gap: 8px; color: #c9d1d9; font-size: 0.85rem; text-transform: none !important; font-weight: 600 !important; cursor: pointer; margin-bottom: 6px; }
 .rdd-asiento__cargo td { background: rgba(248, 81, 73, 0.05); }
 .rdd-asiento__cargo td:first-child { box-shadow: inset 4px 0 0 #f85149; }
 .rdd-asiento__abono td:first-child { box-shadow: inset 4px 0 0 #3fb950; }

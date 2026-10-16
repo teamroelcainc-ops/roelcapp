@@ -44,3 +44,18 @@ export const puentePredeterminado = (puentes: readonly Datos[], tarjeta: Tarjeta
   }
   return '';
 };
+
+/**
+ * ✅ V00457: la caseta de los OTROS CRUCES (Referencias de Puentes): la misma que viene
+ * elegida en la tarjeta AVI ("Caseta AVI"). Si el catálogo la nombra distinto, la caseta
+ * AVI de nombre más corto sin contar lo que va entre paréntesis ("Caseta AVI (USD)" antes
+ * que "Caseta AVI Auto" o "Caseta AVI Nissan…").
+ */
+export const casetaAviOtrosCruces = <T extends Datos>(puentes: readonly T[]): T | null => {
+  const id = puentePredeterminado(puentes, 'avi', (p) => String(p.id));
+  const exacta = id ? puentes.find((p) => String(p.id) === id) : undefined;
+  if (exacta) return exacta;
+  const base = (p: Datos) => norm(nombrePuenteCatalogo(p)).replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+  const candidatas = puentes.filter((p) => base(p).includes('caseta') && /\bavi\b/.test(base(p)));
+  return [...candidatas].sort((a, b) => base(a).length - base(b).length)[0] ?? null;
+};

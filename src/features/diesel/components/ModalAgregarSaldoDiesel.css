@@ -1,0 +1,23 @@
+/* src/features/diesel/components/ModalAgregarSaldoDiesel.css — ✅ V00457 (prefijo masd-)
+   El aspecto que tenía el formulario dentro de Referencias del Diesel → Saldos. */
+.masd-fondo { position: fixed; inset: 0; background: rgba(1, 4, 9, 0.72); z-index: 3000; display: flex; align-items: center; justify-content: center; }
+.masd-caja { width: min(520px, 94vw); display: flex; flex-direction: column; gap: 14px; background: #0d1117; border: 1px solid #30363d; border-radius: 12px; padding: 20px 22px; box-sizing: border-box; }
+.masd-enc { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid #30363d; }
+.masd-titulo { margin: 0; color: #f0f6fc; font-size: 1.1rem; }
+.masd-x { background: none; border: none; padding: 0; color: #8b949e; font-size: 1.1rem; cursor: pointer; }
+.masd-x:hover { color: #f0f6fc; }
+.masd-form { display: flex; flex-direction: column; gap: 16px; }
+.masd-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 14px; }
+.masd-campo { display: flex; flex-direction: column; gap: 5px; }
+.masd-campo--ancho { grid-column: 1 / -1; }
+.masd-campo label { color: #8b949e; font-size: 0.78rem; font-weight: 700; text-transform: uppercase; }
+.masd-campo input, .masd-campo select { width: 100%; box-sizing: border-box; padding: 9px 10px; border-radius: 6px; border: 1px solid #30363d; background: #161b22; color: #f0f6fc; font-size: 0.9rem; color-scheme: dark; }
+.masd-campo .masd-todos { display: flex; align-items: center; gap: 8px; color: #c9d1d9; font-size: 0.85rem; text-transform: none; font-weight: 600; cursor: pointer; margin-bottom: 6px; }
+.masd-campo .masd-todos input { width: auto; }
+.masd-pie { display: flex; justify-content: flex-end; gap: 10px; }
+.masd-btn { padding: 10px 20px; border-radius: 6px; border: 1px solid #30363d; background: transparent; color: #c9d1d9; font-weight: 600; cursor: pointer; font-family: inherit; }
+.masd-btn:hover:not(:disabled) { border-color: #8b949e; }
+.masd-btn--guardar { border: none; background: #D84315; color: #ffffff; font-weight: 700; }
+.masd-btn--guardar:hover:not(:disabled) { background: #e4521f; }
+.masd-btn:disabled { opacity: 0.6; cursor: wait; }
+@media (max-width: 640px) { .masd-grid { grid-template-columns: 1fr; } }

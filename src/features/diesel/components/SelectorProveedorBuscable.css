@@ -1,0 +1,18 @@
+/* src/features/diesel/components/SelectorProveedorBuscable.css — ✅ V00457 (prefijo spd-)
+   Mismo aspecto que tenía dentro de Referencias del Diesel (rdd-x1…x8 + estilos en línea). */
+.spd-caja { position: relative; }
+.spd-boton { width: 100%; padding: 8px; background-color: #161b22; color: #fff; border: 1px solid #30363d; border-radius: 4px; box-sizing: border-box; cursor: pointer; text-align: left; display: flex; justify-content: space-between; align-items: center; gap: 8px; font: inherit; }
+.spd-boton:hover { border-color: #30363d; }
+.spd-boton:focus { outline: none; }
+.spd-boton:focus-visible { outline: 2px solid #D84315; outline-offset: 1px; }
+.spd-texto { color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.spd-texto--vacio { color: #8b949e; }
+.spd-flecha { color: #8b949e; font-size: 0.7rem; flex-shrink: 0; }
+.spd-panel { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 50; background-color: #0d1117; border: 1px solid #30363d; border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); overflow: hidden; }
+.spd-buscar { padding: 8px; }
+.spd-input { width: 100%; padding: 8px; background-color: #161b22; color: #c9d1d9; border: 1px solid #30363d; border-radius: 4px; box-sizing: border-box; }
+.spd-lista { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto; }
+.spd-vacio { padding: 12px; color: #8b949e; font-size: 0.85rem; text-align: center; }
+.spd-opcion { padding: 10px 12px; cursor: pointer; font-size: 0.9rem; color: #c9d1d9; border-left: 3px solid transparent; }
+.spd-opcion--elegida { color: #fff; background-color: rgba(216, 67, 21, 0.15); border-left-color: #D84315; }
+.spd-opcion:hover { background-color: #161b22; }

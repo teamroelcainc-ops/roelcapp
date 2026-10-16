@@ -132,6 +132,9 @@ export const FormularioUnidad = ({ estado, initialData, onClose, onMinimize, onR
     ejeDireccional: 0,
     ejeMotriz: 0,
     tagAvc: '',
+    tagAvi: '', // ✅ V00457
+    tagPuente3: '',
+    tagPuenteColombia: '',
     expedicionHazmat: '',
     tanqueUno: 0,
     tanqueDos: 0,
@@ -371,6 +374,22 @@ export const FormularioUnidad = ({ estado, initialData, onClose, onMinimize, onR
               <div className="form-group">
                 <label className="form-label">TAG AVC</label>
                 <input type="text" name="tagAvc" className="form-control fu-x12" value={formData.tagAvc} onChange={handleTextChange}/>
+              </div>
+
+              {/* ✅ V00457: TAG de cada puente (AVI, Puente III y Colombia) */}
+              <div className="form-group">
+                <label className="form-label">TAG AVI</label>
+                <input type="text" name="tagAvi" className="form-control fu-x12" value={formData.tagAvi ?? ''} onChange={handleTextChange}/>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">TAG PUENTE 3</label>
+                <input type="text" name="tagPuente3" className="form-control fu-x12" value={formData.tagPuente3 ?? ''} onChange={handleTextChange}/>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">TAG PUENTE COLOMBIA</label>
+                <input type="text" name="tagPuenteColombia" className="form-control fu-x12" value={formData.tagPuenteColombia ?? ''} onChange={handleTextChange}/>
               </div>
 
               <div className="form-group">

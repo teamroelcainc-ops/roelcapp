@@ -23,7 +23,7 @@
     "src/features/conveniosProveedores/components/ConveniosProveedoresDashboard.tsx": 57,
     "src/features/conveniosProveedores/components/FormularioConvenioProveedor.tsx": 29,
     "src/features/costosAdicionales/CostosAdicionalesDashboard.tsx": 26,
-    "src/features/diesel/components/ReferenciasDieselDashboard.tsx": 76,
+    "src/features/diesel/components/ReferenciasDieselDashboard.tsx": 74,
     "src/features/direcciones/components/DireccionesDashboard.tsx": 9,
     "src/features/direcciones/components/FormularioDireccion.tsx": 19,
     "src/features/documentos/AlertaDocumentos.tsx": 4,
@@ -66,7 +66,7 @@
     "src/features/panelControl/PanelControlDashboard.tsx": 10,
     "src/features/proveedoresUnidad/components/FormularioProveedorUnidad.tsx": 3,
     "src/features/proveedoresUnidad/components/ProveedoresUnidadDashboard.tsx": 5,
-    "src/features/puentes/components/ReferenciasPuentesDashboard.tsx": 32,
+    "src/features/puentes/components/ReferenciasPuentesDashboard.tsx": 31,
     "src/features/remolques/components/FormularioRemolque.tsx": 3,
     "src/features/remolques/components/RemolquesDashboard.tsx": 1,
     "src/features/reportes/components/ReportesDashboard.tsx": 55,
@@ -85,6 +85,6 @@
     "src/utils/lazyWithRetry.ts": 2,
     "functions/src/index.ts": 13
   },
-  "anyTotal": 2271,
+  "anyTotal": 2268,
   "desactivadosDeps": 90
 }

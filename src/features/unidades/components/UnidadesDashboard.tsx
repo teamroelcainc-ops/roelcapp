@@ -22,7 +22,11 @@ const COLUMNAS_BASE = [
   { id: 'modelo', label: 'Modelo', visible: true },
   { id: 'tanque1', label: 'Tanque 1', visible: true },
   { id: 'tanque2', label: 'Tanque 2', visible: true },
-  { id: 'porcentaje', label: '% Recarga', visible: true }
+  { id: 'porcentaje', label: '% Recarga', visible: true },
+  // ✅ V00457: TAG de cada puente (ocultas; se muestran desde Configurar columnas)
+  { id: 'tagAvi', label: 'TAG AVI', visible: false },
+  { id: 'tagPuente3', label: 'TAG Puente 3', visible: false },
+  { id: 'tagPuenteColombia', label: 'TAG Puente Colombia', visible: false },
 ];
 
 export const UnidadesDashboard: React.FC = () => {
@@ -170,6 +174,9 @@ export const UnidadesDashboard: React.FC = () => {
       case 'tanque1': return <span className="font-mono ud-x2">{reg.tanqueUno || 0}</span>;
       case 'tanque2': return <span className="font-mono ud-x2">{reg.tanqueDos || 0}</span>;
       case 'porcentaje': return <span className="font-mono ud-x2">{Number(reg.porcentajeRecarga || 0).toFixed(2)} %</span>;
+      case 'tagAvi': return <span className="font-mono ud-x2">{reg.tagAvi || '-'}</span>;
+      case 'tagPuente3': return <span className="font-mono ud-x2">{reg.tagPuente3 || '-'}</span>;
+      case 'tagPuenteColombia': return <span className="font-mono ud-x2">{reg.tagPuenteColombia || '-'}</span>;
       default: return <span className="ud-x5">-</span>;
     }
   };
@@ -195,6 +202,9 @@ export const UnidadesDashboard: React.FC = () => {
           case 'tanque1': val = Number(reg.tanqueUno || 0); break;
           case 'tanque2': val = Number(reg.tanqueDos || 0); break;
           case 'porcentaje': val = Number(reg.porcentajeRecarga || 0); break;
+          case 'tagAvi': val = reg.tagAvi || ''; break; // ✅ V00457
+          case 'tagPuente3': val = reg.tagPuente3 || ''; break;
+          case 'tagPuenteColombia': val = reg.tagPuenteColombia || ''; break;
         }
         fila[col.label] = val;
       });
@@ -474,6 +484,9 @@ export const UnidadesDashboard: React.FC = () => {
                   ['Tanque 1 (Lts)', (unidadDetalle as any).tanqueUno ?? (unidadDetalle as any).tanque1],
                   ['Tanque 2 (Lts)', (unidadDetalle as any).tanqueDos ?? (unidadDetalle as any).tanque2],
                   ['TAG AVC', (unidadDetalle as any).tagAvc],
+                  ['TAG AVI', unidadDetalle.tagAvi], // ✅ V00457
+                  ['TAG Puente 3', unidadDetalle.tagPuente3],
+                  ['TAG Puente Colombia', unidadDetalle.tagPuenteColombia],
                   ['Clase', (unidadDetalle as any).clase],
                   ['Peso vehicular (Kg)', (unidadDetalle as any).pesoVehicular],
                   ['Toneladas', (unidadDetalle as any).toneladas],

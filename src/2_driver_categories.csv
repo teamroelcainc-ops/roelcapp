@@ -1,0 +1,12 @@
+﻿Name,Description
+USA,U.S. citizen
+RES,Permanent resident
+C08,Asylum applicant (also A05)
+C09,Pending green card
+C11,Parole
+C19,TPS in process
+C33,DACA
+A03,Refugee
+A05,Asylum granted
+A12,TPS
+V,Under review

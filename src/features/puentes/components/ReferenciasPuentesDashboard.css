@@ -41,24 +41,17 @@
 .rpd-x37 { color: #58a6ff; }
 .rpd-x38 { color: #D84315; }
 .rpd-x39 { padding: 10px 20px; background-color: #D84315; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.9rem; }
-.rpd-x40 { margin-left: auto; display: flex; align-items: center; justify-content: center; background-color: transparent; border: 1px solid #8b949e; color: #c9d1d9; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
 .rpd-x41 { border: 1px solid #30363d; border-radius: 8px; overflow-x: auto; overflow-y: auto; max-height: calc(100vh - 320px); background-color: #161b22; }
 .rpd-x42 { padding: 16px; text-align: center; border-bottom: 1px solid #30363d; white-space: nowrap; }
 .rpd-x43 { padding: 16px; border-bottom: 1px solid #30363d; white-space: nowrap; }
-.rpd-x44 { padding: 64px 24px; text-align: center; }
 .rpd-x45 { text-align: center; padding: 40px; color: #8b949e; }
 .rpd-x46 { border-bottom: 1px solid #21262d; }
 .rpd-x47 { display: flex; gap: 8px; justify-content: center; }
-.rpd-x48 { background: transparent; border: 1px solid #f59e0b; border-radius: 4px; color: #f59e0b; cursor: pointer; padding: 6px; display: flex; }
-.rpd-x49 { background: transparent; border: 1px solid #10b981; border-radius: 4px; color: #10b981; cursor: pointer; padding: 6px; display: flex; }
-.rpd-x50 { background: transparent; border: 1px solid #3b82f6; border-radius: 4px; color: #3b82f6; cursor: pointer; padding: 6px; display: flex; }
 .rpd-x51 { background: transparent; border: 1px solid #ef4444; border-radius: 4px; color: #ef4444; cursor: pointer; padding: 6px; display: flex; }
 .rpd-x52 { padding: 16px; color: #D84315; font-weight: bold; font-family: monospace; white-space: nowrap; }
 .rpd-x53 { padding: 16px; color: #c9d1d9; white-space: nowrap; }
 .rpd-x54 { padding: 16px; color: #8b949e; white-space: nowrap; }
 .rpd-x55 { padding: 16px; color: #58a6ff; font-weight: bold; white-space: nowrap; text-align: center; }
-.rpd-x56 { display: flex; justify-content: center; gap: 10px; margin-top: 20px; }
-.rpd-x57 { color: #fff; align-self: center; }
 .rpd-x58 { z-index: 2000; position: fixed; top: 0; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; align-items: center; backdrop-filter: blur(4px); background-color: rgba(0,0,0,0.7); }
 .rpd-x59 { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; width: 720px; max-width: 95%; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
 .rpd-x60 { display: flex; justify-content: space-between; margin-bottom: 16px; border-bottom: 1px solid #30363d; padding-bottom: 12px; }
@@ -97,8 +90,6 @@
 .rpd-x93 { color: #D84315; font-size: 1.2rem; font-weight: bold; font-family: monospace; }
 .rpd-x94 { text-align: center; }
 .rpd-x95 { color: #3fb950; font-size: 1.2rem; font-weight: bold; }
-.rpd-x96 { display: flex; gap: 24px; flex-wrap: wrap; margin-bottom: 20px; color: #c9d1d9; font-size: 0.9rem; }
-.rpd-x97 { color: #8b949e; }
 .rpd-x98 { display: block; color: #8b949e; font-size: 0.8rem; font-weight: bold; text-transform: uppercase; margin-bottom: 12px; }
 .rpd-x99 { border: 1px solid #30363d; border-radius: 8px; overflow-x: auto; }
 .rpd-x100 { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.85rem; }
@@ -121,13 +112,8 @@
 .rpd-x117 { display: flex; flex-direction: column; gap: 6px; }
 .rpd-x118 { color: #8b949e; font-size: 0.8rem; font-weight: bold; }
 .rpd-x119 { width: 100%; padding: 10px; background-color: #161b22; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; cursor: pointer; box-sizing: border-box; }
-.rpd-x120 { display: flex; border: 1px solid #30363d; border-radius: 6px; overflow: hidden; }
 .rpd-x121 { display: flex; gap: 8px; }
 .rpd-x122 { color: #6e7681; font-size: 0.75rem; }
-.rpd-x123 { position: relative; }
-.rpd-x124 { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #58a6ff; }
-.rpd-x125 { width: 100%; padding: 9px 10px 9px 32px; background-color: #161b22; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; font-size: 0.9rem; box-sizing: border-box; }
-.rpd-x126 { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: transparent; border: none; color: #8b949e; cursor: pointer; font-size: 0.95rem; }
 .rpd-x127 { margin-top: auto; display: flex; gap: 10px; border-top: 1px solid #30363d; padding-top: 14px; }
 .rpd-x128 { flex: 1; padding: 10px; background: none; color: #8b949e; border: 1px solid #30363d; border-radius: 6px; cursor: pointer; font-weight: bold; }
 .rpd-x129 { flex: 1; padding: 10px; background-color: #D84315; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
@@ -144,15 +130,9 @@
   .rpd-x25 { font-size: 1.3rem; }
   .rpd-x30 { padding: 14px 12px; }
   .rpd-x34 { padding: 14px 12px; }
-  .rpd-x40 { flex-wrap: wrap; }
-  .rpd-x44 { padding: 14px 12px; }
   .rpd-x45 { padding: 14px 12px; }
   .rpd-x47 { flex-wrap: wrap; }
-  .rpd-x48 { flex-wrap: wrap; }
-  .rpd-x49 { flex-wrap: wrap; }
-  .rpd-x50 { flex-wrap: wrap; }
   .rpd-x51 { flex-wrap: wrap; }
-  .rpd-x56 { flex-wrap: wrap; }
   .rpd-x58 { flex-wrap: wrap; }
   .rpd-x59 { padding: 14px 12px; }
   .rpd-x60 { flex-wrap: wrap; }
@@ -171,7 +151,6 @@
   .rpd-x107 { flex-wrap: wrap; }
   .rpd-x111 { flex-wrap: wrap; }
   .rpd-x113 { flex-wrap: wrap; }
-  .rpd-x120 { flex-wrap: wrap; }
   .rpd-x121 { flex-wrap: wrap; }
   .rpd-x127 { flex-wrap: wrap; }
 }
@@ -195,9 +174,6 @@
 .rpd-grupo__total { color: #3fb950; font-weight: 700; }
 .rpd-grupo__refs { margin-top: 4px; color: #8b949e; font-size: 0.74rem; word-break: break-word; }
 .rpd-celda--refs { max-width: 360px; white-space: normal; font-size: 0.8rem; }
-.rpd-status { padding: 4px 12px; border-radius: 12px; font-size: 0.75rem; font-weight: 700; border: 1px solid; }
-.rpd-status--pagada { color: #10b981; border-color: #10b981; background: rgba(16, 185, 129, 0.1); }
-.rpd-status--pendiente { color: #f59e0b; border-color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
 /* ✅ V00395: Otros Cruces */
 .rpd-otros-barra { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding: 14px 16px; margin-bottom: 16px; border: 1px solid #30363d; border-radius: 8px; background: #161b22; }
 .rpd-otros-nota { color: #8b949e; font-size: 0.85rem; flex: 1 1 320px; }
@@ -210,7 +186,6 @@
 .rpd-otro-input { width: 100%; box-sizing: border-box; padding: 9px 10px; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: #f0f6fc; font-size: 0.9rem; color-scheme: dark; }
 .rpd-otro-input:focus { outline: none; border-color: #D84315; }
 .rpd-otro-input--ref { color: #ff8a5b; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight: 700; }
-.rpd-chip-otro { display: inline-block; padding: 1px 8px; border-radius: 999px; border: 1px solid #a371f7; color: #d2a8ff; font-size: 0.7rem; font-weight: 700; margin-right: 4px; }
 @media (max-width: 560px) { .rpd-otro-grid { grid-template-columns: 1fr; } }
 /* ✅ V00396: detalle de otro cruce y filas clicables */
 .rpd-fila-clic { cursor: pointer; }
@@ -309,7 +284,6 @@
 .rpd-acciones-hist { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .rpd-btn-borrar { padding: 8px 14px; border-radius: 6px; border: 1px solid #da3633; background: rgba(248, 81, 73, 0.1); color: #ff7b72; font-weight: 700; font-size: 0.82rem; cursor: pointer; white-space: nowrap; }
 .rpd-btn-borrar:hover:not(:disabled) { background: rgba(248, 81, 73, 0.2); }
-.rpd-btn-borrar--todo { background: transparent; }
 .rpd-btn-borrar:disabled { opacity: 0.6; cursor: wait; }
 /* ✅ V00415: cambiar puente, agregar operaciones a la referencia */
 .rpd-select-puente { padding: 5px 8px; border-radius: 6px; border: 1px solid #30363d; background: #0d1117; color: #e6edf3; font-size: 0.84rem; max-width: 200px; cursor: pointer; }

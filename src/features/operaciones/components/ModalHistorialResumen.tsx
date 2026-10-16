@@ -2,7 +2,7 @@
 // ✅ V00456: al presionar la tarjeta Tipo de cambio o Diesel (Operaciones Activas)
 //   se ven los últimos registros capturados. Lectura única acotada (TanStack Query:
 //   volver a abrir no vuelve a leer; se invalida al capturar uno nuevo).
-import { useEffect, useRef } from 'react';
+import { useEffect, useEffectEvent, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import CargandoDatos from '../../../shared/components/CargandoDatos';
@@ -86,14 +86,17 @@ function TablaDiesel({ tcActual }: { tcActual: number | null }) {
 
 export default function ModalHistorialResumen({ tipo, tcActual, onCerrar }: Props) {
   // Escape cierra; el foco entra al modal (botón cerrar) y vuelve a donde estaba al cerrar.
+  // ✅ V00457: con useEffectEvent el efecto corre UNA vez (onCerrar llega nuevo en cada
+  //   repintado de App y movía el foco en cada snapshot).
   const cerrarRef = useRef<HTMLButtonElement>(null);
+  const alTeclear = useEffectEvent((e: KeyboardEvent) => { if (e.key === 'Escape') onCerrar(); });
   useEffect(() => {
     const previo = document.activeElement as HTMLElement | null;
     cerrarRef.current?.focus();
-    const alTeclear = (e: KeyboardEvent) => { if (e.key === 'Escape') onCerrar(); };
-    window.addEventListener('keydown', alTeclear);
-    return () => { window.removeEventListener('keydown', alTeclear); previo?.focus?.(); };
-  }, [onCerrar]);
+    const escuchar = (e: KeyboardEvent) => alTeclear(e);
+    window.addEventListener('keydown', escuchar);
+    return () => { window.removeEventListener('keydown', escuchar); previo?.focus?.(); };
+  }, []);
   const titulo = tipo === 'tc' ? 'Últimos tipos de cambio' : 'Últimas capturas de diesel';
   const nota = tipo === 'tc' ? 'Los 30 registros más recientes (pesos por dólar).' : 'Las 40 capturas más recientes. El precio por litro en pesos usa el tipo de cambio vigente.';
   return createPortal(

@@ -1,0 +1,31 @@
+# V00457 — TAG de puentes en Unidades Propias, Acumulado en Referencias de Puentes y Saldo Diesel con Actualizar saldo e historial
+
+**Solo web** (deploy de hosting de siempre). Sin reglas, índices, banderas ni Cloud Functions.
+
+## Qué cambia
+1. **Unidades Propias: TAG AVI, TAG PUENTE 3 y TAG PUENTE COLOMBIA.** Tres campos nuevos en el formulario (en su propio renglón, después de TAG AVC, que se queda como estaba). Se ven en el detalle de la unidad y, si se quieren, como columnas de la tabla desde *Configurar columnas* (salen también en el Excel). Se guardan en `unidades` como `tagAvi`, `tagPuente3` y `tagPuenteColombia`; las unidades que ya existen los tienen vacíos hasta que se capturen.
+2. **Referencias de Puentes → "Acumulado".** La pestaña *Historial de referencias* ahora se llama **Acumulado**, y los textos que la mencionaban también (*Enviar al Acumulado*, notas de Saldo y de Otros Cruces).
+3. **Sin "Historial manual (anterior)".** Se quitó la pestaña con su búsqueda, filtros, paginación y su Excel. Los otros cruces viejos que vivían ahí se siguen viendo, abriendo y eliminando en *Otros Cruces* y siguen descontando del Saldo, igual que antes.
+4. **Operaciones sin asignar: solo completadas.** Aparecen las operaciones con status *Servicio Completado* (también los *Falsos*, igual que en Servicios Completados). Las que van en camino (Verde MX / Verde USA, Documentado…) y las canceladas ya no aparecen. La misma regla aplica a *+ Agregar operaciones* dentro del detalle de una referencia y a la lista de unidades del filtro.
+5. **Otros Cruces: solo Caseta AVI.** El puente viene fijo en **Caseta AVI** (no se puede cambiar), con su monto ya puesto y la lista de referencias AVI para elegir a cuál va (o crear una nueva AVI-…).
+6. **Sin "Eliminar todas".** Se quitó el botón. Siguen el bote de basura de cada referencia y *Eliminar seleccionadas* al marcar varias.
+7. **Saldo Diesel (Operaciones Activas).**
+   - **Actualizar saldo**: abre el **mismo formulario** *Agregar saldo de diesel* de Referencias del Diesel → Saldos (Fecha, Hora, Proveedor con *Todos los proveedores* marcado, Saldo inicial, Moneda) y lo guarda en sus Saldos, campo por campo igual.
+   - **Al presionar la tarjeta**: el historial del saldo con rango de fechas (Hoy, 7 días, 30 días, Todo): cada saldo agregado (+), lo cargado cada día (−) con cuántas cargas y galones, y el **saldo que queda** después de cada movimiento. La última fila cuadra con la cifra de la tarjeta. Al abrir *Cargas del día* se ven sus referencias (unidad, proveedor, galones, costo y total). Se cierra con *Cerrar*, la ✕ o Escape.
+
+## Técnico
+- **Unidades**: `src/types/unidad.ts` (campos opcionales), `FormularioUnidad.tsx`, `UnidadesDashboard.tsx` (detalle + 3 columnas ocultas + Excel).
+- **Referencias de Puentes** (`ReferenciasPuentesDashboard.tsx/.css`): fuera la pestaña `historial` con su estado, memos, Excel, rama del panel de filtros y 26 reglas de CSS que solo usaba ella; `style={{` 16 → 11; ESLint 32 → 31. El listener de operaciones ya no se cerraba y reabría en cada cambio de pestaña (dependía de `activeTab` solo para la pestaña quitada): ahora se abre una vez. `esCompletadaOp = esGrupoTerminado(estadoGrupoDe(op))` (la regla de `shared/dominio/operacionCanonica.ts`). Caseta de otros cruces: `casetaAviOtrosCruces()` en `puentesCatalogo.ts` (+ prueba): "Caseta AVI"; si el catálogo la nombra distinto, la caseta AVI de nombre más corto.
+- **Diesel**: nuevos `features/diesel/services/proveedoresDiesel.ts` (filtro de proveedores de diesel, puro + prueba) y `saldosDiesel.ts` (alta en `saldos_diesel`); `components/ModalAgregarSaldoDiesel.tsx/.css` (prefijo `masd-`, portal, Escape) y `SelectorProveedorBuscable.tsx/.css` (prefijo `spd-`; salió de ReferenciasDieselDashboard y sus estilos en línea y el hover por JavaScript pasaron a CSS). `ReferenciasDieselDashboard.tsx/.css` usa los tres; `style={{` 70 → 68; ESLint 76 → 74.
+- **Tarjeta Saldo Diesel** (`TarjetaSaldoDiesel.tsx`): botón, tarjeta que se abre (`rd-card--clic`), modales perezosos. Ahora espera `useFlagsCargadas()` antes de abrir sus listeners: con `saldosCorrientes` encendida ya no abre primero el de 3,000 referencias.
+- **Historial** (`services/movimientosDiesel.ts`, puro + pruebas; `components/ModalMovimientosDiesel.tsx/.css`, prefijo `tmd-`, usa la base `tmov-` de los puentes): las cuentas y la aritmética son las de la tarjeta (`cuentasDiesel` / `cuentasDieselDesdeReferencias`), probado al centavo con totales sin redondear.
+- **Lecturas**: el historial usa lo que la tarjeta ya escucha (0 lecturas). El detalle de un día: sin la bandera, de las referencias de la tarjeta (0 lecturas); con `saldosCorrientes`, `referencias_diesel` de esa fecha al abrirlo (rango sobre `fecha`, índice simple automático), guardado en memoria mientras no cambien las cargas del día.
+- `ModalHistorialResumen` (V00456): Escape y foco con `useEffectEvent` (antes el efecto se repetía en cada repintado de App).
+- Carga inicial: +1.6 KB (0.3 KB gzip).
+- Revisión independiente (agente aparte), corregido: el saldo del historial podía diferir por centavos de la tarjeta, la espera del historial al cambiar la bandera, "$ 0.00" mientras cargaba, el detalle de un día que no se refrescaba tras una carga nueva, la Caseta AVI si el catálogo la nombra distinto y Escape en el formulario de saldo.
+- Banco de pruebas (V00456 contra V00457): formulario de saldo (proveedores de diesel, búsqueda, guardado idéntico, la tarjeta sube), historial con y sin `saldosCorrientes` (saldo final = tarjeta, detalle del día leído y sin leer, el foco no se va al llegar un snapshot, Escape), pestañas de Referencias de Puentes, sin asignar (completada y falso sí; verde y cancelada no), Otros Cruces (Caseta AVI fija, monto 23.75, guarda en la referencia AVI), TAG de una unidad (guardar, detalle). Sin errores de consola.
+
+## Qué revisar con datos reales
+1. Unidades Propias → edita una unidad: aparecen TAG AVI, TAG PUENTE 3 y TAG PUENTE COLOMBIA; guarda y ábrela otra vez.
+2. Referencias de Puentes: pestañas *Acumulado · Operaciones sin asignar · Saldo · Otros Cruces*; en sin asignar solo completadas; en *+ Agregar cruce* el puente es Caseta AVI.
+3. Saldo Diesel: *Actualizar saldo* guarda en Referencias del Diesel → Saldos; al presionar la tarjeta, la primera fila del historial tiene el mismo saldo que la tarjeta.

@@ -25,6 +25,10 @@ export interface UnidadRecord {
   ejeDireccional: number;
   ejeMotriz: number;
   tagAvc: string;
+  /** ✅ V00457: TAG de cada puente (texto libre, opcional en los registros viejos). */
+  tagAvi?: string;
+  tagPuente3?: string;
+  tagPuenteColombia?: string;
   expedicionHazmat: string;
   tanqueUno: number;
   tanqueDos: number;

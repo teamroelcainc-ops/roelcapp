@@ -1,0 +1,66 @@
+.detail-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.dstock {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  background: var(--success-bg);
+  border-radius: var(--radius-sm);
+  padding: 11px 14px;
+}
+
+.dstock.is-empty {
+  background: var(--danger-bg);
+}
+
+.dstock-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--success);
+}
+
+.dstock.is-empty .dstock-label {
+  color: var(--danger);
+}
+
+.dstock-add {
+  margin-left: auto;
+  padding: 8px 14px;
+  font-size: 12.5px;
+}
+
+.detail-related {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.detail-related h3 {
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-soft);
+  margin-bottom: 10px;
+}
+/* Aviso: la ventana de captura está cerrada, no se agregan renglones. */
+.detail-locked {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 9px 14px;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: 12.5px;
+  font-weight: 600;
+}
