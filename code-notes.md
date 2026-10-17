@@ -207,6 +207,12 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - Modales con `createPortal` a `document.body` (la tarjeta usa `transform` al pasar el mouse) y perezosos desde la tarjeta (`lazyWithRetry`): la carga inicial crece 0.3 KB (sin eso, ~20 KB por FormularioConfigurable).
 - Se quitaron las reglas `.rd-dos*` de App.css (solo las usaba la tarjeta TC · Diesel).
 
+## V00462 (el T.C. sigue a la fecha también al abrir)
+- Omaf (17-oct, con TR-151026-019): "el tipo de cambio debe cambiar conforme se cambia la fecha: si la fecha es hoy, el de hoy; si es ayer, el de ayer". La V00461 conservaba el T.C. guardado de una operación (por si se ajustó a mano) y solo avisaba; para su rol el campo está bloqueado por Autorizaciones, así que no aparecía "Usar el oficial" y no había forma de corregirla. Además, al regresar a la fecha original se restauraba el T.C. guardado (el malo).
+- Ahora (`tcParaOperacionGuardada`, formulario/tipoCambioFila.ts): al abrir una guardada en su fecha, su T.C. pasa al oficial de su fecha (se guarda al Guardar; el aviso azul dice cuál traía). Excepciones: ya facturada (cliente o proveedor: cambiaría una factura emitida → aviso amarillo, se decide en Facturación o con "Usar el oficial" si el rol puede) y T.C. escrito a mano en esta sesión. Sin T.C. registrado para su fecha se queda el que trae.
+- Un T.C. escrito a mano ya no sobrevive a volver a abrir la operación (regresa al oficial). Es la regla que pidió el negocio; si algún día hace falta un T.C. especial por operación, habría que guardar una marca de "a mano".
+- La corrección automática respeta Autorizaciones: `tipoCambioAprobado` bloqueado en pantalla no cuenta como cambio del usuario (V00382), así que guardar no pide autorización.
+
 ## V00461 (Tipo de cambio de la operación = el de su fecha de servicio)
 - Reporte de Facturación: TR-151026-019 (servicio del 15) con el T.C. del 16. Tres causas, reproducidas en el banco de pruebas:
   1. Al abrir una operación guardada, el efecto del T.C. corría primero con la fecha POR DEFECTO del formulario (hoy) y escribía el T.C. de hoy; al cargar su fecha ya no lo cambiaba (fecha = la inicial). Guardar dejaba el de hoy. Pasa en cualquier módulo que edita operaciones (Activas, Completados, Cancelados, editor embebido).

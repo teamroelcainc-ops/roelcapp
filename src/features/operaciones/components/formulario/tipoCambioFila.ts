@@ -5,7 +5,7 @@
 // FormularioOperacion.tsx). El respaldo cuando no viene en catalogosCacheados
 // está en services/tipoCambioPorFecha (V00438).
 // ---------------------------------------------------------------------------
-import { tipoCambioAplicable, tipoCambioDeFecha, valorDeTipoCambio } from '../../../../shared/dominio/tipoCambio';
+import { mismoTipoCambio, tipoCambioAplicable, tipoCambioDeFecha, valorDeTipoCambio } from '../../../../shared/dominio/tipoCambio';
 
 /** Fecha a AAAA-MM-DD (Timestamp, {seconds}, Date, ISO, D/M/AAAA, epoch). '' si no se entiende. */
 export const normalizarFechaISO = (valor: unknown): string => {
@@ -61,3 +61,17 @@ export const buscarTCDeFecha = (fuente: unknown, objetivoISO: string): number | 
 /** ✅ V00461: el T.C. que le toca a la fecha (sábado/domingo sin registro → el del viernes) y de qué día es. */
 export const buscarTCAplicable = (fuente: unknown, objetivoISO: string): { valor: number; fecha: string } | null =>
   tipoCambioAplicable((f) => tipoCambioDeFecha(fuente, f), objetivoISO);
+
+/**
+ * ✅ V00462: T.C. de una operación GUARDADA abierta en su propia fecha (sin cambiarla). Regla del
+ * negocio: el T.C. de la operación es el oficial de su fecha de servicio, también al abrirla.
+ * · Su fecha no tiene T.C. registrado → se queda el que trae (null = no cambiar).
+ * · Trae 0 o trae otro → el oficial.
+ * · Excepto: ya facturada (cambiaría una factura emitida: solo se avisa) o editado a mano en esta sesión.
+ */
+export const tcParaOperacionGuardada = (p: { actual: number; oficial: number | null; facturada: boolean; editadoAMano: boolean }): number | null => {
+  if (p.oficial === null) return null;
+  if (!(p.actual > 0)) return p.oficial;
+  if (mismoTipoCambio(p.actual, p.oficial) || p.facturada || p.editadoAMano) return null;
+  return p.oficial;
+};

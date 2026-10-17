@@ -1,7 +1,8 @@
 // src/features/operaciones/components/formulario/AvisoTipoCambio.tsx
 // ✅ V00461: debajo de la Fecha de Servicio dice el T.C. OFICIAL de esa fecha y avisa
-//   cuando la operación trae otro (por ejemplo, el de otro día que antes se quedaba
-//   al abrirla o al cambiar la fecha). "Usar el oficial" lo corrige; se guarda al Guardar.
+//   cuando la operación trae otro. "Usar el oficial" lo corrige; se guarda al Guardar.
+// ✅ V00462: al abrir una operación guardada su T.C. ya pasa solo al oficial; aquí se dice cuál
+//   traía. Si ya está facturada no se cambia solo y se explica por qué.
 import { mismoTipoCambio } from '../../../../shared/dominio/tipoCambio';
 import './AvisoTipoCambio.css';
 
@@ -15,6 +16,10 @@ interface Props {
   fechaDelOficial: string;
   /** T.C. que trae la operación (tipoCambioAprobado). */
   deOperacion: number;
+  /** T.C. con el que estaba guardada (0 si es nueva o se cambió la fecha). */
+  traia: number;
+  /** ¿Ya está facturada? (su T.C. no se cambia solo). */
+  facturada: boolean;
   /** Sin función (campo bloqueado por Autorizaciones) no se muestra el botón. */
   onUsarOficial?: () => void;
 }
@@ -25,7 +30,7 @@ const fechaCorta = (iso: string): string => {
 };
 const tc = (n: number): string => `$${n.toFixed(4)}`;
 
-export default function AvisoTipoCambio({ buscando, fechaISO, oficial, fechaDelOficial, deOperacion, onUsarOficial }: Props) {
+export default function AvisoTipoCambio({ buscando, fechaISO, oficial, fechaDelOficial, deOperacion, traia, facturada, onUsarOficial }: Props) {
   // Sábado o domingo sin registro: el del viernes.
   const delDia = fechaDelOficial && fechaDelOficial !== fechaISO ? `del ${fechaCorta(fechaISO)} (fin de semana, el del ${fechaCorta(fechaDelOficial)})` : `del ${fechaCorta(fechaISO)}`;
   if (buscando) return <small className="atc atc--buscando">Buscando TC…</small>;
@@ -40,10 +45,13 @@ export default function AvisoTipoCambio({ buscando, fechaISO, oficial, fechaDelO
   if (deOperacion > 0 && !mismoTipoCambio(deOperacion, oficial)) {
     return (
       <small className="atc atc--distinto">
-        TC de la operación {tc(deOperacion)} · oficial {delDia} {tc(oficial)}
+        TC de la operación {tc(deOperacion)} · oficial {delDia} {tc(oficial)}{facturada ? ' · ya está facturada: no se cambió solo' : ''}
         {onUsarOficial && <button type="button" className="atc__usar" onClick={onUsarOficial}>Usar el oficial</button>}
       </small>
     );
+  }
+  if (traia > 0 && !mismoTipoCambio(traia, oficial) && mismoTipoCambio(deOperacion, oficial)) {
+    return <small className="atc atc--corregido">TC oficial {delDia}: {tc(oficial)} · antes tenía {tc(traia)}, se guarda al presionar Guardar</small>;
   }
   return <small className="atc atc--ok">TC oficial {delDia}: {tc(oficial)}</small>;
 }

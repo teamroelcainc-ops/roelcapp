@@ -52,7 +52,8 @@ import { quitarCamposAjenos } from '../services/camposAjenos'; // ✅ V00451
 // ✅ V00444 (Fase 8.3): piezas sin estado del formulario, en archivos propios.
 import { describirCambiosLog, describirCamposCapturadosLog, listaCambiosAuditoria } from '../services/auditoriaLog';
 import { colorTipoOperacion, formatearDireccionPorPais, normalizarTxtDir, paisDeDireccion } from './formulario/direcciones';
-import { buscarTCAplicable, buscarTCDeFecha, normalizarFechaISO } from './formulario/tipoCambioFila';
+import { buscarTCAplicable, buscarTCDeFecha, normalizarFechaISO, tcParaOperacionGuardada } from './formulario/tipoCambioFila';
+import { facturadaCliente, facturadaProveedor } from '../../../shared/dominio/operacionCanonica'; // ✅ V00462
 import AvisoTipoCambio from './formulario/AvisoTipoCambio'; // ✅ V00461
 import { adjuntosDeCampo, archivosDeCampo, referenciaDeOperacion, subirDocumentosOperacion, TIPOS_DOCUMENTO_OPERACION } from './formulario/documentosOperacion';
 import type { Adjunto } from '../../../shared/archivos/adjuntos'; // ✅ V00451: varios archivos por documento
@@ -417,6 +418,8 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
   const [tipoCambioDia, setTipoCambioDia] = useState<number | null>(null);
   // ✅ V00461: ¿el usuario cambió la Fecha de Servicio? Solo entonces una operación GUARDADA toma el T.C. de otra fecha.
   const fechaServicioTocada = useRef(false);
+  // ✅ V00462: ¿el usuario escribió el T.C. a mano en esta sesión? Entonces no se corrige solo.
+  const tcEditadoAMano = useRef(false);
   const [fechaTCDia, setFechaTCDia] = useState(''); // ✅ V00461: día al que pertenece tipoCambioDia (sábado/domingo → viernes)
   const [buscandoTC, setBuscandoTC] = useState(false);
 
@@ -1010,6 +1013,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
 
       setFormData(prev => ({ ...prev, ...safeInitialData }));
       fechaServicioTocada.current = false; // ✅ V00461: el formulario se reusa (minimizado) al abrir otra operación
+      tcEditadoAMano.current = false; // ✅ V00462
 
       const getNombreEmpresa = (id: string) => {
         if (!id) return '';
@@ -1084,8 +1088,9 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
   //   · Nueva o con la fecha cambiada: el T.C. de esa fecha, o 0 si aún no hay registro (antes
   //     se quedaba el de la fecha anterior y se mostraba como "oficial"). Si el usuario vuelve a
   //     la fecha original de una guardada, regresa su T.C. guardado.
-  //   · Guardada en su fecha: si no trae T.C. se completa con el de su fecha; si trae otro, no se
-  //     cambia solo (pudo ajustarse a mano): AvisoTipoCambio lo señala con "Usar el oficial".
+  //   · ✅ V00462 · Guardada en su fecha: el T.C. pasa al oficial de su fecha también al abrirla
+  //     (traiga 0 u otro; se guarda al Guardar). No se cambia solo si ya está facturada (sería
+  //     cambiar una factura emitida: AvisoTipoCambio lo marca) ni si se escribió a mano aquí.
   useEffect(() => {
     if (!formData.fechaServicio) return;
 
@@ -1117,12 +1122,19 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
       setTipoCambioDia(tcEncontrado);
       setFechaTCDia(tcEncontrado !== null ? fechaDelTC : '');
 
+      const facturada = !!initialData && (facturadaCliente(initialData) || facturadaProveedor(initialData));
       if (sigueLaFecha) {
+        // De vuelta en su fecha original: el oficial, o el que traía si no hay oficial o ya está facturada.
         const tcGuardado = Number(initialData?.tipoCambioAprobado) || 0;
-        const tc = initialData && objetivoISO === fechaInicialISO && tcGuardado > 0 ? tcGuardado : (tcEncontrado ?? 0);
+        const esSuFecha = !!initialData && objetivoISO === fechaInicialISO;
+        const tc = esSuFecha && tcGuardado > 0 && (tcEncontrado === null || facturada) ? tcGuardado : (tcEncontrado ?? 0);
         setFormData(prev => ({ ...prev, tipoCambioAprobado: tc }));
       } else if (tcEncontrado !== null) {
-        setFormData(prev => (Number(prev.tipoCambioAprobado) > 0 ? prev : { ...prev, tipoCambioAprobado: tcEncontrado as number }));
+        const oficial = tcEncontrado;
+        setFormData(prev => {
+          const nuevo = tcParaOperacionGuardada({ actual: Number(prev.tipoCambioAprobado) || 0, oficial, facturada, editadoAMano: tcEditadoAMano.current });
+          return nuevo === null ? prev : { ...prev, tipoCambioAprobado: nuevo };
+        });
       }
       setBuscandoTC(false);
     })();
@@ -1862,7 +1874,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    if (name === 'fechaServicio') fechaServicioTocada.current = true; // ✅ V00461
+    if (name === 'fechaServicio') { fechaServicioTocada.current = true; tcEditadoAMano.current = false; } // ✅ V00461 · V00462
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
@@ -2577,9 +2589,13 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
   const tcResumen = formData.tipoCambioAprobado || tipoCambioDia;
   // ✅ V00461: T.C. oficial de la fecha de servicio y aviso si la operación trae otro (en General y en Cobrar).
   //   "Usar el oficial" respeta el bloqueo de Autorizaciones del campo.
+  // ✅ V00462: `traia` = el T.C. guardado (si la fecha es la original) para decir que se corrigió al abrir.
+  const enSuFechaOriginal = !!initialData && normalizarFechaISO(formData.fechaServicio) === normalizarFechaISO(initialData.fechaServicio);
   const avisoTC = (
     <AvisoTipoCambio buscando={buscandoTC} fechaISO={normalizarFechaISO(formData.fechaServicio)} oficial={tipoCambioDia} fechaDelOficial={fechaTCDia} deOperacion={Number(formData.tipoCambioAprobado) || 0}
-      onUsarOficial={campoBloqueadoAut('tipoCambioAprobado') || tipoCambioDia === null ? undefined : () => setFormData(prev => ({ ...prev, tipoCambioAprobado: tipoCambioDia }))} />
+      traia={enSuFechaOriginal ? Number(initialData?.tipoCambioAprobado) || 0 : 0}
+      facturada={!!initialData && (facturadaCliente(initialData) || facturadaProveedor(initialData))}
+      onUsarOficial={campoBloqueadoAut('tipoCambioAprobado') || tipoCambioDia === null ? undefined : () => { tcEditadoAMano.current = false; setFormData(prev => ({ ...prev, tipoCambioAprobado: tipoCambioDia })); }} />
   );
 
   const fmtFecha = (f: string) => { if (!f) return ''; try { return new Date(f).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return f; } };
@@ -3452,7 +3468,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
                         </div>
                       </div>
                       <div className="form-group"><label className="form-label">Total <span className="campo-badge">subtotalCliente</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.subtotalCliente || 0} readOnly style={{ opacity: 0.9, color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 600 : undefined }} /></ConSimboloMoneda></div>
-                      <div className="form-group"><label className="form-label">Tipo de Cambio <span className="campo-badge">tipoCambioAprobado</span></label><ConSimboloMoneda><input type="number" step="0.0001" className="form-control" value={formData.tipoCambioAprobado || 0} readOnly={campoBloqueadoAut('tipoCambioAprobado')} onChange={e => setFormData(prev => ({ ...prev, tipoCambioAprobado: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('tipoCambioAprobado') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del TC oficial de la fecha de servicio; puedes ajustarlo manualmente'} style={campoBloqueadoAut('tipoCambioAprobado') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} /></ConSimboloMoneda>{avisoTC}</div>
+                      <div className="form-group"><label className="form-label">Tipo de Cambio <span className="campo-badge">tipoCambioAprobado</span></label><ConSimboloMoneda><input type="number" step="0.0001" className="form-control" value={formData.tipoCambioAprobado || 0} readOnly={campoBloqueadoAut('tipoCambioAprobado')} onChange={e => { tcEditadoAMano.current = true; setFormData(prev => ({ ...prev, tipoCambioAprobado: Number(e.target.value) || 0 })); }} title={campoBloqueadoAut('tipoCambioAprobado') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del TC oficial de la fecha de servicio; puedes ajustarlo manualmente'} style={campoBloqueadoAut('tipoCambioAprobado') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} /></ConSimboloMoneda>{avisoTC}</div>
                     </div>
                   </div>
 

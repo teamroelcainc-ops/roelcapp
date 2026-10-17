@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { colorTipoOperacion, limpiarUndefined } from './formatosOperacion';
 import { describirCambiosLog, describirCamposCapturadosLog, listaCambiosAuditoria, truncarValorLog } from './auditoriaLog';
 import { colorTipoOperacion as colorDelFormulario, formatearDireccionPorPais, paisDeDireccion } from '../components/formulario/direcciones';
-import { buscarTCDeFecha, extraerRateDeFilaTC, normalizarFechaISO } from '../components/formulario/tipoCambioFila';
+import { buscarTCDeFecha, extraerRateDeFilaTC, normalizarFechaISO, tcParaOperacionGuardada } from '../components/formulario/tipoCambioFila';
 import { normalizarFechaServicioISO, normalizarMoneda } from '../components/completados/formatos';
 
 describe('formatosOperacion', () => {
@@ -63,6 +63,18 @@ describe('fechas y tipo de cambio', () => {
     expect(buscarTCDeFecha(filas, '2026-03-25')).toBe(17.25);
     expect(buscarTCDeFecha(filas, '2026-03-26')).toBeNull();
     expect(extraerRateDeFilaTC({ x: 'abc', y: '18.5' })).toBe(18.5);
+  });
+
+  // ✅ V00462
+  it('al abrir una operación guardada su T.C. pasa al oficial de su fecha (salvo facturada o editado a mano)', () => {
+    const base = { actual: 18.425, oficial: 18.4888, facturada: false, editadoAMano: false };
+    expect(tcParaOperacionGuardada(base)).toBe(18.4888);
+    expect(tcParaOperacionGuardada({ ...base, actual: 0 })).toBe(18.4888);
+    expect(tcParaOperacionGuardada({ ...base, actual: 18.4888 })).toBeNull();
+    expect(tcParaOperacionGuardada({ ...base, facturada: true })).toBeNull();
+    expect(tcParaOperacionGuardada({ ...base, facturada: true, actual: 0 })).toBe(18.4888);
+    expect(tcParaOperacionGuardada({ ...base, editadoAMano: true })).toBeNull();
+    expect(tcParaOperacionGuardada({ ...base, oficial: null })).toBeNull();
   });
 
   it('moneda normalizada', () => {
