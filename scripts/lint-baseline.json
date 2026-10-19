@@ -55,13 +55,13 @@
     "src/features/nominas/components/ReferenciasNominaDashboard.tsx": 120,
     "src/features/operaciones/components/EditorDetalleConvenioModal.tsx": 7,
     "src/features/operaciones/components/EditorOperacionEmbebido.tsx": 6,
-    "src/features/operaciones/components/FormularioOperacion.tsx": 294,
+    "src/features/operaciones/components/FormularioOperacion.tsx": 293,
     "src/features/operaciones/components/OperacionesDashboard.tsx": 76,
     "src/features/operaciones/components/ServiciosCancelados.tsx": 97,
     "src/features/operaciones/components/ServiciosCompletados.tsx": 143,
     "src/features/operaciones/config/statusRules.ts": 21,
     "src/features/operaciones/context/FormularioOperacionContext.tsx": 8,
-    "src/features/operaciones/services/operacionesService.ts": 10,
+    "src/features/operaciones/services/operacionesService.ts": 6,
     "src/features/pagos/components/PagosDashboard.tsx": 28,
     "src/features/panelControl/PanelControlDashboard.tsx": 10,
     "src/features/proveedoresUnidad/components/FormularioProveedorUnidad.tsx": 3,
@@ -85,6 +85,6 @@
     "src/utils/lazyWithRetry.ts": 2,
     "functions/src/index.ts": 13
   },
-  "anyTotal": 2268,
+  "anyTotal": 2263,
   "desactivadosDeps": 90
 }

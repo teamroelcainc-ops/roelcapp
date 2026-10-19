@@ -17,7 +17,8 @@ import { puedeClave } from '../../../utils/permisos'; // ✅ V00224
 import { claveConsecutivo } from '../../../utils/claveConsecutivo'; // ✅ V00428
 import { CambioSueldoOperador, HistorialCambiosSueldo } from './CambioSueldoOperador'; // ✅ V00433
 import { useUsuarioStore } from '../../../stores/useUsuarioStore';
-import { guardarOperacionSegura } from '../services/operacionesService';
+import { guardarOperacionSegura, nuevoIdEnvioOperacion } from '../services/operacionesService';
+import { conReintentos } from '../services/reintentosCallable'; // ✅ V00463
 // ✅ AUTORIZACIONES: interceptar guardado cuando la acción/campo lo requiere.
 import { cargarConfigModulo, evaluarAutorizacion, camposModificadosDe, obtenerUsuarioAut, MODULOS_AUTORIZABLES } from '../../autorizaciones/autorizaciones';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
@@ -420,6 +421,9 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
   const fechaServicioTocada = useRef(false);
   // ✅ V00462: ¿el usuario escribió el T.C. a mano en esta sesión? Entonces no se corrige solo.
   const tcEditadoAMano = useRef(false);
+  // ✅ V00463: id del envío de esta captura nueva; el mismo en cada "Guardar" hasta que se guarda
+  //   (crearOperacion no duplica si un intento anterior sí llegó). Se limpia al guardar o cancelar.
+  const clienteOpIdRef = useRef<string | null>(null);
   const [fechaTCDia, setFechaTCDia] = useState(''); // ✅ V00461: día al que pertenece tipoCambioDia (sábado/domingo → viernes)
   const [buscandoTC, setBuscandoTC] = useState(false);
 
@@ -1014,6 +1018,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
       setFormData(prev => ({ ...prev, ...safeInitialData }));
       fechaServicioTocada.current = false; // ✅ V00461: el formulario se reusa (minimizado) al abrir otra operación
       tcEditadoAMano.current = false; // ✅ V00462
+      clienteOpIdRef.current = null; // ✅ V00463
 
       const getNombreEmpresa = (id: string) => {
         if (!id) return '';
@@ -2512,11 +2517,13 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
           try {
             const { getFunctions, httpsCallable } = await import('firebase/functions');
             const fn = httpsCallable(getFunctions(undefined, 'us-central1'), 'renumerarOperacion');
-            const rRes: any = await fn({ operacionId: idDocReal, ...renumerarPendiente }); // ✅ V00451: el documento REAL
-            const nuevaRef = String(rRes?.data?.ref || '');
+            // ✅ V00463: con reintentos ante fallos de conexión (no cambia una operación que ya está en la línea).
+            const { valor: rRes } = await conReintentos(() => fn({ operacionId: idDocReal, ...renumerarPendiente })); // ✅ V00451: el documento REAL
+            const rData = (rRes?.data ?? null) as { ref?: unknown; version?: unknown } | null;
+            const nuevaRef = String(rData?.ref || '');
             if (nuevaRef) {
               (operacionData as any).ref = nuevaRef;
-              console.info(`[consecutivo] renumerada por cambio de línea → ${nuevaRef} · función=${rRes?.data?.version || 'v1/desconocida (¡desplegar!)'}`);
+              console.info(`[consecutivo] renumerada por cambio de línea → ${nuevaRef} · función=${String(rData?.version || 'v1/desconocida (¡desplegar!)')}`);
             }
           } catch (eRen: any) {
             alert(`La operación se guardó, pero NO se pudo renumerar a la nueva línea (${eRen?.message || eRen}). Conserva su referencia anterior; reintenta guardando de nuevo.`);
@@ -2528,7 +2535,8 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
         refGuardado = referenciaDeOperacion(idGuardado, operacionData.ref || (initialData as any).ref);
         if (onSave) onSave({ id: initialData.id, ...operacionData });
       } else {
-        const resultado = await guardarOperacionSegura(operacionData);
+        if (!clienteOpIdRef.current) clienteOpIdRef.current = nuevoIdEnvioOperacion(); // ✅ V00463
+        const resultado = await guardarOperacionSegura(operacionData, { clienteOpId: clienteOpIdRef.current });
         const nuevoId = (typeof resultado === 'object' && resultado?.id) ? resultado.id : Date.now().toString();
         idGuardado = String(nuevoId);
         notificarOperacionGuardada(idGuardado, { ...operacionData, ref: (resultado as any)?.ref || operacionData.ref }); // ✅ V00126: avisa a Facturación/Pagos
@@ -2572,6 +2580,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
         ? `\n\nDocumentos subidos a "${refGuardado}": ${subidos}/${totalDocs}${fallidos.length ? `\nNo se pudieron subir:\n• ${fallidos.join('\n• ')}\nSúbelos desde "Documentos guardados de esta operación".` : ''}`
         : '';
       alert(`Operación ${initialData ? 'actualizada' : 'guardada'} correctamente.${resumenDocs}`);
+      clienteOpIdRef.current = null; // ✅ V00463: hasta aquí, por si algo falla después de crearla (no duplica)
       onClose();
     } catch (error: any) {
       console.error('Error al guardar operación:', error);
@@ -2581,7 +2590,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
 
   const handleCancelarConfirmado = () => {
     const ok = window.confirm('¿Seguro que deseas cancelar esta operación? Se perderán los datos que no hayas guardado.');
-    if (ok) onClose();
+    if (ok) { clienteOpIdRef.current = null; onClose(); } // ✅ V00463
   };
 
   const tipoOpNombreResumen = tiposOperacion?.find((op: any) => op.id === formData.tipoOperacionId)?.tipo_operacion || '';
