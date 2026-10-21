@@ -29,10 +29,6 @@ export const TIPO_EMPRESA = {
   bodega: '6e7af5ab',
 } as const;
 
-/** Tipos de gasto de puente (catalogo_tipos_gastos) usados por tráfico. */
-export const PUENTE_IMPORTACION_ID = '4614ec51'; // Puente AVI
-export const PUENTE_EXPORTACION_ID = '49ce0a0e'; // Puente III
-
 /** Grupo de estado de una operación (campo canónico `estadoGrupo`, Fase 4). */
 export type EstadoGrupo = 'activa' | 'completada' | 'cancelada' | 'falso';
 

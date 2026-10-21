@@ -87,6 +87,8 @@ import {
 } from '../selectores'; // ✅ V00444 (Fase 8.1): una sola copia (antes idéntica en Clientes y Proveedores)
 import { useOperacionesFacturables } from '../hooks/useOperacionesFacturables'; // ✅ V00444 (Fase 8.1)
 import { conversionOperacion, montoOperacion } from '../../../shared/dominio/dinero';
+import TagPuenteUnidad from '../../puentes/components/TagPuenteUnidad'; // ✅ V00465
+import { grupoTagDeOperacion } from '../../puentes/services/tagPuente';
 
 // ──────────────────────────────────────────────────────────────────────
 // Constantes
@@ -4419,7 +4421,7 @@ export const FacturacionClientesDashboard = () => {
                       {showDetailInternalFleet && (
                         <div className="fcd-x270">
                           <div className="fcd-x186"><h4 className="fcd-x280">Flota Operativa (Roelca)</h4></div>
-                          <div><span className="fcd-x265">Unidad Asignada</span><span className="fcd-x261">{txt(det.unidadNombre, det.unidad)}</span></div>
+                          <div><span className="fcd-x265">Unidad Asignada</span><span className="fcd-x261">{txt(det.unidadNombre, det.unidad)}</span>{/* ✅ V00465 */}<TagPuenteUnidad unidadId={det.unidad} grupo={grupoTagDeOperacion(det)} /></div>
                           <div className="fcd-x164"><span className="fcd-x265">Operador Asignado</span><span className="fcd-x261">{txt(det.operadorNombre, det.operador)}</span></div>
                           <div className="fcd-x186"><hr className="fcd-x187" /></div>
                           <div><span className="fcd-x265">Sueldo del Operador</span><span className="fcd-x261">{formatoMoneda(det.sueldoOperador)}</span></div>

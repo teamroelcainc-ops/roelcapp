@@ -94,3 +94,11 @@ export const aFechaServicioISO = (v: unknown): string | null => {
   if (/^\d+$/.test(t)) return aFechaServicioISO(Number(t));
   return deDate(new Date(t));
 };
+
+/**
+ * ✅ V00469: fecha de servicio de una OPERACIÓN en AAAA-MM-DD: el canónico `fechaServicioISO` o, si
+ * falta, `fechaServicio` convertida (las de AppSheet vienen en d/m/aaaa o como Timestamp). '' si no
+ * se reconoce. Para comparar o armar ids con la fecha (un "15/10/2026" partía el id de un documento).
+ */
+export const fechaServicioDeOperacion = (op: Record<string, unknown>): string =>
+  String(op.fechaServicioISO || '').slice(0, 10) || aFechaServicioISO(op.fechaServicio) || '';

@@ -11,6 +11,9 @@
 //   · "Ver por mes": matriz dimensión × mes (como UNIDAD×MES / PROVEEDOR×MES
 //     de las hojas E S TRANSFER / E S CRUCES).
 //   Cada nombre es clic → resumen ejecutivo de esas operaciones.
+// ✅ V00467: dimensión ADUANA (por qué aduana cruzó: Transfer y Logística de cruces).
+// ✅ V00468: una dimensión puede limitar las operaciones cuando es la raíz (`soloPara`):
+//   Aduana cuenta solo los CRUCES de importación y exportación (sin movimientos).
 // ---------------------------------------------------------------------------
 import { Fragment, useMemo, useState, type CSSProperties } from 'react';
 import * as XLSX from 'xlsx';
@@ -20,7 +23,7 @@ import './DesgloseJerarquico.css';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Op = any;
 type Modo = 'operaciones' | 'facturacion';
-export type Dimension = 'tipo' | 'cv' | 'movimiento' | 'cliente' | 'operador' | 'unidad' | 'proveedor';
+export type Dimension = 'tipo' | 'cv' | 'movimiento' | 'aduana' | 'cliente' | 'operador' | 'unidad' | 'proveedor';
 type Moneda = 'ambas' | 'MXN' | 'USD';
 
 interface Props {
@@ -35,11 +38,13 @@ interface Props {
   /** ✅ V00191: clic en el MONTO (Pesos/Dólares) de una fila de CLIENTE →
    *  abre las facturas de ese cliente con su moneda (validación vs Empresas). */
   onVerFacturasCliente?: (cliente: string, ops: Op[]) => void;
+  /** ✅ V00468: con esa dimensión como raíz solo entran las operaciones del filtro (y se explica con `nota`). */
+  soloPara?: Partial<Record<Dimension, { filtro: (op: Op) => boolean; nota: string }>>;
 }
 
-const DIMENSIONES: Dimension[] = ['tipo', 'cv', 'movimiento', 'cliente', 'operador', 'unidad', 'proveedor'];
+const DIMENSIONES: Dimension[] = ['tipo', 'cv', 'movimiento', 'aduana', 'cliente', 'operador', 'unidad', 'proveedor'];
 const ETQ: Record<Dimension, string> = {
-  tipo: 'Tipo de operación', cv: 'C/V (cargada / vacía)', movimiento: 'Exportación / Importación / Movimiento',
+  tipo: 'Tipo de operación', cv: 'C/V (cargada / vacía)', movimiento: 'Exportación / Importación / Movimiento', aduana: 'Aduana',
   cliente: 'Cliente', operador: 'Operador', unidad: 'Unidad propia', proveedor: 'Proveedor de transporte',
 };
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
@@ -51,7 +56,7 @@ export const capitalizar = (t: string) => String(t || '').trim().toLowerCase().r
 
 interface Agregado { clave: string; ops: Op[]; n: number; pes: number; dol: number; conv: number; costo: number; meses: number[]; }
 
-export function DesgloseJerarquico({ ops, modo, montoDe, costoDe, monedaDe, etiquetaDe, onVerOps, onVerFacturasCliente }: Props) {
+export function DesgloseJerarquico({ ops, modo, montoDe, costoDe, monedaDe, etiquetaDe, onVerOps, onVerFacturasCliente, soloPara }: Props) {
   const [raizDim, setRaizDim] = useState<Dimension>('tipo');
   const [sub1, setSub1] = useState<Dimension>('cv');
   const [sub2, setSub2] = useState<Dimension>('movimiento');
@@ -68,7 +73,12 @@ export function DesgloseJerarquico({ ops, modo, montoDe, costoDe, monedaDe, etiq
     setSub1(s1); setSub2(s2);
   };
 
-  const opsMoneda = useMemo(() => moneda === 'ambas' ? ops : ops.filter((op) => monedaDe(op) === moneda), [ops, moneda, monedaDe]);
+  const limite = soloPara?.[raizDim];
+  const filtroRaiz = limite?.filtro;
+  const opsMoneda = useMemo(() => {
+    const base = filtroRaiz ? ops.filter(filtroRaiz) : ops;
+    return moneda === 'ambas' ? base : base.filter((op) => monedaDe(op) === moneda);
+  }, [ops, moneda, monedaDe, filtroRaiz]);
 
   const agrupar = (lista: Op[], d: Dimension): Agregado[] => {
     const m = new Map<string, Agregado>();
@@ -189,6 +199,7 @@ export function DesgloseJerarquico({ ops, modo, montoDe, costoDe, monedaDe, etiq
           <button className="est-btn" onClick={exportar} disabled={raiz.length === 0}><Download size={14} /> Excel</button>
         </div>
       </div>
+      {limite && <p className="dj-nota dj-nota--limite">{limite.nota}</p>}
       <p className="dj-nota">
         {esFact ? 'Ordenado por venta (de mayor a menor). Venta MXN convierte los dólares con el TC de cada operación; Costo proveedor y Utilidad con el mismo criterio que Facturación de Proveedores.' : 'Ordenado por servicios (de mayor a menor).'} El % de las filas anidadas es respecto a su fila padre. Clic en un nombre abre el resumen de esas operaciones.
       </p>

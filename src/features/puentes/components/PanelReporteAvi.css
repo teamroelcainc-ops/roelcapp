@@ -1,0 +1,58 @@
+/* src/features/puentes/components/PanelReporteAvi.css — ✅ V00464 · V00466: ventana (prefijo pra-) */
+.pra-fondo { z-index: 1000; padding: 20px; box-sizing: border-box; }
+.pra { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 1120px; max-height: 92vh; padding: 20px 22px; box-sizing: border-box; border-radius: 12px; border: 1px solid #30363d; border-top: 3px solid #1f6feb; background: #0d1117; overflow: hidden; }
+.pra-enc { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.pra-titulo { margin: 0; color: #f0f6fc; font-size: 1.1rem; font-weight: 700; }
+.pra-sub { margin: 3px 0 0; color: #8d97a3; font-size: 0.8rem; }
+.pra-cerrar { flex: none; width: 32px; height: 32px; border-radius: 6px; border: 1px solid #30363d; background: transparent; color: #8d97a3; font: inherit; font-size: 0.9rem; cursor: pointer; }
+.pra-cerrar:hover { color: #f0f6fc; border-color: #8b949e; }
+.pra-cerrar:focus { outline: none; }
+.pra-cerrar:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
+.pra-resumen { display: flex; gap: 6px; flex-wrap: wrap; margin: 0; padding: 0; list-style: none; }
+.pra-chip { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 0.74rem; font-weight: 700; border: 1px solid transparent; white-space: nowrap; }
+.pra-chip--coincide { color: #56d364; border-color: rgba(86, 211, 100, 0.45); background: rgba(86, 211, 100, 0.08); }
+.pra-chip--falta { color: #ff9b95; border-color: rgba(248, 81, 73, 0.5); background: rgba(248, 81, 73, 0.06); }
+.pra-nota { margin: 0; color: #8d97a3; font-size: 0.8rem; }
+.pra-nota b { color: #c9d1d9; }
+.pra-aviso { margin: 0; color: #e3b341; font-size: 0.82rem; }
+.pra-marco { flex: 1 1 auto; min-height: 0; overflow: auto; border: 1px solid #21262d; border-radius: 8px; }
+.pra-marco--bajo { max-height: 260px; margin-top: 8px; }
+.pra-vacio { margin: 0; padding: 28px 16px; color: #8d97a3; font-size: 0.88rem; text-align: center; }
+.pra-tabla { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
+.pra-tabla th { position: sticky; top: 0; z-index: 1; background: #161b22; color: #8d97a3; font-size: 0.72rem; font-weight: 600; text-align: left; padding: 8px 12px; border-bottom: 1px solid #30363d; white-space: nowrap; }
+.pra-tabla td { padding: 8px 12px; color: #c9d1d9; border-bottom: 1px solid #1a212b; vertical-align: top; white-space: nowrap; }
+.pra-tabla tbody tr:last-child td { border-bottom: none; }
+.pra-tabla--clic tbody tr { cursor: pointer; }
+.pra-tabla--clic tbody tr:hover td { background: rgba(88, 166, 255, 0.05); }
+.pra-tabla--clic tbody tr.pra-fila--sel:hover td { background: rgba(216, 67, 21, 0.12); }
+.pra-fila--sel td { background: rgba(216, 67, 21, 0.08); }
+.pra-col-chk { width: 1%; }
+.pra-col-chk input { margin: 0; cursor: pointer; vertical-align: middle; }
+.pra-ref { color: #f0f6fc; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; }
+.pra-num { text-align: right; font-variant-numeric: tabular-nums; }
+.pra-tabla th.pra-num { text-align: right; }
+.pra-cobros { display: block; color: #8d97a3; font-size: 0.72rem; font-weight: 400; } /* ✅ V00467: los dos cobros de Colombia */
+.pra-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem; }
+.pra-tenue { color: #8d97a3; font-size: 0.78rem; }
+.pra-revisar { white-space: normal; min-width: 220px; }
+.pra-aviso-fila { display: block; color: #e3b341; font-size: 0.75rem; white-space: normal; max-width: 340px; }
+.pra-aviso-fila + .pra-aviso-fila { margin-top: 2px; }
+.pra-sobran { color: #8d97a3; font-size: 0.8rem; }
+.pra-sobran summary { cursor: pointer; }
+.pra-sobran ul { margin: 6px 0 0; padding-left: 18px; max-height: 140px; overflow: auto; }
+.pra-pie { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid #21262d; }
+.pra-pie-izq, .pra-pie-der { display: flex; gap: 8px; flex-wrap: wrap; }
+.pra-btn { padding: 8px 14px; border-radius: 6px; border: 1px solid #30363d; background: #161b22; color: #c9d1d9; font: inherit; font-size: 0.82rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.pra-btn:hover:not(:disabled) { border-color: #8b949e; color: #f0f6fc; }
+.pra-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.pra-btn:focus { outline: none; }
+.pra-btn:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
+.pra-btn--principal { border-color: #D84315; background: #D84315; color: #fff; }
+.pra-btn--principal:hover:not(:disabled) { border-color: #f4511e; background: #f4511e; color: #fff; }
+.pra-btn--quitar { color: #ff9b95; }
+@media (max-width: 720px) {
+  .pra-fondo { padding: 8px; }
+  .pra { max-height: 96vh; padding: 16px; }
+  .pra-pie, .pra-pie-izq, .pra-pie-der { width: 100%; }
+  .pra-pie-der .pra-btn { flex: 1 1 auto; }
+}

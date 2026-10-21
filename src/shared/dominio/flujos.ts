@@ -4,6 +4,10 @@
 // Era la lógica de obtenerDocFlujo (statusRules.ts, V00379/V00405/V00407); se
 // mueve aquí, IGUAL, para que el servidor cobre el puente con la misma regla
 // "🌉 aquí se descuenta el puente" que la web. statusRules.ts la usa de aquí.
+// ✅ V00469: flujos POR ADUANA. En Reglas de Estatus se puede elegir la aduana (junto a la
+//   carga): el flujo queda como "Servicio_Tráfico_Carga_Aduana" con el campo `aduana`. Una
+//   operación de esa aduana usa ese flujo; si no hay uno de su aduana, el general (sin aduana),
+//   como siempre. Los flujos de una aduana nunca se usan para otra.
 // ---------------------------------------------------------------------------
 
 type Datos = Record<string, unknown>;
@@ -83,6 +87,29 @@ const utilValor = (v: unknown): string => {
   return s && s.toUpperCase() !== 'N/A' ? s : '';
 };
 
+/** ✅ V00469: aduana de la operación para elegir el flujo (la que mantiene el servidor, V00258). */
+export const aduanaParaFlujo = (op: Datos): string => utilValor(op.aduanaNombre);
+
+/** ✅ V00469: aduana del flujo ('' = flujo general, para todas las aduanas). */
+export const aduanaDeFlujo = (f: FlujoDoc): string => {
+  const a = utilValor(f.datos.aduana);
+  return normalizarNombreFlujo(a) === 'todas' ? '' : a;
+};
+
+/**
+ * ✅ V00469: ¿es la misma aduana? Sin acentos ni mayúsculas y también sin el número del
+ * catálogo: "800 Colombia" = "Colombia"; "240 Nuevo Laredo" = "Nuevo Laredo".
+ */
+export const mismaAduana = (a: unknown, b: unknown): boolean => {
+  const na = normalizarNombreFlujo(String(a ?? ''));
+  const nb = normalizarNombreFlujo(String(b ?? ''));
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  const sinNumero = (x: string) => x.replace(/^\d+\s*/, '').trim();
+  const sa = sinNumero(na); const sb = sinNumero(nb);
+  return !!sa && sa === sb;
+};
+
 /**
  * ✅ V00379/V00405: respaldo TOLERANTE por los campos guardados del flujo
  * (tipoServicio, trafico, carga). Un flujo sin tráfico o sin carga es comodín;
@@ -132,12 +159,28 @@ export const idsCandidatosFlujo = (op: Datos): string[] => {
 
 /** El flujo de la operación (o null): mismos pasos que obtenerDocFlujo. */
 export const buscarFlujo = (op: Datos, flujos: readonly FlujoDoc[]): FlujoDoc | null => {
-  const porId = new Map(flujos.map((f) => [f.id, f]));
+  // ✅ V00469: primero los flujos de SU aduana (mismos pasos, solo entre ellos); luego los generales.
+  const aduana = aduanaParaFlujo(op);
+  const deSuAduana = aduana ? flujos.filter((f) => mismaAduana(aduanaDeFlujo(f), aduana)) : [];
+  if (deSuAduana.length > 0) {
+    const porIdA = new Map(deSuAduana.map((f) => [f.id, f]));
+    const sufijos = Array.from(new Set(deSuAduana.map(aduanaDeFlujo)));
+    for (const id of idsCandidatosFlujo(op)) {
+      for (const sufijo of sufijos) {
+        const f = porIdA.get(idDocFlujo(`${id}_${sufijo}`));
+        if (f) return f;
+      }
+    }
+    const porIndiceA = buscarFlujoPorIndice(op, deSuAduana);
+    if (porIndiceA) return porIdA.get(idDocFlujo(porIndiceA)) ?? null;
+  }
+  const generales = flujos.filter((f) => !aduanaDeFlujo(f));
+  const porId = new Map(generales.map((f) => [f.id, f]));
   for (const id of idsCandidatosFlujo(op)) {
     const f = porId.get(idDocFlujo(id));
     if (f) return f;
   }
-  const porIndice = buscarFlujoPorIndice(op, flujos);
+  const porIndice = buscarFlujoPorIndice(op, generales);
   return porIndice ? (porId.get(idDocFlujo(porIndice)) ?? null) : null;
 };
 
@@ -153,4 +196,14 @@ export const descuentaPuenteSegunFlujo = (flujo: Datos | null | undefined, statu
   if (conFlag.length === 0) return null;
   const n = normalizarNombreFlujo(String(statusNombre || ''));
   return conFlag.some((r) => normalizarNombreFlujo(String(r?.nombreStatus || '')) === n);
+};
+
+/**
+ * ✅ V00469: ¿al estatus se llega SOLO (mecanismo "automático" del flujo)? Entonces pudo ser el
+ * final de una cascada y el paso anterior (p. ej. Verde USA) es el que cobra el puente.
+ */
+export const esStatusAutomatico = (flujo: Datos | null | undefined, statusNombre: unknown): boolean => {
+  const reglas = Array.isArray(flujo?.flujo) ? (flujo.flujo as Datos[]) : [];
+  const n = normalizarNombreFlujo(String(statusNombre || ''));
+  return !!n && reglas.some((r) => r?.tipoMecanismo === 'automatico' && normalizarNombreFlujo(String(r?.nombreStatus || '')) === n);
 };

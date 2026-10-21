@@ -13,6 +13,7 @@
 // ---------------------------------------------------------------------------
 import { STATUS_COMPLETADOS } from './constantes.js';
 import { monedaCanonica, nombreMoneda } from './moneda.js';
+import { fechaServicioDeOperacion } from './fechas.js';
 
 type Datos = Record<string, unknown>;
 
@@ -42,8 +43,21 @@ export const aplicaPeaje = (op: Datos): boolean => {
   return normPuente(op.proveedorUnidadNombre).includes('roelca');
 };
 
-const tarifaBaseDe = (det: Datos | undefined): string =>
-  String(det?.tarifaBaseId ?? det?.tarifa_base_id ?? det?.tarifaReferenciaId ?? det?.tarifa_referencia_id ?? '').trim();
+/**
+ * ✅ V00465: TARIFA DE REFERENCIA del detalle de convenio. Convenios de Clientes la guarda en
+ * `tipoConvenioId` (igual que lo lee el formulario de operación); antes aquí solo se leía
+ * `tarifaBaseId`, y con un detalle que no lo trae no se encontraba la caseta de la tarifa ni la
+ * aduana. El primer campo con valor manda (tarifaBaseId sigue primero: nada cambia donde ya estaba).
+ */
+export const tarifaDeDetalleConvenio = (det: Datos | undefined | null): string => {
+  if (!det) return '';
+  for (const k of ['tarifaBaseId', 'tarifa_base_id', 'tarifaReferenciaId', 'tarifa_referencia_id', 'tipoConvenioId', 'tipo_convenio_id', 'tipoConvenio', 'tipo_convenio', 'tarifaId', 'tarifa_id', 'TIPO DE CONVENIO']) {
+    const v = String(det[k] ?? '').trim();
+    if (v) return v;
+  }
+  return '';
+};
+const tarifaBaseDe = tarifaDeDetalleConvenio;
 
 const refTarifaDeVinculo = (g: Datos): string =>
   String(g.tarifa_referencia_id ?? g.tarifaReferenciaId ?? g.tarifa_referencia ?? g.tarifaReferencia ?? g.ID_SERVICES ?? g.id_services ?? g.idServices ?? g.tarifaId ?? '').trim();
@@ -51,10 +65,11 @@ const refTarifaDeVinculo = (g: Datos): string =>
 const gastoDeVinculo = (g: Datos): string => String(g.gasto ?? g.gastoId ?? g.gasto_id ?? '').trim();
 const montoDeVinculo = (g: Datos): number => Number(g.monto ?? g.importe ?? g.cantidad ?? g.valor ?? 0) || 0;
 
-const gastoPorNombre = (ctx: CtxCobroPuente, nombres: string[]): Datos | null => {
-  for (const x of ctx.tiposGasto.values()) if (nombres.includes(normPuente(x.nombre_gasto))) return x;
+const gastoConIdPorNombre = (ctx: CtxCobroPuente, nombres: string[]): { id: string; x: Datos } | null => {
+  for (const [id, x] of ctx.tiposGasto) if (nombres.includes(normPuente(x.nombre_gasto))) return { id, x };
   return null;
 };
+const gastoPorNombre = (ctx: CtxCobroPuente, nombres: string[]): Datos | null => gastoConIdPorNombre(ctx, nombres)?.x ?? null;
 
 /** ✅ V00412: nombre de la ADUANA de la operación (convenio → tarifa de referencia). */
 export const aduanaDeOperacionCtx = (ctx: CtxCobroPuente, op: Datos): string => {
@@ -67,40 +82,27 @@ export const aduanaDeOperacionCtx = (ctx: CtxCobroPuente, op: Datos): string => 
 const hoyUTC = (): string => new Date().toISOString().slice(0, 10);
 
 /**
+ * ✅ V00469: ¿la operación YA tiene su caseta? Solo un monto mayor a 0 o el puente elegido a
+ * mano en Referencias de Puentes (`saldoPuenteManual`). Un 0 o un campo vacío NO cuentan: antes
+ * un 0 (p. ej. una caseta del catálogo sin importe) dejaba la operación sin cobrar para siempre,
+ * aunque Referencias de Puentes sí la veía "sin monto".
+ */
+export const puenteYaCobrado = (op: Datos): boolean => Number(op.saldoPuente) > 0 || op.saldoPuenteManual === true;
+
+/**
  * ✅ V00392: campos saldoPuente… / saldoPuentePiso… que le FALTAN a la operación
  * ({} si ya los tiene o no aplica). Para asignar en lote desde Referencias de Puentes.
+ * ✅ V00469: la caseta sale de `casetaPrevista` (la MISMA regla del cobro al cambiar de estatus;
+ * antes, con aduana Colombia podía tomar una caseta de Nuevo Laredo de la tarifa), y la fecha de
+ * servicio se convierte (Timestamp o d/m/aaaa de AppSheet ya no quedan como texto roto).
  */
 export const cobroPuenteDeOperacion = (ctx: CtxCobroPuente, op: Datos, evento = 'Asignado desde Referencias de Puentes', hoy = hoyUTC()): Datos => {
-  const fecha = String(op.fechaServicio || '').slice(0, 10) || hoy;
-  const tarifaBase = tarifaBaseDe(ctx.detalles.get(String(op.convenio || '').trim()));
-  const tarifa = tarifaBase ? ctx.tarifas.get(tarifaBase) : undefined;
-  const aduanaV = String(tarifa?.aduana ?? '').trim();
-  const colombia = esAduanaColombia(ctx.aduanas.get(aduanaV) || aduanaV);
+  const fecha = fechaServicioDeOperacion(op) || hoy;
+  const colombia = esAduanaColombia(aduanaDeOperacionCtx(ctx, op));
   const out: Datos = {};
 
   if (!(Number(op.saldoPuente) > 0)) {
-    let caseta: { monto: number; nombre: string; moneda: unknown } | null = null;
-    if (tarifaBase) {
-      for (const g of ctx.gastosIncluidos) {
-        if (refTarifaDeVinculo(g) !== tarifaBase) continue;
-        const cat = ctx.tiposGasto.get(gastoDeVinculo(g));
-        if (!cat || normPuente(cat.categoria_gasto) !== 'puente' || esGastoPisoColombia(cat.nombre_gasto)) continue;
-        caseta = { monto: montoDeVinculo(g) || Number(cat.importe) || 0, nombre: String(cat.nombre_gasto || ''), moneda: cat.moneda };
-        break;
-      }
-    }
-    if (!caseta || !(caseta.monto > 0)) {
-      let x: Datos | null = null;
-      if (colombia) {
-        const trompo = normPuente(`${String(op.carga || '')} ${String(op.convenioNombre || '')}`).includes('trompo');
-        x = gastoPorNombre(ctx, [trompo ? 'trompo colombia' : 'caseta mx colombia']);
-      } else {
-        const traf = normPuente(op.trafico);
-        if (traf.includes('import')) x = gastoPorNombre(ctx, ['caseta avi']);
-        else if (traf.includes('export')) x = gastoPorNombre(ctx, ['caseta puente iii', 'caseta puente 3']);
-      }
-      if (x) caseta = { monto: Number(x.importe) || 0, nombre: String(x.nombre_gasto || ''), moneda: x.moneda };
-    }
+    const caseta = casetaPrevista(ctx, op);
     if (caseta && caseta.monto > 0) {
       Object.assign(out, { saldoPuente: caseta.monto, saldoPuentePuente: caseta.nombre, saldoPuenteMoneda: monedaNombrePuente(caseta.moneda), saldoPuenteFecha: fecha, saldoPuenteEvento: evento });
     }
@@ -144,6 +146,54 @@ export const disparoCobroPuente = (ev: EventoStatusPuente): { evento: string; fe
   return { evento, fecha };
 };
 
+/** ✅ V00465: caseta que le toca a la operación (id del tipo de gasto, nombre, monto y moneda). */
+export interface CasetaPrevista {
+  gastoId: string;
+  nombre: string;
+  monto: number;
+  moneda: unknown;
+  /** De dónde salió: la tarifa del convenio, el respaldo de Colombia o el tráfico (o el verde marcado). */
+  origen: 'tarifa' | 'colombia' | 'trafico';
+}
+
+/**
+ * ✅ V00465: la CASETA que corresponde a la operación, con la misma regla con la que se cobra
+ * (cobroAlCambiarStatus): 1) la de los GASTOS INCLUIDOS de la tarifa del convenio, con el monto
+ * del vínculo; 2) aduana Colombia → Trompo Colombia / Caseta Mx Colombia; 3) por TRÁFICO
+ * (importación → Caseta AVI, exportación → Caseta Puente III; sin tráfico, el verde marcado).
+ * La usa el formulario para dejar elegido el puente en cuanto hay convenio y unidad.
+ */
+export const casetaPrevista = (ctx: CtxCobroPuente, op: Datos, statusNombre = ''): CasetaPrevista | null => {
+  const colombia = esAduanaColombia(aduanaDeOperacionCtx(ctx, op));
+  const tarifaBase = tarifaBaseDe(ctx.detalles.get(String(op.convenio || '').trim()));
+  if (tarifaBase) {
+    for (const g of ctx.gastosIncluidos) {
+      if (refTarifaDeVinculo(g) !== tarifaBase) continue;
+      const gastoId = gastoDeVinculo(g);
+      const cat = ctx.tiposGasto.get(gastoId);
+      if (!cat || normPuente(cat.categoria_gasto) !== 'puente') continue;
+      if (esGastoPisoColombia(cat.nombre_gasto)) continue;
+      if (colombia && !normPuente(cat.nombre_gasto).includes('colombia')) continue;
+      const monto = montoDeVinculo(g) || Number(cat.importe) || 0;
+      if (monto > 0) return { gastoId, nombre: String(cat.nombre_gasto || ''), monto, moneda: cat.moneda, origen: 'tarifa' };
+      break; // el primer vínculo de puente manda (igual que la pantalla)
+    }
+  }
+  if (colombia) {
+    const trompo = normPuente(`${String(op.carga || '')} ${String(op.convenioNombre || '')}`).includes('trompo');
+    const r = gastoConIdPorNombre(ctx, [trompo ? 'trompo colombia' : 'caseta mx colombia']);
+    if (r && Number(r.x.importe) > 0) return { gastoId: r.id, nombre: String(r.x.nombre_gasto || ''), monto: Number(r.x.importe) || 0, moneda: r.x.moneda, origen: 'colombia' };
+  }
+  const traf = normPuente(op.trafico);
+  const nombreSt = normPuente(statusNombre);
+  const objetivo = traf.includes('import') ? 'avi' : traf.includes('export') ? 'p3'
+    : nombreSt.includes('verde usa') ? 'avi' : (nombreSt.includes('verde mx') || nombreSt.includes('verde mexico')) ? 'p3' : '';
+  if (!objetivo) return null;
+  const r = gastoConIdPorNombre(ctx, objetivo === 'avi' ? ['caseta avi'] : ['caseta puente iii', 'caseta puente 3']);
+  if (!r) return null;
+  return { gastoId: r.id, nombre: String(r.x.nombre_gasto || ''), monto: Number(r.x.importe) || 0, moneda: r.x.moneda, origen: 'trafico' };
+};
+
 /**
  * Campos del cobro del puente al CAMBIAR DE ESTATUS ({} si no aplica o ya se cobró).
  * Misma regla que OperacionesDashboard.camposSaldoPuenteAlCompletar:
@@ -155,40 +205,18 @@ export const disparoCobroPuente = (ev: EventoStatusPuente): { evento: string; fe
  *   5) aduana Colombia → además el PISO "Puente Mx Colombia" (V00388).
  */
 export const cobroAlCambiarStatus = (ctx: CtxCobroPuente, op: Datos, ev: EventoStatusPuente): Datos => {
-  if (Number.isFinite(Number(op.saldoPuente))) return {};
+  if (puenteYaCobrado(op)) return {}; // ✅ V00469: un 0 ya no cuenta como cobrado
   if (!aplicaPeaje(op)) return {};
   const disparo = disparoCobroPuente(ev);
   if (!disparo) return {};
   const { evento, fecha } = disparo;
   const colombia = esAduanaColombia(aduanaDeOperacionCtx(ctx, op));
-  const base = ((): Datos => {
-    const tarifaBase = tarifaBaseDe(ctx.detalles.get(String(op.convenio || '').trim()));
-    if (tarifaBase) {
-      for (const g of ctx.gastosIncluidos) {
-        if (refTarifaDeVinculo(g) !== tarifaBase) continue;
-        const cat = ctx.tiposGasto.get(gastoDeVinculo(g));
-        if (!cat || normPuente(cat.categoria_gasto) !== 'puente') continue;
-        if (esGastoPisoColombia(cat.nombre_gasto)) continue;
-        if (colombia && !normPuente(cat.nombre_gasto).includes('colombia')) continue;
-        const monto = montoDeVinculo(g) || Number(cat.importe) || 0;
-        if (monto > 0) return { saldoPuente: monto, saldoPuentePuente: String(cat.nombre_gasto || ''), saldoPuenteMoneda: monedaNombrePuente(cat.moneda), saldoPuenteFecha: fecha, saldoPuenteEvento: evento };
-        break; // el primer vínculo de puente manda (igual que la pantalla)
-      }
-    }
-    if (colombia) {
-      const trompo = normPuente(`${String(op.carga || '')} ${String(op.convenioNombre || '')}`).includes('trompo');
-      const x = gastoPorNombre(ctx, [trompo ? 'trompo colombia' : 'caseta mx colombia']);
-      if (x && Number(x.importe) > 0) return { saldoPuente: Number(x.importe) || 0, saldoPuentePuente: String(x.nombre_gasto || ''), saldoPuenteMoneda: monedaNombrePuente(x.moneda), saldoPuenteFecha: fecha, saldoPuenteEvento: evento };
-    }
-    const traf = normPuente(op.trafico);
-    const nombreSt = normPuente(ev.statusNombre);
-    const objetivo = traf.includes('import') ? 'avi' : traf.includes('export') ? 'p3'
-      : nombreSt.includes('verde usa') ? 'avi' : (nombreSt.includes('verde mx') || nombreSt.includes('verde mexico')) ? 'p3' : '';
-    if (!objetivo) return {};
-    const x = gastoPorNombre(ctx, objetivo === 'avi' ? ['caseta avi'] : ['caseta puente iii', 'caseta puente 3']);
-    if (!x) return {};
-    return { saldoPuente: Number(x.importe) || 0, saldoPuentePuente: String(x.nombre_gasto || ''), saldoPuenteMoneda: monedaNombrePuente(x.moneda), saldoPuenteFecha: fecha, saldoPuenteEvento: evento };
-  })();
+  // ✅ V00465: la elección de la caseta es casetaPrevista (la misma que ve el formulario).
+  const c = casetaPrevista(ctx, op, ev.statusNombre);
+  // ✅ V00469: una caseta sin importe (0) no se cobra: se queda pendiente, no en 0 para siempre.
+  const base: Datos = c && c.monto > 0
+    ? { saldoPuente: c.monto, saldoPuentePuente: c.nombre, saldoPuenteMoneda: monedaNombrePuente(c.moneda), saldoPuenteFecha: fecha, saldoPuenteEvento: evento }
+    : {};
   if (!(Number(base.saldoPuente) > 0) || !colombia || Number(op.saldoPuentePiso) > 0) return base;
   const piso = gastoPorNombre(ctx, [normPuente(NOMBRE_PISO_COLOMBIA)]);
   const montoPiso = Number(piso?.importe) || 0;
@@ -201,4 +229,17 @@ export const cobroAlCambiarStatus = (ctx: CtxCobroPuente, op: Datos, ev: EventoS
     saldoPuentePisoFecha: String(base.saldoPuenteFecha || ''),
     saldoPuentePisoEvento: String(base.saldoPuenteEvento || ''),
   };
+};
+
+/**
+ * ✅ V00469: un clic que pasa por VARIOS estatus (cascada: p. ej. Verde USA → En tránsito, el
+ * segundo automático) cobra en el PRIMER paso que dispara. Antes solo se revisaba el último, y
+ * el cruce en Verde se quedaba sin cobrar hasta Completado (con otra fecha y otro evento).
+ */
+export const cobroEnCascada = (ctx: CtxCobroPuente, op: Datos, pasos: readonly EventoStatusPuente[]): Datos => {
+  for (const ev of pasos) {
+    const c = cobroAlCambiarStatus(ctx, op, ev);
+    if (Object.keys(c).length > 0) return c;
+  }
+  return {};
 };

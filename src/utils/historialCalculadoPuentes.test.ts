@@ -78,6 +78,11 @@ describe('grupo de puente por el puente elegido', () => {
     expect(r?.fila).toMatchObject({ puenteNombre: 'Caseta Mx Colombia + Puente Mx Colombia', caseta: 300, piso: 90 });
   });
 
+  it('V00469: la fecha de la fila es AAAA-MM-DD aunque la operación venga de AppSheet (d/m/aaaa)', async () => {
+    const r = await filaDeOperacion(opColombia({ saldoPuente: 144, saldoPuentePuente: 'Caseta Puente III', saldoPuenteMoneda: 'Pesos', fechaServicio: '15/10/2026' }), '');
+    expect(r?.fila.fecha).toBe('2026-10-15');
+  });
+
   it('una fila guardada se juzga por su puente, no por su convenio', () => {
     expect(grupoDeFila({ puenteNombre: 'Caseta AVI', convenio: 'Transfer - Cargado - Colombia' })).toBe('AVI');
     expect(grupoDeFila({ puenteNombre: 'Caseta Mx Colombia + Puente Mx Colombia', convenio: 'Transfer - Nuevo Laredo' })).toBe('PTC');

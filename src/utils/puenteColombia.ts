@@ -10,7 +10,7 @@ import { db } from '../config/firebase';
 import { idReal, obtenerCatalogo } from '../shared/data/catalogos';
 // ✅ V00441 (Fase 5.7): la regla pura del cobro vive en src/shared/dominio/cobroPuente.ts
 //   (la usa también el trigger del servidor). Aquí quedan los cargadores de catálogos.
-import { esAduanaColombia, esGastoPisoColombia, monedaNombrePuente as monedaNombre, NOMBRE_PISO_COLOMBIA, normPuente } from '../shared/dominio/cobroPuente';
+import { esAduanaColombia, esGastoPisoColombia, monedaNombrePuente as monedaNombre, NOMBRE_PISO_COLOMBIA, normPuente, tarifaDeDetalleConvenio } from '../shared/dominio/cobroPuente';
 import type { CtxCobroPuente } from '../shared/dominio/cobroPuente';
 export { aduanaDeOperacionCtx, cobroPuenteDeOperacion, esAduanaColombia, esGastoPisoColombia, NOMBRE_PISO_COLOMBIA, normPuente } from '../shared/dominio/cobroPuente';
 export type { CtxCobroPuente } from '../shared/dominio/cobroPuente';
@@ -38,7 +38,7 @@ export const aduanaDeConvenio = async (convenioId: unknown): Promise<string> => 
     const det = await getDoc(doc(db, 'convenios_clientes_detalles', convId));
     if (!det.exists()) return '';
     const dd = det.data() as Record<string, unknown>;
-    const tarifaBase = String(dd.tarifaBaseId ?? dd.tarifa_base_id ?? dd.tarifaReferenciaId ?? dd.tarifa_referencia_id ?? '').trim();
+    const tarifaBase = tarifaDeDetalleConvenio(dd); // ✅ V00465: también tipoConvenioId
     if (!tarifaBase) return '';
     const t = await getDoc(doc(db, 'catalogo_tarifas_referencia', tarifaBase));
     if (!t.exists()) return '';

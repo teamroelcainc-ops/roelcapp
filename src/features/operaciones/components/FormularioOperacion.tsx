@@ -9,8 +9,8 @@ import { idReal, obtenerCatalogo, useCatalogos } from '../../../shared/data/cata
 import type { DocCatalogo } from '../../../shared/data/catalogos';
 import { usePermisoRol } from '../../../shared/data/sesion';
 import { ContextoModuloEscuchando, ContextoModuloVivoActivo, useModuloEscuchando, useModuloVivoActivo } from '../../../utils/moduloVivoContexto';
-import { ID_MXN, ID_USD, PUENTE_EXPORTACION_ID, PUENTE_IMPORTACION_ID, STATUS_CANCELADO, STATUS_COMPLETADOS, TIPO_EMPRESA } from '../../../shared/dominio/constantes';
-import { esUSD, monedaCanonica, nombreMoneda as nombreMonedaCanonica } from '../../../shared/dominio/moneda';
+import { ID_MXN, ID_USD, STATUS_CANCELADO, TIPO_EMPRESA } from '../../../shared/dominio/constantes';
+import { esUSD, monedaCanonica } from '../../../shared/dominio/moneda';
 import { DocumentosLista } from '../../documentos/DocumentosLista'; // ✅ V00341: consultar los documentos guardados
 import { EditorTarifaOrigenDestino } from './EditorTarifaOrigenDestino'; // ✅ V00224
 import { puedeClave } from '../../../utils/permisos'; // ✅ V00224
@@ -46,7 +46,13 @@ import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 import { validarFormularioConfigurable } from '../../formularios/configFormularios';
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
-import { aduanaDeConvenio, camposPisoColombia, casetaRespaldoColombia, esAduanaColombia, esGastoPisoColombia, nombresAduana, normPuente } from '../../../utils/puenteColombia';
+import { cargarCtxCobroPuente, nombresAduana, normPuente } from '../../../utils/puenteColombia';
+import { aduanaDeOperacionCtx, casetaPrevista, cobroAlCambiarStatus, disparoCobroPuente, puenteYaCobrado } from '../../../shared/dominio/cobroPuente'; // ✅ V00465 · V00469
+import { aFechaISO } from '../../../shared/dominio/fechas';
+import { mismaAduana } from '../../../shared/dominio/flujos';
+import type { CtxCobroPuente, EventoStatusPuente } from '../../../shared/dominio/cobroPuente';
+import TagPuenteUnidad from '../../puentes/components/TagPuenteUnidad';
+import { grupoTagDeNombres, grupoTagDeTrafico } from '../../puentes/services/tagPuente';
 import { abrirEdicion, useEdicionAbierta } from '../../../shared/utils/edicionesAbiertas'; // ✅ V00438
 import { CAMPOS_CANONICOS, normalizarNumerosOperacion } from '../../../shared/dominio/operacionCanonica';
 import { quitarCamposAjenos } from '../services/camposAjenos'; // ✅ V00451
@@ -136,13 +142,10 @@ const COSTO_MANIFIESTO_DEFAULT = 8.52;
 //   por defecto del manifiesto; cualquier otro coloca 0.
 const TIPOS_SERVICIO_PROV_MANIFIESTO = ['42afffd3', '7e70a3f7'];
 const TIPO_SERVICIO_CON_COSTO_MANIFIESTO = '42afffd3';
-// ✅ (Caseta/Puente automático según tráfico)
-// ✅ V00439 (Fase 3.6): PUENTE_IMPORTACION_ID (Caseta Avi) y PUENTE_EXPORTACION_ID
-//   (Caseta Puente III) y el tipo de empresa Proveedor (Servicios) vienen de shared/dominio/constantes.
-
-// ✅ V00439 (Fase 3.6): nombre de la moneda de un tipo de gasto ('Dólares'/'Pesos');
-//   si no se reconoce, el valor tal cual (antes comparaba contra los IDs a mano).
-const textoMonedaGasto = (v: unknown): string => nombreMonedaCanonica(monedaCanonica(v)) || String(v || '');
+// ✅ V00439 (Fase 3.6): el tipo de empresa Proveedor (Servicios) viene de shared/dominio/constantes.
+// ✅ V00465: el puente automático lo elige casetaPrevista (convenio y su tarifa; Colombia y
+//   tráfico de respaldo), por nombre del catálogo: ya no usa los ids fijos de Caseta AVI y
+//   Caseta Puente III (PUENTE_IMPORTACION_ID / PUENTE_EXPORTACION_ID, que se quitaron de constantes).
 
 // ✅ V00252: TIPO_EMP_CLIENTE_PAGA ('Cliente (Paga)') y TIPO_EMP_PROV_TRANSPORTE
 //   ('Proveedor (Transporte)') se retiraron: el buscador de la operación ya no
@@ -421,6 +424,9 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
   const fechaServicioTocada = useRef(false);
   // ✅ V00462: ¿el usuario escribió el T.C. a mano en esta sesión? Entonces no se corrige solo.
   const tcEditadoAMano = useRef(false);
+  // ✅ V00465: el usuario eligió el puente (o su monto) a mano → la asignación automática ya no lo cambia.
+  const puenteElegidoAMano = useRef(false);
+  const puenteAutoId = useRef(''); // el último que puso la asignación automática
   // ✅ V00463: id del envío de esta captura nueva; el mismo en cada "Guardar" hasta que se guarda
   //   (crearOperacion no duplica si un intento anterior sí llegó). Se limpia al guardar o cancelar.
   const clienteOpIdRef = useRef<string | null>(null);
@@ -485,6 +491,30 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     dolaresCliente: 0, pesosCliente: 0, conversionCliente: 0,
     utilidadEstimada: 0, tipoCambioAprobado: 0
   });
+
+  // ✅ V00465: catálogos del cobro del puente (los que el formulario ya tiene; sin lecturas nuevas).
+  const ctxPuente = useMemo((): CtxCobroPuente => ({
+    detalles: new Map((convDetallesLocal || []).map((d: DocCatalogo) => [idReal(d), d] as const)),
+    tarifas: new Map((tarifasLocal || []).map((d: DocCatalogo) => [idReal(d), d] as const)),
+    gastosIncluidos: gastosIncluidosLocal || [],
+    tiposGasto: new Map((tiposGastosLocal || []).map((d: DocCatalogo) => [idReal(d), d] as const)),
+    aduanas: mapaAduanas,
+  }), [convDetallesLocal, tarifasLocal, gastosIncluidosLocal, tiposGastosLocal, mapaAduanas]);
+  // ✅ V00469: ADUANA de la operación para elegir su flujo de estatus (Reglas de Estatus por
+  //   aduana). Con el mismo convenio guardado manda la del servidor (aduanaNombre, V00258); si no,
+  //   el segmento del nombre del convenio que sea una aduana del catálogo, o la de su tarifa.
+  const aduanaForm = useMemo((): string => {
+    const guardados = (initialData as Record<string, unknown> | undefined) || {};
+    const guardada = String(guardados.aduanaNombre || '').trim();
+    if (guardada && String(guardados.convenio || '') === String(formData.convenio || '')) return guardada;
+    const nombres = Array.from(mapaAduanas.values()).filter(Boolean);
+    const segmentos = String(formData.convenioNombre || '').split(' - ').map(normPuente).filter(Boolean);
+    for (let i = segmentos.length - 1; i >= 0; i--) {
+      const m = nombres.find((n) => normPuente(n) === segmentos[i]);
+      if (m) return m;
+    }
+    return aduanaDeOperacionCtx(ctxPuente, { convenio: formData.convenio }) || guardada;
+  }, [initialData, formData.convenio, formData.convenioNombre, mapaAduanas, ctxPuente]);
 
   // ✅ V00450: REF CLIENTE DUPLICADA — al salir del campo (y al abrir una operación que ya la
   //   trae) se busca la Ref en TODAS las operaciones. Solo avisa: no impide guardar; la
@@ -640,90 +670,51 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
   const labelUnidad = (u: any) => u?.unidad || u?.nombre || '';
   const labelEmpleado = (o: any) => `${o?.firstName || ''} ${o?.lastNamePaternal || ''}`.trim();
 
-  // ✅ V00355: al marcar SERVICIO COMPLETADO, la operación guarda la TARIFA del
-  //   puente del día: Importación → saldo de Caseta AVI · Exportación → saldo
-  //   de Caseta Puente III (del catálogo Tipos de Gastos, que Saldos de
-  //   Puentes mantiene al día). Solo se coloca una vez (no se pisa).
-  // ✅ V00439 (Fase 3.6): los IDs de "Servicio Completado" son STATUS_COMPLETADOS (constantes).
-  // ✅ V00388: aduana COLOMBIA → además de la caseta, el PISO del puente
-  //   ("Puente Mx Colombia", monto fijo del catálogo). Nuevo Laredo: uno solo.
+  // ✅ V00355: al marcar Verde (o el estatus "🌉" del flujo, o Completado de respaldo) la
+  //   operación guarda la TARIFA del puente. Solo se coloca una vez (no se pisa).
+  // ✅ V00469: con la regla COMPARTIDA (cobroAlCambiarStatus, la del servidor y de Operaciones
+  //   Activas) y los catálogos confirmados por el servidor (cargarCtxCobroPuente). La copia que
+  //   tenía el formulario leía la tarifa solo de tarifaBaseId, con aduana Colombia podía cobrar
+  //   una caseta de Nuevo Laredo, tomaba "hoy" en UTC y un 0 dejaba la operación sin cobrar.
   const camposSaldoPuente = async (statusFinal: string, statusNombreSP?: string): Promise<Record<string, unknown>> => {
     // ✅ V00441 (Fase 5.7): con la bandera, el peaje lo cobra el servidor (trigger operacionEscrita).
     if ((await obtenerFlags()).cobroPuenteEnServidor) return {};
-    const base = await camposSaldoPuenteBase(statusFinal, statusNombreSP);
-    if (!(Number(base.saldoPuente) > 0)) return base;
-    const previoPiso = (initialData as Record<string, unknown> | undefined)?.saldoPuentePiso;
-    return { ...base, ...(await camposPisoColombia({ convenio: formData.convenio, saldoPuentePiso: previoPiso }, base.saldoPuenteFecha, base.saldoPuenteEvento)) };
-  };
-
-  const camposSaldoPuenteBase = async (statusFinal: string, statusNombreSP?: string): Promise<Record<string, unknown>> => {
+    // ✅ V00369: el peaje SOLO aplica a Transfer, o Logística de Cruces con proveedor Roelca (mostrarPuente).
+    if (!mostrarPuente) return {};
     try {
-      // ✅ V00367: también dispara al quedar la operación en VERDE (MX o USA) —
-      //   el peaje se descuenta al marcar el verde, con Completado de respaldo.
-      const nSt = String(statusNombreSP || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-      const esVerdeSP = nSt.includes('verde mx') || nSt.includes('verde mexico') || nSt.includes('verde usa');
-      const esCompletadoSP = STATUS_COMPLETADOS.includes(String(statusFinal || '').trim());
-      // ✅ V00377: la REGLA DE ESTATUS del flujo manda — el estatus marcado con
-      //   "🌉 aquí se descuenta el puente" dispara; verdes solo sin regla.
-      const infoFlujoSP = { ...(initialData as Record<string, unknown> | undefined || {}), tipoServicio: formData.tipoServicio, tipoOperacionId: formData.tipoOperacionId, trafico: formData.trafico, carga: formData.carga ?? (initialData as Record<string, unknown> | undefined)?.carga };
-      const flagFlujoSP = await statusDescuentaPuente(infoFlujoSP, String(statusNombreSP || ''));
-      const disparaSP = flagFlujoSP === true || (flagFlujoSP === null && esVerdeSP) || esCompletadoSP;
-      if (!disparaSP) return {};
-      const esDisparoDirectoSP = flagFlujoSP === true || esVerdeSP;
-      // ✅ V00369: el peaje SOLO aplica a Transfer, o Logística de Cruces con
-      //   proveedor Roelca — Fletes nunca (mostrarPuente trae esa regla).
-      if (!mostrarPuente) return {};
-      if (initialData && Number.isFinite(Number((initialData as Record<string, unknown>).saldoPuente))) return {};
-      const normSP0 = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-      const fechaSP0 = esDisparoDirectoSP ? new Date().toISOString().slice(0, 10) : (String(formData.fechaServicio || '').slice(0, 10) || new Date().toISOString().slice(0, 10));
-      const eventoSP0 = flagFlujoSP === true ? String(statusNombreSP || '').trim() : nSt.includes('verde usa') ? 'Verde USA' : esVerdeSP ? 'Verde MX' : 'Completado';
-      // ✅ V00373: la CASETA de los GASTOS INCLUIDOS de la tarifa del convenio
-      //   MANDA — se cobra ese puente con el monto del vínculo (p. ej. $144).
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- catálogos locales sin tipo canónico (mismo criterio del archivo).
-        const convCliente = (listaConveniosCliente as any[]).find((c: any) => c.id === formData.convenio);
-        const tarifaBase = String(convCliente?.tarifaBaseId ?? '').trim();
-        if (tarifaBase) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- variantes legacy de la FK (mismo criterio del archivo).
-          const vinculo = (gastosIncluidosLocal as any[]).find((g: any) => {
-            const ref = String(g.tarifa_referencia_id ?? g.tarifaReferenciaId ?? g.tarifa_referencia ?? g.tarifaReferencia ?? g.ID_SERVICES ?? g.id_services ?? g.idServices ?? g.tarifaId ?? '').trim();
-            if (ref !== tarifaBase) return false;
-            const gastoId = String(g.gasto ?? g.gastoId ?? g.gasto_id ?? '').trim();
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const cat = (tiposGastosLocal as any[]).find((t: any) => String(t.id) === gastoId);
-            return !!cat && normSP0(cat.categoria_gasto) === 'puente' && !esGastoPisoColombia(cat.nombre_gasto); // ✅ V00388: el piso no es la caseta
-          });
-          if (vinculo) {
-            const gastoId = String(vinculo.gasto ?? vinculo.gastoId ?? vinculo.gasto_id ?? '').trim();
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const cat = (tiposGastosLocal as any[]).find((t: any) => String(t.id) === gastoId);
-            const montoCT = Number(vinculo.monto ?? vinculo.importe ?? vinculo.cantidad ?? vinculo.valor ?? 0) || Number(cat?.importe) || 0;
-            if (montoCT > 0) {
-              const monCT = textoMonedaGasto(cat?.moneda); // ✅ V00439 (Fase 3.6)
-              return { saldoPuente: montoCT, saldoPuentePuente: String(cat?.nombre_gasto || ''), saldoPuenteMoneda: monCT, saldoPuenteFecha: fechaSP0, saldoPuenteEvento: eventoSP0 };
-            }
-          }
-        }
-      } catch { /* sigue el fallback por tráfico */ }
-      // ✅ V00388: aduana Colombia sin caseta en la tarifa → Caseta Mx Colombia (o Trompo Colombia)
-      if (esAduanaColombia(await aduanaDeConvenio(formData.convenio))) {
-        const esTrompo = normPuente(`${String(formData.carga || '')} ${String((formData as Record<string, unknown>).convenioNombre || '')}`).includes('trompo');
-        const rc = await casetaRespaldoColombia(esTrompo);
-        if (rc && rc.saldoPuente > 0) return { ...rc, saldoPuenteFecha: fechaSP0, saldoPuenteEvento: eventoSP0 };
+      const guardados = (initialData as Record<string, unknown> | undefined) || {};
+      const nombre = String(statusNombreSP || '');
+      const op: Record<string, unknown> = {
+        ...guardados, tipoServicio: formData.tipoServicio, tipoOperacionId: formData.tipoOperacionId, trafico: formData.trafico,
+        carga: formData.carga ?? guardados.carga, convenio: formData.convenio, convenioNombre: formData.convenioNombre ?? guardados.convenioNombre,
+        aduanaNombre: aduanaForm, tipoOperacionNombre: tipoOpTextNormalizado, proveedorUnidadNombre: searchProvTransporte,
+      };
+      if (puenteYaCobrado(op)) return {};
+      // ✅ V00469: como el servidor, solo al CAMBIAR DE ESTATUS (o si se corrige el convenio, el tipo de
+      //   operación o el proveedor). Guardar otro campo de una operación que ya está en Verde no la cobra
+      //   con la fecha de hoy.
+      const cambioStatus = String(statusFinal || '') !== String(guardados.status || '');
+      const cambioDatos = !!initialData && (['convenio', 'tipoOperacionId', 'proveedorUnidad'] as const)
+        .some((c) => String(guardados[c] ?? '') !== String(formData[c] ?? ''));
+      if (!cambioStatus && !cambioDatos) return {};
+      // ✅ V00377: la REGLA DE ESTATUS del flujo manda — el estatus marcado con "🌉" dispara; los verdes, solo sin regla.
+      const ev: EventoStatusPuente = {
+        statusId: statusFinal, statusNombre: nombre, fechaEvento: '', flagFlujo: await statusDescuentaPuente(op, nombre),
+        hoy: hoyLocalISO(), fechaServicioISO: aFechaISO(formData.fechaServicio) || '',
+      };
+      if (!disparoCobroPuente(ev)) return {};
+      const campos = cobroAlCambiarStatus(await cargarCtxCobroPuente(), op, ev);
+      if (Object.keys(campos).length === 0) return {};
+      // ✅ V00469: la copia del formulario pudo quedar vieja (Operaciones Activas, Referencias de
+      //   Puentes o el servidor cobraron mientras estaba abierto): se confirma con el documento.
+      const idDoc = String(guardados._docId || guardados.id || '');
+      if (idDoc) {
+        const actual = await getDoc(doc(db, 'operaciones', idDoc));
+        const d = actual.exists() ? (actual.data() as Record<string, unknown>) : {};
+        if (puenteYaCobrado(d)) return {};
+        if (Number(d.saldoPuentePiso) > 0) for (const k of Object.keys(campos)) if (k.startsWith('saldoPuentePiso')) delete campos[k];
       }
-      const traf = String(formData.trafico || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-      const objetivo = traf.includes('import') ? 'caseta avi' : traf.includes('export') ? 'caseta puente' : '';
-      if (!objetivo) return {};
-      // ✅ V00439 (Fase 3.6): tipos de gasto del listener compartido (antes getDocs de la colección).
-      const gastosSP = await obtenerCatalogo('catalogo_tipos_gastos', { fresco: true }); // ✅ V00448: escribe el peaje
-      const normSP = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-      const x = gastosSP.find((g) => {
-        const n = normSP(g.nombre_gasto);
-        return objetivo === 'caseta avi' ? n === 'caseta avi' : (n === 'caseta puente iii' || n === 'caseta puente 3');
-      });
-      if (!x) return {};
-      const monedaSP = textoMonedaGasto(x.moneda);
-      return { saldoPuente: Number(x.importe) || 0, saldoPuentePuente: String(x.nombre_gasto || ''), saldoPuenteMoneda: monedaSP, saldoPuenteFecha: fechaSP0, saldoPuenteEvento: eventoSP0 };
+      return campos;
     } catch (e) { console.warn('Saldo de puente al completar:', e); return {}; }
   };
 
@@ -731,6 +722,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
   //   (antes getDocs de la colección al abrir; ahora en vivo).
   const flujosIndex = useMemo(() => cat.flujos.map((x) => ({
     id: idReal(x), tipoServicio: String(x.tipoServicio || ''), trafico: String(x.trafico || ''), carga: String(x.carga || ''),
+    aduana: String(x.aduana || ''), // ✅ V00469
   })), [cat.flujos]);
 
   const buildConfigId = useCallback(() => {
@@ -742,21 +734,26 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
 
     // ✅ V00405: flujo exacto; si no hay, uno del mismo servicio con tráfico y/o
     //   carga COMODÍN (guardados sin elegir) — siempre el más específico.
+    // ✅ V00469: primero entre los flujos de la ADUANA de la operación; si no hay, entre los
+    //   generales (sin aduana). Los de otra aduana no se usan (igual que buscarFlujo).
     const esComodin = (v: unknown) => { const n = normClave(v); return !n || n === 'todos' || n === 'n/a'; };
-    const match = flujosIndex.find(f =>
+    const elegir = (lista: typeof flujosIndex) => lista.find(f =>
       normClave(f.tipoServicio) === normClave(tipoOpText) &&
       normClave(f.trafico) === normClave(traficoTxt) &&
       normClave(f.carga) === normClave(cargaTxt)
-    ) || flujosIndex
+    ) || lista
       .filter(f => normClave(f.tipoServicio) === normClave(tipoOpText) &&
         (esComodin(f.trafico) || normClave(f.trafico) === normClave(traficoTxt)) &&
         (esComodin(f.carga) || normClave(f.carga) === normClave(cargaTxt)))
       .sort((x, y) => (Number(!esComodin(y.trafico)) * 2 + Number(!esComodin(y.carga))) - (Number(!esComodin(x.trafico)) * 2 + Number(!esComodin(x.carga))))[0];
+    const esGeneral = (f: { aduana: string }) => !f.aduana.trim() || normClave(f.aduana) === 'todas';
+    const match = (aduanaForm ? elegir(flujosIndex.filter(f => !esGeneral(f) && mismaAduana(f.aduana, aduanaForm))) : undefined)
+      || elegir(flujosIndex.filter(esGeneral));
 
     const idGenerado = match ? match.id : idCrudo;
     console.log('🔑 configId generado:', idGenerado, match ? '(resuelto por índice)' : '(crudo)');
     return idGenerado;
-  }, [tiposOperacion, formData.tipoOperacionId, formData.trafico, formData.carga, flujosIndex]);
+  }, [tiposOperacion, formData.tipoOperacionId, formData.trafico, formData.carga, flujosIndex, aduanaForm]);
 
   const statusPrevioParaCalculo = (): string | undefined => {
     if (!initialData) return undefined;
@@ -814,8 +811,8 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
       .filter(([, valor]) => valor !== undefined && valor !== null && String(valor).trim() !== '')
       .map(([campo]) => campo)
       .sort();
-    return JSON.stringify([formData.tipoOperacionId, formData.trafico, formData.carga, llenos]);
-  }, [formData]);
+    return JSON.stringify([formData.tipoOperacionId, formData.trafico, formData.carga, aduanaForm, llenos]); // ✅ V00469: la aduana elige el flujo
+  }, [formData, aduanaForm]);
 
   // ✅ V00438 (Fase 2.6): el flujo se lee FRESCO una vez por formulario abierto (y por
   //   combinación servicio/tráfico/carga) y se reutiliza en cada recálculo de la vista
@@ -1019,6 +1016,8 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
       fechaServicioTocada.current = false; // ✅ V00461: el formulario se reusa (minimizado) al abrir otra operación
       tcEditadoAMano.current = false; // ✅ V00462
       clienteOpIdRef.current = null; // ✅ V00463
+      puenteElegidoAMano.current = false; // ✅ V00465
+      puenteAutoId.current = '';
 
       const getNombreEmpresa = (id: string) => {
         if (!id) return '';
@@ -2208,42 +2207,66 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
   //    Logística con proveedor externo NO. (Regla V00369)
   const isMovimientos = tipoOpTextNormalizado.includes('movimiento'); // ✅ V00371: Movimientos exento
   const mostrarPuente = (isTransfer || (isLogistica && !isFletes && isRoelca)) && !isMovimientos;
-  // ✅ V00364: la TARJETA Caseta/Puente solo se enseña cuando la operación ya
-  //   marcó Verde MX o Verde USA (o el peaje ya se cobró) — antes de eso no hay
-  //   cruce que mostrar. La lógica interna (mostrarPuente) no cambia: el puente
-  //   se sigue precalculando y NO se pierde al guardar sin verde.
-  const puenteVisible = mostrarPuente && (() => {
+  // ✅ V00364: la TARJETA Caseta/Puente se enseñaba solo cuando la operación ya
+  //   marcó Verde MX o Verde USA (o el peaje ya se cobró). La lógica interna
+  //   (mostrarPuente) no cambia: el puente se sigue precalculando y NO se pierde al guardar sin verde.
+  // ✅ V00465: también en cuanto se pone la UNIDAD (ya se sabe qué puente le toca y con qué TAG).
+  const puenteVisible = mostrarPuente && (!!String(formData.unidad || '').trim() || (() => {
     const st = String((initialData as Record<string, unknown> | undefined)?.statusNombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
     const evento = String((initialData as Record<string, unknown> | undefined)?.saldoPuenteEvento || '');
     const cobrado = Number((initialData as Record<string, unknown> | undefined)?.saldoPuente) > 0;
     return st.includes('verde') || !!evento || cobrado;
-  })();
+  })());
   // Opciones de puente desde catalogo_tipos_gastos (categoria_gasto === "Puente").
   const opcionesPuente = (tiposGastosLocal || []).filter(
     (g: any) => String(g.categoria_gasto || '').trim().toLowerCase() === 'puente'
   );
 
-  // ✅ (Caseta/Puente automático) Importación -> Caseta Avi (4614ec51);
-  //   Exportación -> Caseta Puente III (49ce0a0e), cada una con el importe de
-  //   su catálogo. El listado del select sigue mostrando TODOS los puentes y
-  //   el usuario puede cambiarlo a mano: la auto-asignación solo aplica cuando
-  //   el puente está vacío o tiene la caseta automática del otro tráfico, y no
-  //   pisa el puente ya guardado al editar una operación existente.
+  // ✅ V00465: el PUENTE QUE CORRESPONDE por el CONVENIO y su TARIFA, con la misma regla con
+  //   la que se cobra (casetaPrevista): la caseta de los gastos incluidos de la tarifa con el
+  //   monto del vínculo (p. ej. Caseta Puente III $144); sin caseta en la tarifa → aduana
+  //   Colombia (Caseta Mx Colombia / Trompo Colombia) → por tráfico (importación → Caseta AVI,
+  //   exportación → Caseta Puente III). Antes solo se veía el tráfico.
+  //   Los catálogos ya están cargados en el formulario: no hay lecturas nuevas.
+  //   (ctxPuente se arma arriba, junto a formData: también lo usa la aduana del flujo, V00469.)
+  const puentePrevisto = useMemo(
+    () => (mostrarPuente ? casetaPrevista(ctxPuente, { convenio: formData.convenio, carga: formData.carga, convenioNombre: formData.convenioNombre, trafico: formData.trafico }) : null),
+    [mostrarPuente, ctxPuente, formData.convenio, formData.carga, formData.convenioNombre, formData.trafico],
+  );
+
+  // ✅ (Caseta/Puente automático) El listado del select sigue mostrando TODOS los puentes y el
+  //   usuario puede cambiarlo a mano. ✅ V00465: se elige el puente previsto (arriba) y se vuelve a
+  //   elegir si cambia el convenio o el tráfico, salvo que el usuario ya lo haya cambiado a mano;
+  //   no pisa el puente ya guardado al editar una operación existente.
+  //   Si la operación ya se COBRÓ (saldoPuente), el puente es el cobrado: el TAG y el select
+  //   dicen lo mismo que la ficha (grupoTagDeOperacion: el cobrado manda).
+  const datosGuardados = (initialData as Record<string, unknown> | undefined) || {};
+  const puenteCobrado = Number(datosGuardados.saldoPuente) > 0 && String(datosGuardados.saldoPuentePuente || '').trim()
+    ? { nombre: String(datosGuardados.saldoPuentePuente), monto: Number(datosGuardados.saldoPuente), piso: Number(datosGuardados.saldoPuentePiso) > 0 ? String(datosGuardados.saldoPuentePisoPuente || '') : '' }
+    : null;
   const asignarPuenteAutomatico = useEffectEvent(() => {
-    if (!mostrarPuente) return;
-    if (initialData && formData.puenteId) return;
-    const traficoTxt = String(formData.trafico || '').toLowerCase();
-    let idAuto = '';
-    if (traficoTxt.includes('impo')) idAuto = PUENTE_IMPORTACION_ID;
-    else if (traficoTxt.includes('expo')) idAuto = PUENTE_EXPORTACION_ID;
-    if (!idAuto || formData.puenteId === idAuto) return;
-    if (formData.puenteId && formData.puenteId !== PUENTE_IMPORTACION_ID && formData.puenteId !== PUENTE_EXPORTACION_ID) return;
-    const row = opcionesPuente.find((g: any) => String(g.id) === idAuto);
-    if (!row) return;
-    const importe = Number(row.Importe ?? row.importe ?? 0) || 0;
-    setFormData(prev => ({ ...prev, puenteId: idAuto, puenteNombre: String(row.nombre_gasto || ''), puenteMonto: importe }));
+    if (!mostrarPuente || puenteElegidoAMano.current) return;
+    // Una operación guardada con puente lo conserva (se lee de initialData, no de formData:
+    // al reusar el formulario minimizado, formData aún puede traer la operación anterior).
+    if (String(datosGuardados.puenteId || datosGuardados.puente || '').trim()) return;
+    if (initialData && formData.puenteId && formData.puenteId !== puenteAutoId.current) return;
+    const objetivo = puenteCobrado
+      ? (() => {
+          const row = opcionesPuente.find((g: DocCatalogo) => normPuente(g.nombre_gasto) === normPuente(puenteCobrado.nombre));
+          return row ? { id: String(row.id), nombre: puenteCobrado.nombre, monto: puenteCobrado.monto } : null;
+        })()
+      : puentePrevisto
+        ? (() => {
+            const row = opcionesPuente.find((g: DocCatalogo) => idReal(g) === puentePrevisto.gastoId || String(g.id) === puentePrevisto.gastoId);
+            return { id: row ? String(row.id) : puentePrevisto.gastoId, nombre: puentePrevisto.nombre, monto: puentePrevisto.monto };
+          })()
+        : null;
+    if (!objetivo) return;
+    if (formData.puenteId === objetivo.id && Number(formData.puenteMonto) === objetivo.monto) return;
+    puenteAutoId.current = objetivo.id;
+    setFormData(prev => ({ ...prev, puenteId: objetivo.id, puenteNombre: objetivo.nombre, puenteMonto: objetivo.monto }));
   });
-  useEffect(() => asignarPuenteAutomatico(), [formData.trafico, formData.puenteId, mostrarPuente, opcionesPuente.length, initialData]);
+  useEffect(() => asignarPuenteAutomatico(), [puentePrevisto, puenteCobrado?.nombre, puenteCobrado?.monto, formData.puenteId, mostrarPuente, opcionesPuente.length, initialData]);
 
   const usuarioActualCancel = useUsuarioStore((s) => s.usuario);
 
@@ -2342,6 +2365,9 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
       let resolvedOperadorProv = formData.operadorProveedor;
       if (!resolvedOperadorProv && searchOperadorProveedor) { const f = listaOpeProvLocal.find((x:any) => String(x.nombre || x.nombres || x.nombreCompleto || '').toLowerCase() === searchOperadorProveedor.toLowerCase()); if (f) resolvedOperadorProv = f.id; }
 
+      // ✅ V00355/V00367: saldo del puente al marcar Verde (o completar). ✅ V00469: aparte del payload;
+      //   se agrega DESPUÉS de quitar los campos ajenos (los saldoPuente… de la copia ya no se guardan).
+      const cobroPuenteForm = await camposSaldoPuente(statusCalculado, statusObj?.nombre || statusObj?.descripcion || '');
       const operacionData: any = { 
         ...datosLimpios, 
         ...(trompoNoCobrable ? { montoConvenioCliente: 0, noCobrable: true, motivoNoCobrable: 'Trompo de Roelca' } : {}), // ✅ V00434
@@ -2352,7 +2378,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
         unidad: resolvedUnidad, operador: resolvedOperador,
         unidadProveedor: resolvedUnidadProv, operadorProveedor: resolvedOperadorProv,
         convenioNombre: detalleDoc?.descripcion || formData.convenioNombre || 'Sin descripción', 
-        status: statusCalculado || 'Pendiente', ...(await camposSaldoPuente(statusCalculado, statusObj?.nombre || statusObj?.descripcion || '')), // ✅ V00355/V00367: saldo del puente al marcar Verde (o completar)
+        status: statusCalculado || 'Pendiente',
         // ✅ FIX: se guarda el NOMBRE del status (la descripción larga del catálogo
         //    solo es texto de ayuda y estaba filtrándose a la tabla del dashboard)
         statusNombre: statusObj?.nombre || statusObj?.descripcion || statusCalculado || 'Pendiente',
@@ -2397,6 +2423,8 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
       // ✅ V00451: tampoco los que escriben otros módulos (facturación, nómina, diésel, puentes…):
       //   guardar la copia vieja regresaba a "Pendiente" una operación ya facturada.
       quitarCamposAjenos(operacionData);
+      // ✅ V00469: el cobro del puente que calculó el formulario (si hubo) sí se guarda.
+      Object.assign(operacionData, cobroPuenteForm);
 
       if (initialData && puedeEditarRef && referencia.trim() && referencia.trim() !== String((initialData as any).ref || '')) {
         operacionData.ref = referencia.trim();
@@ -2531,7 +2559,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
         }
         // ✅ V00126: avisa a Facturación/Pagos. ✅ V00451: sin los campos de otros módulos de la copia
         //   del formulario (la de Facturación es la vigente; la del formulario pudo quedar vieja).
-        notificarOperacionGuardada(idGuardado, quitarCamposAjenos({ ...(initialData as any), ...operacionData }));
+        notificarOperacionGuardada(idGuardado, { ...quitarCamposAjenos({ ...(initialData as any), ...operacionData }), ...cobroPuenteForm }); // ✅ V00469: con el cobro nuevo
         refGuardado = referenciaDeOperacion(idGuardado, operacionData.ref || (initialData as any).ref);
         if (onSave) onSave({ id: initialData.id, ...operacionData });
       } else {
@@ -3427,6 +3455,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
                       <div className="form-group">
                         <label className="form-label">Puente <span className="campo-badge">puenteId</span></label>
                         <select name="puenteId" className="form-control" value={formData.puenteId || ''} onChange={(e) => {
+                          puenteElegidoAMano.current = true; // ✅ V00465
                           const id = e.target.value;
                           const row = opcionesPuente.find((g:any) => String(g.id) === id);
                           const importe = row ? (Number(row.Importe ?? row.importe ?? 0) || 0) : 0;
@@ -3436,8 +3465,15 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
                           {opcionesPuente.map((g:any) => <option key={g.id} value={g.id}>{g.nombre_gasto}</option>)}
                           {formData.puenteId && !opcionesPuente.some((g:any) => String(g.id) === String(formData.puenteId)) && (<option value={formData.puenteId}>{formData.puenteNombre || formData.puenteId}</option>)}
                         </select>
+                        {/* ✅ V00465: el TAG de la unidad para este puente */}
+                        <TagPuenteUnidad unidadId={formData.unidad} grupo={(puenteCobrado ? grupoTagDeNombres(puenteCobrado.nombre, puenteCobrado.piso) : '') || grupoTagDeNombres(formData.puenteNombre) || grupoTagDeTrafico(formData.trafico)} />
+                        {puenteCobrado ? (
+                          <small className="fo-puente-origen">Cobrado: {puenteCobrado.nombre} · {fmtMoney(puenteCobrado.monto)}</small>
+                        ) : puentePrevisto && String(formData.puenteNombre || '') === puentePrevisto.nombre && Number(formData.puenteMonto) === puentePrevisto.monto && (
+                          <small className="fo-puente-origen">{puentePrevisto.origen === 'tarifa' ? 'Del convenio (gastos incluidos de su tarifa)' : puentePrevisto.origen === 'colombia' ? 'Aduana Colombia' : 'Por el tráfico (la tarifa del convenio no trae caseta)'}</small>
+                        )}
                       </div>
-                      <div className="form-group"><label className="form-label">Puente Monto <span className="campo-badge">puenteMonto</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.puenteMonto || 0} readOnly={campoBloqueadoAut('puenteMonto')} onClick={() => campoBloqueadoAut('puenteMonto') && clicCampoBloqueado('puenteMonto')} onChange={e => setFormData(prev => ({ ...prev, puenteMonto: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('puenteMonto') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del catálogo (Importe); puedes ajustarlo manualmente'} style={campoBloqueadoAut('puenteMonto') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} /></ConSimboloMoneda></div>
+                      <div className="form-group"><label className="form-label">Puente Monto <span className="campo-badge">puenteMonto</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.puenteMonto || 0} readOnly={campoBloqueadoAut('puenteMonto')} onClick={() => campoBloqueadoAut('puenteMonto') && clicCampoBloqueado('puenteMonto')} onChange={e => { puenteElegidoAMano.current = true; setFormData(prev => ({ ...prev, puenteMonto: Number(e.target.value) || 0 })); }} title={campoBloqueadoAut('puenteMonto') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del catálogo (Importe); puedes ajustarlo manualmente'} style={campoBloqueadoAut('puenteMonto') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} /></ConSimboloMoneda></div>
                     </div>
                   </div>
                   )}

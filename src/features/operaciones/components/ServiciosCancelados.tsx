@@ -39,6 +39,8 @@ import { usePermisoFormularios } from '../../formularios/configFormularios';
 import { obtenerFlags, useFlags } from '../../../shared/data/flags';
 import { colorTipoOperacion, fmtFechaAuditoria } from '../services/formatosOperacion';
 import { paginaOperaciones, todasLasPaginas } from '../../../shared/data/consultas';
+import TagPuenteUnidad from '../../puentes/components/TagPuenteUnidad'; // ✅ V00465
+import { grupoTagDeOperacion } from '../../puentes/services/tagPuente';
 
 // ✅ V00444 (Fase 8.3): fmtFechaAuditoria y colorTipoOperacion en services/formatosOperacion (eran copias).
 
@@ -1886,7 +1888,7 @@ const ServiciosCancelados = () => {
                   {showDetailInternalFleet && (
                     <div className="scc-x115">
                       <div className="scc-x100"><h4 className="scc-x116">Flota Operativa (Roelca)</h4></div>
-                      <div><span className="scc-x102">Unidad Asignada</span><span>{mostrarDatoMapeado(operacionViendo.unidad, 'unidades', 'unidad', operacionViendo.unidadNombre)}</span></div>
+                      <div><span className="scc-x102">Unidad Asignada</span><span>{mostrarDatoMapeado(operacionViendo.unidad, 'unidades', 'unidad', operacionViendo.unidadNombre)}</span>{/* ✅ V00465 */}<TagPuenteUnidad unidadId={operacionViendo.unidad} grupo={grupoTagDeOperacion(operacionViendo)} /></div>
                       <div className="scc-x106"><span className="scc-x102">Operador Asignado</span><span>{mostrarDatoMapeado(operacionViendo.operador, 'empleados', 'nombre', operacionViendo.operadorNombre)}</span></div>
                       <div className="scc-x100"><hr className="scc-x117" /></div>
                       <div><span className="scc-x102">Sueldo Operador</span><span>{formatoMoneda(operacionViendo.sueldoOperador)}</span></div>

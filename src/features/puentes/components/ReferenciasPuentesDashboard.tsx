@@ -21,11 +21,14 @@ import { FormularioConfigurable } from '../../formularios/FormularioConfigurable
 import { esOperacionPrueba } from '../../../utils/operacionPrueba';
 import { cargarCtxCobroPuente, cobroPuenteDeOperacion } from '../../../utils/puenteColombia';
 import { COL_REF_AUTO, filaDeOperacion, grupoDeFila, grupoDeNombresPuente, quitarOperacionDeReferenciaAuto, upsertReferenciaAuto } from '../../../utils/historialCalculadoPuentes';
+import { fechaServicioDeOperacion } from '../../../shared/dominio/fechas'; // ✅ V00469
 import { FormularioOperacion } from '../../operaciones/components/FormularioOperacion';
 import { idReal, obtenerCatalogo, useCatalogos } from '../../../shared/data/catalogos';
 import ModalAgregarSaldoPuente from './ModalAgregarSaldoPuente';
 import { casetaAviOtrosCruces, monedaDePuente, nombrePuenteCatalogo, puentesDelCatalogo } from '../services/puentesCatalogo';
 import { estadoGrupoDe, esGrupoTerminado } from '../../../shared/dominio/operacionCanonica';
+import PanelReporteAvi from './PanelReporteAvi'; // ✅ V00464
+import { claveUnidadDia, coincidirCruces, leerReportePuente, NOMBRE_REPORTE, unirCruces, type CruceAvi, type GrupoReporte, type OpParaCruce, type UnidadConTag } from '../services/reporteAvi';
 
 // ⚠ Si tu colección de convenios de clientes tiene otro nombre, cámbialo aquí.
 const COLECCION_CONVENIOS = 'convenios_clientes';
@@ -106,7 +109,7 @@ export const ReferenciasPuentesDashboard = () => {
     //   puente" ya no lo toca y la operación va a la referencia de ESE puente (grupoPuenteOp).
     const campos: Record<string, unknown> = {
       saldoPuente: importe, saldoPuentePuente: nombre, saldoPuenteMoneda: monedaC,
-      saldoPuenteFecha: String(op.saldoPuenteFecha || op.fechaServicio || hoyLocalISO()).slice(0, 10),
+      saldoPuenteFecha: String(op.saldoPuenteFecha || '').slice(0, 10) || fechaServicioDeOperacion(op) || hoyLocalISO(), // ✅ V00469
       saldoPuenteEvento: String(op.saldoPuenteEvento || 'Cambio manual (Referencias de Puentes)'),
       saldoPuenteManual: true,
     };
@@ -155,7 +158,7 @@ export const ReferenciasPuentesDashboard = () => {
       if (idsEnHistorialCalculado.has(String(op._docId || op.id)) || idsEnHistorialCalculado.has(String(op.id))) return false;
       const tr = sinAcentos(getTrafico(op));
       if (tr !== 'importacion' && tr !== 'exportacion') return false;
-      if (!agregarTodasFechas && String(op.fechaServicio || '').slice(0, 10) !== String(ref.fechaGeneracion || '')) return false;
+      if (!agregarTodasFechas && fechaServicioDeOperacion(op) !== String(ref.fechaGeneracion || '')) return false; // ✅ V00469
       return grupoPuenteOp(op) === g;
     });
   };
@@ -172,6 +175,9 @@ export const ReferenciasPuentesDashboard = () => {
         if (r && r.grupo === ref.grupoPuente) filas.push(r.fila);
       }
       if (filas.length === 0) { alert('Ninguna de las seleccionadas corresponde a este puente.'); return; }
+      // ✅ V00469: las que son de otro puente ya no se descartan sin aviso.
+      const fuera = selAgregar.length - filas.length;
+      if (fuera > 0) alert(`${fuera} operación(es) no se agregaron: su puente no es el de esta referencia.`);
       await upsertReferenciaAuto(String(ref.id), ref.grupoPuente as 'AVI' | 'PT3' | 'PTC', String(ref.fechaGeneracion || hoyLocalISO()), filas, String(ref.horaGeneracion || horaAhora()), 'manual');
       setReferenciaViendo((prev: Record<string, unknown> | null) => prev ? {
         ...prev,
@@ -281,6 +287,11 @@ export const ReferenciasPuentesDashboard = () => {
   // ✅ V00393: hora en que se marcó Verde MX / Verde USA (bitácora "horarios")
   const [horasVerde, setHorasVerde] = useState<Record<string, { etiqueta: string; fechaHora: string }[]>>({});
   const [seleccionadas, setSeleccionadas] = useState<string[]>([]);
+  // ✅ V00464: reporte del puente AVI cargado en "Operaciones sin asignar" (solo en pantalla).
+  const [reporteAvi, setReporteAvi] = useState<{ nombre: string; grupo: GrupoReporte; cruces: CruceAvi[]; omitidas: number } | null>(null);
+  const [reporteAviAbierto, setReporteAviAbierto] = useState(false); // ✅ V00466: la ventana del reporte
+  const [leyendoReporte, setLeyendoReporte] = useState(false);
+  const inputReporteRef = React.useRef<HTMLInputElement>(null);
 
   const filtroEstadoOps = 'pendientes' as 'pendientes' | 'asignadas'; // ✅ V00399: fijo — las asignadas viven en el Historial
   const [ordenOps, setOrdenOps] = useState<{ campo: string; dir: 'asc' | 'desc' }>({ campo: 'fechaServicio', dir: 'desc' });
@@ -505,7 +516,7 @@ export const ReferenciasPuentesDashboard = () => {
 
   const dentroRangoFecha = (op: any) => {
     if (!fechaInicio && !fechaFin) return true;
-    const f = String(op.fechaServicio || op.createdAt || '').slice(0, 10);
+    const f = fechaServicioDeOperacion(op) || String(op.createdAt || '').slice(0, 10); // ✅ V00469: d/m/aaaa de AppSheet
     if (!f) return false;
     if (fechaInicio && f < fechaInicio) return false;
     if (fechaFin && f > fechaFin) return false;
@@ -853,6 +864,90 @@ export const ReferenciasPuentesDashboard = () => {
   };
 
 
+  // ✅ V00464: REPORTE DEL PUENTE AVI — cada cruce (tag = TAG AVI de Unidades Propias) con la
+  //   operación de esa unidad ese día. Se leen las operaciones que ya trae el módulo (las 2,500 más
+  //   recientes); las horas de Verde llegan al buscar el rango del reporte.
+  // ✅ V00467: también PUENTE 3 y PUENTE COLOMBIA. El formato se reconoce por el encabezado y se
+  //   leen todas las hojas de ese puente (el de Puente 3 repite días en dos hojas: no se duplican).
+  const cargarReporteAvi = async (archivo: File) => {
+    setLeyendoReporte(true);
+    try {
+      const libro = XLSX.read(await archivo.arrayBuffer(), { type: 'array' });
+      const lecturas = libro.SheetNames.map(n => leerReportePuente(XLSX.utils.sheet_to_json<unknown[]>(libro.Sheets[n], { header: 1, raw: true, defval: '' })));
+      const grupo = lecturas.find(l => l.grupo)?.grupo ?? null;
+      if (!grupo) { alert('No se reconoce el reporte. Sube el Excel tal como lo descarga el portal del puente: AVI (TRANSACTION DATE y TAG #), Puente 3 (Fecha, Hora y Folio Tarjeta) o Puente Colombia (Fecha, Tag y #Económico).'); return; }
+      const deEse = lecturas.filter(l => l.grupo === grupo);
+      const cruces = unirCruces(grupo, deEse.map(l => l.cruces));
+      if (cruces.length === 0) { alert('El reporte no trae cruces con fecha y tag.'); return; }
+      const dias = cruces.map(c => c.fecha).sort();
+      setReporteAvi({ nombre: archivo.name, grupo, cruces, omitidas: deEse.reduce((n, l) => n + l.omitidas, 0) });
+      setReporteAviAbierto(true); // ✅ V00466: se abre la ventana con las que coinciden
+      // La tabla de abajo pasa al rango del reporte (sin otros filtros) para ver y enviar las que coinciden.
+      setFechaInicio(dias[0]); setFechaFin(dias[dias.length - 1]);
+      setFiltroPuente('todos'); setFiltroUnidad('todas');
+      setSeleccionadas([]);
+      setBusquedaOpsHecha(true);
+    } catch (e) {
+      console.error('[reporte AVI]', e);
+      alert(`No se pudo leer el archivo: ${(e as Error)?.message || e}`);
+    } finally { setLeyendoReporte(false); }
+  };
+  // ✅ V00467: el TAG de la unidad para el puente del reporte (TAG AVI, TAG Puente 3 o TAG Puente Colombia).
+  const grupoReporte: GrupoReporte = reporteAvi?.grupo ?? 'AVI';
+  const unidadesConTag = useMemo<UnidadConTag[]>(() => unidadesList.map(u => ({
+    id: String(u.id), nombre: String(u.unidad ?? u.numeroEconomico ?? u.nombre ?? u.id),
+    tag: String((grupoReporte === 'PT3' ? u.tagPuente3 : grupoReporte === 'PTC' ? u.tagPuenteColombia : u.tagAvi) ?? ''),
+  })), [unidadesList, grupoReporte]);
+  // Cálculo directo (sin useMemo): usa los helpers del componente y solo corre con un reporte cargado;
+  //   el filtro por los días del reporte deja pocas operaciones.
+  // ✅ V00466: solo las de OPERACIONES SIN ASIGNAR (la misma regla de la tabla: Transfer o Logística
+  //   Roelca, completadas, de importación o exportación y fuera del Acumulado), sin los filtros de
+  //   puente y unidad. Antes también entraban las del Acumulado y las no completadas.
+  //   Las demás operaciones de esas unidades y días (en el Acumulado, sin completar…) no se emparejan,
+  //   pero se avisan en el cruce (otrasDelDiaAvi) para no mandar dos veces un mismo cruce.
+  const { opsParaCruce, otrasDelDiaAvi } = ((): { opsParaCruce: OpParaCruce[]; otrasDelDiaAvi: Map<string, string[]> } => {
+    const otrasDelDia = new Map<string, string[]>();
+    if (!reporteAvi) return { opsParaCruce: [], otrasDelDiaAvi: otrasDelDia };
+    const dias = new Set(reporteAvi.cruces.map(c => c.fecha));
+    const idPorNombre = new Map(unidadesConTag.map(u => [sinAcentos(u.nombre), u.id]));
+    const unidadDe = (op: OpPuente): string => {
+      const crudo = String(op.unidad || '').trim();
+      return unidadPorId.has(crudo) ? crudo : (idPorNombre.get(sinAcentos(op.unidadNombre || crudo)) || crudo || String(op.unidadNombre || ''));
+    };
+    const lista: OpParaCruce[] = [];
+    operacionesGlobales.forEach(op => {
+      const fecha = fechaServicioDeOperacion(op); // ✅ V00469
+      if (!dias.has(fecha) || !esPuenteRoelca(op) || esOperacionPrueba(op) || estadoGrupoDe(op) === 'cancelada') return;
+      const unidad = unidadDe(op);
+      const ref = String(op.ref || op.id);
+      const enAcumulado = idsEnHistorialCalculado.has(String(op._docId || op.id)) || idsEnHistorialCalculado.has(String(op.id));
+      const tr = sinAcentos(getTrafico(op));
+      const motivo = enAcumulado ? 'en el Acumulado' : !esCompletadaOp(op) ? 'aún sin completar' : (tr !== 'importacion' && tr !== 'exportacion') ? 'sin importación ni exportación' : '';
+      if (motivo) {
+        const k = claveUnidadDia(unidad, fecha);
+        otrasDelDia.set(k, [...(otrasDelDia.get(k) ?? []), `${ref} (${motivo})`]);
+        return;
+      }
+      lista.push({
+        id: String(op.id), ref, fecha, unidad,
+        horas: (horasVerde[String(op.id)] || []).map(v => v.fechaHora),
+        // ✅ V00467: caseta + piso de Colombia (el reporte de Colombia trae los dos cobros juntos).
+        monto: Math.round(((Number(op.saldoPuente) || 0) + (Number(op.saldoPuentePiso) || 0)) * 100) / 100,
+        puente: nombresPuenteOp(op).join(' + '), grupo: grupoPuenteOp(op) ?? '',
+      });
+    });
+    return { opsParaCruce: lista, otrasDelDiaAvi: otrasDelDia };
+  })();
+  // Operaciones cuya hora de Verde aún no llega (la coincidencia por hora puede cambiar al llegar).
+  const horasVerdePendientes = opsParaCruce.filter(o => !(o.id in horasVerde)).length;
+  const resultadoAvi = reporteAvi ? coincidirCruces(reporteAvi.cruces, unidadesConTag, opsParaCruce, { grupo: reporteAvi.grupo, otrasDelDia: otrasDelDiaAvi }) : null;
+  const avisoRangoAvi = useMemo(() => {
+    if (!reporteAvi || operacionesGlobales.length < 2500) return '';
+    const primera = operacionesGlobales.reduce((min, op) => { const f = fechaServicioDeOperacion(op); return f && f < min ? f : min; }, '9999-12-31');
+    const antes = reporteAvi.cruces.some(c => c.fecha < primera);
+    return antes ? `El reporte trae días anteriores al ${formatearFechaSpanish(primera)}: el módulo solo tiene cargadas las operaciones desde ese día, así que esos cruces pueden salir sin operación.` : '';
+  }, [reporteAvi, operacionesGlobales]);
+
   const abrirModalGenerar = () => {
     setHoraReferencia(horaAhora()); // ✅ V00399
     setDestinoPorGrupo({});
@@ -986,8 +1081,10 @@ export const ReferenciasPuentesDashboard = () => {
     seleccionadas.forEach(id => {
       const op = operacionesGlobales.find(o => o.id === id);
       if (!op) return;
-      const g = grupoPuenteOp(op) || 'PT3';
-      const fecha = String(op.fechaServicio || '').slice(0, 10) || hoyLocalISO();
+      // ✅ V00469: sin puente todavía, el previsto por el tráfico (importación → AVI). El grupo REAL
+      //   lo da la fila al guardar (handleGuardarReferencia), que es la que calcula el puente.
+      const g = grupoPuenteOp(op) || (sinAcentos(getTrafico(op)).includes('import') ? 'AVI' : 'PT3');
+      const fecha = fechaServicioDeOperacion(op) || hoyLocalISO(); // ✅ V00469: con "/" el id de la referencia se partía
       const k = `${g}|${fecha}`;
       const ent = mapa.get(k) || { grupo: g, fecha, ops: [] };
       ent.ops.push(op);
@@ -1009,22 +1106,35 @@ export const ReferenciasPuentesDashboard = () => {
     setGuardando(true);
     try {
       let omitidas = 0;
+      let aOtroPuente = 0;
+      // ✅ V00469: cada operación va a la referencia de SU puente: el grupo es el de su fila
+      //   (filaDeOperacion calcula el puente de las que aún no lo tienen). Antes se usaba el grupo
+      //   previsto (sin puente = Puente III) y las filas de otro puente (p. ej. AVI) se descartaban
+      //   sin aviso, y podía quedar una referencia vacía.
+      const reales = new Map<string, { grupo: GrupoRef; fecha: string; filas: Record<string, unknown>[] }>();
       for (const g of gruposAsignacion) {
-        const destino = destinoPorGrupo[g.clave] || (g.existentes[0]?.id ?? '__nuevo__');
-        const filas: Record<string, unknown>[] = [];
         for (const op of g.ops) {
           const r = await filaDeOperacion({ ...op, _docId: op._docId || op.id, convenioNombre: op.convenioNombre || getConvenio(op) }, textoHoraVerde(op));
-          if (r) filas.push(r.fila); else omitidas += 1;
+          if (!r) { omitidas += 1; continue; }
+          if (r.grupo !== g.grupo) aOtroPuente += 1;
+          const clave = `${r.grupo}|${g.fecha}`;
+          const ent = reales.get(clave) || { grupo: r.grupo, fecha: g.fecha, filas: [] };
+          ent.filas.push(r.fila);
+          reales.set(clave, ent);
         }
-        if (filas.length === 0) continue;
+      }
+      for (const [clave, v] of reales) {
+        const existentes = refsAuto.filter(r => String((r as { grupoPuente?: string }).grupoPuente || '') === v.grupo && String(r.fechaGeneracion || '') === v.fecha);
+        const destino = destinoPorGrupo[clave] || (existentes[0]?.id ?? '__nuevo__');
         const docId = destino !== '__nuevo__' ? destino
-          : (g.existentes.length === 0 ? `${g.grupo}_${g.fecha}` : `${g.grupo}_${g.fecha}_${Date.now()}`);
-        await upsertReferenciaAuto(docId, g.grupo, g.fecha, filas, horaReferencia || horaAhora(), 'manual');
+          : (existentes.length === 0 ? `${v.grupo}_${v.fecha}` : `${v.grupo}_${v.fecha}_${Date.now()}`);
+        await upsertReferenciaAuto(docId, v.grupo, v.fecha, v.filas, horaReferencia || horaAhora(), 'manual');
       }
       setModalAbierto(false);
       setSeleccionadas([]);
       setActiveTab('calculado');
       if (omitidas) alert(`${omitidas} operación(es) no se agregaron: no se pudo determinar su puente (revisa su convenio o tráfico).`);
+      if (aOtroPuente) alert(`${aOtroPuente} operación(es) se enviaron a la referencia de su puente, que no era el que se mostraba en la ventana (aún no tenían puente cobrado).`);
     } catch (error) {
       console.error(error);
       alert(`Error al enviar al Acumulado: ${(error as Error)?.message || error}`);
@@ -1096,6 +1206,7 @@ export const ReferenciasPuentesDashboard = () => {
             <table className="rpd-x27">
               <thead className="rpd-x28">
                 <tr>
+                  {/* ✅ V00465: el check del encabezado y los de cada fila en la MISMA columna (antes la celda era flex y se descuadraba). */}
                   <th className="rpd-x42">
                     <input type="checkbox" className="rpd-x32" title="Seleccionar todas" checked={refsAuto.length > 0 && selRefsAuto.length === refsAuto.length}
                       onChange={(e) => setSelRefsAuto(e.target.checked ? refsAuto.map(r => r.id) : [])} />
@@ -1116,11 +1227,13 @@ export const ReferenciasPuentesDashboard = () => {
                 ) : refsAuto.map(r => (
                   <tr key={r.id} className="rpd-x46 rpd-fila-clic" title="Ver detalle" onClick={() => setReferenciaViendo(r)}>
                     <td className="rpd-x47">
-                      <input type="checkbox" className="rpd-x32" checked={selRefsAuto.includes(r.id)} onClick={(e) => e.stopPropagation()}
-                        onChange={() => setSelRefsAuto(prev => prev.includes(r.id) ? prev.filter(x => x !== r.id) : [...prev, r.id])} />
-                      <button className="rpd-x51" title="Eliminar (sus operaciones regresan a Operaciones sin asignar)" onClick={(e) => { e.stopPropagation(); eliminarRefAuto(r); }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                      </button>
+                      <div className="rpd-sel-acciones">
+                        <input type="checkbox" className="rpd-x32" checked={selRefsAuto.includes(r.id)} onClick={(e) => e.stopPropagation()}
+                          onChange={() => setSelRefsAuto(prev => prev.includes(r.id) ? prev.filter(x => x !== r.id) : [...prev, r.id])} />
+                        <button className="rpd-x51" title="Eliminar (sus operaciones regresan a Operaciones sin asignar)" onClick={(e) => { e.stopPropagation(); eliminarRefAuto(r); }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                        </button>
+                      </div>
                     </td>
                     <td className="rpd-x52">{r.consecutivo} <span className="rpd-chip-auto">auto</span></td>
                     <td className="rpd-celda">{r.puenteNombre || '—'}</td>
@@ -1432,6 +1545,19 @@ export const ReferenciasPuentesDashboard = () => {
               Filtros
               {(fechaInicio || fechaFin || filtroPuente !== 'todos' || filtroUnidad !== 'todas') && <span className="rpd-x8">{[fechaInicio || fechaFin, filtroPuente !== 'todos' ? filtroPuente : '', filtroUnidad !== 'todas' ? filtroUnidad : ''].filter(Boolean).length}</span>}
             </button>
+            {/* ✅ V00464: el archivo solo se LEE aquí (no se sube a Storage), por eso no es AdjuntosArchivos. */}
+            <button type="button" className="rpd-btn-reporte" onClick={() => inputReporteRef.current?.click()} disabled={leyendoReporte}
+              title="Sube el Excel de cruces del portal del puente (AVI, Puente 3 o Puente Colombia): cada tag se une con su unidad (el TAG de ese puente) y con su operación de ese día.">
+              {leyendoReporte ? 'Leyendo reporte…' : 'Cargar reporte de puente'}
+            </button>
+            {/* ✅ V00466: volver a abrir la ventana del reporte cargado */}
+            {reporteAvi && resultadoAvi && !reporteAviAbierto && (
+              <button type="button" className="rpd-btn-reporte rpd-btn-reporte--ver" onClick={() => setReporteAviAbierto(true)}>
+                Coincidencias {NOMBRE_REPORTE[reporteAvi.grupo]} ({resultadoAvi.filas.filter(f => f.estado === 'coincide').length})
+              </button>
+            )}
+            <input ref={inputReporteRef} type="file" accept=".xlsx,.xls,.csv" className="rpd-input-oculto" tabIndex={-1} aria-hidden="true"
+              onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) cargarReporteAvi(f); }} />
             {(fechaInicio || fechaFin) && (
               <span className="rpd-x9">
                 {(fechaInicio || '…')} → {(fechaFin || '…')}
@@ -1460,6 +1586,16 @@ export const ReferenciasPuentesDashboard = () => {
               </button>
             </div>
           </div>
+
+          {/* ✅ V00466: ventana con las operaciones de Operaciones sin asignar que coinciden */}
+          {reporteAvi && resultadoAvi && reporteAviAbierto && (
+            <PanelReporteAvi grupo={reporteAvi.grupo} nombreArchivo={reporteAvi.nombre} filas={resultadoAvi.filas} opsSinCruce={resultadoAvi.opsSinCruce} omitidas={reporteAvi.omitidas}
+              avisoRango={avisoRangoAvi} horasPendientes={horasVerdePendientes}
+              onEnviar={(ids) => { setSeleccionadas(ids); setReporteAviAbierto(false); abrirModalGenerar(); }}
+              onMarcar={(ids) => { setSeleccionadas(ids); setReporteAviAbierto(false); }}
+              onQuitar={() => { setReporteAvi(null); setReporteAviAbierto(false); }}
+              onCerrar={() => setReporteAviAbierto(false)} />
+          )}
 
           {busquedaOpsHecha ? (
           <>

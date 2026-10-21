@@ -106,11 +106,63 @@ describe('cobro del puente en el servidor', () => {
     const r = await mod.cambiosCobroPuente(falso.db as never, 'o3', { ...sinConv, status: 'v' }, { ...op, status: 'v', statusNombre: 'Verde USA' });
     expect(r).toMatchObject({ saldoPuente: 150 });
   });
+  it('V00465: el detalle que guarda la tarifa en tipoConvenioId (Convenios de Clientes) también cobra la caseta de la tarifa', async () => {
+    falso.docs.set('convenios_clientes_detalles/conv2', { tipoConvenioId: 'tar1' });
+    const op2 = { ...op, convenio: 'conv2' };
+    const r = await mod.cambiosCobroPuente(falso.db as never, 'o4', { ...op2, status: 'a' }, { ...op2, status: 'b', statusNombre: 'Verde USA' });
+    expect(r).toMatchObject({ saldoPuente: 150, saldoPuentePuente: 'Caseta Puente III' });
+  });
   it('la regla "🌉" del flujo manda sobre el verde', async () => {
     falso.docs.set('config_flujos_operacion/Transfer_Importación_N／A', { flujo: [{ nombreStatus: '6. Cruce', descuentaPuente: true }, { nombreStatus: 'Verde USA' }] });
     expect(await mod.cambiosCobroPuente(falso.db as never, 'o2', { ...op, status: 'a' }, { ...op, status: 'b', statusNombre: 'Verde USA' })).toEqual({});
     const r = await mod.cambiosCobroPuente(falso.db as never, 'o2', { ...op, status: 'a' }, { ...op, status: 'c', statusNombre: '6. Cruce' });
     expect(r).toMatchObject({ saldoPuente: 150, saldoPuenteEvento: '6. Cruce' });
+  });
+  it('V00469: un saldoPuente en 0 (caseta sin importe) no bloquea el cobro; el elegido a mano sí', async () => {
+    const r = await mod.cambiosCobroPuente(falso.db as never, 'o5', { ...op, status: 'a', saldoPuente: 0 }, { ...op, status: 'b', statusNombre: 'Verde USA', saldoPuente: 0 });
+    expect(r).toMatchObject({ saldoPuente: 150 });
+    expect(await mod.cambiosCobroPuente(falso.db as never, 'o5', { ...op, status: 'a' }, { ...op, status: 'b', statusNombre: 'Verde USA', saldoPuente: 0, saldoPuenteManual: true })).toEqual({});
+  });
+  it('V00469: una cascada que pasa por Verde USA y termina en un estatus automático cobra en el Verde', async () => {
+    falso.docs.set('config_flujos_operacion/Transfer_Importación_N／A', { flujo: [{ nombreStatus: 'Verde USA' }, { nombreStatus: 'En tránsito', tipoMecanismo: 'automatico' }] });
+    const R = new Date().toISOString();
+    falso.docs.set('horarios/c0', { operacionId: 'o6', status: 's-verde', statusNombre: 'Verde USA', fechaHora: '2026-10-12T07:00', registradoEn: R, ordenCascada: 0 });
+    falso.docs.set('horarios/c1', { operacionId: 'o6', status: 's-trans', statusNombre: 'En tránsito', fechaHora: '2026-10-12T07:00', registradoEn: R, ordenCascada: 1, esAutomatico: true });
+    const r = await mod.cambiosCobroPuente(falso.db as never, 'o6', { ...op, status: 's-antes' }, { ...op, status: 's-trans', statusNombre: 'En tránsito' });
+    expect(r).toMatchObject({ saldoPuente: 150, saldoPuenteEvento: 'Verde USA', saldoPuenteFecha: '2026-10-12' });
+  });
+  it('V00469: Verde MX → Completado automático cobra en el Verde (con su fecha), aunque Completado también cobre', async () => {
+    falso.docs.set('config_flujos_operacion/Transfer_Importación_N／A', { flujo: [{ nombreStatus: 'Verde MX' }, { nombreStatus: 'Servicio Completado', tipoMecanismo: 'automatico' }] });
+    const R = new Date().toISOString();
+    const completado = 'c2d57403'; // STATUS_COMPLETADOS
+    falso.docs.set('horarios/d0', { operacionId: 'o8', status: 's-vmx', statusNombre: 'Verde MX', fechaHora: '2026-10-14T18:00', registradoEn: R, ordenCascada: 0 });
+    falso.docs.set('horarios/d1', { operacionId: 'o8', status: completado, statusNombre: 'Servicio Completado', fechaHora: '2026-10-14T18:00', registradoEn: R, ordenCascada: 1 });
+    const r = await mod.cambiosCobroPuente(falso.db as never, 'o8', { ...op, status: 's-antes' }, { ...op, status: completado, statusNombre: 'Servicio Completado' });
+    expect(r).toMatchObject({ saldoPuente: 150, saldoPuenteEvento: 'Verde MX', saldoPuenteFecha: '2026-10-14' });
+  });
+  it('V00469: una cascada vieja (o un horario posterior sin cascada) no se vuelve a usar', () => {
+    const viejo = '2026-10-01T10:00:00Z';
+    const ahora = Date.parse('2026-10-21T10:00:00Z');
+    expect(mod.pasosPreviosDeCascada([{ status: 'v', registradoEn: viejo, ordenCascada: 0 }, { status: 't', registradoEn: viejo, ordenCascada: 1 }], 't', ahora)).toEqual([]);
+    const reciente = '2026-10-21T09:50:00Z';
+    const hs = [{ status: 'v', registradoEn: reciente, ordenCascada: 0 }, { status: 't', registradoEn: reciente, ordenCascada: 1 }];
+    expect(mod.pasosPreviosDeCascada(hs, 't', ahora).map((h) => h.status)).toEqual(['v']);
+    expect(mod.pasosPreviosDeCascada([...hs, { status: 't', registradoEn: '2026-10-21T09:55:00Z' }], 't', ahora)).toEqual([]);
+  });
+  it('V00469: a un estatus que no es automático no se le buscan pasos (sin leer horarios)', async () => {
+    falso.docs.set('config_flujos_operacion/Transfer_Importación_N／A', { flujo: [{ nombreStatus: 'Verde USA' }, { nombreStatus: 'En tránsito', tipoMecanismo: 'manual' }] });
+    expect(await mod.cambiosCobroPuente(falso.db as never, 'o7', { ...op, status: 'a' }, { ...op, status: 'b', statusNombre: 'En tránsito' })).toEqual({});
+    expect(falso.lecturas.filter((l) => l.startsWith('horarios'))).toEqual([]);
+  });
+  it('V00469: pasosPreviosDeCascada toma solo el clic del último horario de ese estatus', () => {
+    const hs = [
+      { status: 'v', registradoEn: 'A', ordenCascada: 0 }, { status: 't', registradoEn: 'A', ordenCascada: 1 },
+      { status: 'x', registradoEn: 'B', ordenCascada: 0 }, { status: 'y', registradoEn: 'B', ordenCascada: 1 }, { status: 't', registradoEn: 'B', ordenCascada: 2 },
+    ];
+    const ahora = Date.parse('2026-10-21T10:00:00Z');
+    const conHora = hs.map((h) => ({ ...h, registradoEn: h.registradoEn === 'A' ? '2026-10-21T09:40:00Z' : '2026-10-21T09:45:00Z' }));
+    expect(mod.pasosPreviosDeCascada(conHora, 't', ahora).map((h) => h.status)).toEqual(['x', 'y']);
+    expect(mod.pasosPreviosDeCascada([{ status: 't', registradoEn: '2026-10-21T09:45:00Z' }], 't', ahora)).toEqual([]);
   });
 });
 

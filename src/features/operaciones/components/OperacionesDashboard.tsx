@@ -8,7 +8,7 @@ import { esOperacionPrueba, sinPruebas } from '../../../utils/operacionPrueba';
 import { FormularioOperacion } from './FormularioOperacion';
 // ✅ NUEVO: Resúmenes Diarios (Transfer / Logística / Fletes) en PDF.
 import { ResumenDiarioOperaciones } from '../../reportes/components/ResumenDiarioOperaciones';
-import { collection, doc, writeBatch, query, getDoc, getDocs, limit, where, startAfter, orderBy, onSnapshot, setDoc } from 'firebase/firestore';
+import { collection, doc, writeBatch, query, getDocs, limit, where, startAfter, orderBy, onSnapshot, setDoc } from 'firebase/firestore';
 import { DocumentosLista } from '../../documentos/DocumentosLista'; // ✅ V00344
 import { db, eliminarRegistro } from '../../../config/firebase';
 import { useUsuarioStore } from '../../../stores/useUsuarioStore'; // ✅ V00430
@@ -34,7 +34,10 @@ import { usePedidosCompletadasHoy } from '../services/pestanaCompletadas'; // �
 import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 import { ModalFechaStatus } from './ModalFechaStatus';
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
-import { aduanaDeConvenio, camposPisoColombia, casetaRespaldoColombia, esAduanaColombia, esGastoPisoColombia, normPuente } from '../../../utils/puenteColombia';
+import { cargarCtxCobroPuente } from '../../../utils/puenteColombia';
+import { aplicaPeaje, cobroAlCambiarStatus, disparoCobroPuente, puenteYaCobrado } from '../../../shared/dominio/cobroPuente'; // ✅ V00469
+import type { EventoStatusPuente } from '../../../shared/dominio/cobroPuente';
+import { aFechaServicioISO } from '../../../shared/dominio/fechas';
 import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
 import { obtenerFlags, useFlags } from '../../../shared/data/flags';
 import { useOperacionesActivas } from '../hooks/useOperacionesActivas'; // ✅ V00444 (Fase 8.1)
@@ -44,14 +47,15 @@ import type { DocLibre } from '../../../utils/docPorId';
 import { idReal, obtenerCatalogo, useCatalogo, useCatalogos } from '../../../shared/data/catalogos';
 import type { ColeccionCatalogo } from '../../../shared/data/catalogos';
 import { usePermisoRol } from '../../../shared/data/sesion';
-import { ID_MXN, ID_USD, STATUS_CANCELADO, STATUS_COMPLETADOS } from '../../../shared/dominio/constantes';
-import { monedaCanonica, nombreMoneda } from '../../../shared/dominio/moneda';
+import { ID_MXN, ID_USD, STATUS_CANCELADO } from '../../../shared/dominio/constantes';
 import { mostrarCartaPara, useConfigCarta } from '../../../utils/configCartaInstrucciones';
 import { ConfigCartaModal } from './ConfigCartaModal';
 import { usePermisoFormularios } from '../../formularios/configFormularios';
 import { estadoGrupoDe } from '../../../shared/dominio/operacionCanonica';
 import { fmtFechaAuditoria, limpiarUndefined } from '../services/formatosOperacion'; // ✅ V00444 (Fase 8.3) · V00456: el color del tipo sale del CSS de la fila
 import { leerParaDocumento } from '../../../utils/direccionPdf'; // ✅ V00448
+import TagPuenteUnidad from '../../puentes/components/TagPuenteUnidad'; // ✅ V00465
+import { grupoTagDeOperacion } from '../../puentes/services/tagPuente';
 
 // ✅ V00439 (Fase 3.x): catálogos del módulo (alias → colección) desde el
 //   listener compartido (useCatalogos): sin getDocs propios ni copia en
@@ -685,106 +689,28 @@ const OperacionesDashboard = () => {
   //   Verde USA (importación) → Caseta AVI en dólares · Verde MX (exportación)
   //   → Caseta Puente III en pesos. Al COMPLETAR queda como respaldo (por
   //   tráfico) si el verde no se registró. Nunca se cobra dos veces.
-  const STATUS_COMPLETADOS_IDS_SP = STATUS_COMPLETADOS; // ✅ V00439 (Fase 3.x)
-  // ✅ V00369: el peaje aplica SOLO a (1) Transfer y (2) Logística de Cruces
-  //   con proveedor Roelca; Logística de Fletes NUNCA.
-  const aplicaPeajeSP = (op: { tipoOperacionNombre?: unknown; proveedorUnidadNombre?: unknown }): boolean => {
-    const tipo = String(op?.tipoOperacionNombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-    if (tipo.includes('flete') || tipo.includes('movimiento')) return false; // ✅ V00371: Fletes y Movimientos exentos
-    if (tipo.includes('transfer')) return true;
-    if (!tipo.includes('logistica')) return false;
-    return String(op?.proveedorUnidadNombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes('roelca');
-  };
-  // ✅ V00373: la CASETA agregada en los GASTOS INCLUIDOS de la tarifa de la
-  //   operación MANDA sobre el puente por tráfico — se cobra ese puente con el
-  //   MONTO del vínculo (p. ej. Caseta Puente III $144 de la tarifa).
-  const casetaDeGastosSP = async (op: { convenio?: unknown }): Promise<{ nombre: string; moneda: unknown; monto: number } | null> => {
-    try {
-      const convId = String(op?.convenio || '').trim();
-      if (!convId) return null;
-      const det = await getDoc(doc(db, 'convenios_clientes_detalles', convId));
-      if (!det.exists()) return null;
-      const dd = det.data() as Record<string, unknown>;
-      const tarifaBase = String(dd.tarifaBaseId ?? dd.tarifa_base_id ?? dd.tarifaReferenciaId ?? dd.tarifa_referencia_id ?? '').trim();
-      if (!tarifaBase) return null;
-      // ✅ V00439 (Fase 3.x): gastos incluidos y tipos de gasto del listener compartido (antes getDocs por clic).
-      // ✅ V00448: `fresco` — con esto se escribe el peaje (saldoPuente): confirmado por el servidor.
-      const [gastosIncluidos, tiposGastos] = await Promise.all([obtenerCatalogo('tarifas_gastos_incluidos', { fresco: true }), obtenerCatalogo('catalogo_tipos_gastos', { fresco: true })]);
-      const normSP = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-      const gastoPorId = new Map(tiposGastos.map((g) => [idReal(g), g]));
-      const esColSP = esAduanaColombia(await aduanaDeConvenio(op?.convenio)); // ✅ V00416
-      for (const g of gastosIncluidos) {
-        const ref = String(g.tarifa_referencia_id ?? g.tarifaReferenciaId ?? g.tarifa_referencia ?? g.tarifaReferencia ?? g.ID_SERVICES ?? g.id_services ?? g.idServices ?? g.tarifaId ?? '').trim();
-        if (ref !== tarifaBase) continue;
-        const gastoId = String(g.gasto ?? g.gastoId ?? g.gasto_id ?? '').trim();
-        const cat = gastoPorId.get(gastoId);
-        if (!cat || normSP(cat.categoria_gasto) !== 'puente') continue;
-        if (esGastoPisoColombia(cat.nombre_gasto)) continue; // ✅ V00388: el piso de Colombia es el 2º cobro, no la caseta
-        if (esColSP && !normSP(cat.nombre_gasto).includes('colombia')) continue; // ✅ V00416: aduana Colombia = caseta de Colombia
-        const monto = Number(g.monto ?? g.importe ?? g.cantidad ?? g.valor ?? 0) || Number(cat.importe) || 0;
-        return { nombre: String(cat.nombre_gasto || ''), moneda: cat.moneda, monto };
-      }
-      return null;
-    } catch { return null; }
-  };
-
-  // ✅ V00388: aduana COLOMBIA → además de la caseta se cobra el PISO del
-  //   puente ("Puente Mx Colombia", monto fijo del catálogo). Nuevo Laredo: uno solo.
-  const camposSaldoPuenteAlCompletar = async (statusId: string, op: { saldoPuente?: unknown; saldoPuentePiso?: unknown; trafico?: unknown; fechaServicio?: unknown; tipoOperacionNombre?: unknown; proveedorUnidadNombre?: unknown; convenio?: unknown; carga?: unknown; convenioNombre?: unknown }, statusNombre?: string, fechaEvento?: string): Promise<Record<string, unknown>> => {
+  // ✅ V00469: el cobro usa la regla COMPARTIDA (src/shared/dominio/cobroPuente.ts), la misma del
+  //   servidor y del formulario: caseta de la tarifa (con aduana Colombia, solo la de Colombia),
+  //   respaldo de Colombia, tráfico, y el piso de Colombia. Antes aquí había una copia con su propio
+  //   getDoc por clic y "hoy" en UTC (en la noche ya era el día siguiente). Ahora:
+  //   · la fecha de un cruce sin hora capturada es HOY en hora local;
+  //   · Completado toma la fecha de servicio convertida (fechaServicioISO);
+  //   · un saldoPuente en 0 ya no cuenta como cobrado (puenteYaCobrado).
+  const camposSaldoPuenteAlCompletar = async (statusId: string, op: Record<string, unknown>, statusNombre?: string, fechaEvento?: string): Promise<Record<string, unknown>> => {
     // ✅ V00441 (Fase 5.7): con la bandera, el peaje lo cobra el servidor (trigger
     //   operacionEscrita) para web, Mis Operaciones y la app móvil por igual.
     if ((await obtenerFlags()).cobroPuenteEnServidor) return {};
-    const base = await camposSaldoPuenteBaseSP(statusId, op, statusNombre, fechaEvento);
-    if (!(Number(base.saldoPuente) > 0)) return base;
-    return { ...base, ...(await camposPisoColombia(op, base.saldoPuenteFecha, base.saldoPuenteEvento)) };
-  };
-
-  const camposSaldoPuenteBaseSP = async (statusId: string, op: { saldoPuente?: unknown; trafico?: unknown; fechaServicio?: unknown; tipoOperacionNombre?: unknown; proveedorUnidadNombre?: unknown; convenio?: unknown; carga?: unknown; convenioNombre?: unknown }, statusNombre?: string, fechaEvento?: string): Promise<Record<string, unknown>> => {
     try {
-      if (Number.isFinite(Number(op?.saldoPuente))) return {};
-      const nombreSt = String(statusNombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-      const esVerdeUSA = nombreSt.includes('verde usa');
-      const esVerdeMX = nombreSt.includes('verde mx') || nombreSt.includes('verde mexico');
-      const esCompletado = STATUS_COMPLETADOS_IDS_SP.includes(String(statusId || '').trim());
-      if (!aplicaPeajeSP(op as { tipoOperacionNombre?: unknown; proveedorUnidadNombre?: unknown })) return {}; // ✅ V00369
-      // ✅ V00377: si la REGLA DE ESTATUS del flujo marca "🌉 aquí se descuenta
-      //   el puente", ESE estatus dispara el cobro (los verdes solo aplican
-      //   cuando el flujo no define ninguno); COMPLETADO sigue de respaldo.
-      const flagFlujo = await statusDescuentaPuente(op, String(statusNombre || ''));
-      const dispara = flagFlujo === true || (flagFlujo === null && (esVerdeUSA || esVerdeMX)) || esCompletado;
-      if (!dispara) return {};
-      const esDisparoDirecto = flagFlujo === true || esVerdeUSA || esVerdeMX;
-      const eventoSP0 = flagFlujo === true ? String(statusNombre || '').trim() : esVerdeUSA ? 'Verde USA' : esVerdeMX ? 'Verde MX' : 'Completado';
-      // ✅ V00384: el cruce lleva la FECHA capturada del movimiento (antes, siempre hoy)
-      const fechaSP0 = esDisparoDirecto ? (String(fechaEvento || '').slice(0, 10) || new Date().toISOString().slice(0, 10)) : (String(op?.fechaServicio || '').slice(0, 10) || new Date().toISOString().slice(0, 10));
-      // ✅ V00373: primero la caseta de los GASTOS INCLUIDOS de la tarifa
-      const casetaTarifa = await casetaDeGastosSP(op);
-      if (casetaTarifa && casetaTarifa.monto > 0) {
-        const monedaCT = nombreMoneda(monedaCanonica(casetaTarifa.moneda)) || String(casetaTarifa.moneda || ''); // ✅ V00439 (Fase 3.x)
-        return { saldoPuente: casetaTarifa.monto, saldoPuentePuente: casetaTarifa.nombre, saldoPuenteMoneda: monedaCT, saldoPuenteFecha: fechaSP0, saldoPuenteEvento: eventoSP0 };
-      }
-      // ✅ V00388: aduana Colombia sin caseta en la tarifa → Caseta Mx Colombia (o Trompo Colombia)
-      if (esAduanaColombia(await aduanaDeConvenio(op?.convenio))) {
-        const esTrompo = normPuente(`${String(op?.carga || '')} ${String(op?.convenioNombre || '')}`).includes('trompo');
-        const rc = await casetaRespaldoColombia(esTrompo);
-        if (rc && rc.saldoPuente > 0) return { ...rc, saldoPuenteFecha: fechaSP0, saldoPuenteEvento: eventoSP0 };
-      }
-      // ✅ V00365: sin caseta en la tarifa, el puente lo decide el TRÁFICO — importación
-      //   cruza por Caseta AVI (dólares) y exportación por Puente III (pesos) —
-      //   sin importar cuál de los verdes se marcó (p. ej. "Verde Mx
-      //   (Importación)" cobra AVI). Sin tráfico, decide el verde marcado.
-      const traf = String(op?.trafico || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-      const objetivo = traf.includes('import') ? 'avi' : traf.includes('export') ? 'p3' : esVerdeUSA ? 'avi' : esVerdeMX ? 'p3' : '';
-      if (!objetivo) return {};
-      const tiposGastos = await obtenerCatalogo('catalogo_tipos_gastos', { fresco: true }); // ✅ V00439 · V00448: escribe el peaje
-      const normSP = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-      const x = tiposGastos.find((t) => {
-        const n = normSP(t.nombre_gasto);
-        return objetivo === 'avi' ? n === 'caseta avi' : (n === 'caseta puente iii' || n === 'caseta puente 3');
-      });
-      if (!x) return {};
-      const monedaSP = nombreMoneda(monedaCanonica(x.moneda)) || String(x.moneda || '');
-      return { saldoPuente: Number(x.importe) || 0, saldoPuentePuente: String(x.nombre_gasto || ''), saldoPuenteMoneda: monedaSP, saldoPuenteFecha: fechaSP0, saldoPuenteEvento: eventoSP0 };
+      if (puenteYaCobrado(op) || !aplicaPeaje(op)) return {}; // ✅ V00369
+      const nombre = String(statusNombre || '');
+      // ✅ V00377: la REGLA DE ESTATUS del flujo ("🌉 aquí se descuenta el puente") manda.
+      const ev: EventoStatusPuente = {
+        statusId, statusNombre: nombre, fechaEvento: String(fechaEvento || ''),
+        flagFlujo: await statusDescuentaPuente(op, nombre), hoy: hoyLocalISO(),
+        fechaServicioISO: String(op.fechaServicioISO || '').slice(0, 10) || aFechaServicioISO(op.fechaServicio) || '',
+      };
+      if (!disparoCobroPuente(ev)) return {};
+      return cobroAlCambiarStatus(await cargarCtxCobroPuente(), op, ev);
     } catch (e) { console.warn('Saldo de puente al completar:', e); return {}; }
   };
 
@@ -1004,7 +930,7 @@ const OperacionesDashboard = () => {
       batch.update(opRef, limpiarUndefined({ status: statusId, statusNombre: statusNombreResuelto, ...extraSPManual, ...ajusteSueldoPorStatus(operacionViendo, statusNombreResuelto) })); // ✅ V00387: Falso = sueldo a la mitad
 
       await batch.commit();
-      notificarOperacionGuardada(String(operacionViendo._docId || operacionViendo.id), { ...operacionViendo, status: statusId, statusNombre: statusNombreResuelto }, 'operaciones-status'); // ✅ V00126
+      notificarOperacionGuardada(String(operacionViendo._docId || operacionViendo.id), { ...operacionViendo, ...extraSPManual, status: statusId, statusNombre: statusNombreResuelto }, 'operaciones-status'); // ✅ V00126 · V00469: con el cobro del puente
       // ✅ V00402: Verde → Historial calculado (referencia automática del puente de hoy)
       if (esStatusVerde(statusNombreResuelto)) registrarVerdeAutomatico({ ...operacionViendo, ...extraSPManual, status: statusId, statusNombre: statusNombreResuelto }, statusNombreResuelto, nuevaFechaHora);
 
@@ -1160,7 +1086,13 @@ const OperacionesDashboard = () => {
           const opRef = doc(db, 'operaciones', String(operacionViendo._docId || operacionViendo.id));
           // ✅ V00355: al COMPLETAR, colocar la tarifa del puente del día
           //   (Importación → Caseta AVI · Exportación → Caseta Puente III).
-          const extraSaldoPuente = await camposSaldoPuenteAlCompletar(statusFinal.id, operacionViendo, statusFinal.nombre, fechaHoraLocal);
+          // ✅ V00469: en una CASCADA (Verde USA → En tránsito…) cobra el PRIMER paso que dispara,
+          //   no solo el último (el Verde ya no espera a Completado).
+          let extraSaldoPuente: Record<string, unknown> = {};
+          for (const paso of cadenaResuelta) {
+            extraSaldoPuente = await camposSaldoPuenteAlCompletar(paso.id, operacionViendo, paso.nombre, fechaHoraLocal);
+            if (Object.keys(extraSaldoPuente).length > 0) break;
+          }
           batch.update(opRef, limpiarUndefined({
             status: statusFinal.id,
             statusNombre: statusFinal.nombre,
@@ -1169,7 +1101,7 @@ const OperacionesDashboard = () => {
           }));
 
           await batch.commit();
-          notificarOperacionGuardada(String(operacionViendo._docId || operacionViendo.id), { ...operacionViendo, status: statusFinal.id, statusNombre: statusFinal.nombre }, 'operaciones-status'); // ✅ V00126
+          notificarOperacionGuardada(String(operacionViendo._docId || operacionViendo.id), { ...operacionViendo, ...extraSaldoPuente, status: statusFinal.id, statusNombre: statusFinal.nombre }, 'operaciones-status'); // ✅ V00126 · V00469: con el cobro del puente
           // ✅ V00402: si algún paso de la cascada es Verde → Historial calculado
           { const pasoVerde = cadenaResuelta.find((p) => esStatusVerde(p.nombre)); if (pasoVerde) registrarVerdeAutomatico({ ...operacionViendo, ...extraSaldoPuente, status: statusFinal.id, statusNombre: statusFinal.nombre }, pasoVerde.nombre, fechaHoraLocal); }
 
@@ -1826,7 +1758,7 @@ const OperacionesDashboard = () => {
       case 'ref': {
         // ✅ V00367: alerta en la fila si el cruce aún no cobra su peaje (sin Verde marcado)
         const trafSP = String(op.trafico || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-        const faltaPeaje = aplicaPeajeSP(op) && (trafSP.includes('import') || trafSP.includes('export')) && !(Number(op.saldoPuente) > 0);
+        const faltaPeaje = aplicaPeaje(op) && (trafSP.includes('import') || trafSP.includes('export')) && !puenteYaCobrado(op); // ✅ V00469
         // ✅ V00456: el color sale de la fila (od-fila-op--<tipo> → --od-tipo), sin estilos en línea
         return <span className="font-mono od-ref">{op.ref || op.id?.substring(0,6)}{esOperacionPrueba(op) && <span className="op-prueba-chip" title="Operación de PRUEBA: no entra a Facturación, Pagos, Nómina, Estadísticas, Reportes ni Saldos de Puentes">🧪 PRUEBA</span>}{faltaPeaje && <span className="od-ref__peaje" title="Esta operación aún NO ha descontado el saldo del puente — falta marcar Verde MX / Verde USA">🌉⚠</span>}</span>;
       }
@@ -2679,6 +2611,8 @@ const OperacionesDashboard = () => {
                       <div>
                         <span className="od-x94">Unidad Asignada</span>
                         <span className="od-x90">{mostrarDatoMapeado(operacionViendo.unidad, 'unidades', 'unidad', operacionViendo.unidadNombre)}</span>
+                        {/* ✅ V00465: el TAG de la unidad para el puente de esta operación */}
+                        <TagPuenteUnidad unidadId={operacionViendo.unidad} grupo={grupoTagDeOperacion(operacionViendo)} />
                       </div>
                       <div className="od-x98">
                         <span className="od-x94">Operador Asignado</span>

@@ -52,7 +52,9 @@ const grupoDePuente = (nombre: string): GrupoPuente | null => {
   if (n.includes('avi')) return 'avi';
   if (n.includes('puente iii') || n.includes('puente 3')) return 'p3';
   if (n.includes('mx')) return 'p3'; // casetas de México hacia Nuevo Laredo (ej. Caseta Mx Auto)
-  return null;
+  // ✅ V00469: cualquier otro puente cuenta en Puente III, igual que en Referencias de Puentes
+  //   (grupoDeNombresPuente). Antes no entraba en ninguna tarjeta y el saldo no cuadraba con la pestaña Saldo.
+  return 'p3';
 };
 
 export const TarjetaCasetas: React.FC = () => {

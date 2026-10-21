@@ -42,11 +42,14 @@
 .rpd-x38 { color: #D84315; }
 .rpd-x39 { padding: 10px 20px; background-color: #D84315; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.9rem; }
 .rpd-x41 { border: 1px solid #30363d; border-radius: 8px; overflow-x: auto; overflow-y: auto; max-height: calc(100vh - 320px); background-color: #161b22; }
-.rpd-x42 { padding: 16px; text-align: center; border-bottom: 1px solid #30363d; white-space: nowrap; }
+/* ✅ V00465: columna de selección del Acumulado — encabezado y filas alineados a la izquierda con el mismo padding. */
+.rpd-x42 { padding: 16px; width: 1%; text-align: left; border-bottom: 1px solid #30363d; white-space: nowrap; }
 .rpd-x43 { padding: 16px; border-bottom: 1px solid #30363d; white-space: nowrap; }
 .rpd-x45 { text-align: center; padding: 40px; color: #8b949e; }
 .rpd-x46 { border-bottom: 1px solid #21262d; }
-.rpd-x47 { display: flex; gap: 8px; justify-content: center; }
+.rpd-x47 { padding: 16px; width: 1%; text-align: left; vertical-align: middle; white-space: nowrap; }
+.rpd-sel-acciones { display: inline-flex; align-items: center; gap: 12px; }
+.rpd-x42 .rpd-x32, .rpd-sel-acciones .rpd-x32 { margin: 0; vertical-align: middle; }
 .rpd-x51 { background: transparent; border: 1px solid #ef4444; border-radius: 4px; color: #ef4444; cursor: pointer; padding: 6px; display: flex; }
 .rpd-x52 { padding: 16px; color: #D84315; font-weight: bold; font-family: monospace; white-space: nowrap; }
 .rpd-x53 { padding: 16px; color: #c9d1d9; white-space: nowrap; }
@@ -131,7 +134,6 @@
   .rpd-x30 { padding: 14px 12px; }
   .rpd-x34 { padding: 14px 12px; }
   .rpd-x45 { padding: 14px 12px; }
-  .rpd-x47 { flex-wrap: wrap; }
   .rpd-x51 { flex-wrap: wrap; }
   .rpd-x58 { flex-wrap: wrap; }
   .rpd-x59 { padding: 14px 12px; }
@@ -163,6 +165,14 @@
 .rpd-btn-asignar { padding: 8px 14px; border-radius: 6px; border: 1px solid #1f6feb; background: rgba(56, 139, 253, 0.12); color: #79c0ff; font-weight: 700; font-size: 0.82rem; cursor: pointer; white-space: nowrap; }
 .rpd-btn-asignar:hover:not(:disabled) { background: rgba(56, 139, 253, 0.22); }
 .rpd-btn-asignar:disabled { opacity: 0.6; cursor: wait; }
+.rpd-btn-reporte { padding: 9px 16px; border-radius: 8px; border: 1px solid #1f6feb; background: rgba(56, 139, 253, 0.12); color: #79c0ff; font-weight: 700; font-size: 0.88rem; cursor: pointer; white-space: nowrap; } /* ✅ V00464 */
+.rpd-btn-reporte:hover:not(:disabled) { background: rgba(56, 139, 253, 0.22); }
+.rpd-btn-reporte:disabled { opacity: 0.6; cursor: wait; }
+.rpd-btn-reporte:focus { outline: none; }
+.rpd-btn-reporte:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
+.rpd-btn-reporte--ver { border-color: rgba(86, 211, 100, 0.55); background: rgba(86, 211, 100, 0.1); color: #56d364; } /* ✅ V00466 */
+.rpd-btn-reporte--ver:hover:not(:disabled) { background: rgba(86, 211, 100, 0.2); }
+.rpd-input-oculto { display: none; }
 .rpd-hora { color: #f0f6fc; font-variant-numeric: tabular-nums; } /* ✅ V00393 */
 /* ✅ V00394: referencias por puente */
 .rpd-grupos { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }

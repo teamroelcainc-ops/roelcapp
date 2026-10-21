@@ -45,6 +45,8 @@ import { describirCambiosLog, truncarValorLog } from '../services/auditoriaLog';
 import { COLUMNAS_STORAGE_KEY, cargarColumnasGuardadas } from './completados/columnas';
 import { describirFiltrosLog, fmtSaldoPuente, normalizarFechaServicioISO, normalizarMoneda } from './completados/formatos';
 import { colorTipoOperacion, fmtFechaAuditoria } from '../services/formatosOperacion';
+import TagPuenteUnidad from '../../puentes/components/TagPuenteUnidad'; // ✅ V00465
+import { grupoTagDeOperacion } from '../../puentes/services/tagPuente';
 
 // ✅ V00439 (Fase 3.x): catálogos del módulo (alias → colección) desde el
 //   listener compartido (antes 16 onSnapshot propios + caché de useCatalogoCache).
@@ -3251,6 +3253,8 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                       <div>
                         <span className="sc-x140">Unidad Asignada</span>
                         <span className="sc-x136">{mostrarDatoMapeado(operacionViendo.unidad, 'unidades', 'unidad', operacionViendo.unidadNombre)}</span>
+                        {/* ✅ V00465: el TAG de la unidad para el puente de esta operación */}
+                        <TagPuenteUnidad unidadId={operacionViendo.unidad} grupo={grupoTagDeOperacion(operacionViendo)} />
                       </div>
                       <div className="sc-x144">
                         <span className="sc-x140">Operador Asignado</span>

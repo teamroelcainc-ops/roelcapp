@@ -207,6 +207,101 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - Modales con `createPortal` a `document.body` (la tarjeta usa `transform` al pasar el mouse) y perezosos desde la tarjeta (`lazyWithRetry`): la carga inicial crece 0.3 KB (sin eso, ~20 KB por FormularioConfigurable).
 - Se quitaron las reglas `.rd-dos*` de App.css (solo las usaba la tarjeta TC · Diesel).
 
+## V00469 (Reglas de Estatus por aduana; revisión del cobro de puentes)
+- Pedido de Omaf (21-oct, captura del Editor de Flujos): "agrega la aduana en el configurador de status, al lado de CARGA".
+  - El flujo por aduana es `Servicio_Tráfico_Carga_Aduana` con el campo `aduana`; sin aduana el id no cambia (los flujos guardados siguen igual).
+  - `buscarFlujo` (web y servidor) y `buildConfigId` (formulario) prueban primero los flujos de la aduana de la operación y luego los generales; un flujo de OTRA aduana nunca se usa.
+  - La aduana de la operación es `aduanaNombre` (servidor, V00258). En el formulario, con un convenio nuevo, sale del nombre del convenio o de su tarifa (`aduanaForm`).
+  - Roelca Móvil (repo aparte) arma su flujo con el id general: no ve los flujos por aduana.
+- Pedido: "revisa la lógica de los puentes". Se revisaron los tres caminos de cobro (formulario, Operaciones Activas, servidor), el Acumulado y las tarjetas. Se corrigió lo que no pedía una decisión:
+  - **0 bloqueaba:** `Number.isFinite(saldoPuente)` tomaba 0, '' y null como cobrado. La tarifa por tráfico con importe 0 escribía 0 y ya nunca se cobraba, aunque Referencias de Puentes sí la veía "sin monto". Ahora `puenteYaCobrado` = > 0 o `saldoPuenteManual`, y no se cobra en 0. Ningún camino escribía 0 a propósito: se revisaron todos con grep.
+  - **Cascada:** solo se evaluaba el último estatus. En el servidor, los horarios se leen solo si el estatus final es `automatico` en el flujo (sin eso no hay cascada posible) y no cobra, para no sumar una lectura en cada cambio de estatus.
+  - **Formulario:**
+    - guardaba los `saldoPuente…` de su copia: deshacía un cambio de Referencias de Puentes, o pasaba los de otra operación en un formulario minimizado. Ahora son campos ajenos (`camposAjenos.ts`);
+    - el cobro propio va aparte y se confirma con un `getDoc` antes de escribir (solo cuando hay cobro);
+    - su copia de la regla se quitó: no tenía el filtro de Colombia (V00416), leía solo `tarifaBaseId` y usaba "hoy" en UTC.
+  - **Operaciones Activas:** misma regla compartida. Sin el `getDoc` por clic: los catálogos vienen de `cargarCtxCobroPuente()`, que espera al servidor (`fresco`).
+  - **Enviar al Acumulado:** el grupo previsto (`grupoPuenteOp || 'PT3'`) no siempre era el de la fila, y `upsertReferenciaAuto` descartaba las filas de otro grupo sin aviso. Si la referencia no existía, la creaba vacía. Ahora se agrupa por el grupo de la fila.
+  - **Tarjetas de casetas:** `grupoDePuente` devolvía null para nombres desconocidos; `grupoDeNombresPuente` los manda a PT3.
+- Una revisión aparte del cambio encontró, y se corrigió:
+  - el servidor solo miraba los pasos anteriores si el final NO cobraba: Verde MX → Completado automático cobraba en Completado (fecha de servicio), o nada sin tráfico. Ahora se prueban todos en orden;
+  - un horario de cascada viejo podía reutilizarse: ahora tiene que ser el último horario de la operación y de menos de 30 min;
+  - el formulario cobraba en cualquier guardado (con 0 ya no bloqueando, más operaciones). Ahora sigue la regla del servidor (`cambioStatus` o `CAMPOS_QUE_DECIDEN_PUENTE`);
+  - Saldos de Puentes seguía con `Number.isFinite`;
+  - fechas d/m/aaaa en Referencias (id con "/");
+  - el aviso del bus sin el cobro nuevo (Servicios Completados ahora copia `saldoPuente…` del aviso).
+- Decisiones abiertas (en CAMBIOS-V00469.md):
+  - la operación queda en $0 al enviarla al Acumulado sin puente;
+  - el módulo viejo Saldos de Puentes;
+  - subtotales con monedas mezcladas y lo que cuenta "Hoy";
+  - el `orderBy('fechaServicio')` de la lista de Referencias (formatos mezclados; necesita índice para pasar a `fechaServicioISO`);
+  - tope de 1,000 y sin transacción en el Acumulado.
+- Se revisó que coinciden: las reglas de caseta, piso y moneda del servidor y del tablero; que el flujo lo busca la misma función; que no hay doble cobro entre servidor y tablero (con la bandera, la web devuelve {}); y que tarjetas, Saldo y movimientos leen las mismas fuentes.
+
+## V00468 (Aduana: solo cruces de importación y exportación)
+- Omaf (21-oct, captura del desglose Aduana → C/V → Exp/Imp/Mov): "en esta lista no se muestran movimientos, solo los cruces de importación y exportación". Se leyó como regla para la lista de Aduana.
+- `esCruceOp` = línea Transfer o Logística (`lineaDeOp`; Fletes no) Y movimiento Importación o Exportación (`movimientoDeOp`, el mismo criterio de la dimensión Exp/Imp/Mov de la pantalla; la clasificación manual manda).
+- `DesgloseJerarquico.soloPara[dim]`: con esa dimensión como RAÍZ solo entran las operaciones del filtro y se muestra la nota. Como sub-nivel no se filtra (los totales del padre no cambiarían), y lo que no cruza sale "No cruza".
+- `norm`, `textoDeOp` y `movimientoDeOp` pasaron a nivel de módulo (son puros) para que el filtro sea estable entre renders. Con eso dos `eslint-disable exhaustive-deps` quedaron sin uso y se quitaron.
+
+## V00467 (Estadísticas por Aduana; reportes de Puente 3 y Puente Colombia)
+- Pedido de Omaf (21-oct, mensaje de Facturación): un filtro más en Estadísticas, "por qué aduana cruzó (Transfer y Logística)". Se agregó como dimensión del Desglose (`aduana`). La etiqueta se toma así:
+  - `aduanaNombre` de la operación, que mantiene el servidor desde el convenio (V00258);
+  - si falta, `aduana`/`aduanaId` contra el catálogo;
+  - si falta, `aduanaDeOperacionCtx` (convenio → tarifa → aduana).
+  Los catálogos de convenio, tarifa y aduana solo se escuchan con el Desglose a la vista.
+- Reportes de puente (los dos Excel de muestra):
+  - Puente 3: REPORTE_PUENTE_240, estado de cuenta de "Puente del Comercio Mundial". Hoja PVentaEdoCta con Fecha (serie, solo día) + Hora + Folio Tarjeta (hex de 16, rellenado con ceros) + Importe + T. Movimiento. Una segunda hoja (Hoja1) trae los mismos datos desde el 30-abr con columnas dispersas.
+  - Colombia: REPORTE_PUENTE_800 con Fecha (serie con hora) + Tag (numérico) + #Económico (= número de la unidad) + Importe Trans. + Descuento % + Importe Total.
+- El formato se reconoce por el encabezado (Folio Tarjeta → Puente 3; #Económico o Importe Total → Colombia; Transaction Date / Tag # → AVI). Se leen todas las hojas de ese puente y un cobro igual (fecha, hora, tag, monto) no se repite.
+- Colombia cobra DOS veces por cruce (puente 100→90 y caseta 144→129.60, con 10% de descuento):
+  - casi siempre a ≤10 min, pero a veces hasta 4 h 20 (la fila); también pasando la medianoche;
+  - `unirCruces` une dos cobros seguidos del mismo tag con montos distintos y ≤ 300 min;
+  - en los 380 cobros de la muestra quedaron 2 sueltos.
+  Del lado de la operación, el monto comparado es caseta + piso.
+- Tag por puente: Puente 3 se compara en mayúsculas y sin los ceros de relleno del final (9D1A330000000000 = 9D1A33); AVI y Colombia, solo dígitos y sin ceros a la izquierda. Colombia de respaldo por # económico (dígitos del nombre de la unidad), con aviso.
+- Emparejamiento: las operaciones de OTRO puente (con monto) van al final (+1,000,000 en la distancia) y con aviso, para que un cruce de Puente 3 no se quede con la operación AVI de la misma unidad ese día.
+- Los nombres de archivo `reporteAvi.ts` y `PanelReporteAvi.tsx` se quedaron (ya sirven para los tres puentes) para no pedir `git rm`.
+
+## V00466 (reporte AVI: solo Operaciones sin asignar, en una ventana)
+- Pedido de Omaf (20-oct), con captura de 226 cruces: 91 salían "Ya está en el Acumulado". Pidió tres cosas:
+  - buscar solo en Operaciones sin asignar;
+  - abrir un modal con las que coinciden;
+  - no mostrar el lugar (todo el reporte es del AVI).
+- Las candidatas siguen la regla de la tabla "Operaciones sin asignar": Transfer o Logística Roelca, completada, de importación o exportación, fuera del Acumulado y no de prueba. No se aplican los filtros de puente y unidad.
+- `coincidirCruces` ya no tiene los estados enAcumulado, noCompletada ni otroTrafico. Las demás operaciones de la unidad ese día no se emparejan, pero llegan en `otrasDelDia` y se avisan en cada cruce ("también tiene ese día: TR-… (en el Acumulado)").
+- El riesgo que cubre el aviso: con un solo cruce, una operación en el Acumulado y otra sin asignar, el cruce queda con la sin asignar. Puede ser el de la otra, y entonces se pagaría dos veces. El usuario decide con el check.
+- Ventana: guarda las DESMARCADAS, no las marcadas. Así, si la coincidencia cambia cuando llegan las horas de Verde, lo nuevo entra marcado. Mientras falten horas sale CargandoDatos.
+  - "Enviar al Acumulado" deja esas como seleccionadas y abre la ventana de siempre;
+  - "Solo marcar en la tabla" solo las selecciona;
+  - Esc o ✕ cierra la ventana y deja el reporte cargado (botón "Coincidencias AVI (N)").
+- Se quitó la columna `lugar` (LOCATION): ni se lee ni se exporta.
+
+## V00465 (puente por convenio al poner la unidad, TAG por puente, checks del Acumulado)
+- Pedido de Omaf (20-oct): checks disparejos en el Acumulado; el TAG que corresponde según el puente en la ficha; en el formulario, al poner la unidad, habilitar el puente que toca por el convenio y la tarifa.
+- Una sola regla para "qué caseta le toca": `casetaPrevista` en `shared/dominio/cobroPuente.ts`. La usan el formulario (para preelegir) y `cobroAlCambiarStatus` (el cobro del servidor). El resultado de `cobroAlCambiarStatus` no cambió: las pruebas de siempre siguen en verde.
+- Hallazgo: los detalles de convenio guardan la tarifa en `tipoConvenioId` (Convenios de Clientes, triggers de `relacional.ts`). La regla pura, el contexto del servidor (`puentesYDiesel.ts`), `aduanaDeConvenio` y `casetaDeGastosSP` solo leían `tarifaBaseId`; el formulario sí leía `tipoConvenioId`. Con un detalle sin `tarifaBaseId`:
+  - no se encontraban la caseta de la tarifa ni la aduana Colombia;
+  - el cobro caía al tráfico (Caseta AVI / Puente III del catálogo).
+  Ahora `tarifaDeDetalleConvenio` lee primero `tarifaBaseId` (nada cambia donde existe) y luego `tipoConvenioId` y las variantes. Requiere desplegar `functions:operacionEscrita`.
+- Pendiente: `camposSaldoPuenteBase` del formulario (el cobro desde la web con `cobroPuenteEnServidor` apagada) tiene su propia copia de la regla, sin el filtro "aduana Colombia → solo casetas de Colombia" de la V00416. No se tocó. Cuando la bandera quede encendida para siempre, esa copia se puede borrar. **Resuelto en la V00469**: el formulario y Operaciones Activas ya usan `cobroAlCambiarStatus`.
+- TAG: el grupo del puente usa la misma regla que el Acumulado (`grupoDeNombresPuente`: Colombia → PTC, AVI → AVI, lo demás → PT3). La regla está repetida en `tagPuente.ts`, que es puro (`historialCalculadoPuentes` importa Firebase). Sin puente ni tráfico, o sin peaje (`aplicaPeaje`), no se muestra.
+- Asignación automática del formulario:
+  - no pisa un puente guardado (salvo el que ella misma puso en esta sesión: `puenteAutoId`) ni uno elegido a mano (`puenteElegidoAMano`, también al editar el monto);
+  - sigue funcionando aunque la tarjeta no se vea (como desde la V00364).
+  - la guarda del puente guardado lee `initialData` y no `formData`: al reusar el formulario minimizado, el efecto puede correr con el `formData` de la operación anterior (lo encontró la revisión);
+  - con `saldoPuente`, el objetivo y el TAG son los del puente cobrado, como en la ficha.
+- Se quitaron `PUENTE_IMPORTACION_ID` y `PUENTE_EXPORTACION_ID`: el respaldo por tráfico busca por nombre en el catálogo, como el servidor.
+
+## V00464 (reporte del puente AVI en Referencias de Puentes)
+- Pedido de Omaf (20-oct): subir el Excel de cruces del portal del AVI y que el sistema una cada TAG # (= TAG AVI de Unidades Propias, V00457) con la unidad y, por fecha, devuelva las operaciones que coinciden.
+- Lógica pura en `features/puentes/services/reporteAvi.ts` (+ pruebas): encabezado buscado en las primeras 30 filas; fechas del portal como mes/día/año (es de EE. UU.), también serie de Excel; tag comparable = solo dígitos sin ceros a la izquierda; monto "($23.75)" → 23.75.
+- Coincidencia por unidad + fecha de servicio. Varias operaciones/cruces el mismo día: emparejamiento por cercanía entre la hora del cruce y la del Verde (bitácora `horarios`, la misma "Hora (Verde)" de la tabla); sin hora, por orden de referencia. Una operación se usa una sola vez.
+- Solo SELECCIONA las que coinciden (y quedan listas para "Enviar al Acumulado" de siempre); no escribe nada. El reporte vive en pantalla (no se guarda). El LOCATION (Bridge 2/3/4) solo se muestra: todos los renglones son cobros del tag AVI.
+- Se usan las operaciones que el módulo ya escucha (las 2,500 más recientes por fecha de servicio): si el reporte trae días anteriores, el panel lo avisa.
+- El archivo se lee con un `<input type="file">` propio: no es un adjunto (no se sube a Storage), por eso no usa `AdjuntosArchivos`.
+- Pendiente posible: poner el monto del AVI a las operaciones "sin monto de puente" desde el reporte (hoy se avisa y se usa "Asignar monto del puente").
+
 ## V00463 (aviso "internal" al guardar operaciones nuevas)
 - El alert "internal" (minúsculas) es el `catch` de `handleSubmit` mostrando el mensaje de `crearOperacion`. El SDK de Functions pone "internal" como mensaje cuando NO hubo respuesta válida: `fetch` falló (red cortada, CORS de un rechazo de Cloud Run 429/500/503 sin cabeceras, instancia caída) o HTTP 500 sin JSON (ver `postJSON`/`codeForHTTPStatus(0)` en @firebase/functions). Una excepción no controlada de la función llega como "INTERNAL" (mayúsculas) y un HttpsError con su mensaje en español. No hay acceso a los registros de Cloud Run desde aquí: la causa exacta (red de la oficina vs. servidor) se confirma con Logging y con el Historial de actividad nuevo.
 - Arreglo en el cliente, sin desplegar: `conReintentos` (services/reintentosCallable.ts) reintenta 3 veces (1.5 s y 4 s) los códigos pasajeros con el MISMO `clienteOpId` (crearOperacion ya era idempotente por `operaciones_idempotencia`); 30 s por intento. El formulario conserva el `clienteOpId` entre sus "Guardar" hasta guardar o cancelar (se limpia también al cargar otra operación): un segundo Guardar tras una falla cuya primera llamada sí llegó recibe `yaExistia` y se le aplica lo capturado ahora (`updateDoc` sin campos de control). renumerarOperacion también con reintentos (es idempotente).

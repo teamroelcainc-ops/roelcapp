@@ -28,6 +28,8 @@ interface FlujoGuardado {
   tipoServicio: string;
   trafico: string;
   carga: string;
+  /** ✅ V00469: '' = para todas las aduanas (flujo general). */
+  aduana?: string;
   ultimaActualizacion: string;
   flujo: ReglaStatus[];
   // ✅ NUEVO: configuración del formulario por flujo (no por nodo)
@@ -36,7 +38,7 @@ interface FlujoGuardado {
 }
 
 type CombinacionEdicion =
-  | { tipoServicio: string; trafico: string; carga: string; flujo?: ReglaStatus[] }
+  | { tipoServicio: string; trafico: string; carga: string; aduana?: string; flujo?: ReglaStatus[] }
   | undefined;
 
 /* ============================================================
@@ -652,6 +654,7 @@ const EditorFlujoAppSheet = ({
   //   catálogos compartidos (en vivo) en vez de 4 getDocs al abrir el editor.
   const { datos: cat } = useCatalogos({
     status: 'catalogo_status_servicio', tiposOp: 'catalogo_tipo_operacion', trafico: 'catalogo_trafico', cargaVacia: 'catalogo_carga_vacia',
+    aduanas: 'catalogo_aduanas', // ✅ V00469
   });
   const catalogoStatus = useMemo(() => cat.status.map((d) => d.nombre as string).sort(), [cat.status]);
   const tiposOperacion = useMemo(() => cat.tiposOp.map((d) => ({ id: idReal(d), tipo_operacion: d.tipo_operacion as string })), [cat.tiposOp]);
@@ -663,6 +666,13 @@ const EditorFlujoAppSheet = ({
   const [tipoServicio, setTipoServicio] = useState(flujoInicial?.tipoServicio || '');
   const [trafico, setTrafico]           = useState(flujoInicial?.trafico       || '');
   const [carga, setCarga]               = useState(flujoInicial?.carga         || '');
+  // ✅ V00469: ADUANA del flujo (opcional). Vacía = el flujo general, para todas las aduanas;
+  //   con aduana, solo las operaciones de esa aduana lo usan (y ganan al general).
+  const [aduana, setAduana]             = useState(flujoInicial?.aduana        || '');
+  const opcionesAduana = useMemo(() => cat.aduanas
+    .map((d) => String(d.aduana ?? d.nombre ?? '').trim())
+    .filter((n) => n !== '')
+    .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base', numeric: true })), [cat.aduanas]);
   // ✅ NUEVO (V00110): opciones del dropdown "Carga" vienen del catálogo C/V
   //   (`catalogo_carga_vacia`); si está vacío, se usa la lista fija de respaldo.
   const opcionesCarga = useMemo(() => {
@@ -718,7 +728,7 @@ const EditorFlujoAppSheet = ({
 
   // ✅ V00405: solo el SERVICIO es obligatorio; sin tráfico o sin carga el flujo
   //   es COMODÍN ("Todos") y aplica a cualquiera que no tenga uno más específico.
-  const configId = `${tipoServicio}_${trafico || 'Todos'}_${carga || 'Todos'}`;
+  const configId = `${tipoServicio}_${trafico || 'Todos'}_${carga || 'Todos'}${aduana ? `_${aduana}` : ''}`; // ✅ V00469: + aduana
   const configValido = !!tipoServicio;
 
   /* ============================================================
@@ -798,7 +808,7 @@ const EditorFlujoAppSheet = ({
     };
     cargarReglas();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tipoServicio, trafico, carga]);
+  }, [tipoServicio, trafico, carga, aduana]);
 
   /* posición automática inicial en cascada diagonal suave */
   const autoPosicion = (i: number): NodoPosicion => ({
@@ -1251,6 +1261,7 @@ const EditorFlujoAppSheet = ({
         tipoServicio,
         trafico,
         carga,
+        aduana, // ✅ V00469
         ultimaActualizacion: new Date().toISOString(),
         flujo: flujoFinal,
         ...configFormulario,
@@ -1261,7 +1272,7 @@ const EditorFlujoAppSheet = ({
       //   flujo viejo sigue guardado bajo la combinación anterior. Se ofrece
       //   eliminarlo para que no queden dos flujos duplicados en la lista.
       const configIdOriginal = flujoInicial
-        ? `${flujoInicial.tipoServicio}_${flujoInicial.trafico || 'Todos'}_${flujoInicial.carga || 'Todos'}` // ✅ V00407: mismo formato que configId
+        ? `${flujoInicial.tipoServicio}_${flujoInicial.trafico || 'Todos'}_${flujoInicial.carga || 'Todos'}${flujoInicial.aduana ? `_${flujoInicial.aduana}` : ''}` // ✅ V00407 · V00469: mismo formato que configId
         : '';
       if (configIdOriginal && idDocFlujo(configIdOriginal) !== idDocFlujo(configId)) {
         const borrarViejo = window.confirm(
@@ -1368,13 +1379,23 @@ const EditorFlujoAppSheet = ({
             options={traficos}
             placeholder="Todos (opcional)"
           />
-          <SelectorCampo
-            label="Carga"
-            value={carga}
-            onChange={setCarga}
-            options={carga && !opcionesCarga.includes(carga) ? [...opcionesCarga, carga] : opcionesCarga}
-            placeholder="Todos (opcional)"
-          />
+          {/* ✅ V00469: la ADUANA va al lado de la carga (juntas, aunque la barra se parta en dos renglones) */}
+          <div className="cs-par-selectores">
+            <SelectorCampo
+              label="Carga"
+              value={carga}
+              onChange={setCarga}
+              options={carga && !opcionesCarga.includes(carga) ? [...opcionesCarga, carga] : opcionesCarga}
+              placeholder="Todos (opcional)"
+            />
+            <SelectorCampo
+              label="Aduana"
+              value={aduana}
+              onChange={setAduana}
+              options={aduana && !opcionesAduana.includes(aduana) ? [...opcionesAduana, aduana] : opcionesAduana}
+              placeholder="Todas (opcional)"
+            />
+          </div>
         </div>
 
         <div style={S.topRight}>
@@ -2164,7 +2185,8 @@ export const ConfiguradorStatus = () => {
     return !t ||
       f.tipoServicio?.toLowerCase().includes(t) ||
       f.trafico?.toLowerCase().includes(t) ||
-      f.carga?.toLowerCase().includes(t);
+      f.carga?.toLowerCase().includes(t) ||
+      f.aduana?.toLowerCase().includes(t);
   });
 
   return (
@@ -2191,7 +2213,7 @@ export const ConfiguradorStatus = () => {
         </div>
 
         <input className="cs-x104"
-          placeholder="Buscar por servicio, tráfico o carga…"
+          placeholder="Buscar por servicio, tráfico, carga o aduana…"
           value={filtro}
           onChange={(e) => setFiltro(e.target.value)}
         />
@@ -2203,6 +2225,7 @@ export const ConfiguradorStatus = () => {
                 <th className="cs-x108">Servicio</th>
                 <th className="cs-x108">Tráfico</th>
                 <th className="cs-x108">Carga</th>
+                <th className="cs-x108">Aduana</th>
                 <th className="cs-x108">Pasos</th>
                 <th className="cs-x109">Acción</th>
               </tr>
@@ -2210,7 +2233,7 @@ export const ConfiguradorStatus = () => {
             <tbody>
               {filtrados.length === 0 && (
                 <tr>
-                  <td className="cs-x110" colSpan={5}>
+                  <td className="cs-x110" colSpan={6}>
                     No hay flujos guardados todavía.
                   </td>
                 </tr>
@@ -2220,6 +2243,7 @@ export const ConfiguradorStatus = () => {
                   <td className="cs-x112">{f.tipoServicio}</td>
                   <td className="cs-x113">{f.trafico || <span className="cs-comodin">Todos</span>}</td>
                   <td className="cs-x113">{f.carga || <span className="cs-comodin">Todos</span>}</td>
+                  <td className="cs-x113">{f.aduana || <span className="cs-comodin">Todas</span>}</td>
                   <td className="cs-x114">
                     <span className="cs-x115">
                       {(f.flujo || []).length} pasos

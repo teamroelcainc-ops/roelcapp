@@ -16,6 +16,7 @@ import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { operacionesDelRango } from '../../../shared/data/consultas';
 import { idReal, useCatalogo } from '../../../shared/data/catalogos';
 import { STATUS_COMPLETADOS } from '../../../shared/dominio/constantes';
+import { puenteYaCobrado } from '../../../shared/dominio/cobroPuente'; // ✅ V00469
 import { monedaCanonica, nombreMoneda as nombreMonedaCanonica } from '../../../shared/dominio/moneda';
 
 const norm = (s: unknown): string => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -264,7 +265,7 @@ export const SaldosPuentesDashboard: React.FC = () => {
       docsSinPruebas(snap.docs).forEach((d) => { // ✅ V00380
         const x = d.data() as Record<string, unknown>;
         if (!STATUS_COMPLETADOS_IDS.includes(String(x.status || '').trim())) return;
-        if (Number.isFinite(Number(x.saldoPuente))) {
+        if (puenteYaCobrado(x)) { // ✅ V00469: un 0 no cuenta como cobrado (igual que el resto de la app)
           // ✅ V00366: REPARA cruces cobrados por Completado (o sin evento) que
           //   quedaron con la fecha del día en que se registró en vez de la
           //   fecha de servicio — así el "gastado hoy" solo suma cruces de hoy.
@@ -279,7 +280,7 @@ export const SaldosPuentesDashboard: React.FC = () => {
         if (!aplicaPeajeSP(x)) return; // ✅ V00369: Fletes / Logística no-Roelca no cobran
         const traf = norm(x.trafico);
         const p = traf.includes('import') ? avi : traf.includes('export') ? p3 : undefined;
-        if (!p) return;
+        if (!p || !(Number(p.tarifa) > 0)) return; // ✅ V00469: una caseta sin importe no se cobra en 0
         pendientes.push({ id: d.id, data: { saldoPuente: p.tarifa, saldoPuentePuente: p.nombre, saldoPuenteMoneda: p.moneda, saldoPuenteFecha: String(x.fechaServicio || hoyISO()), saldoPuenteEvento: 'Completado' } });
       });
       const total = pendientes.length;

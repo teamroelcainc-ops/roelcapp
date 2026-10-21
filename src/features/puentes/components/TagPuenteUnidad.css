@@ -1,0 +1,4 @@
+/* src/features/puentes/components/TagPuenteUnidad.css — ✅ V00465 (prefijo tpu-) */
+.tpu { display: block; margin-top: 4px; color: #8b949e; font-size: 0.78rem; font-weight: 600; line-height: 1.4; }
+.tpu-valor { color: #79c0ff; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; letter-spacing: 0.02em; }
+.tpu--falta { color: #e3b341; }

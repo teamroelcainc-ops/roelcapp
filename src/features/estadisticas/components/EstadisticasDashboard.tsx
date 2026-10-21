@@ -22,11 +22,12 @@ import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
 import html2pdf from 'html2pdf.js';
 import { cargarLogoDataUrl } from '../../../utils/pdfGenerator';
-import { useCatalogo, useCatalogos } from '../../../shared/data/catalogos';
+import { idReal, useCatalogo, useCatalogos } from '../../../shared/data/catalogos';
 import type { DocCatalogo } from '../../../shared/data/catalogos';
 import { useEsAdmin } from '../../../shared/data/sesion';
 import { useUsuarioStore } from '../../../stores/useUsuarioStore';
 import { STATUS_CANCELADO } from '../../../shared/dominio/constantes';
+import { aduanaDeOperacionCtx, type CtxCobroPuente } from '../../../shared/dominio/cobroPuente'; // ✅ V00467
 import { flagsAhora } from '../../../shared/data/flags';
 import { esMXN, esUSD, monedaCanonica } from '../../../shared/dominio/moneda';
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
@@ -65,6 +66,12 @@ const NOMBRE_DE: Record<keyof typeof COLECCIONES_NOMBRES, (r: DocCatalogo) => st
   empresas: (r) => String(r.nombre || ''),
 };
 
+// ✅ V00467: para la ADUANA del desglose cuando la operación no trae aduanaNombre
+//   (convenio → tarifa de referencia → aduana).
+const CATALOGOS_ADUANA = {
+  aduanas: 'catalogo_aduanas', tarifas: 'catalogo_tarifas_referencia', detalles: 'convenios_clientes_detalles',
+} as const;
+
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
 type Linea = 'Transfer' | 'Logística' | 'Fletes' | 'Otro';
@@ -102,6 +109,21 @@ const mapaPagosPorFactura = (docs: { data: () => unknown }[]): Record<string, Pa
 };
 
 // ── Clasificación de línea de negocio (nombre del tipo; respaldo: prefijo de la ref) ──
+const norm = (s: string) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+// Texto clasificable de la operación (convenio + tipo + servicio).
+const textoDeOp = (op: Op) => norm(`${op.convenioNombre || ''} ${op.tipoOperacionNombre || op.tipoOperacion || ''} ${op.tipoServicioNombre || op.tipoServicio || ''}`);
+
+const movimientoDeOp = (op: Op): 'Importación' | 'Exportación' | 'Movimiento' | 'Sin clasificar' => {
+  // ✅ NUEVO: la clasificación MANUAL (modal "Sin clasificar") manda.
+  const manual = String((op as any).movimientoManual || '');
+  if (manual === 'Importación' || manual === 'Exportación' || manual === 'Movimiento') return manual as any;
+  const t = textoDeOp(op);
+  if (t.includes('impo')) return 'Importación';
+  if (t.includes('expo')) return 'Exportación';
+  if (t.includes('mov')) return 'Movimiento';
+  return 'Sin clasificar';
+};
+
 const lineaDeOp = (op: Op): Linea => {
   const t = String(op.tipoOperacionNombre || op.tipoOperacion || '').toLowerCase();
   if (t.includes('transfer')) return 'Transfer';
@@ -114,6 +136,17 @@ const lineaDeOp = (op: Op): Linea => {
   if (ref.startsWith('LG') || ref.startsWith('LO')) return 'Logística';
   if (ref.startsWith('FL') || ref.includes('-FL')) return 'Fletes';
   return 'Otro';
+};
+
+// ✅ V00468: CRUCE = Transfer o Logística (no Fletes) de importación o exportación. El desglose
+//   por Aduana solo cuenta estos (sin movimientos); de sub-nivel, lo demás sale "No cruza".
+const esCruceOp = (op: Op): boolean => {
+  const linea = lineaDeOp(op);
+  const mov = movimientoDeOp(op);
+  return (linea === 'Transfer' || linea === 'Logística') && (mov === 'Importación' || mov === 'Exportación');
+};
+const SOLO_CRUCES_ADUANA = {
+  aduana: { filtro: esCruceOp, nota: 'Aduana: solo los cruces de importación y exportación (Transfer y Logística). Los movimientos, fletes y lo sin clasificar no se cuentan.' },
 };
 
 // ── Montos del CLIENTE (mismo criterio que Facturación de Clientes) ──
@@ -280,6 +313,24 @@ export function EstadisticasDashboard() {
   };
   const anioActual = new Date().getFullYear();
   const [pestana, setPestana] = useState<Pestana>('desgloseOps');
+  // ✅ V00467: ADUANA por la que cruzó. Manda aduanaNombre (lo mantiene el servidor desde el
+  //   convenio, V00258); si falta, la aduana guardada o la de la tarifa del convenio.
+  //   Los catálogos solo se escuchan con el Desglose a la vista.
+  const { datos: catAduana } = useCatalogos(CATALOGOS_ADUANA, { activo: pestana === 'desgloseOps' || pestana === 'desgloseFact' });
+  const ctxAduana = useMemo((): CtxCobroPuente => ({
+    detalles: new Map(catAduana.detalles.map((d) => [idReal(d), d] as const)),
+    tarifas: new Map(catAduana.tarifas.map((d) => [idReal(d), d] as const)),
+    gastosIncluidos: [],
+    tiposGasto: new Map(),
+    aduanas: new Map(catAduana.aduanas.map((d) => [idReal(d), String(d.aduana ?? d.nombre ?? '')] as const)),
+  }), [catAduana.detalles, catAduana.tarifas, catAduana.aduanas]);
+  const aduanaDeOp = (op: Op): string => {
+    const directa = String(op.aduanaNombre || '').trim();
+    if (directa) return directa;
+    const guardada = String(op.aduana || op.aduanaId || '').trim();
+    if (guardada) return ctxAduana.aduanas.get(guardada) || guardada;
+    return aduanaDeOperacionCtx(ctxAduana, op);
+  };
   const [area, setArea] = useState<Area>('operativa');
   const cambiarArea = (a: Area) => { setArea(a); setPestana(a === 'operativa' ? 'desgloseOps' : 'desgloseFact'); };
   const [lineaVista, setLineaVista] = useState<'Globales' | Linea>('Globales');
@@ -585,21 +636,8 @@ export function EstadisticasDashboard() {
   }, [utilidad]);
 
   // ══════════ DETALLE DE UN MES (pestaña Servicios) ══════════
-  const norm = (s: string) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  // Texto clasificable de la operación (convenio + tipo + servicio).
-  const textoDeOp = (op: Op) => norm(`${op.convenioNombre || ''} ${op.tipoOperacionNombre || op.tipoOperacion || ''} ${op.tipoServicioNombre || op.tipoServicio || ''}`);
-
-  const movimientoDeOp = (op: Op): 'Importación' | 'Exportación' | 'Movimiento' | 'Sin clasificar' => {
-    // ✅ NUEVO: la clasificación MANUAL (modal "Sin clasificar") manda.
-    const manual = String((op as any).movimientoManual || '');
-    if (manual === 'Importación' || manual === 'Exportación' || manual === 'Movimiento') return manual as any;
-    const t = textoDeOp(op);
-    if (t.includes('impo')) return 'Importación';
-    if (t.includes('expo')) return 'Exportación';
-    if (t.includes('mov')) return 'Movimiento';
-    return 'Sin clasificar';
-  };
-
+  // ✅ V00468: norm, textoDeOp y movimientoDeOp pasaron fuera del componente (son puros) para
+  //   que el filtro de cruces del desglose por Aduana sea estable entre renders.
   const esTrompo = (op: Op) => textoDeOp(op).includes('trompo');
 
   // ✅ V00126: etiqueta de cada dimensión del desglose (resuelta contra catálogos)
@@ -608,6 +646,7 @@ export function EstadisticasDashboard() {
       case 'tipo': return String(op.tipoOperacionNombre || op.tipoOperacion || '') || 'Sin tipo';
       case 'cv': return cvDeOp(op); // ✅ V00253/V00255: campo directo, campo de AppSheet o derivado del nombre del convenio
       case 'movimiento': return movimientoDeOp(op);
+      case 'aduana': return esCruceOp(op) ? (aduanaDeOp(op) || 'Sin aduana') : 'No cruza'; // ✅ V00467 · V00468
       case 'cliente': return valorColumna(op, 'clientePagaNombre') || 'Sin cliente';
       case 'operador': return valorColumna(op, 'operadorNombre') || 'Sin operador';
       case 'unidad': return valorColumna(op, 'unidadNombre') || 'Sin unidad';
@@ -630,7 +669,6 @@ export function EstadisticasDashboard() {
     const c: Record<string, number> = { Todas: detalleSel?.ops.length || 0, Transfer: 0, 'Logística': 0, Fletes: 0, Otro: 0 };
     (detalleSel?.ops || []).forEach((op: Op) => { c[lineaDeOp(op)] += 1; });
     return c;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detalleSel]);
 
   // Ops de un mes (0-11), opcionalmente filtradas por línea.
@@ -762,7 +800,6 @@ export function EstadisticasDashboard() {
       operadores: contarPor(delSel, (op) => String(op.operadorNombre || op.operador || '')),
       clientes: contarPor(delSel, (op) => String(op.clientePagaNombre || op.clienteNombre || op.clientePaga || '')),
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detalleSel, tabLineaDet, filtrosDet]);
 
 
@@ -1549,6 +1586,7 @@ export function EstadisticasDashboard() {
               costoDe={costoProveedorDe}
               monedaDe={monedaClienteDe}
               etiquetaDe={etiquetaDimension}
+              soloPara={SOLO_CRUCES_ADUANA}
               onVerOps={(titulo, lista) => { setDetalleSel({ titulo, ops: lista }); setRefsFiltro(null); }}
               onVerFacturasCliente={(clienteSel, lista) => setFacturasClienteSel({ cliente: clienteSel, ops: lista })}
             />

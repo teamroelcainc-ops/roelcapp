@@ -13,6 +13,7 @@
 import { collection, doc, getDoc, getDocs, query, where, writeBatch } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { esOperacionPrueba } from './operacionPrueba';
+import { fechaServicioDeOperacion } from '../shared/dominio/fechas';
 import { aduanaDeOperacionCtx, cargarCtxCobroPuente, cobroPuenteDeOperacion, esAduanaColombia, type CtxCobroPuente } from './puenteColombia';
 
 export const COL_REF_AUTO = 'referencias_puentes_auto';
@@ -100,7 +101,7 @@ export const filaDeOperacion = async (op: Record<string, unknown>, horaVerde: st
       id: opId,
       grupo: m.grupo, // ✅ V00412: para no mezclar puentes
       ref: String(op.ref || opId),
-      fecha: String(op.fechaServicio || '').slice(0, 10),
+      fecha: fechaServicioDeOperacion(op), // ✅ V00469: AAAA-MM-DD también para las de AppSheet
       horaVerde,
       unidad: String(op.unidadNombre || op.unidad || '-'),
       convenio: String(op.convenioNombre || '-'),
@@ -132,7 +133,7 @@ export const upsertReferenciaAuto = async (docId: string, grupo: GrupoRef, fecha
   const d = (snap.exists() ? snap.data() : {}) as Record<string, unknown>;
   const ids = (Array.isArray(d.operacionesIds) ? d.operacionesIds : []) as string[];
   const nuevas = filas.filter((f) => !ids.includes(String(f.id)) && (!f.grupo || f.grupo === grupo));
-  if (nuevas.length === 0 && snap.exists()) return;
+  if (nuevas.length === 0) return; // ✅ V00469: nunca crea una referencia vacía (antes, si no existía, sí)
   const guardadas = [...((Array.isArray(d.operacionesGuardadas) ? d.operacionesGuardadas : []) as Record<string, unknown>[]), ...nuevas];
   const b = writeBatch(db);
   b.set(ref, {

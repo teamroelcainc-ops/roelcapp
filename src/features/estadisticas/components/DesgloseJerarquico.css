@@ -9,6 +9,7 @@
 .dj-chip { background: #0d1117; border: 1px solid #30363d; color: #c9d1d9; border-radius: 999px; padding: 3px 10px; font-size: 0.75rem; cursor: pointer; }
 .dj-chip.activo { background: rgba(210, 153, 34, 0.18); border-color: #d29922; color: #f0f6fc; font-weight: 700; }
 .dj-nota { color: #8b949e; font-size: 0.75rem; margin: 0; }
+.dj-nota--limite { color: #e3b341; font-weight: 600; } /* ✅ V00468 */
 .dj-tabla-wrap { border: 1px solid #30363d; border-radius: 10px; overflow: auto; max-height: 70vh; background: #0d1117; }
 .dj-tabla { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
 .dj-tabla th { position: sticky; top: 0; background: #161b22; color: #8b949e; font-size: 0.7rem; letter-spacing: 0.04em; padding: 8px 10px; text-align: right; border-bottom: 1px solid #30363d; z-index: 1; }
