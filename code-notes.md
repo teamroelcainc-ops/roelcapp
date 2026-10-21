@@ -207,6 +207,12 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - Modales con `createPortal` a `document.body` (la tarjeta usa `transform` al pasar el mouse) y perezosos desde la tarjeta (`lazyWithRetry`): la carga inicial crece 0.3 KB (sin eso, ~20 KB por FormularioConfigurable).
 - Se quitaron las reglas `.rd-dos*` de App.css (solo las usaba la tarjeta TC · Diesel).
 
+## V00472 (Reglas de Estatus: cambiar la aduana conserva los pasos)
+- Omaf (21-oct): "cuando cambio la aduana, se quita lo que tenía guardado. Pero es el mismo proceso, solo lo estoy actualizando".
+- El lienzo se vaciaba en la carga de la combinación nueva (sin documento): el confirm de la V00111 con Cancelar, o un navegador que no muestra confirm, lo dejaba en blanco. No se borraba nada en Firestore.
+- Ahora se conserva siempre y un aviso lo dice. Con documento se abre el guardado (sin cambio).
+- El confirm de borrar el anterior se queda (Cancelar conserva ambos): un flujo general que se borra deja sin flujo a las otras aduanas, por eso el aviso extra.
+
 ## V00471 (ventana al cruzar el puente; aduana en el formulario)
 - Pedido de Omaf (21-oct):
   - aduana debajo de Cargada/Vacía;

@@ -159,3 +159,5 @@
 .cs-puente-monto { font-weight: 600; color: #e3b341; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .cs-puente-monto--falta { font-weight: 400; font-style: italic; color: #8b949e; }
 .cs-puente-nota { margin-top: 6px; font-size: 11.5px; line-height: 1.45; color: #8b949e; }
+/* ✅ V00472: la combinación elegida aún no tiene flujo guardado (el lienzo conserva los pasos) */
+.cs-aviso-combinacion { margin-top: 4px; max-width: 260px; font-size: 11px; line-height: 1.35; color: #e3b341; }

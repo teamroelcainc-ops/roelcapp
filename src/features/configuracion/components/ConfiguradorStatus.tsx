@@ -703,6 +703,8 @@ const EditorFlujoAppSheet = ({
   }, [cat.cargaVacia]);
   const [reglas, setReglas]             = useState<ReglaStatus[]>([]);
   const [cargando, setCargando]         = useState(false);
+  // ✅ V00472: la combinación elegida aún no tiene flujo guardado y el lienzo conserva los pasos.
+  const [pasosSinGuardar, setPasosSinGuardar] = useState(false);
   const [guardando, setGuardando]       = useState(false);
   const [mensaje, setMensaje]           = useState<{ tipo: 'ok' | 'err'; texto: string } | null>(null);
 
@@ -812,6 +814,7 @@ const EditorFlujoAppSheet = ({
               posicion: r.posicion ?? autoPosicion(i),
             }));
           setReglas(flujoData);
+          setPasosSinGuardar(false); // ✅ V00472
           // ✅ NUEVO: precarga config del formulario; si el flujo no la tiene
           // guardada, se deja en `null` (el Formulario asumirá "todas las
           // pestañas" / "sin campos extra obligatorios" por defecto).
@@ -823,21 +826,15 @@ const EditorFlujoAppSheet = ({
           //   renombrar la carga (Cargada → Cargado), obligaba a capturar el
           //   flujo desde cero. Ahora se pregunta: conservar los pasos (para
           //   guardarlos bajo la nueva combinación) o empezar en blanco.
-          const conservar = window.confirm(
-            `La combinación "${configId.replace(/_/g, ' · ')}" no tiene un flujo guardado.\n\n` +
-            `¿Deseas CONSERVAR los ${reglas.length} pasos que están en el lienzo para guardarlos bajo esta nueva combinación?\n\n` +
-            `· Aceptar = conservar los pasos (útil para renombrar, p. ej. Cargada → Cargado)\n` +
-            `· Cancelar = empezar con el lienzo en blanco`
-          );
-          if (!conservar) {
-            setReglas([]);
-            setPestanasVisibles(null);
-            setCamposObligatorios(null);
-          }
-          // Si conserva: los pasos y la config del formulario viajan tal cual
-          // a la nueva combinación y se escriben al presionar "Guardar flujo".
+          // ✅ V00472: se CONSERVAN siempre, sin preguntar (Omaf: "es el mismo proceso, solo lo estoy
+          //   actualizando", p. ej. al ponerle la aduana). Antes un confirm; con Cancelar (o si el navegador
+          //   no lo mostraba) el lienzo quedaba en blanco. Los pasos y la config del formulario viajan tal
+          //   cual a la nueva combinación y se escriben al presionar "Guardar flujo"; para empezar de cero,
+          //   Seleccionar todo + Supr.
+          setPasosSinGuardar(true);
         } else {
           setReglas([]);
+          setPasosSinGuardar(false);
           setPestanasVisibles(null);
           setCamposObligatorios(null);
         }
@@ -1314,9 +1311,13 @@ const EditorFlujoAppSheet = ({
         ? `${flujoInicial.tipoServicio}_${flujoInicial.trafico || 'Todos'}_${flujoInicial.carga || 'Todos'}${flujoInicial.aduana ? `_${flujoInicial.aduana}` : ''}` // ✅ V00407 · V00469: mismo formato que configId
         : '';
       if (configIdOriginal && idDocFlujo(configIdOriginal) !== idDocFlujo(configId)) {
+        // ✅ V00472: si el anterior era el GENERAL (todas las aduanas) y el nuevo es de una aduana, se dice
+        //   qué pasa al borrarlo: las operaciones de las demás aduanas se quedan sin flujo.
+        const eraGeneralAhoraAduana = !flujoInicial?.aduana && !!aduanaFlujo;
         const borrarViejo = window.confirm(
           `El flujo quedó guardado como "${configId.replace(/_/g, ' · ')}".\n\n` +
           `¿Deseas ELIMINAR el flujo anterior "${configIdOriginal.replace(/_/g, ' · ')}" para no tener duplicados?\n\n` +
+          (eraGeneralAhoraAduana ? `Ojo: el anterior es el flujo para TODAS las aduanas. Si lo eliminas, las operaciones de las demás aduanas se quedan sin flujo.\n\n` : '') +
           `· Aceptar = eliminar el anterior (renombrado limpio)\n` +
           `· Cancelar = conservar ambos flujos`
         );
@@ -1390,6 +1391,9 @@ const EditorFlujoAppSheet = ({
             <div>
               <div style={S.brandTitle}>Editor de Flujos</div>
               <div style={S.brandSub}>{configValido ? configId.replace(/_/g, ' · ') : 'Nuevo flujo'}</div>
+              {pasosSinGuardar && reglas.length > 0 && ( // ✅ V00472
+                <div className="cs-aviso-combinacion">Combinación sin flujo guardado: estos pasos se guardan aquí con Guardar flujo.</div>
+              )}
             </div>
           </div>
 
