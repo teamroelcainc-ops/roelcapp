@@ -16,8 +16,9 @@ const ctx: CtxCobroPuente = {
   aduanas: new Map([['adu-col', 'Colombia']]),
 };
 const regla = vi.fn(async (): Promise<boolean | null> => null);
+const elegido = vi.fn(async (): Promise<unknown> => null);
 vi.mock('../../../utils/puenteColombia', () => ({ cargarCtxCobroPuente: async () => ctx }));
-vi.mock('../../operaciones/config/statusRules', () => ({ statusDescuentaPuente: () => regla() }));
+vi.mock('../../operaciones/config/statusRules', () => ({ puenteSegunFlujo: async () => ({ flag: await regla(), regla: await elegido() }) }));
 const ventanas: { titulo: string; parrafos: string[] }[] = [];
 vi.mock('../../../shared/data/avisos', () => ({ mostrarVentana: (v: { titulo: string; parrafos: string[] }) => { ventanas.push(v); return 1; } }));
 
@@ -25,7 +26,7 @@ const { avisarCrucePuente, cobroPuenteDelPaso, textosCrucePuente } = await impor
 
 const transfer = (extra: Datos = {}): Datos => ({ tipoOperacionNombre: 'Transfer', trafico: 'Exportación', unidadNombre: 'T-15', ref: 'TR-211026-021', ...extra });
 
-beforeEach(() => { ventanas.length = 0; regla.mockResolvedValue(null); });
+beforeEach(() => { ventanas.length = 0; regla.mockResolvedValue(null); elegido.mockResolvedValue(null); });
 
 describe('cobro del paso', () => {
   it('el Verde cobra la caseta por el tráfico; un estatus que no cobra, nada', async () => {
@@ -37,6 +38,11 @@ describe('cobro del paso', () => {
     expect(await cobroPuenteDelPaso(transfer(), 's3', '6. Cruce')).toMatchObject({ saldoPuente: 144, saldoPuenteEvento: '6. Cruce' });
     regla.mockResolvedValue(false);
     expect(await cobroPuenteDelPaso(transfer(), 's1', '9.1 Verde Mx (Exportación)')).toEqual({});
+  });
+  it('V00473: el puente elegido en Reglas de Estatus (con su monto) gana al del tráfico', async () => {
+    regla.mockResolvedValue(true);
+    elegido.mockResolvedValue({ caseta: { gastoId: 'g-avi', monto: 25 }, piso: null, aduanaFlujo: '' });
+    expect(await cobroPuenteDelPaso(transfer(), 's1', '9.1 Verde Mx (Exportación)')).toMatchObject({ saldoPuente: 25, saldoPuentePuente: 'Caseta AVI', saldoPuenteMoneda: 'Dólares' });
   });
   it('ya cobrada o fuera del peaje: nada', async () => {
     expect(await cobroPuenteDelPaso(transfer({ saldoPuente: 144 }), 's1', 'Verde Mx')).toEqual({});

@@ -207,6 +207,14 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - Modales con `createPortal` a `document.body` (la tarjeta usa `transform` al pasar el mouse) y perezosos desde la tarjeta (`lazyWithRetry`): la carga inicial crece 0.3 KB (sin eso, ~20 KB por FormularioConfigurable).
 - Se quitaron las reglas `.rd-dos*` de App.css (solo las usaba la tarjeta TC · Diesel).
 
+## V00473 (eliminar flujos; puente elegido por paso)
+- Omaf (22-oct):
+  - "poder eliminar reglas de estatus" → el flujo completo, con `eliminarRegistro` (Papelera + nota + Autorizaciones). `config_flujos_operacion` no está en `COLECCIONES_NO_BORRABLES`;
+  - "poder editar y seleccionar el puente, que no sea estático" → el nodo guarda `puenteCaseta` / `puentePiso` = `{ gastoId, monto | null }`. Solo el id y el monto cambiado: el nombre y la moneda se leen del catálogo al cobrar, así un cambio de nombre o de moneda en Tipos de Gastos llega solo.
+- Prioridad: tarifa del convenio → elegido → Colombia/tráfico. Omaf contestó el 21-oct "La de la tarifa" a "¿cuál manda?". Si quiere que el elegido gane a la tarifa, es cambiar el orden en `casetaPrevista`.
+- Un flujo general (sin aduana) también lo usan las operaciones de Colombia sin flujo propio. Su caseta elegida (pensada para Nuevo Laredo) no se les aplica (`reglaAplica`). El piso elegido solo cuenta en un flujo de aduana Colombia.
+- El puente elegido solo cuenta en el nodo con 🌉 (`reglaPuenteDelPaso`): en los Verde por omisión no hay nodo marcado, y el panel lo deja informativo.
+
 ## V00472 (Reglas de Estatus: cambiar la aduana conserva los pasos)
 - Omaf (21-oct): "cuando cambio la aduana, se quita lo que tenía guardado. Pero es el mismo proceso, solo lo estoy actualizando".
 - El lienzo se vaciaba en la carga de la combinación nueva (sin documento): el confirm de la V00111 con Cancelar, o un navegador que no muestra confirm, lo dejaba en blanco. No se borraba nada en Firestore.

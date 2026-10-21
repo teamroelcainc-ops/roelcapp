@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
-import { db } from '../../../config/firebase';
+import { db, eliminarRegistro } from '../../../config/firebase';
 import './ConfiguradorStatus.css';
 import { idDocFlujo } from '../../operaciones/config/statusRules';
 import { idReal, useCatalogo, useCatalogos } from '../../../shared/data/catalogos';
 import { casetasDeFlujo, esAduanaColombia, normPuente } from '../../../shared/dominio/cobroPuente'; // ✅ V00470
 import type { LineaPuenteFlujo } from '../../../shared/dominio/cobroPuente';
+import { monedaCanonica } from '../../../shared/dominio/moneda';
+import type { Moneda } from '../../../shared/dominio/moneda';
 
 /** ✅ V00470: la aduana solo se configura en los flujos de Transfer. */
 const esServicioTransfer = (servicio: unknown): boolean => normPuente(servicio).includes('transfer');
@@ -15,12 +17,20 @@ const montoPuenteTexto = (l: LineaPuenteFlujo): string => (l.monto === null
   ? 'No está en Tipos de Gastos'
   : `$${l.monto.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${l.moneda ? ` ${l.moneda}` : ''}`);
 
-/** ✅ V00470: lo que el panel del paso muestra del puente (informativo). */
+/** ✅ V00473: un puente del catálogo Tipos de Gastos (categoría Puente) para elegir. */
+interface OpcionPuente { id: string; nombre: string; monto: number; moneda: Moneda | null; }
+
+/** ✅ V00470: lo que el panel del paso muestra del puente. */
 interface InfoPuenteFlujo {
   /** Fletes y Movimientos no cobran puente. */
   sinPeaje: boolean;
+  /** El puente por defecto (Automático): la regla de siempre con el catálogo. */
   lineas: LineaPuenteFlujo[];
   notas: string[];
+  /** ✅ V00473: flujo de aduana Colombia (caseta + puente). */
+  colombia: boolean;
+  /** ✅ V00473: los puentes que se pueden elegir. */
+  opciones: OpcionPuente[];
 }
 
 /* ============================================================
@@ -38,7 +48,14 @@ interface ReglaStatus {
   posicion?: NodoPosicion;
   descripcion?: string;
   descuentaPuente?: boolean; // ✅ V00377: al marcar este estatus se descuenta el saldo del puente
+  // ✅ V00473: el puente ELEGIDO para este paso (null/ausente = Automático: el de la regla de siempre).
+  puenteCaseta?: PuenteElegidoNodo | null;
+  /** Colombia: el puente (piso). */
+  puentePiso?: PuenteElegidoNodo | null;
 }
+
+/** ✅ V00473: tipo de gasto elegido y, si se cambió, su monto (null = el importe del catálogo). */
+interface PuenteElegidoNodo { gastoId: string; monto: number | null; }
 
 interface FlujoGuardado {
   id: string;
@@ -764,10 +781,16 @@ const EditorFlujoAppSheet = ({
       const colombia = casetasDeFlujo(tiposGastoMapa, { carga, aduana: 'Colombia' });
       notas.push(`Si la operación es de aduana Colombia: ${colombia.map((l) => `${l.nombre} ${montoPuenteTexto(l)}`).join(' + ')}.`);
     }
+    const opciones: OpcionPuente[] = Array.from(tiposGastoMapa.entries())
+      .filter(([, d]) => normPuente(d.categoria_gasto) === 'puente')
+      .map(([id, d]) => ({ id, nombre: String(d.nombre_gasto || id), monto: Number(d.importe) || 0, moneda: monedaCanonica(d.moneda) }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
     return {
       sinPeaje: tipo.includes('flete') || tipo.includes('movimiento'),
       lineas: casetasDeFlujo(tiposGastoMapa, { trafico, carga, aduana: aduanaFlujo }),
       notas,
+      colombia: esAduanaColombia(aduanaFlujo),
+      opciones,
     };
   }, [tipoServicio, trafico, carga, aduanaFlujo, esTransferFlujo, tiposGastoMapa]);
   const configValido = !!tipoServicio;
@@ -2117,18 +2140,36 @@ const Inspector = ({
         {/* ✅ V00377: en qué estatus se descuenta el saldo del puente */}
         <Section
           title="Saldo del puente"
-          hint="Al marcar este estatus en la operación se descuenta el peaje del puente (la caseta de los Gastos Incluidos de la tarifa, o la del tráfico)."
+          hint="Al marcar este estatus en la operación se descuenta el peaje del puente: la caseta de los Gastos Incluidos de la tarifa del convenio o, si no trae, la de este paso."
         >
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: regla.descuentaPuente ? '#d29922' : '#c9d1d9' }}>
             <input type="checkbox" checked={!!regla.descuentaPuente} onChange={(e) => onChange({ descuentaPuente: e.target.checked })} />
             🌉 Aquí se descuenta el puente
           </label>
-          {/* ✅ V00470: la caseta (y en Colombia también el puente) con su costo, solo informativo */}
-          {cobraAqui && (puente.sinPeaje ? (
+          {/* ✅ V00473: en el paso con 🌉 el puente se ELIGE y su monto se puede cambiar (Colombia: caseta y puente) */}
+          {regla.descuentaPuente && puente.sinPeaje && <div className="cs-puente-nota">Este servicio no cobra puente.</div>}
+          {regla.descuentaPuente && !puente.sinPeaje && (
+            <>
+              <dl className="cs-puente-costos">
+                <CampoPuenteElegible id={`${regla.id}-caseta`} etiqueta="Caseta" porDefecto={puente.colombia ? puente.lineas.slice(0, 1) : puente.lineas}
+                  elegido={regla.puenteCaseta} opciones={puente.opciones} onCambiar={(v) => onChange({ puenteCaseta: v })} />
+                {puente.colombia && (
+                  <CampoPuenteElegible id={`${regla.id}-piso`} etiqueta="Puente" porDefecto={puente.lineas.slice(1, 2)}
+                    elegido={regla.puentePiso} opciones={puente.opciones} onCambiar={(v) => onChange({ puentePiso: v })} />
+                )}
+              </dl>
+              <div className="cs-puente-nota">
+                Automático = el del catálogo Tipos de Gastos según el tráfico{puente.colombia ? ' (Colombia: caseta y puente)' : ''}. Si eliges otro o cambias el monto, se cobra ese. Si la tarifa del convenio de la operación trae su caseta, manda la de la tarifa.
+              </div>
+              {puente.notas.map((n) => <div key={n} className="cs-puente-nota">{n}</div>)}
+            </>
+          )}
+          {/* ✅ V00470: sin 🌉 en el flujo se cobra en los Verde, con la regla de siempre (solo informativo) */}
+          {!regla.descuentaPuente && cobraAqui && (puente.sinPeaje ? (
             <div className="cs-puente-nota">Este servicio no cobra puente.</div>
           ) : (
             <>
-              {verdePorOmision && <div className="cs-puente-nota">Ningún paso del flujo tiene 🌉: se descuenta en este Verde.</div>}
+              {verdePorOmision && <div className="cs-puente-nota">Ningún paso del flujo tiene 🌉: se descuenta en este Verde. Marca 🌉 aquí para elegir el puente.</div>}
               <dl className="cs-puente-costos">
                 {puente.lineas.map((l) => (
                   <div key={l.etiqueta} className="cs-puente-campo">
@@ -2230,6 +2271,48 @@ const Inspector = ({
   );
 };
 
+/** ✅ V00473: un puente del paso: cuál (Automático = el de la regla de siempre) y su monto. */
+const CampoPuenteElegible = ({ id, etiqueta, porDefecto, elegido, opciones, onCambiar }: {
+  id: string;
+  etiqueta: string;
+  /** El de Automático (una línea; dos cuando el flujo es para todos los tráficos). */
+  porDefecto: LineaPuenteFlujo[];
+  elegido: PuenteElegidoNodo | null | undefined;
+  opciones: OpcionPuente[];
+  onCambiar: (v: PuenteElegidoNodo | null) => void;
+}) => {
+  const sel = elegido?.gastoId ? opciones.find((o) => o.id === elegido.gastoId) : undefined;
+  const unico = porDefecto.length === 1 && porDefecto[0].gastoId ? porDefecto[0] : null;
+  // El monto se cambia sobre el elegido o, en Automático con un solo puente, sobre ese.
+  const base = sel ?? (unico ? { id: unico.gastoId, nombre: unico.nombre, monto: unico.monto ?? 0, moneda: unico.moneda } : null);
+  const textoAuto = porDefecto.map((l) => `${porDefecto.length > 1 ? `${l.etiqueta}: ` : ''}${l.nombre} ${montoPuenteTexto(l)}`).join(' · ');
+  return (
+    <div className="cs-puente-campo">
+      <dt><label htmlFor={`${id}-puente`}>{etiqueta}</label></dt>
+      <dd className="cs-puente-editable">
+        <select id={`${id}-puente`} className="cs-puente-select" value={elegido?.gastoId || ''}
+          onChange={(e) => onCambiar(e.target.value ? { gastoId: e.target.value, monto: null } : null)}>
+          <option value="">Automático: {textoAuto}</option>
+          {opciones.map((o) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+          {elegido?.gastoId && !sel && <option value={elegido.gastoId}>(ya no está en Tipos de Gastos)</option>}
+        </select>
+        <div className="cs-puente-monto-fila">
+          <span aria-hidden="true">$</span>
+          <input type="number" min="0" step="0.01" className="cs-puente-monto-input" aria-label={`Monto de ${etiqueta}`}
+            value={elegido?.monto ?? ''} placeholder={base ? base.monto.toFixed(2) : '—'} disabled={!base}
+            onChange={(e) => {
+              if (!base) return;
+              const v = e.target.value;
+              onCambiar({ gastoId: base.id, monto: v === '' ? null : Math.max(0, Number(v) || 0) });
+            }} />
+          <span className="cs-puente-moneda">{base?.moneda ?? ''}</span>
+          {elegido?.monto != null && <button type="button" className="cs-puente-restaurar" onClick={() => onCambiar(elegido.gastoId ? { gastoId: elegido.gastoId, monto: null } : null)} title="Volver al importe del catálogo">Catálogo</button>}
+        </div>
+      </dd>
+    </div>
+  );
+};
+
 const Section = ({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) => (
   <div>
     <div className="cs-x95">
@@ -2250,6 +2333,28 @@ export const ConfiguradorStatus = () => {
   const { datos: datosFlujos } = useCatalogo('config_flujos_operacion', { activo: vista === 'lista' });
   const flujos = datosFlujos as unknown as FlujoGuardado[];
   const [filtro, setFiltro] = useState('');
+  const [eliminando, setEliminando] = useState(''); // ✅ V00473: id del flujo que se está eliminando
+
+  // ✅ V00473: ELIMINAR un flujo. Va a la Papelera de Reciclaje (se puede restaurar) con su nota,
+  //   y respeta Autorizaciones (eliminarRegistro). Las operaciones de esa combinación usan el flujo
+  //   que les siga aplicando (el general o uno con tráfico/carga "Todos"), o se quedan sin reglas.
+  const eliminarFlujo = async (f: FlujoGuardado) => {
+    const id = idReal(f);
+    const nombre = [f.tipoServicio, f.trafico || 'Todos', f.carga || 'Todos', f.aduana || ''].filter(Boolean).join(' · ');
+    const general = esServicioTransfer(f.tipoServicio) && !f.aduana
+      ? '\n\nEs el flujo para TODAS las aduanas: las operaciones que no tengan uno de su aduana se quedarían sin él.'
+      : '';
+    if (!window.confirm(`¿Eliminar el flujo "${nombre}" (${(f.flujo || []).length} pasos)?${general}\n\nSe puede recuperar desde la Papelera de Reciclaje.`)) return;
+    setEliminando(id);
+    try {
+      await eliminarRegistro('config_flujos_operacion', id, { modulo: 'Reglas de Estatus', etiqueta: nombre });
+    } catch (e) {
+      const msg = String((e as Error)?.message || e);
+      if (!/cancelada|bloqueada/i.test(msg)) alert(`No se pudo eliminar el flujo: ${msg}`);
+    } finally {
+      setEliminando('');
+    }
+  };
 
   if (vista === 'configurar') {
     return <EditorFlujoAppSheet flujoInicial={combinacion} onVolver={() => setVista('lista')} />;
@@ -2325,11 +2430,18 @@ export const ConfiguradorStatus = () => {
                     </span>
                   </td>
                   <td className="cs-x116">
-                    <button className="cs-x117"
-                      onClick={() => { setCombinacion(f); setVista('configurar'); }}
-                    >
-                      Editar →
-                    </button>
+                    <div className="cs-acciones-flujo">
+                      <button className="cs-x117"
+                        onClick={() => { setCombinacion(f); setVista('configurar'); }}
+                      >
+                        Editar →
+                      </button>
+                      {/* ✅ V00473 */}
+                      <button type="button" className="cs-eliminar-flujo" disabled={!!eliminando} onClick={() => eliminarFlujo(f)}
+                        title="Eliminar este flujo (va a la Papelera de Reciclaje)">
+                        {eliminando === idReal(f) ? 'Eliminando…' : 'Eliminar'}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

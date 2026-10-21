@@ -140,6 +140,14 @@ describe('cobro del puente en el servidor', () => {
     const r = await mod.cambiosCobroPuente(falso.db as never, 'o8', { ...op, status: 's-antes' }, { ...op, status: completado, statusNombre: 'Servicio Completado' });
     expect(r).toMatchObject({ saldoPuente: 150, saldoPuenteEvento: 'Verde MX', saldoPuenteFecha: '2026-10-14' });
   });
+  it('V00473: el puente elegido en Reglas de Estatus para el paso con 🌉 (sin caseta en la tarifa) se cobra con su monto', async () => {
+    falso.docs.set('convenios_clientes_detalles/conv5', { tarifaBaseId: 'tar5' });
+    falso.docs.set('catalogo_tarifas_referencia/tar5', { aduana: 'adu-nl' });
+    falso.docs.set('config_flujos_operacion/Transfer_Importación_N／A', { flujo: [{ nombreStatus: 'Verde USA', descuentaPuente: true, puenteCaseta: { gastoId: 'g-p3', monto: 160 } }] });
+    const op5 = { ...op, convenio: 'conv5' };
+    const r = await mod.cambiosCobroPuente(falso.db as never, 'o9', { ...op5, status: 'a' }, { ...op5, status: 'b', statusNombre: 'Verde USA' });
+    expect(r).toMatchObject({ saldoPuente: 160, saldoPuentePuente: 'Caseta Puente III', saldoPuenteMoneda: 'Pesos', saldoPuenteEvento: 'Verde USA' });
+  });
   it('V00469: una cascada vieja (o un horario posterior sin cascada) no se vuelve a usar', () => {
     const viejo = '2026-10-01T10:00:00Z';
     const ahora = Date.parse('2026-10-21T10:00:00Z');

@@ -118,6 +118,23 @@ export const cobroPuenteDeOperacion = (ctx: CtxCobroPuente, op: Datos, evento = 
   return out;
 };
 
+/** ✅ V00473: un puente elegido en Reglas de Estatus (tipo de gasto y, si se cambió, su monto). */
+export interface PuenteElegido {
+  gastoId: string;
+  /** null = el importe del catálogo Tipos de Gastos. */
+  monto: number | null;
+}
+
+/** ✅ V00473: el puente que eligieron en Reglas de Estatus para el paso que cobra. */
+export interface ReglaPuenteFlujo {
+  /** La caseta (en Colombia, la de cruzar). */
+  caseta: PuenteElegido | null;
+  /** Colombia: el puente (piso). */
+  piso: PuenteElegido | null;
+  /** Aduana del flujo ('' = flujo para todas las aduanas). */
+  aduanaFlujo: string;
+}
+
 /** Evento de cambio de estatus que puede cobrar el puente. */
 export interface EventoStatusPuente {
   statusId: string;
@@ -130,6 +147,8 @@ export interface EventoStatusPuente {
   hoy: string;
   /** Fecha de servicio en AAAA-MM-DD (para el respaldo de Completado). */
   fechaServicioISO: string;
+  /** ✅ V00473: el puente elegido en Reglas de Estatus para este paso (si eligieron uno). */
+  reglaPuente?: ReglaPuenteFlujo | null;
 }
 
 /** ¿El estatus dispara el cobro? (V00355/V00367/V00377) y con qué evento y fecha. */
@@ -153,9 +172,27 @@ export interface CasetaPrevista {
   nombre: string;
   monto: number;
   moneda: unknown;
-  /** De dónde salió: la tarifa del convenio, el respaldo de Colombia o el tráfico (o el verde marcado). */
-  origen: 'tarifa' | 'colombia' | 'trafico';
+  /** De dónde salió: la tarifa del convenio, Reglas de Estatus (V00473), el respaldo de Colombia o el tráfico (o el verde marcado). */
+  origen: 'tarifa' | 'regla' | 'colombia' | 'trafico';
 }
+
+/** ✅ V00473: el puente elegido, con su nombre y moneda del catálogo; null si ya no está o no tiene monto. */
+export const casetaDeElegido = (ctx: CtxCobroPuente, elegido: PuenteElegido | null | undefined): Omit<CasetaPrevista, 'origen'> | null => {
+  if (!elegido?.gastoId) return null;
+  const cat = ctx.tiposGasto.get(elegido.gastoId);
+  if (!cat) return null;
+  const monto = elegido.monto != null && elegido.monto > 0 ? elegido.monto : Number(cat.importe) || 0;
+  if (!(monto > 0)) return null;
+  return { gastoId: elegido.gastoId, nombre: String(cat.nombre_gasto || ''), monto, moneda: cat.moneda };
+};
+
+/**
+ * ✅ V00473: ¿el puente de Reglas de Estatus aplica a esta operación? Un flujo para todas las
+ * aduanas también lo usan las de Colombia sin flujo propio: a esas no se les cobra la caseta
+ * elegida para Nuevo Laredo, sino la de Colombia.
+ */
+const reglaAplica = (regla: ReglaPuenteFlujo | null | undefined, colombia: boolean): regla is ReglaPuenteFlujo =>
+  !!regla && (!colombia || esAduanaColombia(regla.aduanaFlujo));
 
 /**
  * ✅ V00465: la CASETA que corresponde a la operación, con la misma regla con la que se cobra
@@ -164,7 +201,7 @@ export interface CasetaPrevista {
  * (importación → Caseta AVI, exportación → Caseta Puente III; sin tráfico, el verde marcado).
  * La usa el formulario para dejar elegido el puente en cuanto hay convenio y unidad.
  */
-export const casetaPrevista = (ctx: CtxCobroPuente, op: Datos, statusNombre = ''): CasetaPrevista | null => {
+export const casetaPrevista = (ctx: CtxCobroPuente, op: Datos, statusNombre = '', reglaPuente?: ReglaPuenteFlujo | null): CasetaPrevista | null => {
   const colombia = esAduanaColombia(aduanaDeOperacionCtx(ctx, op));
   const tarifaBase = tarifaBaseDe(ctx.detalles.get(String(op.convenio || '').trim()));
   if (tarifaBase) {
@@ -179,6 +216,11 @@ export const casetaPrevista = (ctx: CtxCobroPuente, op: Datos, statusNombre = ''
       if (monto > 0) return { gastoId, nombre: String(cat.nombre_gasto || ''), monto, moneda: cat.moneda, origen: 'tarifa' };
       break; // el primer vínculo de puente manda (igual que la pantalla)
     }
+  }
+  // ✅ V00473: después de la tarifa, el puente ELEGIDO en Reglas de Estatus para el paso que cobra.
+  if (reglaAplica(reglaPuente, colombia)) {
+    const elegida = casetaDeElegido(ctx, reglaPuente.caseta);
+    if (elegida) return { ...elegida, origen: 'regla' };
   }
   if (colombia) {
     const trompo = normPuente(`${String(op.carga || '')} ${String(op.convenioNombre || '')}`).includes('trompo');
@@ -213,14 +255,18 @@ export const cobroAlCambiarStatus = (ctx: CtxCobroPuente, op: Datos, ev: EventoS
   const { evento, fecha } = disparo;
   const colombia = esAduanaColombia(aduanaDeOperacionCtx(ctx, op));
   // ✅ V00465: la elección de la caseta es casetaPrevista (la misma que ve el formulario).
-  const c = casetaPrevista(ctx, op, ev.statusNombre);
+  const c = casetaPrevista(ctx, op, ev.statusNombre, ev.reglaPuente);
   // ✅ V00469: una caseta sin importe (0) no se cobra: se queda pendiente, no en 0 para siempre.
   const base: Datos = c && c.monto > 0
     ? { saldoPuente: c.monto, saldoPuentePuente: c.nombre, saldoPuenteMoneda: monedaNombrePuente(c.moneda), saldoPuenteFecha: fecha, saldoPuenteEvento: evento }
     : {};
   if (!(Number(base.saldoPuente) > 0) || !colombia || Number(op.saldoPuentePiso) > 0) return base;
-  const piso = gastoPorNombre(ctx, [normPuente(NOMBRE_PISO_COLOMBIA)]);
-  const montoPiso = Number(piso?.importe) || 0;
+  // ✅ V00473: el puente (piso) elegido en Reglas de Estatus de un flujo de Colombia; si no, el del catálogo.
+  const pisoElegido = reglaAplica(ev.reglaPuente, colombia) && esAduanaColombia(ev.reglaPuente.aduanaFlujo) ? casetaDeElegido(ctx, ev.reglaPuente.piso) : null;
+  const piso: Datos | null = pisoElegido
+    ? { nombre_gasto: pisoElegido.nombre, moneda: pisoElegido.moneda }
+    : gastoPorNombre(ctx, [normPuente(NOMBRE_PISO_COLOMBIA)]);
+  const montoPiso = pisoElegido ? pisoElegido.monto : Number(piso?.importe) || 0;
   if (!piso || montoPiso <= 0) return base;
   return {
     ...base,
@@ -249,6 +295,8 @@ export const cobroEnCascada = (ctx: CtxCobroPuente, op: Datos, pasos: readonly E
 export interface LineaPuenteFlujo {
   /** 'Caseta' / 'Puente' (Colombia), o 'Importación' / 'Exportación' cuando el flujo es para todos los tráficos. */
   etiqueta: string;
+  /** ✅ V00473: id del tipo de gasto ('' si no está en el catálogo). */
+  gastoId: string;
   nombre: string;
   /** null = ese tipo de gasto no está en el catálogo. */
   monto: number | null;
@@ -256,12 +304,12 @@ export interface LineaPuenteFlujo {
 }
 
 const lineaDeCatalogo = (tiposGasto: ReadonlyMap<string, Datos>, etiqueta: string, nombres: string[], nombreVisible: string): LineaPuenteFlujo => {
-  for (const x of tiposGasto.values()) {
+  for (const [gastoId, x] of tiposGasto) {
     if (nombres.includes(normPuente(x.nombre_gasto))) {
-      return { etiqueta, nombre: String(x.nombre_gasto || nombreVisible), monto: Number(x.importe) || 0, moneda: monedaCanonica(x.moneda) };
+      return { etiqueta, gastoId, nombre: String(x.nombre_gasto || nombreVisible), monto: Number(x.importe) || 0, moneda: monedaCanonica(x.moneda) };
     }
   }
-  return { etiqueta, nombre: nombreVisible, monto: null, moneda: null };
+  return { etiqueta, gastoId: '', nombre: nombreVisible, monto: null, moneda: null };
 };
 
 /**

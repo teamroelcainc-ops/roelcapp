@@ -12,6 +12,8 @@
 //   como siempre. Los flujos de una aduana nunca se usan para otra.
 // ---------------------------------------------------------------------------
 
+import type { PuenteElegido, ReglaPuenteFlujo } from './cobroPuente.js';
+
 type Datos = Record<string, unknown>;
 
 /** Un documento de config_flujos_operacion. */
@@ -198,6 +200,29 @@ export const descuentaPuenteSegunFlujo = (flujo: Datos | null | undefined, statu
   if (conFlag.length === 0) return null;
   const n = normalizarNombreFlujo(String(statusNombre || ''));
   return conFlag.some((r) => normalizarNombreFlujo(String(r?.nombreStatus || '')) === n);
+};
+
+/**
+ * ✅ V00473: el PUENTE elegido en Reglas de Estatus para el paso `statusNombre` (los campos
+ * `puenteCaseta` / `puentePiso` del nodo: { gastoId, monto }). Solo cuenta en un paso con 🌉;
+ * null si ese paso no tiene uno elegido (entonces se cobra con la regla de siempre).
+ */
+export const reglaPuenteDelPaso = (flujo: Datos | null | undefined, statusNombre: unknown): ReglaPuenteFlujo | null => {
+  const reglas = Array.isArray(flujo?.flujo) ? (flujo.flujo as Datos[]) : [];
+  const n = normalizarNombreFlujo(String(statusNombre || ''));
+  const nodo = n ? reglas.find((r) => !!r?.descuentaPuente && normalizarNombreFlujo(String(r?.nombreStatus || '')) === n) : undefined;
+  if (!nodo) return null;
+  const leer = (v: unknown): PuenteElegido | null => {
+    const o = (v && typeof v === 'object' ? v : {}) as Datos;
+    const gastoId = String(o.gastoId ?? '').trim();
+    if (!gastoId) return null;
+    const m = Number(o.monto);
+    return { gastoId, monto: o.monto != null && o.monto !== '' && Number.isFinite(m) && m > 0 ? m : null };
+  };
+  const caseta = leer(nodo.puenteCaseta);
+  const piso = leer(nodo.puentePiso);
+  if (!caseta && !piso) return null;
+  return { caseta, piso, aduanaFlujo: String(flujo?.aduana ?? '').trim() };
 };
 
 /**

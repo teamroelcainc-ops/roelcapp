@@ -15,7 +15,7 @@ import type { EventoStatusPuente } from '../../../shared/dominio/cobroPuente';
 import { fechaServicioDeOperacion } from '../../../shared/dominio/fechas';
 import { monedaCanonica } from '../../../shared/dominio/moneda';
 import { mostrarVentana } from '../../../shared/data/avisos';
-import { statusDescuentaPuente } from '../../operaciones/config/statusRules';
+import { puenteSegunFlujo } from '../../operaciones/config/statusRules';
 
 type Datos = Record<string, unknown>;
 
@@ -26,10 +26,13 @@ type Datos = Record<string, unknown>;
  */
 export const cobroPuenteDelPaso = async (op: Datos, statusId: string, statusNombre: string, fechaEvento = ''): Promise<Datos> => {
   if (puenteYaCobrado(op) || !aplicaPeaje(op)) return {};
+  // ✅ V00377: la REGLA DE ESTATUS del flujo ("🌉 aquí se descuenta el puente") manda.
+  // ✅ V00473: y el puente que eligieron en ese paso (si eligieron uno).
+  const { flag, regla } = await puenteSegunFlujo(op, statusNombre);
   const ev: EventoStatusPuente = {
     statusId, statusNombre, fechaEvento,
-    // ✅ V00377: la REGLA DE ESTATUS del flujo ("🌉 aquí se descuenta el puente") manda.
-    flagFlujo: await statusDescuentaPuente(op, statusNombre),
+    flagFlujo: flag,
+    reglaPuente: regla,
     hoy: hoyLocalISO(),
     fechaServicioISO: fechaServicioDeOperacion(op),
   };

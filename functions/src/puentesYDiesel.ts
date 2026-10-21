@@ -24,7 +24,7 @@ import { aplicaPeaje, cobroAlCambiarStatus, disparoCobroPuente, puenteYaCobrado,
 import type { CtxCobroPuente } from './dominio/cobroPuente.js';
 import { COL } from './dominio/constantes.js';
 import { aFechaISO, aFechaServicioISO } from './dominio/fechas.js';
-import { buscarFlujo, descuentaPuenteSegunFlujo, esStatusAutomatico, normalizarNombreFlujo } from './dominio/flujos.js';
+import { buscarFlujo, descuentaPuenteSegunFlujo, esStatusAutomatico, normalizarNombreFlujo, reglaPuenteDelPaso } from './dominio/flujos.js';
 import {
   aporteDiesel, aporteDieselCambio, CLAVE_TODOS_DIESEL, COL_SALDOS_CORRIENTES, diaDiesel, idSaldoDiesel,
 } from './dominio/saldosCorrientes.js';
@@ -161,7 +161,8 @@ export const cambiosCobroPuente = async (db: Firestore, opId: string, antes: Dat
   const [ctx, hs] = await Promise.all([contextoCobro(db, x), horarios ? Promise.resolve(horarios) : horariosDe(db, opId)]);
   for (const p of candidatos) {
     const fechaEvento = fechaDeHorarios(hs, p.statusId, p.statusNombre);
-    const campos = cobroAlCambiarStatus(ctx, x, { ...p, flagFlujo: reglaDe(p.statusNombre), hoy, fechaServicioISO, fechaEvento });
+    // ✅ V00473: con el puente elegido en Reglas de Estatus para ese paso (si eligieron uno).
+    const campos = cobroAlCambiarStatus(ctx, x, { ...p, flagFlujo: reglaDe(p.statusNombre), hoy, fechaServicioISO, fechaEvento, reglaPuente: reglaPuenteDelPaso(flujo?.datos ?? null, p.statusNombre) });
     if (Object.keys(campos).length > 0) return { ...campos, puenteCobradoEn: new Date().toISOString(), puenteCobradoPor: 'servidor' };
   }
   return {};

@@ -25,7 +25,7 @@ import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesC
 import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 // ✅ NUEVO: historial de actividad (colección historial_actividad)
 import { registrarLog } from '../../../utils/logger';
-import { statusDescuentaPuente, calcularStatusDinamico, idDocFlujo, leerFlujoFresco } from '../config/statusRules';
+import { puenteSegunFlujo, calcularStatusDinamico, idDocFlujo, leerFlujoFresco } from '../config/statusRules';
 import { obtenerFlags } from '../../../shared/data/flags';
 import { usosEnCache } from '../../../shared/data/consultas';
 import { obtenerFilaTipoCambioDeFecha } from '../services/tipoCambioPorFecha'; // ✅ V00438 (Fase 2.9)
@@ -48,9 +48,9 @@ import { validarFormularioConfigurable } from '../../formularios/configFormulari
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
 import { cargarCtxCobroPuente, nombresAduana, normPuente } from '../../../utils/puenteColombia';
 import { avisarCrucePuente } from '../../puentes/services/crucePuente'; // ✅ V00470
-import { aduanaDeOperacionCtx, casetaPrevista, casetasDeFlujo, cobroAlCambiarStatus, disparoCobroPuente, esAduanaColombia, puenteYaCobrado } from '../../../shared/dominio/cobroPuente'; // ✅ V00465 · V00469 · V00470
+import { aduanaDeOperacionCtx, casetaDeElegido, casetaPrevista, casetasDeFlujo, cobroAlCambiarStatus, disparoCobroPuente, esAduanaColombia, puenteYaCobrado } from '../../../shared/dominio/cobroPuente'; // ✅ V00465 · V00469 · V00470 · V00473
 import { aFechaISO } from '../../../shared/dominio/fechas';
-import { mismaAduana } from '../../../shared/dominio/flujos';
+import { mismaAduana, reglaPuenteDelPaso } from '../../../shared/dominio/flujos';
 import type { CtxCobroPuente, EventoStatusPuente } from '../../../shared/dominio/cobroPuente';
 import TagPuenteUnidad from '../../puentes/components/TagPuenteUnidad';
 import { grupoTagDeNombres, grupoTagDeTrafico } from '../../puentes/services/tagPuente';
@@ -699,8 +699,9 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
         .some((c) => String(guardados[c] ?? '') !== String(formData[c] ?? ''));
       if (!cambioStatus && !cambioDatos) return {};
       // ✅ V00377: la REGLA DE ESTATUS del flujo manda — el estatus marcado con "🌉" dispara; los verdes, solo sin regla.
+      const reglaFlujo = await puenteSegunFlujo(op, nombre); // ✅ V00473: la regla 🌉 y el puente elegido en ese paso
       const ev: EventoStatusPuente = {
-        statusId: statusFinal, statusNombre: nombre, fechaEvento: '', flagFlujo: await statusDescuentaPuente(op, nombre),
+        statusId: statusFinal, statusNombre: nombre, fechaEvento: '', flagFlujo: reglaFlujo.flag, reglaPuente: reglaFlujo.regla,
         hoy: hoyLocalISO(), fechaServicioISO: aFechaISO(formData.fechaServicio) || '',
       };
       if (!disparoCobroPuente(ev)) return {};
@@ -761,11 +762,19 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
   }, [flujoResuelto]);
   // ✅ V00470: en qué estatus se cobra el puente según Reglas de Estatus: los pasos con 🌉 del flujo
   //   de la operación; [] = el flujo no marca ninguno (se cobra en los Verde).
+  const flujoDocForm = useMemo(
+    () => (flujoResuelto.porIndice ? cat.flujos.find((x) => idReal(x) === flujoResuelto.idGenerado) : undefined),
+    [flujoResuelto, cat.flujos],
+  );
   const pasosQueCobranPuente = useMemo((): string[] => {
-    const f = flujoResuelto.porIndice ? cat.flujos.find((x) => idReal(x) === flujoResuelto.idGenerado) : undefined;
-    const nodos = Array.isArray(f?.flujo) ? (f.flujo as Record<string, unknown>[]) : [];
+    const nodos = Array.isArray(flujoDocForm?.flujo) ? (flujoDocForm.flujo as Record<string, unknown>[]) : [];
     return nodos.filter((n) => !!n.descuentaPuente).map((n) => String(n.nombreStatus || '').trim()).filter(Boolean);
-  }, [flujoResuelto, cat.flujos]);
+  }, [flujoDocForm]);
+  // ✅ V00473: el puente que eligieron en Reglas de Estatus para el (primer) paso que cobra.
+  const reglaPuenteForm = useMemo(
+    () => (flujoDocForm && pasosQueCobranPuente[0] ? reglaPuenteDelPaso(flujoDocForm, pasosQueCobranPuente[0]) : null),
+    [flujoDocForm, pasosQueCobranPuente],
+  );
 
   const statusPrevioParaCalculo = (): string | undefined => {
     if (!initialData) return undefined;
@@ -2242,8 +2251,8 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
   //   Los catálogos ya están cargados en el formulario: no hay lecturas nuevas.
   //   (ctxPuente se arma arriba, junto a formData: también lo usa la aduana del flujo, V00469.)
   const puentePrevisto = useMemo(
-    () => (mostrarPuente ? casetaPrevista(ctxPuente, { convenio: formData.convenio, carga: formData.carga, convenioNombre: formData.convenioNombre, trafico: formData.trafico }) : null),
-    [mostrarPuente, ctxPuente, formData.convenio, formData.carga, formData.convenioNombre, formData.trafico],
+    () => (mostrarPuente ? casetaPrevista(ctxPuente, { convenio: formData.convenio, carga: formData.carga, convenioNombre: formData.convenioNombre, trafico: formData.trafico }, '', reglaPuenteForm) : null), // ✅ V00473: + el elegido en Reglas de Estatus
+    [mostrarPuente, ctxPuente, formData.convenio, formData.carga, formData.convenioNombre, formData.trafico, reglaPuenteForm],
   );
 
   // ✅ (Caseta/Puente automático) El listado del select sigue mostrando TODOS los puentes y el
@@ -2262,6 +2271,9 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     if (!mostrarPuente) return null;
     if (puenteCobrado?.piso) return { nombre: puenteCobrado.piso, monto: Number(datosGuardados.saldoPuentePiso) || 0 };
     if (puenteCobrado || !esAduanaColombia(aduanaForm)) return null;
+    // ✅ V00473: el puente elegido en un flujo de Colombia de Reglas de Estatus; si no, el del catálogo.
+    const elegido = reglaPuenteForm && esAduanaColombia(reglaPuenteForm.aduanaFlujo) ? casetaDeElegido(ctxPuente, reglaPuenteForm.piso) : null;
+    if (elegido) return { nombre: elegido.nombre, monto: elegido.monto };
     const l = casetasDeFlujo(ctxPuente.tiposGasto, { aduana: aduanaForm, carga: formData.carga })[1];
     return l && l.monto !== null ? { nombre: l.nombre, monto: l.monto } : null;
   })();
@@ -3505,7 +3517,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
                         ) : (
                           <>
                             {puentePrevisto && String(formData.puenteNombre || '') === puentePrevisto.nombre && Number(formData.puenteMonto) === puentePrevisto.monto && (
-                              <small className="fo-puente-origen">{puentePrevisto.origen === 'tarifa' ? 'Del convenio (gastos incluidos de su tarifa)' : puentePrevisto.origen === 'colombia' ? 'De Reglas de Estatus: aduana Colombia (la tarifa no trae caseta)' : 'De Reglas de Estatus: por el tráfico (la tarifa del convenio no trae caseta)'}</small>
+                              <small className="fo-puente-origen">{puentePrevisto.origen === 'tarifa' ? 'Del convenio (gastos incluidos de su tarifa)' : puentePrevisto.origen === 'regla' ? 'De Reglas de Estatus: el puente elegido para ese estatus' : puentePrevisto.origen === 'colombia' ? 'De Reglas de Estatus: aduana Colombia (la tarifa no trae caseta)' : 'De Reglas de Estatus: por el tráfico (la tarifa del convenio no trae caseta)'}</small>
                             )}
                             {/* ✅ V00470: cuándo se cobra, según Reglas de Estatus */}
                             <small className="fo-puente-origen">

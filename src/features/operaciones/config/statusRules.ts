@@ -8,7 +8,8 @@ import type { DocumentData } from 'firebase/firestore';
 // ✅ V00441 (Fase 5.7): la elección del flujo vive en src/shared/dominio/flujos.ts
 //   (la usa también el servidor para cobrar el puente); aquí solo se lee el catálogo.
 export { idDocFlujo } from '../../../shared/dominio/flujos';
-import { buscarFlujo, descuentaPuenteSegunFlujo, idDocFlujo, normalizarNombreFlujo } from '../../../shared/dominio/flujos';
+import { buscarFlujo, descuentaPuenteSegunFlujo, idDocFlujo, normalizarNombreFlujo, reglaPuenteDelPaso } from '../../../shared/dominio/flujos';
+import type { ReglaPuenteFlujo } from '../../../shared/dominio/cobroPuente';
 import { db } from '../../../config/firebase';
 import { idReal, obtenerCatalogo } from '../../../shared/data/catalogos';
 import type { DocCatalogo } from '../../../shared/data/catalogos';
@@ -262,12 +263,17 @@ export const obtenerNombresStatusDelFlujo = async (operacionInfo: any): Promise<
 // ✅ V00377: ¿este estatus DESCUENTA el puente según la regla del flujo?
 //   true/false cuando el flujo define nodos con descuentaPuente;
 //   null cuando no hay flujo o ningún nodo lo define (aplica el fallback).
-export const statusDescuentaPuente = async (operacionInfo: any, statusNombre: string): Promise<boolean | null> => {
+/**
+ * ✅ V00473: la regla 🌉 del flujo para ese estatus (`flag`: true/false si el flujo marca pasos con 🌉, null si no) y el puente
+ * elegido en Reglas de Estatus para ese paso (`regla`), con UNA búsqueda del flujo.
+ */
+export const puenteSegunFlujo = async (operacionInfo: Record<string, unknown>, statusNombre: string): Promise<{ flag: boolean | null; regla: ReglaPuenteFlujo | null }> => {
   try {
     const snap = await obtenerDocFlujo(operacionInfo);
-    if (!snap || !snap.exists()) return null;
-    return descuentaPuenteSegunFlujo(snap.data(), statusNombre);
-  } catch { return null; }
+    if (!snap || !snap.exists()) return { flag: null, regla: null };
+    const datos = snap.data();
+    return { flag: descuentaPuenteSegunFlujo(datos, statusNombre), regla: reglaPuenteDelPaso(datos, statusNombre) };
+  } catch { return { flag: null, regla: null }; }
 };
 
 export const obtenerBotonesHorarioDinamicos = async (operacionInfo: any): Promise<string[]> => {

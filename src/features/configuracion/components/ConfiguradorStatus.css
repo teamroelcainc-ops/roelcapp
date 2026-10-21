@@ -161,3 +161,19 @@
 .cs-puente-nota { margin-top: 6px; font-size: 11.5px; line-height: 1.45; color: #8b949e; }
 /* ✅ V00472: la combinación elegida aún no tiene flujo guardado (el lienzo conserva los pasos) */
 .cs-aviso-combinacion { margin-top: 4px; max-width: 260px; font-size: 11px; line-height: 1.35; color: #e3b341; }
+/* ✅ V00473: el puente del paso se elige y su monto se puede cambiar */
+.cs-puente-campo dd.cs-puente-editable { flex-direction: column; align-items: stretch; gap: 6px; padding: 0; border: none; background: none; }
+.cs-puente-select { width: 100%; padding: 7px 8px; border: 1px solid #262d3e; border-radius: 6px; background: #11151d; color: #c9d1d9; font-size: 12.5px; }
+.cs-puente-monto-fila { display: flex; align-items: center; gap: 6px; color: #7a8499; font-size: 12.5px; }
+.cs-puente-monto-input { flex: 1 1 0; width: 0; min-width: 0; padding: 6px 8px; border: 1px solid #262d3e; border-radius: 6px; background: #11151d; color: #e3b341; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cs-puente-monto-input:disabled { color: #5f697d; cursor: not-allowed; }
+.cs-puente-moneda { min-width: 30px; color: #8b949e; }
+.cs-puente-restaurar { padding: 4px 8px; border: 1px solid #262d3e; border-radius: 6px; background: none; color: #8b949e; font-size: 11px; cursor: pointer; }
+.cs-puente-restaurar:hover { color: #c9d1d9; border-color: #3a4357; }
+/* ✅ V00473: eliminar un flujo desde la lista */
+.cs-acciones-flujo { display: inline-flex; align-items: center; gap: 8px; }
+.cs-eliminar-flujo { padding: 6px 10px; border: 1px solid #5c2b2b; border-radius: 6px; background: none; color: #f85149; font-size: 12px; font-weight: 600; cursor: pointer; }
+.cs-eliminar-flujo:hover { background: rgba(248, 81, 73, 0.12); }
+.cs-eliminar-flujo:disabled { opacity: 0.55; cursor: not-allowed; }
+/* el panel es angosto: la fila del monto no se sale */
+.cs-puente-costos, .cs-puente-campo { grid-template-columns: minmax(0, 1fr); min-width: 0; }
