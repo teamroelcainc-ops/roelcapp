@@ -13,6 +13,7 @@
 // ---------------------------------------------------------------------------
 import { STATUS_COMPLETADOS } from './constantes.js';
 import { monedaCanonica, nombreMoneda } from './moneda.js';
+import type { Moneda } from './moneda.js';
 import { fechaServicioDeOperacion } from './fechas.js';
 
 type Datos = Record<string, unknown>;
@@ -243,3 +244,47 @@ export const cobroEnCascada = (ctx: CtxCobroPuente, op: Datos, pasos: readonly E
   }
   return {};
 };
+
+/** ✅ V00470: una línea del costo del puente que se muestra (informativo) en el Editor de Flujos. */
+export interface LineaPuenteFlujo {
+  /** 'Caseta' / 'Puente' (Colombia), o 'Importación' / 'Exportación' cuando el flujo es para todos los tráficos. */
+  etiqueta: string;
+  nombre: string;
+  /** null = ese tipo de gasto no está en el catálogo. */
+  monto: number | null;
+  moneda: Moneda | null;
+}
+
+const lineaDeCatalogo = (tiposGasto: ReadonlyMap<string, Datos>, etiqueta: string, nombres: string[], nombreVisible: string): LineaPuenteFlujo => {
+  for (const x of tiposGasto.values()) {
+    if (nombres.includes(normPuente(x.nombre_gasto))) {
+      return { etiqueta, nombre: String(x.nombre_gasto || nombreVisible), monto: Number(x.importe) || 0, moneda: monedaCanonica(x.moneda) };
+    }
+  }
+  return { etiqueta, nombre: nombreVisible, monto: null, moneda: null };
+};
+
+/**
+ * ✅ V00470: lo que cobra un paso del FLUJO, con el costo del catálogo Tipos de Gastos (informativo:
+ * el flujo no tiene convenio; si la tarifa del convenio de la operación trae su caseta, se cobra esa).
+ *   · aduana Colombia → la CASETA (Trompo Colombia si la carga es trompo; si no, Caseta Mx Colombia)
+ *     y el PUENTE (Puente Mx Colombia): dos líneas;
+ *   · importación → Caseta AVI; exportación → Caseta Puente III;
+ *   · sin tráfico (flujo para todos) → las dos, una por tráfico.
+ */
+export const casetasDeFlujo = (tiposGasto: ReadonlyMap<string, Datos>, flujo: { trafico?: unknown; carga?: unknown; aduana?: unknown }): LineaPuenteFlujo[] => {
+  if (esAduanaColombia(flujo.aduana)) {
+    const trompo = normPuente(flujo.carga).includes('trompo');
+    return [
+      lineaDeCatalogo(tiposGasto, 'Caseta', [trompo ? 'trompo colombia' : 'caseta mx colombia'], trompo ? 'Trompo Colombia' : 'Caseta Mx Colombia'),
+      lineaDeCatalogo(tiposGasto, 'Puente', [normPuente(NOMBRE_PISO_COLOMBIA)], NOMBRE_PISO_COLOMBIA),
+    ];
+  }
+  const avi = (etiqueta: string) => lineaDeCatalogo(tiposGasto, etiqueta, ['caseta avi'], 'Caseta AVI');
+  const p3 = (etiqueta: string) => lineaDeCatalogo(tiposGasto, etiqueta, ['caseta puente iii', 'caseta puente 3'], 'Caseta Puente III');
+  const traf = normPuente(flujo.trafico);
+  if (traf.includes('import')) return [avi('Caseta')];
+  if (traf.includes('export')) return [p3('Caseta')];
+  return [avi('Importación'), p3('Exportación')];
+};
+

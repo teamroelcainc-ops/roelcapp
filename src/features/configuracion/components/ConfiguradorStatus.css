@@ -151,3 +151,11 @@
   .cs-x110 { padding: 14px 12px; }
 }
 .cs-comodin { color: #8b949e; font-style: italic; } /* ✅ V00405: flujo sin tráfico/carga = aplica a todos */
+/* ✅ V00470: costo del puente (informativo) en el panel del paso */
+.cs-puente-costos { display: grid; gap: 8px; margin: 10px 0 0; }
+.cs-puente-campo { display: grid; gap: 3px; }
+.cs-puente-campo dt { font-size: 11px; font-weight: 600; color: #7a8499; }
+.cs-puente-campo dd { margin: 0; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 7px 10px; border: 1px solid #262d3e; border-radius: 6px; background: #11151d; font-size: 12.5px; color: #c9d1d9; }
+.cs-puente-monto { font-weight: 600; color: #e3b341; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cs-puente-monto--falta { font-weight: 400; font-style: italic; color: #8b949e; }
+.cs-puente-nota { margin-top: 6px; font-size: 11.5px; line-height: 1.45; color: #8b949e; }

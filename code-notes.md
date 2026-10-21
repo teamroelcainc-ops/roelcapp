@@ -207,6 +207,13 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - Modales con `createPortal` a `document.body` (la tarjeta usa `transform` al pasar el mouse) y perezosos desde la tarjeta (`lazyWithRetry`): la carga inicial crece 0.3 KB (sin eso, ~20 KB por FormularioConfigurable).
 - Se quitaron las reglas `.rd-dos*` de App.css (solo las usaba la tarjeta TC · Diesel).
 
+## V00470 (Reglas de Estatus: costo del puente en el paso; aduana solo en Transfer)
+- Pedido de Omaf (21-oct, captura del panel "Saldo del puente"): "que se agregue directamente la tarifa y aparezca el costo, pero informativamente; si es Colombia, la caseta y el puente (dos campos)". También: "la aduana solo se debe mostrar en los Transfer".
+- El flujo no tiene convenio, así que el costo es el del catálogo Tipos de Gastos, con la regla de respaldo del cobro (Colombia → caseta + piso; tráfico → AVI / Puente III). La caseta de los Gastos Incluidos de la tarifa del convenio gana en el cobro real; el panel lo dice.
+- Se muestra solo en el paso que cobra: el marcado con 🌉 o, si el flujo no tiene ninguno, en los Verde (misma regla que `descuentaPuenteSegunFlujo` + `disparoCobroPuente`).
+- Un flujo de Transfer sin aduana también lo usan las operaciones de Colombia que no tienen flujo propio: por eso la línea "Si la operación es de aduana Colombia…".
+- Aduana fuera de Transfer: el selector se oculta, el handler del servicio la borra y `aduanaFlujo` la ignora en el id y al guardar (un flujo viejo guardado con aduana en otro servicio se vuelve a guardar sin ella, y se ofrece borrar el anterior como en cualquier cambio de combinación).
+
 ## V00469 (Reglas de Estatus por aduana; revisión del cobro de puentes)
 - Pedido de Omaf (21-oct, captura del Editor de Flujos): "agrega la aduana en el configurador de status, al lado de CARGA".
   - El flujo por aduana es `Servicio_Tráfico_Carga_Aduana` con el campo `aduana`; sin aduana el id no cambia (los flujos guardados siguen igual).

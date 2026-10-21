@@ -2,7 +2,7 @@
 // y elección del flujo de estatus (regla de statusRules), ya como lógica pura compartida.
 import { describe, expect, it } from 'vitest';
 import { STATUS_COMPLETADOS } from './constantes';
-import { aplicaPeaje, casetaPrevista, cobroAlCambiarStatus, cobroEnCascada, cobroPuenteDeOperacion, disparoCobroPuente, puenteYaCobrado, tarifaDeDetalleConvenio } from './cobroPuente';
+import { aplicaPeaje, casetaPrevista, casetasDeFlujo, cobroAlCambiarStatus, cobroEnCascada, cobroPuenteDeOperacion, disparoCobroPuente, puenteYaCobrado, tarifaDeDetalleConvenio } from './cobroPuente';
 import type { CtxCobroPuente, EventoStatusPuente } from './cobroPuente';
 import { buscarFlujo, buscarFlujoPorIndice, construirConfigId, descuentaPuenteSegunFlujo, esStatusAutomatico, idDocFlujo, mismaAduana } from './flujos';
 
@@ -131,6 +131,25 @@ describe('cobro del puente al cambiar de estatus', () => {
     const c = ctx({ gastosIncluidos: [{ tarifa_referencia_id: 'tar-col', gasto: 'g-p3', monto: 150 }] });
     expect(cobroPuenteDeOperacion(c, transfer({ convenio: 'conv-col', fechaServicio: '8/10/2026' }))).toMatchObject({ saldoPuente: 300, saldoPuentePuente: 'Caseta Mx Colombia', saldoPuenteFecha: '2026-10-08', saldoPuentePiso: 90 });
     expect(cobroPuenteDeOperacion(ctx(), transfer({ fechaServicioISO: '2026-10-03', fechaServicio: { seconds: 1 } }))).toMatchObject({ saldoPuenteFecha: '2026-10-03' });
+  });
+});
+
+describe('V00470: costo del puente en el Editor de Flujos', () => {
+  const tg = new Map(tipos);
+  it('por tráfico una caseta; sin tráfico, las dos', () => {
+    expect(casetasDeFlujo(tg, { trafico: 'Exportación' })).toEqual([{ etiqueta: 'Caseta', nombre: 'Caseta Puente III', monto: 144, moneda: 'MXN' }]);
+    expect(casetasDeFlujo(tg, { trafico: 'Importación' })).toEqual([{ etiqueta: 'Caseta', nombre: 'Caseta AVI', monto: 23.75, moneda: 'USD' }]);
+    expect(casetasDeFlujo(tg, {}).map((l) => `${l.etiqueta}: ${l.nombre}`)).toEqual(['Importación: Caseta AVI', 'Exportación: Caseta Puente III']);
+  });
+  it('aduana Colombia: la caseta y el puente (trompo si la carga lo dice)', () => {
+    expect(casetasDeFlujo(tg, { trafico: 'Exportación', aduana: '800 Colombia' })).toEqual([
+      { etiqueta: 'Caseta', nombre: 'Caseta Mx Colombia', monto: 300, moneda: 'MXN' },
+      { etiqueta: 'Puente', nombre: 'Puente Mx Colombia', monto: 90, moneda: 'MXN' },
+    ]);
+    expect(casetasDeFlujo(tg, { aduana: 'Colombia', carga: 'Trompo' })[0]).toMatchObject({ nombre: 'Trompo Colombia', monto: 350 });
+  });
+  it('un tipo de gasto que no está en el catálogo sale sin monto', () => {
+    expect(casetasDeFlujo(new Map(), { trafico: 'Importación' })).toEqual([{ etiqueta: 'Caseta', nombre: 'Caseta AVI', monto: null, moneda: null }]);
   });
 });
 

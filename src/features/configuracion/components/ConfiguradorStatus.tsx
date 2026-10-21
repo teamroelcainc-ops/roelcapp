@@ -4,6 +4,24 @@ import { db } from '../../../config/firebase';
 import './ConfiguradorStatus.css';
 import { idDocFlujo } from '../../operaciones/config/statusRules';
 import { idReal, useCatalogo, useCatalogos } from '../../../shared/data/catalogos';
+import { casetasDeFlujo, esAduanaColombia, normPuente } from '../../../shared/dominio/cobroPuente'; // ✅ V00470
+import type { LineaPuenteFlujo } from '../../../shared/dominio/cobroPuente';
+
+/** ✅ V00470: la aduana solo se configura en los flujos de Transfer. */
+const esServicioTransfer = (servicio: unknown): boolean => normPuente(servicio).includes('transfer');
+
+/** ✅ V00470: costo de una línea del puente ("$144.00 MXN"); sin el tipo de gasto en el catálogo, lo dice. */
+const montoPuenteTexto = (l: LineaPuenteFlujo): string => (l.monto === null
+  ? 'No está en Tipos de Gastos'
+  : `$${l.monto.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${l.moneda ? ` ${l.moneda}` : ''}`);
+
+/** ✅ V00470: lo que el panel del paso muestra del puente (informativo). */
+interface InfoPuenteFlujo {
+  /** Fletes y Movimientos no cobran puente. */
+  sinPeaje: boolean;
+  lineas: LineaPuenteFlujo[];
+  notas: string[];
+}
 
 /* ============================================================
    TIPOS
@@ -655,6 +673,7 @@ const EditorFlujoAppSheet = ({
   const { datos: cat } = useCatalogos({
     status: 'catalogo_status_servicio', tiposOp: 'catalogo_tipo_operacion', trafico: 'catalogo_trafico', cargaVacia: 'catalogo_carga_vacia',
     aduanas: 'catalogo_aduanas', // ✅ V00469
+    tiposGastos: 'catalogo_tipos_gastos', // ✅ V00470: costo del puente en el panel del paso
   });
   const catalogoStatus = useMemo(() => cat.status.map((d) => d.nombre as string).sort(), [cat.status]);
   const tiposOperacion = useMemo(() => cat.tiposOp.map((d) => ({ id: idReal(d), tipo_operacion: d.tipo_operacion as string })), [cat.tiposOp]);
@@ -728,7 +747,27 @@ const EditorFlujoAppSheet = ({
 
   // ✅ V00405: solo el SERVICIO es obligatorio; sin tráfico o sin carga el flujo
   //   es COMODÍN ("Todos") y aplica a cualquiera que no tenga uno más específico.
-  const configId = `${tipoServicio}_${trafico || 'Todos'}_${carga || 'Todos'}${aduana ? `_${aduana}` : ''}`; // ✅ V00469: + aduana
+  // ✅ V00470: la aduana solo cuenta en Transfer (en otro servicio el selector no se muestra).
+  const esTransferFlujo = esServicioTransfer(tipoServicio);
+  const aduanaFlujo = esTransferFlujo ? aduana : '';
+  const configId = `${tipoServicio}_${trafico || 'Todos'}_${carga || 'Todos'}${aduanaFlujo ? `_${aduanaFlujo}` : ''}`; // ✅ V00469: + aduana
+
+  // ✅ V00470: COSTO DEL PUENTE (informativo) para el panel del paso, con el catálogo Tipos de Gastos.
+  const tiposGastoMapa = useMemo(() => new Map(cat.tiposGastos.map((d) => [idReal(d), d] as const)), [cat.tiposGastos]);
+  const infoPuente = useMemo((): InfoPuenteFlujo => {
+    const tipo = normPuente(tipoServicio);
+    const notas: string[] = [];
+    if (tipo.includes('logistica')) notas.push('En Logística solo se cobra cuando el proveedor es Roelca.');
+    if (esTransferFlujo && !esAduanaColombia(aduanaFlujo)) {
+      const colombia = casetasDeFlujo(tiposGastoMapa, { carga, aduana: 'Colombia' });
+      notas.push(`Si la operación es de aduana Colombia: ${colombia.map((l) => `${l.nombre} ${montoPuenteTexto(l)}`).join(' + ')}.`);
+    }
+    return {
+      sinPeaje: tipo.includes('flete') || tipo.includes('movimiento'),
+      lineas: casetasDeFlujo(tiposGastoMapa, { trafico, carga, aduana: aduanaFlujo }),
+      notas,
+    };
+  }, [tipoServicio, trafico, carga, aduanaFlujo, esTransferFlujo, tiposGastoMapa]);
   const configValido = !!tipoServicio;
 
   /* ============================================================
@@ -1261,7 +1300,7 @@ const EditorFlujoAppSheet = ({
         tipoServicio,
         trafico,
         carga,
-        aduana, // ✅ V00469
+        aduana: aduanaFlujo, // ✅ V00469 · V00470: solo en Transfer
         ultimaActualizacion: new Date().toISOString(),
         flujo: flujoFinal,
         ...configFormulario,
@@ -1368,7 +1407,7 @@ const EditorFlujoAppSheet = ({
           <SelectorCampo
             label="Servicio"
             value={tipoServicio}
-            onChange={setTipoServicio}
+            onChange={(v) => { setTipoServicio(v); if (!esServicioTransfer(v)) setAduana(''); }} // ✅ V00470: aduana solo en Transfer
             options={tiposOperacion.map(t => t.tipo_operacion)}
             placeholder="Selecciona…"
           />
@@ -1388,13 +1427,15 @@ const EditorFlujoAppSheet = ({
               options={carga && !opcionesCarga.includes(carga) ? [...opcionesCarga, carga] : opcionesCarga}
               placeholder="Todos (opcional)"
             />
-            <SelectorCampo
-              label="Aduana"
-              value={aduana}
-              onChange={setAduana}
-              options={aduana && !opcionesAduana.includes(aduana) ? [...opcionesAduana, aduana] : opcionesAduana}
-              placeholder="Todas (opcional)"
-            />
+            {esTransferFlujo && ( // ✅ V00470: la aduana solo se muestra en Transfer
+              <SelectorCampo
+                label="Aduana"
+                value={aduana}
+                onChange={setAduana}
+                options={aduana && !opcionesAduana.includes(aduana) ? [...opcionesAduana, aduana] : opcionesAduana}
+                placeholder="Todas (opcional)"
+              />
+            )}
           </div>
         </div>
 
@@ -1884,6 +1925,7 @@ const EditorFlujoAppSheet = ({
                 regla={reglaSel}
                 catalogoStatus={catalogoStatus}
                 todosNodos={reglas}
+                puente={infoPuente}
                 onChange={(patch) => actualizarNodo(reglaSel.id, patch)}
                 onDuplicar={() => duplicarNodo(reglaSel.id)}
                 onEliminar={() => eliminarNodo(reglaSel.id)}
@@ -1972,12 +2014,13 @@ const BlockTile = ({ tipo, title, desc, onClick }: {
 };
 
 const Inspector = ({
-  regla, catalogoStatus, todosNodos,
+  regla, catalogoStatus, todosNodos, puente,
   onChange, onDuplicar, onEliminar, onDesconectar, onAbrirModalCampos,
 }: {
   regla: ReglaStatus;
   catalogoStatus: string[];
   todosNodos: ReglaStatus[];
+  puente: InfoPuenteFlujo; // ✅ V00470
   onChange: (p: Partial<ReglaStatus>) => void;
   onDuplicar: () => void;
   onEliminar: () => void;
@@ -1986,6 +2029,11 @@ const Inspector = ({
 }) => {
   const meta = TIPO_META[regla.tipoMecanismo];
   const camposCount = (regla.camposRequeridos || []).length;
+  // ✅ V00470: ¿este paso cobra el puente? El marcado con 🌉; si ningún paso del flujo lo tiene, los Verde.
+  const nombrePaso = normPuente(regla.nombreStatus);
+  const flujoConRegla = todosNodos.some((n) => !!n.descuentaPuente);
+  const verdePorOmision = !flujoConRegla && (nombrePaso.includes('verde usa') || nombrePaso.includes('verde mx') || nombrePaso.includes('verde mexico'));
+  const cobraAqui = !!regla.descuentaPuente || verdePorOmision;
 
   return (
     <div className="cs-x80">
@@ -2071,6 +2119,29 @@ const Inspector = ({
             <input type="checkbox" checked={!!regla.descuentaPuente} onChange={(e) => onChange({ descuentaPuente: e.target.checked })} />
             🌉 Aquí se descuenta el puente
           </label>
+          {/* ✅ V00470: la caseta (y en Colombia también el puente) con su costo, solo informativo */}
+          {cobraAqui && (puente.sinPeaje ? (
+            <div className="cs-puente-nota">Este servicio no cobra puente.</div>
+          ) : (
+            <>
+              {verdePorOmision && <div className="cs-puente-nota">Ningún paso del flujo tiene 🌉: se descuenta en este Verde.</div>}
+              <dl className="cs-puente-costos">
+                {puente.lineas.map((l) => (
+                  <div key={l.etiqueta} className="cs-puente-campo">
+                    <dt>{l.etiqueta}</dt>
+                    <dd>
+                      <span>{l.nombre}</span>
+                      <span className={`cs-puente-monto${l.monto === null ? ' cs-puente-monto--falta' : ''}`}>{montoPuenteTexto(l)}</span>
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+              <div className="cs-puente-nota">
+                Informativo: costo del catálogo Tipos de Gastos. Si la tarifa del convenio de la operación trae su caseta, se cobra la de la tarifa.
+              </div>
+              {puente.notas.map((n) => <div key={n} className="cs-puente-nota">{n}</div>)}
+            </>
+          ))}
         </Section>
 
         {/* NUEVO: Campos requeridos (ahora via modal) */}
@@ -2243,7 +2314,7 @@ export const ConfiguradorStatus = () => {
                   <td className="cs-x112">{f.tipoServicio}</td>
                   <td className="cs-x113">{f.trafico || <span className="cs-comodin">Todos</span>}</td>
                   <td className="cs-x113">{f.carga || <span className="cs-comodin">Todos</span>}</td>
-                  <td className="cs-x113">{f.aduana || <span className="cs-comodin">Todas</span>}</td>
+                  <td className="cs-x113">{f.aduana || <span className="cs-comodin">{esServicioTransfer(f.tipoServicio) ? 'Todas' : '—'}</span>}</td>{/* ✅ V00470: aduana solo en Transfer */}
                   <td className="cs-x114">
                     <span className="cs-x115">
                       {(f.flujo || []).length} pasos
