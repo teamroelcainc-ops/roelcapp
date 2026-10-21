@@ -15,7 +15,7 @@ import { useUsuarioStore } from '../../../stores/useUsuarioStore'; // ✅ V00430
 import { CambioSueldoOperador, HistorialCambiosSueldo } from './CambioSueldoOperador'; // ✅ V00433 
 import { registrarLog } from '../../../utils/logger';
 import { sincronizarNombresOperaciones as sincronizarNombresUtil } from '../../../utils/sincronizarNombresOperaciones';
-import { obtenerBotonesHorarioDinamicos, resolverCascadaStatus, obtenerNombresStatusDelFlujo, statusDescuentaPuente } from '../config/statusRules';
+import { obtenerBotonesHorarioDinamicos, resolverCascadaStatus, obtenerNombresStatusDelFlujo } from '../config/statusRules';
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF, setLogoPdf } from '../../../utils/pdfGenerator'; 
 import * as XLSX from 'xlsx';
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
@@ -34,10 +34,8 @@ import { usePedidosCompletadasHoy } from '../services/pestanaCompletadas'; // �
 import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 import { ModalFechaStatus } from './ModalFechaStatus';
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
-import { cargarCtxCobroPuente } from '../../../utils/puenteColombia';
-import { aplicaPeaje, cobroAlCambiarStatus, disparoCobroPuente, puenteYaCobrado } from '../../../shared/dominio/cobroPuente'; // ✅ V00469
-import type { EventoStatusPuente } from '../../../shared/dominio/cobroPuente';
-import { aFechaServicioISO } from '../../../shared/dominio/fechas';
+import { avisarCrucePuente, cobroPuenteDelPaso } from '../../puentes/services/crucePuente'; // ✅ V00470
+import { aplicaPeaje, puenteYaCobrado } from '../../../shared/dominio/cobroPuente'; // ✅ V00469
 import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
 import { obtenerFlags, useFlags } from '../../../shared/data/flags';
 import { useOperacionesActivas } from '../hooks/useOperacionesActivas'; // ✅ V00444 (Fase 8.1)
@@ -696,23 +694,17 @@ const OperacionesDashboard = () => {
   //   · la fecha de un cruce sin hora capturada es HOY en hora local;
   //   · Completado toma la fecha de servicio convertida (fechaServicioISO);
   //   · un saldoPuente en 0 ya no cuenta como cobrado (puenteYaCobrado).
-  const camposSaldoPuenteAlCompletar = async (statusId: string, op: Record<string, unknown>, statusNombre?: string, fechaEvento?: string): Promise<Record<string, unknown>> => {
-    // ✅ V00441 (Fase 5.7): con la bandera, el peaje lo cobra el servidor (trigger
-    //   operacionEscrita) para web, Mis Operaciones y la app móvil por igual.
-    if ((await obtenerFlags()).cobroPuenteEnServidor) return {};
-    try {
-      if (puenteYaCobrado(op) || !aplicaPeaje(op)) return {}; // ✅ V00369
-      const nombre = String(statusNombre || '');
-      // ✅ V00377: la REGLA DE ESTATUS del flujo ("🌉 aquí se descuenta el puente") manda.
-      const ev: EventoStatusPuente = {
-        statusId, statusNombre: nombre, fechaEvento: String(fechaEvento || ''),
-        flagFlujo: await statusDescuentaPuente(op, nombre), hoy: hoyLocalISO(),
-        fechaServicioISO: String(op.fechaServicioISO || '').slice(0, 10) || aFechaServicioISO(op.fechaServicio) || '',
-      };
-      if (!disparoCobroPuente(ev)) return {};
-      return cobroAlCambiarStatus(await cargarCtxCobroPuente(), op, ev);
-    } catch (e) { console.warn('Saldo de puente al completar:', e); return {}; }
+  // ✅ V00470: el cálculo vive en features/puentes/services/crucePuente.ts (cobroPuenteDelPaso) y
+  //   se hace SIEMPRE, también con la bandera: la ventana "Esta unidad cruzó el puente…" necesita
+  //   el puente y el monto. Con la bandera solo NO se escribe (lo escribe el servidor, misma regla).
+  const cobroDelPasoSP = async (statusId: string, op: Record<string, unknown>, statusNombre?: string, fechaEvento?: string): Promise<Record<string, unknown>> => {
+    try { return await cobroPuenteDelPaso(op, statusId, String(statusNombre || ''), String(fechaEvento || '')); }
+    catch (e) { console.warn('Saldo de puente al completar:', e); return {}; }
   };
+  // ✅ V00441 (Fase 5.7): con la bandera, el peaje lo cobra el servidor (trigger
+  //   operacionEscrita) para web, Mis Operaciones y la app móvil por igual.
+  const cobroParaEscribirSP = async (cobro: Record<string, unknown>): Promise<Record<string, unknown>> =>
+    ((await obtenerFlags()).cobroPuenteEnServidor ? {} : cobro);
 
   // ✅ V00356: utilidad de la operación TRANSFER = lo generado (tarifa cliente
   //   + cargos adicionales al cliente) − saldo del puente − gastos adicionales
@@ -926,11 +918,13 @@ const OperacionesDashboard = () => {
       }));
       const opRef = doc(db, 'operaciones', String(operacionViendo._docId || operacionViendo.id));
       // ✅ V00367: marcar Verde también desde "Registrar Status" manual cobra el peaje
-      const extraSPManual = await camposSaldoPuenteAlCompletar(statusId, operacionViendo, statusNombreResuelto, nuevaFechaHora);
+      const cobroSPManual = await cobroDelPasoSP(statusId, operacionViendo, statusNombreResuelto, nuevaFechaHora); // ✅ V00470
+      const extraSPManual = await cobroParaEscribirSP(cobroSPManual);
       batch.update(opRef, limpiarUndefined({ status: statusId, statusNombre: statusNombreResuelto, ...extraSPManual, ...ajusteSueldoPorStatus(operacionViendo, statusNombreResuelto) })); // ✅ V00387: Falso = sueldo a la mitad
 
       await batch.commit();
       notificarOperacionGuardada(String(operacionViendo._docId || operacionViendo.id), { ...operacionViendo, ...extraSPManual, status: statusId, statusNombre: statusNombreResuelto }, 'operaciones-status'); // ✅ V00126 · V00469: con el cobro del puente
+      avisarCrucePuente(operacionViendo, cobroSPManual); // ✅ V00470: "Esta unidad cruzó el puente…"
       // ✅ V00402: Verde → Historial calculado (referencia automática del puente de hoy)
       if (esStatusVerde(statusNombreResuelto)) registrarVerdeAutomatico({ ...operacionViendo, ...extraSPManual, status: statusId, statusNombre: statusNombreResuelto }, statusNombreResuelto, nuevaFechaHora);
 
@@ -1088,11 +1082,12 @@ const OperacionesDashboard = () => {
           //   (Importación → Caseta AVI · Exportación → Caseta Puente III).
           // ✅ V00469: en una CASCADA (Verde USA → En tránsito…) cobra el PRIMER paso que dispara,
           //   no solo el último (el Verde ya no espera a Completado).
-          let extraSaldoPuente: Record<string, unknown> = {};
+          let cobroPaso: Record<string, unknown> = {};
           for (const paso of cadenaResuelta) {
-            extraSaldoPuente = await camposSaldoPuenteAlCompletar(paso.id, operacionViendo, paso.nombre, fechaHoraLocal);
-            if (Object.keys(extraSaldoPuente).length > 0) break;
+            cobroPaso = await cobroDelPasoSP(paso.id, operacionViendo, paso.nombre, fechaHoraLocal);
+            if (Object.keys(cobroPaso).length > 0) break;
           }
+          const extraSaldoPuente = await cobroParaEscribirSP(cobroPaso); // ✅ V00470
           batch.update(opRef, limpiarUndefined({
             status: statusFinal.id,
             statusNombre: statusFinal.nombre,
@@ -1102,6 +1097,7 @@ const OperacionesDashboard = () => {
 
           await batch.commit();
           notificarOperacionGuardada(String(operacionViendo._docId || operacionViendo.id), { ...operacionViendo, ...extraSaldoPuente, status: statusFinal.id, statusNombre: statusFinal.nombre }, 'operaciones-status'); // ✅ V00126 · V00469: con el cobro del puente
+          avisarCrucePuente(operacionViendo, cobroPaso); // ✅ V00470: "Esta unidad cruzó el puente…"
           // ✅ V00402: si algún paso de la cascada es Verde → Historial calculado
           { const pasoVerde = cadenaResuelta.find((p) => esStatusVerde(p.nombre)); if (pasoVerde) registrarVerdeAutomatico({ ...operacionViendo, ...extraSaldoPuente, status: statusFinal.id, statusNombre: statusFinal.nombre }, pasoVerde.nombre, fechaHoraLocal); }
 

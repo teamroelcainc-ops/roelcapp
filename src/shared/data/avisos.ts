@@ -6,6 +6,8 @@
 //   · publicarRevision(...)  → cuántas operaciones hay en Revisión en un módulo;
 //                              avisa solo por las que son NUEVAS en la sesión.
 //   · irARevision(modulo)    → abre el módulo en su pestaña Revisión.
+//   · mostrarVentana(...)    → ✅ V00470: VENTANA (pop-up) que se cierra con "Entendido"
+//                              (p. ej. "Esta unidad cruzó el puente…"). Una a la vez, en fila.
 // Se leen con useAvisos() / usePestanaPedida() (useSyncExternalStore).
 // ---------------------------------------------------------------------------
 import { useSyncExternalStore } from 'react';
@@ -32,8 +34,17 @@ export interface Revision {
   muestra: string[];
 }
 
+/** ✅ V00470: ventana (pop-up) que el usuario cierra. */
+export interface AvisoVentana {
+  id: number;
+  titulo: string;
+  /** Un párrafo por renglón. */
+  parrafos: string[];
+}
+
 interface Estado {
   flotantes: AvisoFlotante[];
+  ventanas: AvisoVentana[];
   revisiones: Record<ModuloRevision, Revision>;
   pestanaPedida: ModuloRevision | null;
 }
@@ -43,6 +54,7 @@ const MAX_FLOTANTES = 4;
 
 let estado: Estado = {
   flotantes: [],
+  ventanas: [],
   revisiones: { operaciones: { n: 0, muestra: [] }, facturacionClientes: { n: 0, muestra: [] } },
   pestanaPedida: null,
 };
@@ -79,6 +91,18 @@ export const avisar = (aviso: Omit<AvisoFlotante, 'id'>): number => {
   cambiar({ flotantes });
   temporizadores.set(id, setTimeout(() => quitarAviso(id), DURACION_MS));
   return id;
+};
+
+/** ✅ V00470: abre una ventana (pop-up); si ya hay una abierta, esta sale al cerrarla. Devuelve su id. */
+export const mostrarVentana = (ventana: Omit<AvisoVentana, 'id'>): number => {
+  const id = siguienteId++;
+  cambiar({ ventanas: [...estado.ventanas, { ...ventana, id }] });
+  return id;
+};
+
+/** ✅ V00470: cierra la ventana (botón "Entendido"). */
+export const cerrarVentana = (id: number): void => {
+  if (estado.ventanas.some((v) => v.id === id)) cambiar({ ventanas: estado.ventanas.filter((v) => v.id !== id) });
 };
 
 /** IDs ya avisados en esta sesión (por módulo): no se repite el aviso al volver a entrar. */
@@ -138,6 +162,7 @@ export const reiniciarAvisos = (): void => {
   avisadas.facturacionClientes.clear();
   estado = {
     flotantes: [],
+    ventanas: [],
     revisiones: { operaciones: { n: 0, muestra: [] }, facturacionClientes: { n: 0, muestra: [] } },
     pestanaPedida: null,
   };

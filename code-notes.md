@@ -207,6 +207,20 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - Modales con `createPortal` a `document.body` (la tarjeta usa `transform` al pasar el mouse) y perezosos desde la tarjeta (`lazyWithRetry`): la carga inicial crece 0.3 KB (sin eso, ~20 KB por FormularioConfigurable).
 - Se quitaron las reglas `.rd-dos*` de App.css (solo las usaba la tarjeta TC · Diesel).
 
+## V00471 (ventana al cruzar el puente; aduana en el formulario)
+- Pedido de Omaf (21-oct):
+  - aduana debajo de Cargada/Vacía;
+  - "por defecto el puente que fue agregado en las reglas de Estatus";
+  - al marcar Verde o el estatus con el puente, un pop-up: "Esta unidad cruzó el puente (nombre). Se envió el cobro a operaciones sin asignar por el monto de (monto)".
+- Se le preguntó, y contestó:
+  - la tarjeta sigue apareciendo desde la unidad;
+  - si la tarifa trae su caseta, manda la tarifa.
+  "El puente de Reglas de Estatus" queda entonces como el respaldo de siempre (Colombia / tráfico), etiquetado así, más el estatus en que se cobra.
+- La ventana usa el estado de `avisos.ts` (mismo `AvisosFlotantes`), para no hacer otro sistema de avisos (V00450). Una a la vez; si llegan dos, la segunda sale al cerrar la primera.
+- La ventana se calcula con `cobroPuenteDelPaso`, también con la bandera encendida (entonces la web no escribe: lo hace el servidor con la misma regla). Si el servidor ya cobró por otro lado, el formulario lo ve al releer el documento y no abre la ventana; en Operaciones Activas la copia de la ficha decide.
+- El campo Aduana del formulario solo en Transfer, por consistencia con Reglas de Estatus (V00470). Para Logística de Cruces se cambia con `isTransfer`.
+- Pendiente de decidir: el puente cambiado a mano en el formulario (`puenteId`) no es el que se cobra (el cobro sale de la regla). Así está desde la V00355.
+
 ## V00470 (Reglas de Estatus: costo del puente en el paso; aduana solo en Transfer)
 - Pedido de Omaf (21-oct, captura del panel "Saldo del puente"): "que se agregue directamente la tarifa y aparezca el costo, pero informativamente; si es Colombia, la caseta y el puente (dos campos)". También: "la aduana solo se debe mostrar en los Transfer".
 - El flujo no tiene convenio, así que el costo es el del catálogo Tipos de Gastos, con la regla de respaldo del cobro (Colombia → caseta + piso; tráfico → AVI / Puente III). La caseta de los Gastos Incluidos de la tarifa del convenio gana en el cobro real; el panel lo dice.

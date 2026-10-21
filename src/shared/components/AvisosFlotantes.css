@@ -57,3 +57,43 @@
 @media (prefers-reduced-motion: reduce) {
   .avf-aviso { animation: none; }
 }
+/* ✅ V00470: ventana (pop-up) que se cierra con "Entendido" */
+.avf-fondo {
+  position: fixed;
+  inset: 0;
+  z-index: 5100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(1, 4, 9, 0.62);
+}
+.avf-ventana {
+  width: min(440px, 100%);
+  padding: 22px 22px 18px;
+  border: 1px solid #30363d;
+  border-top: 4px solid #e3b341;
+  border-radius: 12px;
+  background: #161b22;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.6);
+  animation: avf-entrar 0.2s ease-out;
+}
+.avf-ventana-titulo { margin: 0 0 10px; color: #f0f6fc; font-size: 1.05rem; font-weight: 700; }
+.avf-ventana-texto { margin: 0 0 8px; color: #c9d1d9; font-size: 0.9rem; line-height: 1.5; }
+.avf-ventana-ok {
+  display: block;
+  margin: 14px 0 0 auto;
+  padding: 8px 18px;
+  border: none;
+  border-radius: 6px;
+  background: #D84315;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.avf-ventana-ok:hover { background: #e65a2c; }
+.avf-ventana-ok:focus-visible { outline: 2px solid #f0f6fc; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .avf-ventana { animation: none; }
+}

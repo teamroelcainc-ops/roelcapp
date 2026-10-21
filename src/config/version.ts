@@ -1,3 +1,3 @@
 // ═══════════ VERSIÓN DE LA APLICACIÓN ═══════════
-export const APP_VERSION = 'V00470';
+export const APP_VERSION = 'V00471';
 export const APP_AUTOR = 'Jesús Molero';
