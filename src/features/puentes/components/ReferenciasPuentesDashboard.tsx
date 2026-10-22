@@ -28,7 +28,7 @@ import ModalAgregarSaldoPuente from './ModalAgregarSaldoPuente';
 import { casetaAviOtrosCruces, monedaDePuente, nombrePuenteCatalogo, puentesDelCatalogo } from '../services/puentesCatalogo';
 import { estadoGrupoDe, esGrupoTerminado } from '../../../shared/dominio/operacionCanonica';
 import PanelReporteAvi from './PanelReporteAvi'; // ✅ V00464
-import { claveUnidadDia, coincidirCruces, leerReportePuente, NOMBRE_REPORTE, unirCruces, type CruceAvi, type GrupoReporte, type OpParaCruce, type UnidadConTag } from '../services/reporteAvi';
+import { claveUnidadDia, coincidirCruces, leerReportePuente, NOMBRE_REPORTE, unirCruces, type CruceAvi, type GrupoReporte, type OpParaCruce, type RefDelDia, type UnidadConTag } from '../services/reporteAvi';
 
 // ⚠ Si tu colección de convenios de clientes tiene otro nombre, cámbialo aquí.
 const COLECCION_CONVENIOS = 'convenios_clientes';
@@ -229,6 +229,12 @@ export const ReferenciasPuentesDashboard = () => {
     const set = new Set<string>();
     refsAuto.forEach(r => (r.operacionesIds || []).forEach(id => set.add(String(id))));
     return set;
+  }, [refsAuto]);
+  // ✅ V00475: en qué referencia del Acumulado está cada operación (para la ventana del reporte).
+  const referenciaDeOp = useMemo(() => {
+    const m = new Map<string, string>();
+    refsAuto.forEach(r => (r.operacionesIds || []).forEach(id => m.set(String(id), String(r.consecutivo || ''))));
+    return m;
   }, [refsAuto]);
 
   const eliminarRefAuto = async (r: RefAuto) => {
@@ -905,9 +911,12 @@ export const ReferenciasPuentesDashboard = () => {
   //   puente y unidad. Antes también entraban las del Acumulado y las no completadas.
   //   Las demás operaciones de esas unidades y días (en el Acumulado, sin completar…) no se emparejan,
   //   pero se avisan en el cruce (otrasDelDiaAvi) para no mandar dos veces un mismo cruce.
-  const { opsParaCruce, otrasDelDiaAvi } = ((): { opsParaCruce: OpParaCruce[]; otrasDelDiaAvi: Map<string, string[]> } => {
+  // ✅ V00475: además, TODAS las operaciones de cada unidad y día del reporte (refsDelDia), en cualquier
+  //   estado, para que la ventana muestre cada cruce del Excel con sus referencias.
+  const { opsParaCruce, otrasDelDiaAvi, refsDelDia } = ((): { opsParaCruce: OpParaCruce[]; otrasDelDiaAvi: Map<string, string[]>; refsDelDia: Map<string, RefDelDia[]> } => {
     const otrasDelDia = new Map<string, string[]>();
-    if (!reporteAvi) return { opsParaCruce: [], otrasDelDiaAvi: otrasDelDia };
+    const delDia = new Map<string, RefDelDia[]>();
+    if (!reporteAvi) return { opsParaCruce: [], otrasDelDiaAvi: otrasDelDia, refsDelDia: delDia };
     const dias = new Set(reporteAvi.cruces.map(c => c.fecha));
     const idPorNombre = new Map(unidadesConTag.map(u => [sinAcentos(u.nombre), u.id]));
     const unidadDe = (op: OpPuente): string => {
@@ -923,6 +932,12 @@ export const ReferenciasPuentesDashboard = () => {
       const enAcumulado = idsEnHistorialCalculado.has(String(op._docId || op.id)) || idsEnHistorialCalculado.has(String(op.id));
       const tr = sinAcentos(getTrafico(op));
       const motivo = enAcumulado ? 'en el Acumulado' : !esCompletadaOp(op) ? 'aún sin completar' : (tr !== 'importacion' && tr !== 'exportacion') ? 'sin importación ni exportación' : '';
+      const clave = claveUnidadDia(unidad, fecha);
+      delDia.set(clave, [...(delDia.get(clave) ?? []), {
+        id: String(op.id), ref,
+        estado: enAcumulado ? 'acumulado' : !esCompletadaOp(op) ? 'sinCompletar' : motivo ? 'otroTrafico' : 'porAsignar',
+        referencia: enAcumulado ? (referenciaDeOp.get(String(op._docId || op.id)) || referenciaDeOp.get(String(op.id)) || '') : '',
+      }]);
       if (motivo) {
         const k = claveUnidadDia(unidad, fecha);
         otrasDelDia.set(k, [...(otrasDelDia.get(k) ?? []), `${ref} (${motivo})`]);
@@ -936,7 +951,8 @@ export const ReferenciasPuentesDashboard = () => {
         puente: nombresPuenteOp(op).join(' + '), grupo: grupoPuenteOp(op) ?? '',
       });
     });
-    return { opsParaCruce: lista, otrasDelDiaAvi: otrasDelDia };
+    delDia.forEach((l) => l.sort((a, b) => a.ref.localeCompare(b.ref)));
+    return { opsParaCruce: lista, otrasDelDiaAvi: otrasDelDia, refsDelDia: delDia };
   })();
   // Operaciones cuya hora de Verde aún no llega (la coincidencia por hora puede cambiar al llegar).
   const horasVerdePendientes = opsParaCruce.filter(o => !(o.id in horasVerde)).length;
@@ -1590,6 +1606,7 @@ export const ReferenciasPuentesDashboard = () => {
           {/* ✅ V00466: ventana con las operaciones de Operaciones sin asignar que coinciden */}
           {reporteAvi && resultadoAvi && reporteAviAbierto && (
             <PanelReporteAvi grupo={reporteAvi.grupo} nombreArchivo={reporteAvi.nombre} filas={resultadoAvi.filas} opsSinCruce={resultadoAvi.opsSinCruce} omitidas={reporteAvi.omitidas}
+              refsDelDia={refsDelDia} cargandoOps={!opsPuentesListas}
               avisoRango={avisoRangoAvi} horasPendientes={horasVerdePendientes}
               onEnviar={(ids) => { setSeleccionadas(ids); setReporteAviAbierto(false); abrirModalGenerar(); }}
               onMarcar={(ids) => { setSeleccionadas(ids); setReporteAviAbierto(false); }}

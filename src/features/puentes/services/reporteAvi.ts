@@ -275,6 +275,24 @@ export interface OpParaCruce {
 /** coincide = tiene operación por asignar · sinOperacion = la unidad no tiene una por asignar para ese cruce. */
 export type EstadoCruce = 'coincide' | 'sinOperacion' | 'tagSinUnidad';
 
+/**
+ * ✅ V00475: una operación de esa UNIDAD ese DÍA, en cualquier estado, para mostrarla junto al
+ * cruce en la ventana del reporte (solo las 'porAsignar' se pueden enviar al Acumulado).
+ */
+export interface RefDelDia {
+  id: string;
+  ref: string;
+  estado: 'porAsignar' | 'acumulado' | 'sinCompletar' | 'otroTrafico';
+  /** Consecutivo de la referencia del Acumulado donde ya está ('' si no). */
+  referencia: string;
+}
+export const ETIQUETA_REF_DEL_DIA: Record<RefDelDia['estado'], string> = {
+  porAsignar: 'Por asignar',
+  acumulado: 'En el Acumulado',
+  sinCompletar: 'Sin completar',
+  otroTrafico: 'Sin importación ni exportación',
+};
+
 export interface ResultadoCruce {
   cruce: CruceAvi;
   unidad: UnidadConTag | null;

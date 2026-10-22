@@ -22,9 +22,10 @@
 .pra-tabla th { position: sticky; top: 0; z-index: 1; background: #161b22; color: #8d97a3; font-size: 0.72rem; font-weight: 600; text-align: left; padding: 8px 12px; border-bottom: 1px solid #30363d; white-space: nowrap; }
 .pra-tabla td { padding: 8px 12px; color: #c9d1d9; border-bottom: 1px solid #1a212b; vertical-align: top; white-space: nowrap; }
 .pra-tabla tbody tr:last-child td { border-bottom: none; }
-.pra-tabla--clic tbody tr { cursor: pointer; }
-.pra-tabla--clic tbody tr:hover td { background: rgba(88, 166, 255, 0.05); }
-.pra-tabla--clic tbody tr.pra-fila--sel:hover td { background: rgba(216, 67, 21, 0.12); }
+/* ✅ V00475: solo los renglones que coinciden se marcan con clic */
+.pra-tabla tbody tr.pra-fila--clic { cursor: pointer; }
+.pra-tabla tbody tr.pra-fila--clic:hover td { background: rgba(88, 166, 255, 0.05); }
+.pra-tabla tbody tr.pra-fila--clic.pra-fila--sel:hover td { background: rgba(216, 67, 21, 0.12); }
 .pra-fila--sel td { background: rgba(216, 67, 21, 0.08); }
 .pra-col-chk { width: 1%; }
 .pra-col-chk input { margin: 0; cursor: pointer; vertical-align: middle; }
@@ -56,3 +57,16 @@
   .pra-pie, .pra-pie-izq, .pra-pie-der { width: 100%; }
   .pra-pie-der .pra-btn { flex: 1 1 auto; }
 }
+/* ✅ V00475: chips que filtran y referencias de la unidad ese día */
+.pra-filtro { font: inherit; font-size: 0.74rem; font-weight: 700; cursor: pointer; }
+.pra-chip--todos { color: #c9d1d9; border-color: #30363d; background: transparent; }
+.pra-filtro--activo { box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.55); }
+.pra-filtro:focus { outline: none; }
+.pra-filtro:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
+.pra-refs { white-space: normal; min-width: 240px; }
+.pra-lista-refs { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; }
+.pra-ref-dia { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.pra-ref-estado { font-size: 0.74rem; color: #8d97a3; }
+.pra-ref-dia--coincide .pra-ref-estado { color: #56d364; font-weight: 700; }
+.pra-ref-dia--porAsignar .pra-ref-estado { color: #79c0ff; }
+.pra-ref-dia--acumulado .pra-ref-estado { color: #e3b341; }

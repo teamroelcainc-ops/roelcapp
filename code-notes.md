@@ -207,6 +207,17 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - Modales con `createPortal` a `document.body` (la tarjeta usa `transform` al pasar el mouse) y perezosos desde la tarjeta (`lazyWithRetry`): la carga inicial crece 0.3 KB (sin eso, ~20 KB por FormularioConfigurable).
 - Se quitaron las reglas `.rd-dos*` de App.css (solo las usaba la tarjeta TC · Diesel).
 
+## V00475 (ventana del reporte de puente: el Excel con las referencias de cada unidad y día)
+- Omaf (22-oct): "al cargar cualquiera de los excel de los puentes se abra un modal, con la información del excel y las referencias que coincidan en unidad y fecha". La ventana ya se abría (V00466), pero solo mostraba las operaciones de Operaciones sin asignar que coincidían, y el Excel quedaba plegado.
+- "Referencias" se mostró de las dos formas que usa la app:
+  - la referencia de la operación (TR-…);
+  - si ya está en el Acumulado, el consecutivo de la referencia del puente (AVI-/PT3-/PTC-…).
+- Solo se pueden enviar al Acumulado las que coinciden y están por asignar (la regla de V00466 no cambia); las demás se muestran para revisar.
+- La búsqueda sigue sobre las operaciones que ya trae el módulo (las 2,500 más recientes por fechaServicio). Para días más viejos sale el aviso de rango de siempre.
+
+## V00474 (los movimientos no llevan aduana)
+- Omaf (22-oct, captura de la lista): "los movimientos no tienen aduana, quita esa opción". Un movimiento se reconoce porque su tráfico contiene "movimiento" (catálogo de tráfico: Movimiento LDO, Movimiento NLD), con la misma normalización del resto (`normPuente`). La regla es `flujoLlevaAduana`: Transfer y tráfico que no es movimiento.
+
 ## V00473 (eliminar flujos; puente elegido por paso)
 - Omaf (22-oct):
   - "poder eliminar reglas de estatus" → el flujo completo, con `eliminarRegistro` (Papelera + nota + Autorizaciones). `config_flujos_operacion` no está en `COLECCIONES_NO_BORRABLES`;
