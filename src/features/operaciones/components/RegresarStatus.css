@@ -1,0 +1,45 @@
+/* ✅ V00476: "Regresar estatus" (ficha de Servicios Completados) */
+.rgs-btn { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; border: 1px solid rgba(227, 179, 65, 0.45); border-radius: 6px; background: #21262d; color: #e3b341; font-family: inherit; font-size: 0.85rem; font-weight: 700; cursor: pointer; transition: background 0.2s; white-space: nowrap; }
+.rgs-btn:hover { background: rgba(227, 179, 65, 0.12); }
+.rgs-btn:focus-visible, .rgs-guardar:focus-visible, .rgs-cerrar:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
+
+.rgs-fondo { position: fixed; inset: 0; z-index: 3500; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(1, 4, 9, 0.7); }
+.rgs-modal { display: flex; flex-direction: column; width: min(520px, 100%); max-height: 90vh; border: 1px solid #30363d; border-radius: 12px; background: #161b22; color: #c9d1d9; box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5); }
+.rgs-enc { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 18px; border-bottom: 1px solid #30363d; }
+.rgs-titulo { margin: 0; font-size: 1rem; color: #f0f6fc; }
+.rgs-sub { margin: 4px 0 0; font-size: 0.82rem; color: #8b949e; }
+.rgs-sub b { color: #e3b341; }
+.rgs-cerrar { padding: 2px 4px; border: none; background: none; color: #8b949e; font-size: 1rem; cursor: pointer; }
+.rgs-cerrar:hover { color: #f0f6fc; }
+
+.rgs-cuerpo { display: flex; flex-direction: column; gap: 8px; padding: 16px 18px; overflow-y: auto; }
+.rgs-vacio { margin: 0; padding: 12px; border: 1px dashed #30363d; border-radius: 8px; color: #8b949e; font-size: 0.85rem; }
+.rgs-grupo { margin: 0; padding: 0; border: none; min-width: 0; }
+.rgs-lbl { display: block; margin: 4px 0 6px; padding: 0; font-size: 0.78rem; font-weight: 700; color: #c9d1d9; }
+.rgs-lista { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; max-height: 300px; overflow-y: auto; }
+.rgs-opcion { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid #30363d; border-radius: 8px; background: #0d1117; cursor: pointer; }
+.rgs-opcion:hover { border-color: #8b949e; }
+.rgs-opcion--elegida { border-color: #d84315; background: rgba(216, 67, 21, 0.1); }
+.rgs-opcion--elegida:hover { border-color: #e65100; }
+.rgs-opcion input { flex-shrink: 0; margin: 0; accent-color: #d84315; }
+.rgs-nombre { flex: 1; min-width: 0; color: #f0f6fc; font-size: 0.88rem; font-weight: 600; overflow-wrap: anywhere; }
+.rgs-paso { color: #8b949e; font-size: 0.75rem; white-space: nowrap; }
+.rgs-etiqueta { padding: 2px 8px; border: 1px solid #238636; border-radius: 999px; color: #3fb950; font-size: 0.7rem; font-weight: 700; white-space: nowrap; }
+.rgs-fecha { max-width: 260px; }
+
+.rgs-efectos { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.rgs-efecto { margin: 0; padding: 8px 10px; border: 1px solid rgba(31, 111, 235, 0.45); border-radius: 6px; background: rgba(31, 111, 235, 0.08); color: #c9d1d9; font-size: 0.82rem; }
+.rgs-efecto b { color: #58a6ff; }
+.rgs-aviso { margin: 0; padding: 8px 10px; border: 1px solid #9e6a03; border-radius: 6px; background: rgba(187, 128, 9, 0.1); color: #e3b341; font-size: 0.8rem; }
+
+.rgs-pie { display: flex; justify-content: flex-end; gap: 10px; padding: 14px 18px; border-top: 1px solid #30363d; }
+.rgs-guardar { padding: 8px 18px; border: none; border-radius: 6px; background: #d84315; color: #fff; font-family: inherit; font-weight: 700; cursor: pointer; }
+.rgs-guardar:hover:not(:disabled) { background: #e65100; }
+.rgs-guardar:disabled { opacity: 0.6; cursor: not-allowed; }
+
+@media (max-width: 560px) {
+  .rgs-opcion { flex-wrap: wrap; }
+  .rgs-fecha { max-width: none; }
+  .rgs-pie { flex-wrap: wrap; }
+  .rgs-pie > button { flex: 1 1 auto; }
+}

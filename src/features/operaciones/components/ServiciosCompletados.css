@@ -238,9 +238,6 @@
 .sc-x221 { padding: 16px 12px; color: #c9d1d9; }
 .sc-x222 { padding: 16px 12px; color: #10b981; font-weight: bold; }
 .sc-x223 { padding: 16px 24px; border-top: 1px solid #30363d; text-align: right; background-color: #161b22; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
-.sc-x224 { max-width: 450px; background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; }
-.sc-x225 { padding: 24px; }
-.sc-x226 { width: 100%; margin-top: 24px; padding: 12px; border-radius: 6px; font-weight: bold; }
 .sc-x227 { z-index: 2100; }
 .sc-x228 { max-width: 760px; width: 95%; max-height: 88vh; background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; display: flex; flex-direction: column; }
 .sc-x229 { border-bottom: 1px solid #30363d; padding: 18px 24px; display: flex; justify-content: space-between; align-items: center; }
@@ -305,7 +302,6 @@
   .sc-x207 { padding: 14px 12px; }
   .sc-x208 { flex-wrap: wrap; }
   .sc-x214 { padding: 14px 12px; }
-  .sc-x225 { padding: 14px 12px; }
   .sc-x229 { flex-wrap: wrap; }
   .sc-x233 { flex-wrap: wrap; }
 }
@@ -390,3 +386,6 @@
 .sc-cfg-pregunta { color: #c9d1d9; font-size: 0.85rem; font-weight: 600; }
 .sc-cfg-guardar { display: flex; align-items: center; gap: 8px; margin: 10px 0 4px; }
 .sc-cfg-input { flex: 1; padding: 8px 10px; font-size: 0.85rem; }
+
+/* ✅ V00476: en la bitácora, el horario de un "Regresar estatus" dice de qué estatus salió */
+.sc-bitacora-regreso { display: inline-block; margin-left: 8px; padding: 1px 8px; border: 1px solid rgba(227, 179, 65, 0.45); border-radius: 999px; color: #e3b341; font-size: 0.72rem; font-weight: 600; white-space: nowrap; }

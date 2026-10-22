@@ -58,7 +58,7 @@
     "src/features/operaciones/components/FormularioOperacion.tsx": 292,
     "src/features/operaciones/components/OperacionesDashboard.tsx": 76,
     "src/features/operaciones/components/ServiciosCancelados.tsx": 97,
-    "src/features/operaciones/components/ServiciosCompletados.tsx": 143,
+    "src/features/operaciones/components/ServiciosCompletados.tsx": 138,
     "src/features/operaciones/config/statusRules.ts": 20,
     "src/features/operaciones/context/FormularioOperacionContext.tsx": 8,
     "src/features/operaciones/services/operacionesService.ts": 6,
@@ -85,6 +85,6 @@
     "src/utils/lazyWithRetry.ts": 2,
     "functions/src/index.ts": 13
   },
-  "anyTotal": 2261,
+  "anyTotal": 2256,
   "desactivadosDeps": 89
 }

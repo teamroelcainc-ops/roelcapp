@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback, useEffectEvent } from 'react';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { useHandlerEstable } from '../hooks/useHandlerEstable';
-import { datosAAplicar, notificarOperacionGuardada, suscribirOperacionGuardada } from '../../../utils/operacionesBus';
+import { datosAAplicar, suscribirOperacionGuardada } from '../../../utils/operacionesBus';
 import { CAMPOS_AJENOS_AL_FORMULARIO } from '../services/camposAjenos'; // ✅ V00451
 import { sinPruebas, esOperacionPrueba } from '../../../utils/operacionPrueba';
 import { addDoc, collection, query, getDocs, getDoc, orderBy, limit, where, startAfter, documentId, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
@@ -17,7 +17,6 @@ import { sincronizarNombresOperaciones } from '../../../utils/sincronizarNombres
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF } from '../../../utils/pdfGenerator'; 
 import * as XLSX from 'xlsx';
 // ✅ NUEVO: reglas de status (botones dinámicos + cascada) — igual que Operaciones Activas
-import { obtenerBotonesHorarioDinamicos, resolverCascadaStatus } from '../config/statusRules';
 // ✅ NUEVO: visor y subida de documentos ligados a la operación
 import { DocumentosLista } from '../../documentos/DocumentosLista';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
@@ -27,9 +26,6 @@ import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00
 import { almacenSesion } from '../../../utils/cacheMemoria';
 import { obtenerFlags, useFlags } from '../../../shared/data/flags';
 import { paginaOperaciones, todasLasPaginas } from '../../../shared/data/consultas';
-import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
-import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
-import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
 import { docPorId, nombreEmpresaPdf } from '../../../utils/docPorId';
 import { datosDireccionEmpresaPdf, direccionesParaPdf, leerParaDocumento } from '../../../utils/direccionPdf';
 import { mostrarCartaPara, useConfigCarta } from '../../../utils/configCartaInstrucciones';
@@ -46,6 +42,8 @@ import { COLUMNAS_STORAGE_KEY, cargarColumnasGuardadas } from './completados/col
 import { describirFiltrosLog, fmtSaldoPuente, normalizarFechaServicioISO, normalizarMoneda } from './completados/formatos';
 import { colorTipoOperacion, fmtFechaAuditoria } from '../services/formatosOperacion';
 import TagPuenteUnidad from '../../puentes/components/TagPuenteUnidad'; // ✅ V00465
+import RegresarStatus from './RegresarStatus'; // ✅ V00476
+import { avisar } from '../../../shared/data/avisos';
 import { grupoTagDeOperacion } from '../../puentes/services/tagPuente';
 
 // ✅ V00439 (Fase 3.x): catálogos del módulo (alias → colección) desde el
@@ -237,16 +235,10 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     return nombresUsuarios[t] || t;
   };
 
-  const [modalHorarios, setModalHorarios] = useState<'cerrado' | 'registrar' | 'historial'>('cerrado');
+  // ✅ V00476: el registro manual de estatus (muerto desde la V00365) se cambió por "Regresar estatus".
+  const [modalHorarios, setModalHorarios] = useState<'cerrado' | 'historial'>('cerrado');
   const [historialList, setHistorialList] = useState<any[]>([]);
   const [cargandoHorarios, setCargandoHorarios] = useState(false);
-
-  // ✅ NUEVO: edición de horario/status (igual que Operaciones Activas)
-  const [nuevoStatus, setNuevoStatus] = useState('');
-  const [nuevaFechaHora, setNuevaFechaHora] = useState('');
-  const [botonesDisponibles, setBotonesDisponibles] = useState<string[]>([]);
-  const [guardandoStatusRapido, setGuardandoStatusRapido] = useState<string | null>(null);
-  const [ultimoStatusGuardado, setUltimoStatusGuardado] = useState<string | null>(null);
 
   // ✅ NUEVO: visor/subida de documentos de la operación
   const [mostrarDocumentos, setMostrarDocumentos] = useState(false);
@@ -911,23 +903,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     } catch { /* almacenamiento lleno o no disponible: ignorar */ }
   }, [columnasTabla]);
 
-  const cargarBotonesDelFlujo = useEffectEvent(() => {
-    const cargarBotones = async () => {
-      if (operacionViendo) {
-        let op = operacionViendo;
-        if (!op.statusNombre && op.status) {
-          const resuelto = resolverStatus(op.status);
-          if (resuelto.nombre && resuelto.nombre !== resuelto.id) op = { ...op, statusNombre: resuelto.nombre };
-        }
-        const botones = await obtenerBotonesHorarioDinamicos(op);
-        setBotonesDisponibles(botones || []);
-      } else {
-        setBotonesDisponibles([]);
-      }
-    };
-    cargarBotones();
-  });
-  useEffect(() => cargarBotonesDelFlujo(), [operacionViendo, mapaStatus]);
 
   const mostrarDato = (text: any) => (text && text !== '' ? text : '-');
   
@@ -976,9 +951,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     return `$ ${parseFloat(monto).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
   
-  // ✅ V00365: la fila "Siguiente paso / Registrar Status" salió de la ficha
-  //   (la operación ya está completada); estas piezas quedan por si se
-  //   reactiva el registro manual desde Completados.
   const verHistorial = async () => {
     setModalHorarios('historial');
     setCargandoHorarios(true);
@@ -994,143 +966,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     setCargandoHorarios(false);
   };
 
-  const abrirRegistroHorario = () => {
-    // ✅ FIX: hora local real del dispositivo (o de la zona fija configurada),
-    //    sin el truco de tzOffset que dependía del UTC.
-    const localISOTime = ahoraLocalISOCorto();
-    setNuevaFechaHora(localISOTime);
-    setNuevoStatus(botonesDisponibles[0] || '');
-    setModalHorarios('registrar');
-  };
-
-  const aplicarStatusEnMemoria = (opId: string, statusId: string, statusNombre: string) => {
-    setOperacionesGlobales(prev => {
-      const next = prev.map((o: any) => (o.id === opId ? { ...o, status: statusId, statusNombre } : o));
-      if (filtrosAplicados) guardarCacheActual(next);
-      return next;
-    });
-    setOperacionViendo((prev: any) => (prev && prev.id === opId ? { ...prev, status: statusId, statusNombre } : prev));
-  };
-
-  const guardarHorario = async () => {
-    if (!operacionViendo) return;
-    if (!nuevoStatus || !nuevaFechaHora) return alert('Completa la fecha y el estatus.');
-    setCargandoHorarios(true);
-    try {
-      const { id: statusId, nombre: statusNombreResuelto } = resolverStatus(nuevoStatus);
-      const batch = writeBatch(db);
-      const horarioRef = doc(collection(db, 'horarios'));
-      batch.set(horarioRef, {
-        operacionId: operacionViendo.id,
-        status: statusId,
-        statusNombre: statusNombreResuelto,
-        fechaHora: nuevaFechaHora,
-        registradoEn: new Date().toISOString()
-      });
-      const opRef = doc(db, 'operaciones', String(operacionViendo.id));
-      batch.update(opRef, { status: statusId, statusNombre: statusNombreResuelto, ...ajusteSueldoPorStatus(operacionViendo, statusNombreResuelto) }); // ✅ V00387
-      await batch.commit();
-      if (esStatusVerde(statusNombreResuelto)) registrarVerdeAutomatico({ ...operacionViendo }, statusNombreResuelto, nuevaFechaHora); // ✅ V00402
-      notificarOperacionGuardada(String(operacionViendo.id), { ...operacionViendo, status: statusId, statusNombre: statusNombreResuelto }, 'completados-status'); // ✅ V00126
-
-      // ✅ HISTORIAL: cambio de status con el valor anterior y el nuevo.
-      const refLogH = operacionViendo.ref || operacionViendo.id?.substring(0, 6) || operacionViendo.id;
-      const statusAnteriorH = operacionViendo.statusNombre || operacionViendo.status || '(sin status)';
-      registrarLog('Servicios Completados', 'Edición', `Cambió el status de la operación ${refLogH}: "${statusAnteriorH}" → "${statusNombreResuelto}" (horario del evento: ${nuevaFechaHora})`).catch(() => {});
-
-      aplicarStatusEnMemoria(operacionViendo.id, statusId, statusNombreResuelto);
-      alert('Horario registrado y Estatus actualizado.');
-      setModalHorarios('cerrado');
-    } catch (e) {
-      console.error('[ServiciosCompletados] Error guardarHorario:', e);
-      alert('Error al actualizar la base de datos.');
-    }
-    setCargandoHorarios(false);
-  };
-
-  const registrarStatusRapido = async (statusNombre: string) => {
-    if (!operacionViendo || !statusNombre) return;
-    if (guardandoStatusRapido) return;
-
-    const _normalizar = (s: string) =>
-      String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-    if (_normalizar(statusNombre).includes('cancel')) {
-      const refOp = operacionViendo.ref || operacionViendo.id?.substring(0, 6) || 'esta operación';
-      const confirmado = window.confirm(
-        `¿Seguro que deseas CANCELAR la operación ${refOp}?\n\n` +
-        `Se registrará el status "${statusNombre}" y la referencia quedará cancelada.`
-      );
-      if (!confirmado) return;
-    }
-
-    setGuardandoStatusRapido(statusNombre);
-
-    const operacionPrevia = operacionViendo;
-    const operacionesPrevias = operacionesGlobales;
-    const botonesPrevios = botonesDisponibles;
-
-    try {
-      let opParaCascada = operacionViendo;
-      if (!opParaCascada.statusNombre && opParaCascada.status) {
-        const r = resolverStatus(opParaCascada.status);
-        opParaCascada = { ...opParaCascada, statusNombre: r.nombre };
-      }
-
-      const cadenaStatus = await resolverCascadaStatus(statusNombre, opParaCascada);
-      const cadenaResuelta = cadenaStatus.map(resolverStatus);
-      const statusFinal = cadenaResuelta[cadenaResuelta.length - 1];
-
-      aplicarStatusEnMemoria(operacionViendo.id, statusFinal.id, statusFinal.nombre);
-
-      obtenerBotonesHorarioDinamicos({ ...operacionViendo, status: statusFinal.id, statusNombre: statusFinal.nombre })
-        .then(botones => setBotonesDisponibles(botones || []))
-        .catch(() => {});
-
-      // ✅ FIX: hora local consistente (ver src/utils/fechaHoraLocal.ts).
-      const fechaHoraLocal = ahoraLocalISOCorto();
-      const registradoEn = new Date().toISOString();
-
-      const batch = writeBatch(db);
-      cadenaResuelta.forEach((statusPaso, idx) => {
-        const horarioRef = doc(collection(db, 'horarios'));
-        batch.set(horarioRef, {
-          operacionId: operacionViendo.id,
-          status: statusPaso.id,
-          statusNombre: statusPaso.nombre,
-          fechaHora: fechaHoraLocal,
-          registradoEn,
-          ordenCascada: idx,
-          esAutomatico: idx > 0,
-        });
-      });
-      const opRef = doc(db, 'operaciones', String(operacionViendo.id));
-      batch.update(opRef, { status: statusFinal.id, statusNombre: statusFinal.nombre, ...ajusteSueldoPorStatus(operacionViendo, statusFinal.nombre) }); // ✅ V00387
-      await batch.commit();
-      { const pasoVerde = cadenaResuelta.find((p) => esStatusVerde(p.nombre)); if (pasoVerde) registrarVerdeAutomatico({ ...operacionViendo }, pasoVerde.nombre, fechaHoraLocal); } // ✅ V00402
-
-      // ✅ HISTORIAL: status rápido (incluye la cascada de status automáticos).
-      const refLogR = operacionViendo.ref || operacionViendo.id?.substring(0, 6) || operacionViendo.id;
-      const statusAnteriorR = operacionPrevia.statusNombre || operacionPrevia.status || '(sin status)';
-      const cascadaTxt = cadenaResuelta.length > 1 ? ` (cascada: ${cadenaResuelta.map(c => c.nombre).join(' → ')})` : '';
-      registrarLog('Servicios Completados', 'Edición', `Cambió el status de la operación ${refLogR}: "${statusAnteriorR}" → "${statusFinal.nombre}"${cascadaTxt}`).catch(() => {});
-
-      setGuardandoStatusRapido(null);
-      setUltimoStatusGuardado(statusNombre);
-      setTimeout(() => setUltimoStatusGuardado(null), 1500);
-    } catch (e: any) {
-      console.error('[ServiciosCompletados] Error al registrar status:', e);
-      setOperacionViendo(operacionPrevia);
-      setOperacionesGlobales(operacionesPrevias);
-      setBotonesDisponibles(botonesPrevios);
-      setGuardandoStatusRapido(null);
-      alert('Error al guardar el status. Se revirtió el cambio.');
-    }
-  };
-
-  // ✅ V00365: la fila "Siguiente paso / Registrar Status" salió de la ficha
-  //   (la operación ya está completada); estas piezas quedan por si se
-  //   reactiva el registro manual desde Completados.
-  void ultimoStatusGuardado; void abrirRegistroHorario; void registrarStatusRapido;
 
   // ✅ V00448: los documentos ESPERAN sus catálogos. Las unidades, operadores externos y
   //   direcciones solo se abren con la ficha o el formulario; en el primer clic de la sesión
@@ -1443,6 +1278,30 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       console.error('[ServiciosCompletados] Error al eliminar la operación:', err);
       alert(`No se pudo eliminar la operación.\n\nDetalle: ${err?.message || err}`);
     }
+  };
+
+  // ✅ V00476: la operación regresó a otro estatus. A uno de Operaciones Activas sale de esta lista
+  //   (y de las búsquedas guardadas, que la seguirían trayendo como completada); a Completado o
+  //   Falso se queda con su estatus nuevo.
+  const alRegresarStatus = (op: Record<string, unknown>, cambios: Record<string, unknown>, destino: { nombre: string }, vuelveAActivas: boolean) => {
+    const id = String(op._docId || op.id || '');
+    const es = (o: { id?: unknown; _docId?: unknown } | null | undefined) => !!o && String(o._docId || o.id || '') === id;
+    const refTxt = String(op.ref || id);
+    if (vuelveAActivas) {
+      const restantes = operacionesGlobales.filter((o) => !es(o));
+      setOperacionesGlobales(restantes);
+      limpiarCachesPorPrefijo(CACHE_PREFIX);
+      try { almacenSesion.removeItem(CACHE_KEY_TODOS); } catch { /* ignorar */ }
+      if (filtrosAplicados) guardarCacheActual(restantes);
+      setOperacionViendo(null);
+      avisar({ titulo: 'Estatus regresado', texto: `${refTxt} regresó a ${destino.nombre} y ya está en Operaciones Activas.`, tipo: 'info' });
+      return;
+    }
+    const lista = operacionesGlobales.map((o) => (es(o) ? { ...o, ...cambios } : o));
+    setOperacionesGlobales(lista);
+    if (filtrosAplicados) guardarCacheActual(lista);
+    setOperacionViendo((prev: Record<string, unknown> | null) => (es(prev) ? { ...prev, ...cambios } : prev));
+    avisar({ titulo: 'Estatus cambiado', texto: `${refTxt} quedó como ${destino.nombre}.`, tipo: 'info' });
   };
 
   const obtenerConsecutivoRef = (op: any): number => {
@@ -2967,6 +2826,14 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
                     Bitácora
                   </button>
+                  {/* ✅ V00476: regresar a cualquier estatus de su flujo (también desde Falso) */}
+                  <RegresarStatus
+                    op={operacionViendo}
+                    modulo="Servicios Completados"
+                    resolverStatus={resolverStatus}
+                    catalogoStatus={(catalogosGlobales.statusServicio || []).map((s) => String(s.nombre || '')).filter(Boolean)}
+                    onRegresada={(cambios, destino, vuelveAActivas) => alRegresarStatus(operacionViendo, cambios, destino, vuelveAActivas)}
+                  />
                   <button onClick={() => handleEditarOperacion(operacionViendo)} title="Editar Operación" style={{ ...btnSecondaryActionStyle, border: '1px solid #58a6ff', color: '#58a6ff' }}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                     Editar
@@ -3629,7 +3496,10 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                       historialList.map((h: any) => (
                         <tr className="sc-x220" key={h.id}>
                           <td className="sc-x221">{new Date(h.fechaHora).toLocaleString('es-MX')}</td>
-                          <td className="sc-x222">{h.statusNombre || mostrarDatoMapeado(h.status, 'statusServicio', 'nombre')}</td>{/* ✅ V00364: el horario guarda statusNombre desnormalizado */}
+                          <td className="sc-x222">
+                            {h.statusNombre || mostrarDatoMapeado(h.status, 'statusServicio', 'nombre')}{/* ✅ V00364: el horario guarda statusNombre desnormalizado */}
+                            {h.regreso && <span className="sc-bitacora-regreso">regresó de {h.statusAnteriorNombre || 'otro estatus'}</span>}{/* ✅ V00476 */}
+                          </td>
                         </tr>
                       ))
                     )}
@@ -3639,46 +3509,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
             </div>
             <div className="sc-x223">
               <button onClick={() => setModalHorarios('cerrado')} className="btn btn-outline sc-x209">Cerrar Historial</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {modalHorarios === 'registrar' && (
-        <div className="modal-overlay sc-x210">
-          <div className="form-card sc-x224">
-            <div className="form-header sc-x212">
-              <h2 className="sc-x213">Registrar Movimiento (Fecha Personalizada)</h2>
-              <button onClick={() => setModalHorarios('cerrado')} className="btn-window close">✕</button>
-            </div>
-            <div className="sc-x225">
-              <p className="sc-x98">
-                Usa este formulario solo si necesitas registrar un movimiento con una fecha y hora distinta a la actual.
-              </p>
-              <div className="form-group">
-                <label className="form-label sc-x3">Fecha y Hora</label>
-                <input type="datetime-local" className="form-control" value={nuevaFechaHora} onChange={e => setNuevaFechaHora(e.target.value)} />
-              </div>
-              <div className="form-group">
-                <label className="form-label sc-x3">Estatus / Hito</label>
-                <select className="form-control" value={nuevoStatus} onChange={e => setNuevoStatus(e.target.value)}>
-                  <option value="">-- Selecciona un status --</option>
-                  {botonesDisponibles.length > 0 ? (
-                    botonesDisponibles.map((botonStr: string) => (
-                      <option key={botonStr} value={botonStr}>{botonStr}</option>
-                    ))
-                  ) : (
-                    (catalogosGlobales.statusServicio || [])
-                      .filter((s: any) => s.nombre)
-                      .map((s: any) => (
-                        <option key={s.id} value={s.nombre}>{s.nombre}</option>
-                      ))
-                  )}
-                </select>
-              </div>
-              <button onClick={guardarHorario} disabled={cargandoHorarios} className="btn btn-primary sc-x226">
-                {cargandoHorarios ? 'Actualizando...' : 'Guardar y Actualizar Operación'}
-              </button>
             </div>
           </div>
         </div>

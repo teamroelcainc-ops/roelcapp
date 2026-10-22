@@ -2,6 +2,8 @@
 import React, { useState, useEffect, useMemo, useCallback, useEffectEvent, useRef } from 'react';
 import { BookOpen, ChevronLeft, ChevronRight, CircleCheck, Coins, Columns3, Download, FileText, Funnel, ListChecks, ListOrdered, Pencil, Plus, RefreshCw, Search, SlidersHorizontal, Trash2, X } from 'lucide-react'; // ✅ V00456
 import { datosAAplicar, notificarOperacionGuardada, suscribirOperacionGuardada } from '../../../utils/operacionesBus';
+import type { OperacionGuardadaDetalle } from '../../../utils/operacionesBus';
+import { ORIGEN_REGRESO_STATUS } from '../services/regresoStatus'; // ✅ V00476
 import { useModuloEscuchando } from '../../../utils/moduloVivoContexto';
 import { useHandlerEstable } from '../hooks/useHandlerEstable';
 import { esOperacionPrueba, sinPruebas } from '../../../utils/operacionPrueba';
@@ -375,6 +377,19 @@ const OperacionesDashboard = () => {
     const t = setTimeout(sacarFinalizadas, 0);
     return () => clearTimeout(t);
   }, [hayFinalizadas, operacionesGlobales]);
+
+  // ✅ V00476: una operación que regresó desde Servicios Completados ("Regresar estatus") entra a
+  //   la lista sin "Actualizar" (la lista se lee por páginas, sin listener).
+  const recibirRegreso = useEffectEvent((d: OperacionGuardadaDetalle) => {
+    if (d.origen !== ORIGEN_REGRESO_STATUS) return;
+    const op: Record<string, unknown> = { id: d.id, ...d.data, _docId: d.id };
+    if (!esOperacionActiva(op)) return;
+    setOperacionesGlobales((prev) => {
+      const i = prev.findIndex((o) => String(o._docId || o.id) === d.id);
+      return i >= 0 ? prev.map((o, j) => (j === i ? { ...o, ...op } : o)) : [op, ...prev];
+    });
+  });
+  useEffect(() => suscribirOperacionGuardada((d) => recibirRegreso(d)), []);
 
   // ✅ MODIFICADO (V00114) — SINCRONIZAR NOMBRES: ahora usa la utilidad
   //   compartida `sincronizarNombresOperaciones` (misma que Servicios
@@ -2898,6 +2913,7 @@ const OperacionesDashboard = () => {
                         <div className="od-x170">
                           {h.statusNombre || resolverStatus(h.status).nombre || h.status}
                           {h.esAutomatico && <span className="od-x171">(automático)</span>}
+                          {h.regreso && <span className="od-x171">(regresó de {h.statusAnteriorNombre || 'otro estatus'})</span>}{/* ✅ V00476 */}
                         </div>
                         <div className="od-x172">{formatearFechaHora(h.fechaHora)}</div>
                       </div>

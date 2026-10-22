@@ -207,6 +207,17 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - Modales con `createPortal` a `document.body` (la tarjeta usa `transform` al pasar el mouse) y perezosos desde la tarjeta (`lazyWithRetry`): la carga inicial crece 0.3 KB (sin eso, ~20 KB por FormularioConfigurable).
 - Se quitaron las reglas `.rd-dos*` de App.css (solo las usaba la tarjeta TC · Diesel).
 
+## V00476 (regresar el estatus de una operación completada o en Falso)
+- Omaf (22-oct, captura de la ficha de TR-221026-011 en 7. Falso): "necesito la posibilidad de regresarlo a cualquier status anterior después de haberse completado o enviado a falso".
+- "Cualquier status anterior" = los estatus del flujo de la operación (`obtenerNombresStatusDelFlujo`, en orden), sin el actual ni Cancelado (cancelar tiene su propio camino con confirmación). Se incluyen Completado/Falso para corregir uno por otro. Sin flujo: los de la bitácora; sin bitácora: el catálogo.
+- Hace lo mismo que marcar ese estatus en Activas → Registrar movimiento: horario en la bitácora, sueldo de Falso (`ajusteSueldoPorStatus`), puente si el estatus lo cobra y aún no se cobró (sin la bandera lo escribe la web; con ella, el servidor), ventana del cruce y Verde automático. Sin cascada (se elige el estatus exacto).
+- Va en `runTransaction`: el sueldo es dinero y la lista de Completados puede estar vieja. Si el estatus en la base ya no es el que se ve, no escribe y lo dice.
+- El horario lleva `regreso: true`, `statusAnterior`, `statusAnteriorNombre`. Las bitácoras de Activas y Completados lo marcan.
+- Facturas, nómina y diésel ya ligados NO se tocan: la ventana lo avisa. Si se quiere bloquear el regreso de una operación facturada o con nómina pagada, es una regla nueva en `efectosDelRegreso`/el botón.
+- Sin permiso propio: el botón aparece para quien abre la ficha (igual que Editar). Si se quiere limitar, se agrega a "Permisos Especiales" como `editarTarifaOrigenDestino`.
+- Operaciones Activas no tiene listener (páginas): la operación entra por `operacionesBus` (origen `regreso-status`). Si Activas no estaba montado, la lee al abrir.
+- Se quitó de `ServiciosCompletados` el registro manual de estatus que estaba muerto desde la V00365 (`abrirRegistroHorario`, `guardarHorario`, `registrarStatusRapido`, modal "Registrar Movimiento", la carga de botones del flujo en cada ficha).
+
 ## V00475 (ventana del reporte de puente: el Excel con las referencias de cada unidad y día)
 - Omaf (22-oct): "al cargar cualquiera de los excel de los puentes se abra un modal, con la información del excel y las referencias que coincidan en unidad y fecha". La ventana ya se abría (V00466), pero solo mostraba las operaciones de Operaciones sin asignar que coincidían, y el Excel quedaba plegado.
 - "Referencias" se mostró de las dos formas que usa la app:
