@@ -107,6 +107,8 @@ import { queryClient } from './lib/queryClient';
 import AvisosFlotantes from './shared/components/AvisosFlotantes'; // ✅ V00450
 import { irARevision, NOMBRE_MODULO_REVISION, useAvisos } from './shared/data/avisos'; // ✅ V00450
 import type { ModuloRevision } from './shared/data/avisos';
+import PestanasOperaciones from './features/operaciones/components/PestanasOperaciones'; // ✅ V00477
+import { esModuloOperaciones, pestanaDeEntrada } from './features/operaciones/services/modulosOperaciones';
 
 // ============================================================================
 // Mapa: etiqueta del módulo (como se guarda en el rol) -> clave interna (moduloActivo).
@@ -1429,6 +1431,8 @@ function AppContenido() {
   }, [bloqueoChecador, accesoTotal, usuarioActualDB, rolesCatalogo, vistaComoAplicada]);
 
   const puede = (clave: string) => clavesPermitidas.has(clave);
+  // ✅ V00477: a qué pestaña lleva el menú "Operaciones" (null = sin ninguna de las tres)
+  const pestanaOperaciones = pestanaDeEntrada(moduloActivo, puede);
 
   // ✅ V00224: publica los permisos para que otros módulos los consulten
   //   (p. ej. el botón "Tarifa (Origen/Destino)" en operaciones).
@@ -1675,24 +1679,11 @@ function AppContenido() {
             <span className="sidebar-label">{etq('menu.mis_operaciones', 'Mis Operaciones')}</span>
           </div>
         )}
-        {puede('operaciones') && (
-          <div className={`sidebar-item ${moduloActivo === 'operaciones' ? 'active' : ''}`} title="Operaciones Activas" onClick={() => navegarA('operaciones')}>
+        {/* ✅ V00477: Activas, Completadas y Canceladas en un solo "Operaciones" (pestañas arriba del módulo) */}
+        {pestanaOperaciones && (
+          <div className={`sidebar-item ${esModuloOperaciones(moduloActivo) ? 'active' : ''}`} title="Operaciones: activas, completadas y canceladas" onClick={() => navegarA(pestanaOperaciones)}>
             <span className="sidebar-icon">{ICON.operaciones}</span>
-            <span className="sidebar-label">{etq('menu.operaciones_activas', 'Operaciones Activas')}</span>
-          </div>
-        )}
-
-        {puede('serviciosCompletados') && (
-          <div className={`sidebar-item ${moduloActivo === 'serviciosCompletados' ? 'active' : ''}`} title="Servicios Completados" onClick={() => navegarA('serviciosCompletados')}>
-            <span className="sidebar-icon">{ICON.serviciosCompletados}</span>
-            <span className="sidebar-label">{etq('menu.servicios_completados', 'Servicios Completados')}</span>
-          </div>
-        )}
-
-        {puede('serviciosCancelados') && (
-          <div className={`sidebar-item ${moduloActivo === 'serviciosCancelados' ? 'active' : ''}`} title="Servicios Cancelados" onClick={() => navegarA('serviciosCancelados')}>
-            <span className="sidebar-icon">{ICON.serviciosCancelados}</span>
-            <span className="sidebar-label">{etq('menu.servicios_cancelados', 'Servicios Cancelados')}</span>
+            <span className="sidebar-label">{etq('menu.operaciones', 'Operaciones')}</span>
           </div>
         )}
 
@@ -2046,6 +2037,9 @@ function AppContenido() {
             {moduloActivo === 'etiquetas' && puede('etiquetas') && (
               <EtiquetasDashboard />
             )}
+            {esModuloOperaciones(moduloActivo) && puede(moduloActivo) && (
+              <PestanasOperaciones activo={moduloActivo} puede={puede} onCambiar={navegarA} />
+            )}{/* ✅ V00477 */}
             <MantenerVivo activo={moduloActivo === 'operaciones' && puede('operaciones')} siempreEscuchando>{/* ✅ V00264 · V00447 */}
               <>
                 <ResumenDelDia />

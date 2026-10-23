@@ -207,15 +207,6 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - Modales con `createPortal` a `document.body` (la tarjeta usa `transform` al pasar el mouse) y perezosos desde la tarjeta (`lazyWithRetry`): la carga inicial crece 0.3 KB (sin eso, ~20 KB por FormularioConfigurable).
 - Se quitaron las reglas `.rd-dos*` de App.css (solo las usaba la tarjeta TC · Diesel).
 
-## V00478 (Empresas: duplicados por nombre y unir desde el grupo)
-- Omaf (23-oct): "en la hoja de empresas necesito la facilidad y la posibilidad de identificar duplicados en nombre para limpiar el app". Ya existía *Duplicadas*: nombre idéntico sin acentos/signos, mismo RFC y primera+última palabra, con un getDocs propio y sin unir desde ahí ("elimina el otro desde la tabla").
-- `services/duplicadosEmpresas.ts` (puro, con pruebas): sin forma legal al final (SA de CV, S de RL de CV, LLC, Inc, Ltd, Corp, Co…), sin espacios (C.H. = CH), errores de escritura (1 letra; 2 desde 20 letras), mismas palabras en otro orden, una palabra de más con la misma primera palabra, mismo RFC (no el genérico). **Números distintos nunca son parecidos** (Planta 5 / Planta 6; en el banco de pruebas, "Empresa 1" / "Empresa 11" daban 2,000 falsos).
-- La regla vieja "primera + última palabra" se cambió por "una palabra de más": juntaba "Transportes Morales Valdez" con "Transportes Garcia Valdez".
-- Para no comparar todas contra todas: solo dentro de bloques (mismas 4 primeras letras, 4 últimas o primera palabra; un bloque de más de 400 se salta). Unión-búsqueda: si A≈B y B≈C es un solo grupo.
-- Los grupos salen EN VIVO del catálogo `empresas` (useCatalogo): al unir, el grupo desaparece solo y ya no hay getDocs propio. Los ids son `e.id`, como la selección de la tabla y el modal Unir.
-- Unir: `abrirUnirCon(ids)` (tabla o grupo). Por omisión se conserva el de MÁS operaciones (antes: más campos llenos, que sigue como desempate). El duplicado se borra por `idReal` (antes `e.id`: con un campo `id` de AppSheet distinto al del documento, el borrado no hacía nada).
-- No se guarda "no son duplicados": un grupo que no lo es sigue apareciendo (se desmarca y no se une). Si molesta, guardar la marca en la empresa.
-
 ## V00477 (Operaciones: activas, completadas y canceladas con pestañas)
 - Omaf (23-oct): "las operaciones activas, completadas y canceladas estén todas en un mismo lugar, pero dividido en pestañas".
 - NO se fusionó el código de los tres módulos (CLAUDE.md: fusionar dos funcionalidades que funcionan es decisión de producto): siguen siendo `operaciones`, `serviciosCompletados` y `serviciosCancelados`, con sus permisos, `?modulo=`, buscador global y MantenerVivo. Lo nuevo es el menú (un solo ítem) y `PestanasOperaciones` arriba, que solo navega entre ellos.

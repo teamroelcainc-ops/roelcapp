@@ -17,9 +17,7 @@ const CATALOGO: { seccion: string; items: { clave: string; porDefecto: string }[
     seccion: 'Menú · Apartados y subapartados',
     items: [
       { clave: 'menu.mis_operaciones', porDefecto: 'Mis Operaciones' },
-      { clave: 'menu.operaciones_activas', porDefecto: 'Operaciones Activas' },
-      { clave: 'menu.servicios_completados', porDefecto: 'Servicios Completados' },
-      { clave: 'menu.servicios_cancelados', porDefecto: 'Servicios Cancelados' },
+      { clave: 'menu.operaciones', porDefecto: 'Operaciones' }, // ✅ V00477: Activas, Completadas y Canceladas son pestañas
       { clave: 'menu.reportes', porDefecto: 'Reportes' },
       { clave: 'menu.estad_sticas', porDefecto: 'Estadísticas' },
       { clave: 'menu.pagos', porDefecto: 'Pagos' },
