@@ -305,7 +305,7 @@
   border-color: rgba(163, 113, 247, 0.5);
 }
 
-.ed-dup-miembro { padding: 12px 16px; border-bottom: 1px solid #21262d; display: flex; flex-direction: column; gap: 10px; }
+.ed-dup-miembro { padding: 12px 16px; border-bottom: 1px solid #21262d; display: flex; flex-direction: column; gap: 8px; }
 .ed-dup-miembro:last-child { border-bottom: none; }
 
 .ed-dup-miembro-fila { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
@@ -469,3 +469,26 @@
 
 /* ✅ V00342: sincronizar razón social */
 .ed-razon-btn { white-space: nowrap; }
+
+/* ✅ V00478: Duplicadas — conteo, búsqueda, filtros, marcar y unir por grupo, marca en la tabla */
+.ed-dup-cuenta { min-width: 20px; padding: 1px 7px; border-radius: 999px; background: #d84315; color: #fff; font-size: 0.72rem; font-weight: 800; text-align: center; }
+.ed-dup-herramientas { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 14px 22px; border-bottom: 1px solid #30363d; }
+.ed-dup-buscar { flex: 1 1 260px; max-width: 380px; padding: 8px 12px; font-size: 0.88rem; }
+.ed-dup-filtros { display: flex; flex-wrap: wrap; gap: 6px; }
+.ed-dup-filtro { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border: 1px solid #30363d; border-radius: 999px; background: #0d1117; color: #c9d1d9; font-family: inherit; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
+.ed-dup-filtro:hover { border-color: #8b949e; }
+.ed-dup-filtro--activo { border-color: #d84315; background: rgba(216, 67, 21, 0.14); color: #f0f6fc; }
+.ed-dup-filtro--activo:hover { border-color: #d84315; }
+.ed-dup-filtro-n { color: #8b949e; font-weight: 800; }
+.ed-dup-criterios { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.ed-dup-miembros { margin: 0; padding: 0; list-style: none; }
+.ed-dup-check { width: 16px; height: 16px; margin: 0; accent-color: #8957e5; cursor: pointer; }
+.ed-dup-miembro-ops { color: #f0b72f; font-size: 0.78rem; font-weight: 700; }
+.ed-dup-miembro-tipos { color: #58a6ff; font-size: 0.74rem; font-weight: 600; padding-left: 28px; }
+.ed-dup-grupo-pie { display: flex; justify-content: flex-end; padding: 10px 16px; background-color: #161b22; border-top: 1px solid #21262d; }
+.ed-dup-unir { padding: 8px 18px; border: none; border-radius: 6px; background: #8957e5; color: #fff; font-family: inherit; font-size: 0.85rem; font-weight: 700; cursor: pointer; }
+.ed-dup-unir:hover:not(:disabled) { background: #a371f7; }
+.ed-dup-unir:disabled { background: #21262d; color: #6e7681; cursor: not-allowed; }
+.ed-dup-mas-grupos { align-self: center; }
+.ed-dup-marca { margin-left: 8px; padding: 1px 8px; border: 1px solid rgba(216, 67, 21, 0.55); border-radius: 999px; background: rgba(216, 67, 21, 0.12); color: #f0a06c; font-family: inherit; font-size: 0.7rem; font-weight: 700; white-space: nowrap; cursor: pointer; vertical-align: middle; }
+.ed-dup-marca:hover { background: rgba(216, 67, 21, 0.25); }

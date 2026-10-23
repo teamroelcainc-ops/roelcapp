@@ -32,7 +32,7 @@
     "src/features/empleados/components/EmpleadosDashboard.tsx": 9,
     "src/features/empleados/components/EmployeeForm.tsx": 19,
     "src/features/empleados/components/HerramientasEmpleado.tsx": 5,
-    "src/features/empresas/components/EmpresasDashboard.tsx": 61,
+    "src/features/empresas/components/EmpresasDashboard.tsx": 60,
     "src/features/empresas/components/FormularioEmpresa.tsx": 12,
     "src/features/empresas/services/propagarMoneda.ts": 5,
     "src/features/empresas/services/sincronizarRazonSocial.ts": 1,
