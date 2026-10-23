@@ -12,7 +12,7 @@ import './RolesDashboard.css';
 // que se muestran en el sidebar (para que el filtrado por permisos coincida).
 // ============================================================================
 const GRUPOS_MODULOS: { grupo: string; modulos: string[] }[] = [
-  { grupo: 'General', modulos: ['Mis Operaciones', 'Operaciones Activas', 'Pagos', 'Estadísticas', 'Servicios Completados', 'Servicios Cancelados', 'Reportes', 'Reporte de Vencimiento', 'Historial de Cambios', 'Panel de Control', 'Tablero (CRM)', 'Catálogos'] },
+  { grupo: 'General', modulos: ['Mis Operaciones', 'Operaciones Activas', 'Pagos', 'Estadísticas', 'Análisis de Clientes', 'Servicios Completados', 'Servicios Cancelados', 'Reportes', 'Reporte de Vencimiento', 'Historial de Cambios', 'Panel de Control', 'Tablero (CRM)', 'Catálogos'] },
   { grupo: 'Gastos', modulos: ['MTTO', 'Referencias del Diesel', 'Referencias de Puentes', 'Costos Adicionales'] },
   { grupo: 'Clientes', modulos: ['Convenio de Clientes', 'Tarifario Clientes', 'Detalles del Convenio', 'Facturación de Clientes'] }, // ✅ V00198
   { grupo: 'Proveedores', modulos: ['Convenio de Proveedores', 'Facturación de Proveedores', 'Tarifario Proveedores', 'Detalles del Convenio (Proveedores)'] },

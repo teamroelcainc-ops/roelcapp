@@ -20,6 +20,7 @@ const CATALOGO: { seccion: string; items: { clave: string; porDefecto: string }[
       { clave: 'menu.operaciones', porDefecto: 'Operaciones' }, // ✅ V00477: Activas, Completadas y Canceladas son pestañas
       { clave: 'menu.reportes', porDefecto: 'Reportes' },
       { clave: 'menu.estad_sticas', porDefecto: 'Estadísticas' },
+      { clave: 'menu.analisis_clientes', porDefecto: 'Análisis de Clientes' }, // ✅ V00479
       { clave: 'menu.pagos', porDefecto: 'Pagos' },
       { clave: 'menu.gastos', porDefecto: 'Gastos' },
       { clave: 'menu.mtto', porDefecto: 'MTTO' },

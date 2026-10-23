@@ -1,0 +1,24 @@
+/* ✅ V00479: operaciones de un cliente */
+.aco-fondo { position: fixed; inset: 0; z-index: 3500; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(1, 4, 9, 0.7); }
+.aco-modal { display: flex; flex-direction: column; width: min(1180px, 100%); max-height: 90vh; border: 1px solid #30363d; border-radius: 12px; background: #161b22; box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5); }
+.aco-enc { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 16px 20px; border-bottom: 1px solid #30363d; }
+.aco-titulo { margin: 0; color: #f0f6fc; font-size: 1.15rem; }
+.aco-sub { margin: 4px 0 0; color: #8b949e; font-size: 0.84rem; }
+.aco-cerrar { padding: 2px 6px; border: none; background: none; color: #8b949e; font-size: 1.05rem; cursor: pointer; }
+.aco-cerrar:hover { border-color: transparent; color: #f0f6fc; }
+.aco-cuerpo { display: flex; flex-direction: column; gap: 12px; padding: 0 0 16px; overflow: auto; }
+.aco-tabla { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+.aco-tabla th { position: sticky; top: 0; padding: 10px 12px; border-bottom: 1px solid #30363d; background: #161b22; color: #f0f6fc; font-size: 0.78rem; font-weight: 600; text-align: left; white-space: nowrap; }
+.aco-tabla td { padding: 9px 12px; border-bottom: 1px solid #21262d; color: #c9d1d9; white-space: nowrap; }
+.aco-tabla tbody tr:hover td { background: #1c2128; }
+.aco-fecha { font-variant-numeric: tabular-nums; }
+.aco-ref { color: #f0f6fc; font-weight: 600; }
+.aco-texto { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.aco-fila--falso td { color: #e3b341; }
+.aco-fila--falso .aco-ref { color: #e3b341; }
+.aco-vacio { margin: 0; padding: 28px; color: #8b949e; text-align: center; }
+.aco-mas { align-self: center; }
+@media (max-width: 640px) {
+  .aco-fondo { padding: 0; }
+  .aco-modal { max-height: 100dvh; height: 100dvh; border-radius: 0; }
+}

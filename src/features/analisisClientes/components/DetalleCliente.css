@@ -1,0 +1,17 @@
+/* ✅ V00479: ficha del cliente */
+.acf-ficha { display: flex; flex-direction: column; gap: 14px; padding: 18px 20px; border: 1px solid #30363d; border-radius: 12px; background: #161b22; }
+.acf-cabeza { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.acf-nombre { padding: 0; border: none; background: none; color: #f0f6fc; font-family: inherit; font-size: 1.15rem; font-weight: 700; text-align: left; cursor: pointer; }
+.acf-nombre:hover { color: #58a6ff; text-decoration: underline; text-underline-offset: 3px; }
+.acf-nombre:focus-visible, .acf-ver:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
+.acf-datos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 18px; margin: 0; }
+.acf-dato dt { color: #8b949e; font-size: 0.8rem; }
+.acf-dato dd { margin: 2px 0 0; color: #f0f6fc; font-size: 1.05rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.acf-subtitulo { margin: 6px 0 0; color: #f0f6fc; font-size: 0.95rem; font-weight: 600; }
+.acf-barras { display: grid; grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; align-items: end; gap: 6px; height: 170px; margin: 0; padding: 0; list-style: none; border-bottom: 1px solid #30363d; }
+.acf-mes { display: grid; grid-template-rows: auto 1fr auto; align-items: end; justify-items: center; height: 100%; min-width: 0; }
+.acf-cuenta { color: #8b949e; font-size: 0.68rem; font-variant-numeric: tabular-nums; }
+.acf-barra { width: 100%; max-width: 30px; height: var(--acf-alto); min-height: 2px; border-radius: 4px 4px 0 0; background: #5b8def; align-self: end; }
+.acf-etq { padding-top: 4px; color: #8b949e; font-size: 0.7rem; }
+.acf-ver { align-self: flex-start; padding: 7px 14px; border: 1px solid #1f6feb; border-radius: 6px; background: none; color: #58a6ff; font-family: inherit; font-size: 0.84rem; font-weight: 600; cursor: pointer; }
+.acf-ver:hover { background: rgba(31, 111, 235, 0.12); }

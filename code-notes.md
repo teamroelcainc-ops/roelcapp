@@ -207,6 +207,34 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - Modales con `createPortal` a `document.body` (la tarjeta usa `transform` al pasar el mouse) y perezosos desde la tarjeta (`lazyWithRetry`): la carga inicial crece 0.3 KB (sin eso, ~20 KB por FormularioConfigurable).
 - Se quitaron las reglas `.rd-dos*` de App.css (solo las usaba la tarjeta TC · Diesel).
 
+## V00479 (Análisis de Clientes)
+- Omaf (23-oct) mandó capturas de una investigación del cliente ("Qué está cambiando" y la tabla Cliente Paga con su ficha) y pidió el dashboard en la app, con los nombres clicables que muestren sus operaciones de la más reciente a la primera. **No se pudo abrir la investigación**: el artefacto es de otra organización y desde aquí no hay salida a esa página (ENOTFOUND), y el chat compartido llega vacío. Las reglas se armaron con las capturas y cuadran con sus números:
+  - Bajando ≤ −20% (A. Castañeda −22%) y Estable hasta −19% (Viskoteepak, Landstar −16%);
+  - Creciendo ≥ +20% (Transplace +9% estable);
+  - Inactivo con 21 días o más sin operar (Esguard, última 29 sep, sale inactivo; con 28 días no saldría);
+  - Nuevo si su primera operación del año fue en los últimos 183 días (Meta In "desde 24 abr" entra justo);
+  - Ocasional con menos de 20 operaciones ("Clientes con 20 o más operaciones" en la captura).
+  Si la investigación usó otras, se cambian en `REGLAS` (`services/analisisClientes.ts`) y la pantalla se explica sola con ese objeto.
+- Definiciones propias (no se veían en las capturas):
+  - **% de días que opera:** ÷ días de lunes a sábado desde su primera operación; la captura daba 98% a C.H. Robinson con 256 días y no se pudo deducir el denominador;
+  - **Días hábiles sin operar:** de lunes a viernes;
+  - **Pausa más larga:** días seguidos sin operar entre dos operaciones;
+  - **Ops/sem antes:** desde su primera operación del año, no desde el 1 de enero, para que un cliente que empezó en marzo no salga "creciendo";
+  - **Hazmat y vacíos:** por el texto de carga y convenio (como Diésel).
+- Datos: UNA lectura por rango (fechaServicioISO con `consultasCanonicas`, si no fechaServicio, como Estadísticas), guardada con TanStack Query 10 min. Un año ≈ 8,600 operaciones = 8,600 lecturas por cada vez que se abre o se presiona Actualizar. Si pesa, el siguiente paso es un resumen por cliente y semana calculado en el servidor.
+- Los clientes se agrupan por ID (clientePaga / clienteMercancia) con el nombre ACTUAL del catálogo de empresas. Los duplicados de empresas salen como clientes separados (de ahí la V00478). Sin ID se agrupa por nombre.
+- La ventana de operaciones muestra las del año ya leídas (sin lecturas nuevas). No abre la ficha de la operación: los módulos vivos leen `roelca_abrir_registro` solo al montarse.
+- Permiso nuevo `analisisClientes` ('Análisis de Clientes' en Roles → General). Admin lo ve siempre.
+
+## V00478 (Empresas: duplicados por nombre y unir desde el grupo)
+- Omaf (23-oct): "en la hoja de empresas necesito la facilidad y la posibilidad de identificar duplicados en nombre para limpiar el app". Ya existía *Duplicadas*: nombre idéntico sin acentos/signos, mismo RFC y primera+última palabra, con un getDocs propio y sin unir desde ahí ("elimina el otro desde la tabla").
+- `services/duplicadosEmpresas.ts` (puro, con pruebas): sin forma legal al final (SA de CV, S de RL de CV, LLC, Inc, Ltd, Corp, Co…), sin espacios (C.H. = CH), errores de escritura (1 letra; 2 desde 20 letras), mismas palabras en otro orden, una palabra de más con la misma primera palabra, mismo RFC (no el genérico). **Números distintos nunca son parecidos** (Planta 5 / Planta 6; en el banco de pruebas, "Empresa 1" / "Empresa 11" daban 2,000 falsos).
+- La regla vieja "primera + última palabra" se cambió por "una palabra de más": juntaba "Transportes Morales Valdez" con "Transportes Garcia Valdez".
+- Para no comparar todas contra todas: solo dentro de bloques (mismas 4 primeras letras, 4 últimas o primera palabra; un bloque de más de 400 se salta). Unión-búsqueda: si A≈B y B≈C es un solo grupo.
+- Los grupos salen EN VIVO del catálogo `empresas` (useCatalogo): al unir, el grupo desaparece solo y ya no hay getDocs propio. Los ids son `e.id`, como la selección de la tabla y el modal Unir.
+- Unir: `abrirUnirCon(ids)` (tabla o grupo). Por omisión se conserva el de MÁS operaciones (antes: más campos llenos, que sigue como desempate). El duplicado se borra por `idReal` (antes `e.id`: con un campo `id` de AppSheet distinto al del documento, el borrado no hacía nada).
+- No se guarda "no son duplicados": un grupo que no lo es sigue apareciendo (se desmarca y no se une). Si molesta, guardar la marca en la empresa.
+
 ## V00477 (Operaciones: activas, completadas y canceladas con pestañas)
 - Omaf (23-oct): "las operaciones activas, completadas y canceladas estén todas en un mismo lugar, pero dividido en pestañas".
 - NO se fusionó el código de los tres módulos (CLAUDE.md: fusionar dos funcionalidades que funcionan es decisión de producto): siguen siendo `operaciones`, `serviciosCompletados` y `serviciosCancelados`, con sus permisos, `?modulo=`, buscador global y MantenerVivo. Lo nuevo es el menú (un solo ítem) y `PestanasOperaciones` arriba, que solo navega entre ellos.

@@ -1,0 +1,8 @@
+/* ✅ V00479: estado del cliente (mismos colores en todo el análisis) */
+.ach-chip { display: inline-block; padding: 2px 10px; border: 1px solid currentColor; border-radius: 999px; font-size: 0.76rem; font-weight: 600; line-height: 1.4; white-space: nowrap; }
+.ach-chip--creciendo { color: #3fb950; background: rgba(63, 185, 80, 0.08); }
+.ach-chip--estable { color: #8b949e; background: rgba(139, 148, 158, 0.08); }
+.ach-chip--bajando { color: #e3b341; background: rgba(227, 179, 65, 0.08); }
+.ach-chip--inactivo { color: #ff7b72; background: rgba(255, 123, 114, 0.08); }
+.ach-chip--nuevo { color: #79c0ff; background: rgba(121, 192, 255, 0.08); }
+.ach-chip--ocasional { color: #bc8cff; background: rgba(188, 140, 255, 0.08); }

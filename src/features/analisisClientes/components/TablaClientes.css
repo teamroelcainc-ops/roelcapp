@@ -1,0 +1,42 @@
+/* ✅ V00479: tabla de clientes (Cliente Paga / Cliente Mercancía) */
+.act-vista { display: flex; flex-direction: column; gap: 14px; }
+.act-herramientas { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.act-buscar { flex: 0 1 340px; padding: 8px 12px; font-size: 0.9rem; }
+.act-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.act-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border: 1px solid #30363d; border-radius: 999px; background: #161b22; color: #c9d1d9; font-family: inherit; font-size: 0.84rem; font-weight: 600; cursor: pointer; }
+.act-chip:hover { border-color: #8b949e; }
+.act-chip-n { color: #8b949e; font-weight: 700; font-variant-numeric: tabular-nums; }
+.act-chip--creciendo.act-chip--activo { border-color: #3fb950; background: rgba(63, 185, 80, 0.12); }
+.act-chip--estable.act-chip--activo { border-color: #8b949e; background: rgba(139, 148, 158, 0.14); }
+.act-chip--bajando.act-chip--activo { border-color: #e3b341; background: rgba(227, 179, 65, 0.12); }
+.act-chip--inactivo.act-chip--activo { border-color: #ff7b72; background: rgba(255, 123, 114, 0.12); }
+.act-chip--nuevo.act-chip--activo { border-color: #79c0ff; background: rgba(121, 192, 255, 0.12); }
+.act-chip--ocasional.act-chip--activo { border-color: #bc8cff; background: rgba(188, 140, 255, 0.12); }
+.act-chip--activo { border-color: #d84315; background: rgba(216, 67, 21, 0.12); color: #f0f6fc; }
+
+.act-cuerpo { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr); align-items: start; gap: 16px; }
+.act-tabla-marco { max-height: calc(100vh - 290px); min-height: 240px; overflow: auto; border: 1px solid #30363d; border-radius: 10px; background: #0d1117; }
+.act-tabla { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.act-tabla thead th { position: sticky; top: 0; z-index: 1; padding: 0; border-bottom: 1px solid #30363d; background: #161b22; text-align: left; }
+.act-tabla thead th.act-num { text-align: right; }
+.act-orden { width: 100%; padding: 12px 12px; border: none; border-radius: 0; background: none; color: #f0f6fc; font-family: inherit; font-size: 0.82rem; font-weight: 600; text-align: inherit; cursor: pointer; }
+.act-orden:hover { border-color: transparent; color: #58a6ff; }
+.act-orden:focus { outline: none; }
+.act-orden:focus-visible { outline: 2px solid #58a6ff; outline-offset: -2px; }
+.act-tabla td { padding: 11px 12px; border-bottom: 1px solid #21262d; color: #c9d1d9; white-space: nowrap; }
+.act-num { text-align: right; font-variant-numeric: tabular-nums; }
+.act-fila { cursor: pointer; }
+.act-fila:hover td { background: #161b22; }
+.act-fila--elegida td, .act-fila--elegida:hover td { background: #1c2128; }
+.act-nombre { max-width: 280px; padding: 0; border: none; background: none; color: #e6edf3; font-family: inherit; font-size: 0.9rem; font-weight: 600; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; vertical-align: middle; }
+.act-nombre:hover { border-color: transparent; color: #58a6ff; text-decoration: underline; text-underline-offset: 3px; }
+.act-nombre:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; border-radius: 3px; }
+.act-tabla td.act-sube { color: #3fb950; }
+.act-tabla td.act-baja { color: #ff7b72; }
+.act-vacio { margin: 0; padding: 28px; color: #8b949e; text-align: center; }
+.act-lado { position: sticky; top: 12px; max-height: calc(100vh - 290px); min-height: 240px; overflow-y: auto; border-radius: 12px; }
+@media (max-width: 1100px) {
+  .act-cuerpo { grid-template-columns: 1fr; }
+  .act-tabla-marco { max-height: 60vh; }
+  .act-lado { position: static; max-height: none; overflow: visible; }
+}

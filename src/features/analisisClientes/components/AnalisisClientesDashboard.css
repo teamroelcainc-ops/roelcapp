@@ -1,0 +1,25 @@
+/* ✅ V00479: Análisis de clientes — encabezado y pestañas */
+.acs-modulo { padding: 24px; width: 100%; box-sizing: border-box; animation: fadeIn 0.3s ease; }
+.acs-encabezado { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; margin-bottom: 18px; }
+.acs-titulo { margin: 0; color: #f0f6fc; font-size: 1.5rem; font-weight: 700; }
+.acs-sub { margin: 4px 0 0; color: #8b949e; font-size: 0.86rem; }
+.acs-acciones { display: flex; align-items: flex-end; gap: 10px; }
+.acs-anio { display: flex; flex-direction: column; gap: 4px; color: #8b949e; font-size: 0.74rem; font-weight: 600; }
+.acs-anio .form-control { width: 110px; padding: 7px 10px; }
+.acs-actualizar { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border: 1px solid #30363d; border-radius: 6px; background: #21262d; color: #c9d1d9; font-family: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+.acs-actualizar:hover:not(:disabled) { border-color: #8b949e; }
+.acs-actualizar:disabled { opacity: 0.7; cursor: wait; }
+.acs-girando { animation: acsGiro 0.9s linear infinite; }
+@keyframes acsGiro { to { transform: rotate(360deg); } }
+.acs-pestanas { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid #30363d; overflow-x: auto; }
+.acs-pestana { margin-bottom: -1px; padding: 10px 16px; border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; color: #8b949e; font-family: inherit; font-size: 0.95rem; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.acs-pestana:hover { border-bottom-color: transparent; color: #c9d1d9; }
+.acs-pestana:focus { outline: none; }
+.acs-pestana:focus-visible { outline: 2px solid #58a6ff; outline-offset: -2px; }
+.acs-pestana--activa, .acs-pestana--activa:hover { border-bottom-color: #d84315; color: #f0f6fc; }
+.acs-error { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 18px; border: 1px solid #da3633; border-radius: 8px; background: rgba(248, 81, 73, 0.08); color: #ffa198; }
+.acs-error p { margin: 0; }
+@media (max-width: 768px) {
+  .acs-modulo { padding: 14px 12px; }
+  .acs-titulo { font-size: 1.25rem; }
+}

@@ -44,6 +44,7 @@ const OperacionesDashboard = lazyWithRetry(() => import('./features/operaciones/
 const MisOperacionesDashboard = lazyWithRetry(() => import('./features/misOperaciones/components/MisOperacionesDashboard'), 'MisOperacionesDashboard');
 const PagosDashboard = lazyWithRetry(() => import('./features/pagos/components/PagosDashboard'), 'PagosDashboard');
 const EstadisticasDashboard = lazyWithRetry(() => import('./features/estadisticas/components/EstadisticasDashboard'), 'EstadisticasDashboard');
+const AnalisisClientesDashboard = lazyWithRetry(() => import('./features/analisisClientes/components/AnalisisClientesDashboard'), 'AnalisisClientesDashboard'); // ✅ V00479
 const EtiquetasDashboard = lazyWithRetry(() => import('./features/etiquetas/components/EtiquetasDashboard'), 'EtiquetasDashboard');
 const ServiciosCompletados = lazyWithRetry(() => import('./features/operaciones/components/ServiciosCompletados'), 'ServiciosCompletados');
 const ServiciosCancelados = lazyWithRetry(() => import('./features/operaciones/components/ServiciosCancelados'), 'ServiciosCancelados');
@@ -124,6 +125,7 @@ const MODULOS_A_CLAVE: Record<string, string> = {
   'Pagos': 'pagos',
   // ✅ NUEVO: estadísticas del proyecto (tendencia, servicios, ventas, utilidad).
   'Estadísticas': 'estadisticas',
+  'Análisis de Clientes': 'analisisClientes', // ✅ V00479
   // ✅ NUEVO: editor de nombres del menú y columnas (marcable por rol).
   'Personalizar Etiquetas': 'etiquetas',
   'Operaciones Activas': 'operaciones',
@@ -210,6 +212,10 @@ const iPackage = (
 
 const ICON: Record<string, React.ReactNode> = {
   operaciones: iTruck,
+  // ✅ V00479: clientes con su tendencia
+  analisisClientes: (
+    <Ico><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><polyline points="16 11 18.5 8.5 20 10 23 7" /></Ico>
+  ),
   serviciosCompletados: (
     <Ico><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></Ico>
   ),
@@ -783,7 +789,7 @@ function AppContenido() {
   const { datos: rolesCatalogo, listo: rolesCargados } = useCatalogo('roles', { activo: estaAutenticado });
   
   const { etq } = useEtiquetas();
-  const [moduloActivo, setModuloActivo] = useState<'tableroCrm' | 'panelControl' | 'reporteVencimientos' | 'etiquetas' | 'estadisticas' | 'pagos' | 'misOperaciones' | 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'saldosPuentes' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'tarifarioClientes' | 'conveniosProveedores' | 'tarifarioProveedores' | 'detallesConvenioClientes' | 'detallesConvenioProveedores' | 'papeleraReciclaje' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones' | 'historialCambios'>(() => {
+  const [moduloActivo, setModuloActivo] = useState<'tableroCrm' | 'panelControl' | 'reporteVencimientos' | 'etiquetas' | 'estadisticas' | 'analisisClientes' | 'pagos' | 'misOperaciones' | 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'saldosPuentes' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'tarifarioClientes' | 'conveniosProveedores' | 'tarifarioProveedores' | 'detallesConvenioClientes' | 'detallesConvenioProveedores' | 'papeleraReciclaje' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones' | 'historialCambios'>(() => {
     // ✅ PANTALLA PERSISTENTE: al recargar se regresa al último módulo visitado.
     //   (El guard de permisos más abajo redirige si el rol ya no lo permite.)
     // Cast simple a string: cualquier valor raro lo corrige el guard de permisos.
@@ -1727,6 +1733,12 @@ function AppContenido() {
             <span className="sidebar-label">{etq('menu.estad_sticas', 'Estadísticas')}</span>
           </div>
         )}
+        {puede('analisisClientes') && (
+          <div className={`sidebar-item ${moduloActivo === 'analisisClientes' ? 'active' : ''}`} title="Análisis de clientes: quién crece, baja, dejó de operar o es nuevo" onClick={() => navegarA('analisisClientes')}>
+            <span className="sidebar-icon">{ICON.analisisClientes}</span>
+            <span className="sidebar-label">{etq('menu.analisis_clientes', 'Análisis de Clientes')}</span>
+          </div>
+        )}{/* ✅ V00479 */}
         {puede('pagos') && (
           <div className={`sidebar-item ${moduloActivo === 'pagos' ? 'active' : ''}`} title="Pagos" onClick={() => navegarA('pagos')}>
             <span className="sidebar-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></span>
@@ -2034,6 +2046,7 @@ function AppContenido() {
             {moduloActivo === 'estadisticas' && puede('estadisticas') && (
               <EstadisticasDashboard />
             )}
+            {moduloActivo === 'analisisClientes' && puede('analisisClientes') && <AnalisisClientesDashboard />}{/* ✅ V00479 */}
             {moduloActivo === 'etiquetas' && puede('etiquetas') && (
               <EtiquetasDashboard />
             )}
