@@ -6,8 +6,13 @@
 .pmo-tab:focus { outline: none; }
 .pmo-tab:focus-visible { outline: 2px solid #58a6ff; outline-offset: -2px; border-radius: 6px 6px 0 0; }
 .pmo-tab--activa, .pmo-tab--activa:hover { border-bottom-color: #d84315; color: #f0f6fc; }
+/* ✅ V00487: acciones del apartado, a la derecha de las pestañas */
+.pmo-acciones { display: flex; align-items: center; gap: 8px; margin-left: auto; padding-bottom: 8px; }
 
 @media (max-width: 768px) {
   .pmo-barra { padding: 10px 12px 0; }
   .pmo-tab { padding: 9px 12px; font-size: 0.88rem; }
+  /* ✅ V00487: en el teléfono las acciones van en su propio renglón (antes de que la barra se desplace de lado) */
+  .pmo-barra:has(.pmo-acciones) { flex-wrap: wrap; }
+  .pmo-acciones { order: -1; flex-basis: 100%; margin-left: 0; padding-bottom: 6px; }
 }

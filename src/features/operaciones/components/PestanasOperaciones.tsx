@@ -7,10 +7,16 @@
 // pestaña al cambiar (no se vuelve a cargar).
 // ✅ V00480: la barra es la compartida (PestanasModulo), la misma de Facturación.
 // ---------------------------------------------------------------------------
-import { CheckCircle2, Truck, XCircle } from 'lucide-react';
+import { Suspense, useState } from 'react';
+import { CheckCircle2, Truck, Wand2, XCircle } from 'lucide-react';
 import PestanasModulo from '../../../shared/components/PestanasModulo';
 import type { PestanaModulo } from '../../../shared/components/PestanasModulo';
+import { lazyWithRetry } from '../../../utils/lazyWithRetry';
 import type { ModuloOperaciones } from '../services/modulosOperaciones';
+import './PestanasOperaciones.css';
+
+// ✅ V00487: la ventana (y lo que lee) se carga al presionar el botón.
+const CorregirMonedasConvenioModal = lazyWithRetry(() => import('./CorregirMonedasConvenioModal'), 'CorregirMonedasConvenioModal');
 
 const PESTANAS: readonly PestanaModulo<ModuloOperaciones>[] = [
   { modulo: 'operaciones', texto: 'Activas', Icono: Truck, color: '#d84315' },
@@ -25,5 +31,21 @@ interface Props {
 }
 
 export default function PestanasOperaciones({ activo, puede, onCambiar }: Props) {
-  return <PestanasModulo etiqueta="Operaciones" pestanas={PESTANAS} activo={activo} puede={puede} onCambiar={onCambiar} />;
+  const [corrigiendo, setCorrigiendo] = useState(false);
+  return (
+    <>
+      <PestanasModulo etiqueta="Operaciones" pestanas={PESTANAS} activo={activo} puede={puede} onCambiar={onCambiar}
+        acciones={(
+          <button type="button" className="pop-btn-corregir" onClick={() => setCorrigiendo(true)}
+            title="Pone la moneda del convenio a las operaciones que no la tienen y recalcula sus montos (primero muestra qué cambia)">
+            <Wand2 size={15} aria-hidden="true" /> Corregir monedas de convenio
+          </button>
+        )} />
+      {corrigiendo && (
+        <Suspense fallback={null}>
+          <CorregirMonedasConvenioModal onCerrar={() => setCorrigiendo(false)} />
+        </Suspense>
+      )}
+    </>
+  );
 }

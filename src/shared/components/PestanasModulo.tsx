@@ -5,7 +5,7 @@
 // módulo de siempre, con su permiso; aquí solo se navega entre ellos. Con una sola pestaña
 // permitida no se pinta.
 // ---------------------------------------------------------------------------
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import './PestanasModulo.css';
 
@@ -24,14 +24,16 @@ interface Props<K extends string> {
   activo: K;
   puede: (modulo: K) => boolean;
   onCambiar: (modulo: K) => void;
+  /** ✅ V00487: botones a la derecha de las pestañas (valen para todo el apartado). */
+  acciones?: ReactNode;
 }
 
-export default function PestanasModulo<K extends string>({ etiqueta, pestanas, activo, puede, onCambiar }: Props<K>) {
+export default function PestanasModulo<K extends string>({ etiqueta, pestanas, activo, puede, onCambiar, acciones }: Props<K>) {
   const visibles = pestanas.filter((p) => puede(p.modulo));
-  if (visibles.length < 2) return null;
+  if (visibles.length < 2 && !acciones) return null;
   return (
     <nav className="pmo-barra" aria-label={etiqueta}>
-      {visibles.map(({ modulo, texto, Icono, color }) => (
+      {visibles.length >= 2 && visibles.map(({ modulo, texto, Icono, color }) => (
         <button
           key={modulo}
           type="button"
@@ -44,6 +46,7 @@ export default function PestanasModulo<K extends string>({ etiqueta, pestanas, a
           {texto}
         </button>
       ))}
+      {acciones && <div className="pmo-acciones">{acciones}</div>}
     </nav>
   );
 }

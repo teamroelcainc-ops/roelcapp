@@ -1,0 +1,54 @@
+/* ✅ V00487: Corregir monedas de convenio (Operaciones) */
+.modal-overlay.cmc-fondo { z-index: 2000; padding: 16px; box-sizing: border-box; background-color: rgba(0, 0, 0, 0.75); }
+.cmc-ventana { display: flex; flex-direction: column; width: 920px; max-width: 100%; max-height: calc(100vh - 32px); box-sizing: border-box; border: 1px solid #30363d; border-radius: 12px; background: #0d1117; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55); overflow: hidden; }
+.cmc-cabecera { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 22px 14px; border-bottom: 1px solid #21262d; }
+.cmc-titulo { margin: 0 0 6px; color: #f0f6fc; font-size: 1.15rem; }
+.cmc-sub { margin: 0; max-width: 66ch; color: #8b949e; font-size: 0.86rem; line-height: 1.45; }
+.cmc-cerrar { flex-shrink: 0; padding: 4px 6px; border: none; background: none; color: #8b949e; font-size: 1.1rem; cursor: pointer; }
+.cmc-cerrar:hover { color: #f0f6fc; }
+.cmc-cerrar:disabled { opacity: 0.4; cursor: not-allowed; }
+.cmc-cuerpo { display: grid; align-content: start; gap: 14px; min-height: 0; padding: 16px 22px; overflow-y: auto; }
+.cmc-cifras { display: flex; flex-wrap: wrap; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.cmc-cifra { padding: 8px 14px; border: 1px solid #30363d; border-radius: 8px; color: #c9d1d9; font-size: 0.88rem; }
+.cmc-cifra b { margin-right: 4px; color: #f0f6fc; font-size: 1.05rem; }
+.cmc-cifra--corregir { border-color: rgba(88, 166, 255, 0.55); }
+.cmc-cifra--corregir b { color: #58a6ff; }
+.cmc-cifra--revisar { border-color: rgba(210, 153, 34, 0.55); }
+.cmc-cifra--revisar b { color: #e3b341; }
+.cmc-cifra--error { border-color: rgba(248, 81, 73, 0.55); }
+.cmc-cifra--error b { color: #ff7b72; }
+.cmc-cifra--leidas { margin-left: auto; border-style: dashed; color: #8b949e; }
+.cmc-aviso { margin: 0; padding: 8px 12px; border: 1px solid rgba(88, 166, 255, 0.4); border-radius: 8px; background: rgba(88, 166, 255, 0.07); color: #c9d1d9; font-size: 0.84rem; line-height: 1.45; }
+.cmc-tabla-caja { max-height: 42vh; border: 1px solid #21262d; border-radius: 8px; overflow: auto; }
+.cmc-tabla { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.cmc-tabla th { position: sticky; top: 0; padding: 8px 10px; background: #161b22; color: #8b949e; font-size: 0.75rem; font-weight: 600; text-align: left; white-space: nowrap; }
+.cmc-tabla td { padding: 7px 10px; border-top: 1px solid #21262d; color: #c9d1d9; white-space: nowrap; }
+.cmc-tabla .cmc-num { text-align: right; }
+.cmc-tabla tr.cmc-fila--cambia td { background: rgba(88, 166, 255, 0.06); }
+.cmc-fuente { color: #8b949e; }
+.cmc-tabla td.cmc-antes { opacity: 0.7; text-decoration: line-through; text-decoration-color: rgba(139, 148, 158, 0.6); }
+.cmc-nada { color: #484f58; }
+.cmc-ref { color: #f0883e; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600; }
+.cmc-grupo { padding: 8px 12px; border: 1px solid #21262d; border-radius: 8px; color: #c9d1d9; font-size: 0.85rem; }
+.cmc-grupo summary { color: #e3b341; font-weight: 600; cursor: pointer; }
+.cmc-problemas { display: grid; gap: 6px; max-height: 32vh; margin: 10px 0 2px; padding: 0; overflow-y: auto; list-style: none; color: #c9d1d9; font-size: 0.84rem; }
+.cmc-problemas li { display: grid; grid-template-columns: minmax(130px, auto) 1fr; column-gap: 12px; row-gap: 2px; }
+.cmc-problemas .cmc-motivo { grid-column: 2; color: #c9d1d9; }
+.cmc-nota { margin: 0; padding: 4px 2px; color: #8b949e; font-size: 0.82rem; }
+.cmc-texto { margin: 0; color: #c9d1d9; }
+.cmc-error { margin: 0; color: #ff7b72; font-weight: 600; }
+.cmc-avance { width: 100%; height: 10px; accent-color: #58a6ff; }
+.cmc-pie { display: flex; justify-content: flex-end; gap: 10px; padding: 12px 22px; border-top: 1px solid #21262d; background: #161b22; }
+.cmc-btn { padding: 8px 18px; border: 1px solid #30363d; border-radius: 6px; background: transparent; color: #c9d1d9; font: inherit; font-size: 0.88rem; font-weight: 700; cursor: pointer; }
+.cmc-btn:hover { border-color: #8b949e; }
+.cmc-btn--principal { border-color: #238636; background: #238636; color: #fff; }
+.cmc-btn--principal:hover { border-color: #2ea043; background: #2ea043; }
+.cmc-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+@media (max-width: 640px) {
+  .cmc-ventana { border-radius: 0; }
+  .cmc-cabecera, .cmc-cuerpo, .cmc-pie { padding-left: 14px; padding-right: 14px; }
+  .cmc-cifra--leidas { margin-left: 0; }
+  .cmc-problemas li { grid-template-columns: 1fr; }
+  .cmc-problemas .cmc-motivo { grid-column: 1; }
+}

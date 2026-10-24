@@ -9,7 +9,7 @@
 // el índice va en firestore.indexes.json.
 // ---------------------------------------------------------------------------
 import {
-  collection, documentId, getDocs, limit as limitar, orderBy, query, startAfter, where,
+  collection, documentId, getCountFromServer, getDocs, limit as limitar, orderBy, query, startAfter, where,
 } from 'firebase/firestore';
 import type { DocumentData, QueryConstraint, QueryDocumentSnapshot } from 'firebase/firestore';
 import { db } from '../../config/firebase';
@@ -91,6 +91,18 @@ export const paginaPorFacturar = (lado: 'cliente' | 'proveedor', empresaId: stri
 /** 7.6 — operaciones de una empresa (en cualquier papel), de la más reciente. */
 export const paginaOperacionesDeEmpresa = (empresaId: string, tamano: number, cursor: Cursor = null): Promise<Pagina> =>
   pagina('operaciones', [where('empresasIds', 'array-contains', empresaId), orderBy('fechaServicioISO', 'desc')], tamano, cursor);
+
+/**
+ * ✅ V00487 — TODAS las operaciones, en páginas por id (sin índice). Solo para herramientas de
+ * corrección que el usuario lanza a mano y que antes dicen cuántas lecturas cuestan
+ * (Corregir monedas de convenio); ninguna pantalla debe listar con esto.
+ */
+export const paginaOperacionesPorId = (tamano: number, cursor: Cursor = null): Promise<Pagina> =>
+  pagina('operaciones', [orderBy(documentId())], tamano, cursor);
+
+/** ✅ V00487 — cuántas operaciones hay (agregación del servidor: 1 lectura por cada 1,000). */
+export const contarOperaciones = async (): Promise<number> =>
+  (await getCountFromServer(collection(db, 'operaciones'))).data().count;
 
 /** 7.7 — operaciones de un convenio (detalle) de cliente o proveedor. */
 export const paginaOperacionesDeConvenio = (lado: 'cliente' | 'proveedor', convenioId: string, tamano: number, cursor: Cursor = null): Promise<Pagina> =>
