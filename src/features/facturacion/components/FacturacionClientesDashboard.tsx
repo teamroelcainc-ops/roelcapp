@@ -919,6 +919,10 @@ export const FacturacionClientesDashboard = () => {
     if (emitida) return emitida;
     return monedaDeCliente(f.clienteId) || 'N/A';
   };
+  // ✅ V00485: el CÓDIGO (USD / MXN) de esa moneda, para el filtro de moneda del Historial.
+  //   monedaFacturaMostrar devuelve el NOMBRE ("Dólares" / "Pesos"); el filtro lo comparaba con
+  //   'USD' / 'MXN' y nunca coincidía (los conteos salían en 0 y elegir una moneda vaciaba la lista).
+  const codigoMonedaFactura = (f: unknown): Moneda | null => monedaCanonicaComun(monedaFacturaMostrar(f));
 
   // ✅ V00481: la moneda de una factura es SIEMPRE la del cliente en Empresas (null si no tiene).
   const monedaClienteDe = (clienteId: unknown): Moneda | null =>
@@ -2178,7 +2182,7 @@ export const FacturacionClientesDashboard = () => {
       return false;
     };
     const coincideCliente = (f: any) => !filtroCliente || String(f.clienteId || '') === filtroCliente;
-    const coincideMoneda = (f: any) => filtroMonedaHist === 'todas' || monedaFacturaMostrar(f).toUpperCase() === filtroMonedaHist;
+    const coincideMoneda = (f: any) => filtroMonedaHist === 'todas' || codigoMonedaFactura(f) === filtroMonedaHist; // ✅ V00485
     const coincideFechas = (f: any) => {
       if (!fechaDesdeHist && !fechaHastaHist) return true;
       const fc = String(f.fecha || '').slice(0, 10);
@@ -2274,7 +2278,7 @@ export const FacturacionClientesDashboard = () => {
       if (fechaHastaHist && fc > fechaHastaHist) return false;
       return true;
     };
-    const coincideMoneda = (f: any) => filtroMonedaHist === 'todas' || monedaFacturaMostrar(f).toUpperCase() === filtroMonedaHist;
+    const coincideMoneda = (f: any) => filtroMonedaHist === 'todas' || codigoMonedaFactura(f) === filtroMonedaHist; // ✅ V00485
     const base = facturasGlobales.filter(f => coincideTexto(f) && coincideCliente(f) && coincideMoneda(f) && coincideFechas(f));
     const c = { Todos: base.length } as Record<string, number>;
     base.forEach((f: any) => {
@@ -2313,7 +2317,7 @@ export const FacturacionClientesDashboard = () => {
     const base = facturasGlobales.filter(f => coincideTexto(f) && coincideCliente(f) && coincideFechas(f) && coincideStatus(f));
     let usd = 0, mxn = 0;
     base.forEach((f: any) => {
-      const mon = monedaFacturaMostrar(f).toUpperCase();
+      const mon = codigoMonedaFactura(f); // ✅ V00485
       if (mon === 'USD') usd++;
       else if (mon === 'MXN') mxn++;
     });

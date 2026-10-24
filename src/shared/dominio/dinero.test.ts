@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { ID_MXN, ID_USD } from './constantes';
 import {
-  agregadosFactura, calcularAbono, calcularReversion, conversionOperacion, ErrorDinero, estadoFactura, montoOperacion,
+  agregadosFactura, calcularAbono, calcularReversion, conversionOperacion, ErrorDinero, estadoFactura, monedaConvenioDe, monedaConvenioDeducida, montoOperacion,
   renglonEnCentavos, renglonFactura, totalesTrasCambioDeOps, totalNativoDeRenglonesLegado, totalNativoFactura,
   totalNativoFacturaLegado,
 } from './dinero';
@@ -130,10 +130,15 @@ describe('paridad con las reglas anteriores (3,000 casos al azar)', () => {
   it('conversión y monto de operación = Facturación Clientes / Proveedores', () => {
     for (let i = 0; i < 3000; i++) {
       const op = opAlAzar();
-      expect(conversionOperacion(op, 'cliente')).toEqual(refConversion(op, 'cliente'));
-      expect(conversionOperacion(op, 'proveedor')).toEqual(refConversion(op, 'proveedor'));
-      expect(montoOperacion(op, 'cliente')).toEqual(refMontoCliente(op));
-      expect(montoOperacion(op, 'proveedor')).toEqual(refMontoProveedor(op));
+      // ✅ V00486: la regla solo cambia cuando la moneda del convenio falta y se deduce de la conversión guardada.
+      if (!monedaConvenioDe(op, 'cliente').deducida) {
+        expect(conversionOperacion(op, 'cliente')).toEqual(refConversion(op, 'cliente'));
+        expect(montoOperacion(op, 'cliente')).toEqual(refMontoCliente(op));
+      }
+      if (!monedaConvenioDe(op, 'proveedor').deducida) {
+        expect(conversionOperacion(op, 'proveedor')).toEqual(refConversion(op, 'proveedor'));
+        expect(montoOperacion(op, 'proveedor')).toEqual(refMontoProveedor(op));
+      }
     }
   });
   it('total "legado" = Pagos; total de renglones "legado" = servidor', () => {
@@ -231,5 +236,47 @@ describe('agregados y renglones en centavos', () => {
   it('renglón de factura con los campos de siempre', () => {
     const r = renglonFactura('op1', { ref: 'TR-1', refCliente: 'PO-9', convenioNombre: 'Transfer', numeroRemolque: 'r1', montoConvenioCliente: 100, monedaConvenioCliente: 'USD', facturadoEnCobrar: ID_USD, tipoCambioAprobado: 18 }, 'cliente', (v) => (v === 'r1' ? 'CAJA 12' : v));
     expect(r).toEqual({ id: 'op1', ref: 'TR-1', monto: 1800, subtotalBase: 100, dol: 100, pes: 0, convenioNombre: 'Transfer', refCliente: 'PO-9', remolque: 'CAJA 12' });
+  });
+});
+
+describe('✅ V00486 — convenio sin moneda: se deduce de la conversión guardada', () => {
+  // LO-050626-002 (Juan Carlos Quintanar): convenio 115 (USD), facturado en Pesos, TC 17.2888;
+  //   el formulario guardó Pesos (Cliente) y Conversión Final $1,988.21, sin monedaConvenioCliente.
+  const quintanar = {
+    montoConvenioCliente: 115, cargosAdicionales: 0, facturadoEnCobrar: ID_MXN, monedaConvenioCliente: '',
+    tipoCambioAprobado: 17.2888, subtotalCliente: 115, dolaresCliente: 0, pesosCliente: 1988.21, conversionCliente: 1988.21,
+  };
+  it('convenio en dólares facturado en pesos: × TC (antes quedaba en $115 pesos)', () => {
+    expect(monedaConvenioDe(quintanar, 'cliente')).toEqual({ moneda: 'USD', deducida: true });
+    const m = montoOperacion(quintanar, 'cliente');
+    expect([m.pes, m.conv, m.dol]).toEqual([1988.21, 1988.21, 0]);
+    expect(renglonFactura('o1', quintanar, 'cliente').monto).toBe(1988.21);
+  });
+  it('convenio en pesos (la conversión guardada es igual al convenio): sin cambio', () => {
+    const op = { ...quintanar, montoConvenioCliente: 2000, conversionCliente: 2000, pesosCliente: 2000 };
+    expect(monedaConvenioDeducida(op, 'cliente')).toBe('MXN');
+    expect(montoOperacion(op, 'cliente').conv).toBe(2000);
+  });
+  it('convenio en pesos facturado en dólares: ÷ TC', () => {
+    const op = { montoConvenioCliente: 1850, facturadoEnCobrar: ID_USD, tipoCambioAprobado: 18.5, conversionCliente: 1850 };
+    const m = montoOperacion(op, 'cliente');
+    expect([m.dol, m.conv]).toEqual([100, 1850]);
+  });
+  it('la moneda guardada manda; sin conversión guardada no se deduce (regla de antes)', () => {
+    expect(montoOperacion({ ...quintanar, monedaConvenioCliente: ID_MXN }, 'cliente').conv).toBe(115);
+    const sinGuardada = { ...quintanar, conversionCliente: 0, pesosCliente: 0 };
+    expect(monedaConvenioDe(sinGuardada, 'cliente')).toEqual({ moneda: null, deducida: false });
+    expect(montoOperacion(sinGuardada, 'cliente').conv).toBe(115);
+    // una conversión que no se parece a ninguna (p. ej. 3×) tampoco deduce
+    expect(monedaConvenioDeducida({ ...quintanar, conversionCliente: 345 }, 'cliente')).toBeNull();
+  });
+  it('proveedores: con la conversión del proveedor', () => {
+    const op = { totalAPagarProv: 50, cargosAdicionalesProv: 0, facturadoEnUnidad: ID_MXN, tipoCambioAprobado: 18, conversionProv: 900 };
+    expect(monedaConvenioDe(op, 'proveedor')).toEqual({ moneda: 'USD', deducida: true });
+    expect(montoOperacion(op, 'proveedor').conv).toBe(900);
+  });
+  it('sin TC en la operación: cae a la conversión guardada (respaldo de siempre)', () => {
+    const op = { ...quintanar, tipoCambioAprobado: 0 };
+    expect(montoOperacion(op, 'cliente').conv).toBe(1988.21);
   });
 });

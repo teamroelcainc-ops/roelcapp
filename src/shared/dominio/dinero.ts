@@ -58,9 +58,49 @@ const camposLado = (op: Datos, lado: Lado) => (lado === 'cliente'
   : { fact: op.facturadoEnUnidad, monto: op.totalAPagarProv, cargos: op.cargosAdicionalesProv, nombreMoneda: op.monedaUnidadNombre, monedaConvenio: op.monedaConvenioProv });
 
 /**
+ * ✅ V00486 — moneda del convenio DEDUCIDA de la conversión que la operación trae guardada
+ * (conversionCliente / conversionProv), para las operaciones que no traen la moneda del convenio
+ * (importadas de AppSheet, o guardadas sin poder leer el detalle del convenio: el formulario calcula
+ * entonces con la del convenio elegido o USD y la deja vacía). La conversión siempre es en pesos:
+ * ≈ (convenio + cargos) × TC → el convenio era en Dólares; ≈ convenio + cargos → en Pesos.
+ * null si no hay conversión guardada o no se parece a ninguna de las dos.
+ */
+export const monedaConvenioDeducida = (operacion: unknown, lado: Lado): Moneda | null => {
+  const op = comoDatos(operacion);
+  const c = camposLado(op, lado);
+  const base = num(c.monto) + num(c.cargos);
+  const guardada = num(lado === 'cliente' ? op.conversionCliente : op.conversionProv);
+  if (!(base > 0) || !(guardada > 0)) return null;
+  const razon = guardada / base;
+  if (Math.abs(razon - 1) <= 0.02) return 'MXN';
+  if (razon >= 5) return 'USD'; // un dólar nunca ha valido menos de 5 pesos en estos datos
+  return null;
+};
+
+const monedaConvenioDeCampo = (crudo: unknown): { usd: boolean; mxn: boolean } => {
+  const monConv = String(crudo ?? '');
+  return {
+    usd: monConv === ID_USD || (!!monConv && textoUsd(monConv.toUpperCase())),
+    mxn: monConv === ID_MXN || (!!monConv && textoMxn(monConv.toUpperCase())),
+  };
+};
+
+/** Moneda del convenio de la operación: la guardada o, si no la trae, la deducida (V00486). */
+export const monedaConvenioDe = (operacion: unknown, lado: Lado): { moneda: Moneda | null; deducida: boolean } => {
+  const campo = monedaConvenioDeCampo(camposLado(comoDatos(operacion), lado).monedaConvenio);
+  if (campo.usd) return { moneda: 'USD', deducida: false };
+  if (campo.mxn) return { moneda: 'MXN', deducida: false };
+  const deducida = monedaConvenioDeducida(operacion, lado);
+  return { moneda: deducida, deducida: deducida !== null };
+};
+
+/**
  * Regla de monedas (V00126 · V00243 · V00244). Es exactamente la de
  * calcularConversionCliente / calcularConversionProveedor de Facturación y la del
  * espejo del servidor (relacional.ts), ahora en un solo lugar.
+ * ✅ V00486: sin moneda del convenio, la deducida de la conversión guardada (antes se tomaba como
+ * la misma moneda de la factura: un convenio de 115 USD facturado en pesos quedaba en $115 pesos,
+ * mientras el formulario y Por Cobrar decían $1,988.21).
  */
 export const conversionOperacion = (operacion: unknown, lado: Lado): MontosOperacion => {
   const op = comoDatos(operacion);
@@ -71,9 +111,14 @@ export const conversionOperacion = (operacion: unknown, lado: Lado): MontosOpera
   const nombreMoneda = String(c.nombreMoneda ?? '').toUpperCase();
   const factUSD = c.fact === ID_USD || textoUsd(nombreMoneda);
   const factMXN = c.fact === ID_MXN || textoMxn(nombreMoneda);
-  const monConv = String(c.monedaConvenio ?? '');
-  const convUSD = monConv === ID_USD || (!!monConv && textoUsd(monConv.toUpperCase()));
-  const convMXN = monConv === ID_MXN || (!!monConv && textoMxn(monConv.toUpperCase()));
+  const campo = monedaConvenioDeCampo(c.monedaConvenio);
+  let convUSD = campo.usd;
+  let convMXN = campo.mxn;
+  if (!convUSD && !convMXN) {
+    const deducida = monedaConvenioDeducida(op, lado);
+    convUSD = deducida === 'USD';
+    convMXN = deducida === 'MXN';
+  }
   let subtotal = montoConvenio;
   if (convUSD && factMXN) subtotal = tc > 0 ? montoConvenio * tc : 0;
   else if (convMXN && factUSD) subtotal = tc > 0 ? montoConvenio / tc : 0;

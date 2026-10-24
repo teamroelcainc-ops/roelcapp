@@ -41,7 +41,7 @@ import { CATALOGO_ADUANAS, CATALOGO_CV, cambiosCanonicos, catalogoServidor, cont
 import { banderaServidor } from './flags';
 import { CAMPOS_CANONICOS, derivarDesdeConvenio } from './dominio/operacionCanonica.js';
 import { ESQUEMA_OPERACION_VERSION, ID_MXN, ID_USD } from './dominio/constantes.js';
-import { conversionOperacion, derivadosFactura, monedaDeFactura, totalNativoDeOperaciones, totalNativoDeRenglonesLegado } from './dominio/dinero.js';
+import { conversionOperacion, derivadosFactura, monedaConvenioDeducida, monedaDeFactura, totalNativoDeOperaciones, totalNativoDeRenglonesLegado } from './dominio/dinero.js';
 import { aNumero, deCentavos, r2 } from './dominio/numeros.js';
 import { borrarRenglones, proyectarRenglones } from './proyecciones.js';
 import { cambiosCobroPuente } from './puentesYDiesel.js';
@@ -403,8 +403,14 @@ const conversionOperacionLegado = (op: Dict, lado: 'cliente' | 'proveedor') => {
   const factUSD = fact === ID_USD || esUSDTextoLegado(nombreMoneda);
   const factMXN = fact === ID_MXN || esMXNTextoLegado(nombreMoneda);
   const monConv = String((lado === 'cliente' ? op.monedaConvenioCliente : op.monedaConvenioProv) || '');
-  const convUSD = monConv === ID_USD || (!!monConv && esUSDTextoLegado(monConv));
-  const convMXN = monConv === ID_MXN || (!!monConv && esMXNTextoLegado(monConv));
+  let convUSD = monConv === ID_USD || (!!monConv && esUSDTextoLegado(monConv));
+  let convMXN = monConv === ID_MXN || (!!monConv && esMXNTextoLegado(monConv));
+  // ✅ V00486: sin moneda del convenio, la deducida de la conversión guardada (la misma regla de la web).
+  if (!convUSD && !convMXN) {
+    const deducida = monedaConvenioDeducida(op, lado);
+    convUSD = deducida === 'USD';
+    convMXN = deducida === 'MXN';
+  }
   let subtotal = montoConvenio;
   if (convUSD && factMXN) subtotal = tc > 0 ? montoConvenio * tc : 0;
   else if (convMXN && factUSD) subtotal = tc > 0 ? montoConvenio / tc : 0;
