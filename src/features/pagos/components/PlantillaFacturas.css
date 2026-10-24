@@ -1,0 +1,32 @@
+/* ✅ V00484: plantilla de facturas a pagar (Registrar pago / Editar pago) */
+.ptf-barra { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ptf-btn {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
+  border: 1px solid #30363d; border-radius: 6px; background-color: #161b22;
+  color: #c9d1d9; font-size: 0.8rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.ptf-btn:hover:not(:disabled) { border-color: #58a6ff; color: #58a6ff; }
+.ptf-btn:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
+.ptf-btn:disabled { opacity: 0.6; cursor: wait; }
+.ptf-btn--cargar { border-color: rgba(63, 185, 80, 0.5); color: #3fb950; }
+.ptf-btn--cargar:hover:not(:disabled) { border-color: #3fb950; color: #56d364; background-color: rgba(63, 185, 80, 0.08); }
+.ptf-input-oculto { display: none; }
+
+/* El resultado ocupa su propio renglón dentro del encabezado (flex con wrap) */
+.ptf-error, .ptf-resultado { flex-basis: 100%; margin: 0; order: 2; }
+.ptf-error { color: #f85149; font-size: 0.82rem; }
+.ptf-resultado {
+  display: grid; gap: 6px; padding: 8px 12px;
+  border: 1px solid #30363d; border-left: 3px solid #3fb950; border-radius: 8px;
+  background-color: #0b1016; color: #c9d1d9; font-size: 0.84rem;
+}
+.ptf-resultado__linea { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ptf-ok { color: #3fb950; }
+.ptf-cero, .ptf-aviso { color: #e3b341; }
+.ptf-cerrar { display: inline-flex; padding: 2px; border: none; background: none; color: #8b949e; cursor: pointer; }
+.ptf-cerrar:hover { color: #f0f6fc; }
+.ptf-avisos { display: grid; gap: 3px; max-height: 140px; margin: 0; padding: 0; list-style: none; overflow-y: auto; }
+.ptf-avisos li { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.ptf-factura { flex-shrink: 0; min-width: 72px; color: #f0883e; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 700; }
+.ptf-motivo { flex: 1; min-width: 0; color: #c9d1d9; }
+.ptf-fila { flex-shrink: 0; color: #6e7681; font-size: 0.76rem; }

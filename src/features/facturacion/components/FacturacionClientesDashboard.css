@@ -6,15 +6,15 @@
 .fcd-x2 { color: #c9d1d9; font-family: monospace; }
 .fcd-x3 { display: inline-flex; align-items: center; gap: 6px; }
 .fcd-x4 { color: #f59e0b; border: 1px solid #f59e0b; border-radius: 10px; padding: 0 6px; font-size: 0.75rem; font-weight: bold; line-height: 16px; }
-.fcd-x5 { padding: 16px; white-space: nowrap; }
+.fcd-x5 { padding: 10px 12px; white-space: nowrap; } /* ✅ V00482: filas más bajas */
 .fcd-x6 { padding: 3px 10px; border-radius: 12px; font-size: 0.78rem; font-weight: bold; color: #58a6ff; border: 1px solid #58a6ff; background-color: rgba(88,166,255,0.1); font-family: monospace; }
 .fcd-x7 { color: #8b949e; font-size: 0.8rem; }
-.fcd-x8 { padding: 16px; color: #58a6ff; font-weight: bold; font-family: monospace; white-space: nowrap; }
-.fcd-x9 { padding: 16px; color: #3fb950; font-weight: bold; white-space: nowrap; }
+.fcd-x8 { padding: 10px 12px; color: #58a6ff; font-weight: bold; font-family: monospace; white-space: nowrap; }
+.fcd-x9 { padding: 10px 12px; color: #3fb950; font-weight: bold; white-space: nowrap; }
 .fcd-x10 { color: #D84315; font-weight: bold; font-family: monospace; }
 .fcd-x11 { color: #c9d1d9; }
 .fcd-x12 { color: #f0f6fc; }
-.fcd-x13 { display: flex; flex-wrap: wrap; gap: 6px; max-width: 420px; white-space: normal; }
+.fcd-x13 { display: flex; flex-wrap: nowrap; gap: 6px; white-space: nowrap; } /* ✅ V00482: en una línea (máx. 3 y "+N") */
 .fcd-x14 { background-color: #21262d; border: 1px solid #58a6ff; color: #58a6ff; padding: 3px 8px; border-radius: 6px; cursor: pointer; font-size: 0.78rem; font-family: monospace; font-weight: bold; }
 .fcd-x15 { color: #58a6ff; font-weight: bold; }
 .fcd-x16 { flex: 1; min-width: 280px; position: relative; }
@@ -83,10 +83,10 @@
 .fcd-x79 { color: #3fb950; font-size: 1.8rem; font-weight: bold; }
 .fcd-x80 { color: #f0f6fc; font-size: 1.1rem; font-weight: bold; }
 .fcd-x81 { color: #D84315; font-size: 1.8rem; font-weight: bold; }
-.fcd-x82 { border: 1px solid #30363d; border-radius: 8px; overflow-x: auto; overflow-y: auto; max-height: calc(100vh - 380px); background-color: #161b22; }
+.fcd-x82 { border: 1px solid #30363d; border-radius: 8px; overflow-x: auto; overflow-y: auto; max-height: calc(100vh - 290px); background-color: #161b22; }
 .fcd-x83 { width: 100%; border-collapse: collapse; text-align: left; }
 .fcd-x84 { background-color: #1f2937; color: #8b949e; font-size: 0.8rem; position: sticky; top: 0; z-index: 10; }
-.fcd-x85 { padding: 16px; text-align: center; border-bottom: 1px solid #30363d; white-space: nowrap; }
+.fcd-x85 { padding: 10px 12px; text-align: center; border-bottom: 1px solid #30363d; white-space: nowrap; }
 .fcd-x86 { padding: 16px; width: 50px; text-align: center; border-bottom: 1px solid #30363d; white-space: nowrap; }
 .fcd-x87 { padding: 64px 24px; text-align: center; }
 .fcd-x88 { display: flex; flex-direction: column; align-items: center; gap: 14px; }
@@ -99,20 +99,19 @@
 .fcd-x95 { background-color: transparent; border: 1px solid #f59e0b; color: #f59e0b; border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 0.78rem; font-weight: bold; white-space: nowrap; }
 .fcd-x96 { background-color: transparent; border: 1px solid #ef4444; color: #ef4444; border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 0.78rem; font-weight: bold; white-space: nowrap; }
 .fcd-x97 { background-color: transparent; border: 1px solid #58a6ff; color: #58a6ff; border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 0.78rem; font-weight: bold; white-space: nowrap; }
-.fcd-x98 { padding: 16px; text-align: center; white-space: nowrap; }
+.fcd-x98 { padding: 8px 12px; text-align: center; white-space: nowrap; }
 .fcd-x99 { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background-color: #10b981; }
 .fcd-x100 { cursor: pointer; width: 16px; height: 16px; accent-color: #ffffff; }
 .fcd-x101 { display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 16px; }
 .fcd-x102 { color: #8b949e; font-size: 0.85rem; }
-.fcd-x103 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
-.fcd-x104 { background-color: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 20px; }
-.fcd-x105 { display: block; color: #8b949e; font-size: 0.8rem; font-weight: bold; text-transform: uppercase; margin-bottom: 6px; }
-.fcd-x106 { color: #58a6ff; font-size: 2rem; font-weight: bold; }
-.fcd-x107 { color: #3fb950; font-size: 2rem; font-weight: bold; }
-.fcd-x108 { display: block; color: #D84315; font-size: 0.8rem; font-weight: bold; text-transform: uppercase; margin-bottom: 6px; }
-.fcd-x109 { color: #10b981; font-size: 1.5rem; font-weight: bold; }
-.fcd-x110 { color: #3b82f6; font-size: 1.5rem; font-weight: bold; }
-.fcd-x111 { display: flex; align-items: center; gap: 8px; }
+.fcd-x103 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; } /* ✅ V00482: tarjetas más compactas */
+.fcd-x104 { background-color: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 12px 16px; }
+.fcd-x105 { display: block; color: #8b949e; font-size: 0.74rem; font-weight: bold; text-transform: uppercase; margin-bottom: 4px; }
+.fcd-x106 { color: #c9d1d9; font-size: 1.4rem; font-weight: bold; }
+.fcd-x107 { color: #c9d1d9; font-size: 1.4rem; font-weight: bold; }
+.fcd-x108 { display: block; color: #8b949e; font-size: 0.74rem; font-weight: bold; text-transform: uppercase; margin-bottom: 4px; }
+.fcd-x109 { color: #58a6ff; font-size: 1.4rem; font-weight: bold; } /* ✅ V00481: Dólares en azul (antes verde) */
+.fcd-x110 { color: #3fb950; font-size: 1.4rem; font-weight: bold; } /* ✅ V00481: Pesos en verde (antes azul) */
 .fcd-x112 { text-align: center; padding: 40px; color: #8b949e; }
 .fcd-x113 { border-bottom: 1px solid #21262d; }
 .fcd-x114 { display: flex; gap: 8px; justify-content: center; }
@@ -199,20 +198,6 @@
 .fcd-x195 { color: #3fb950; font-size: 0.85rem; }
 .fcd-x196 { padding: 16px 24px; display: flex; justify-content: flex-end; border-top: 1px solid #30363d; background-color: #161b22; }
 .fcd-x197 { padding: 8px 24px; border-radius: 6px; color: #c9d1d9; border: 1px solid #30363d; background: transparent; cursor: pointer; }
-.fcd-x198 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.85); z-index: 1900; display: flex; justify-content: center; align-items: center; padding: 20px; backdrop-filter: blur(4px); }
-.fcd-x199 { width: 720px; max-width: 100%; max-height: 92vh; overflow-y: auto; background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; }
-.fcd-x200 { color: #f0f6fc; font-size: 1.15rem; font-weight: bold; }
-.fcd-x201 { background: transparent; border: none; color: #8b949e; font-size: 1.4rem; cursor: pointer; }
-.fcd-x202 { padding: 24px; display: flex; flex-direction: column; gap: 18px; }
-.fcd-x204 { color: #8b949e; font-size: 0.78rem; font-weight: bold; text-transform: uppercase; margin-bottom: 10px; }
-.fcd-x205 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.fcd-x206 { background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 14px; }
-.fcd-x207 { color: #8b949e; font-size: 0.72rem; text-transform: uppercase; }
-.fcd-x208 { display: flex; flex-direction: column; gap: 8px; font-size: 0.88rem; }
-.fcd-x209 { flex-shrink: 0; }
-.fcd-x210 { background-color: rgba(88,166,255,0.06); border: 1px solid rgba(88,166,255,0.3); border-radius: 8px; padding: 12px 14px; color: #8b949e; font-size: 0.8rem; }
-.fcd-x211 { padding: 16px 24px; border-top: 1px solid #30363d; display: flex; justify-content: flex-end; gap: 10px; }
-.fcd-x212 { padding: 8px 24px; border-radius: 6px; background-color: #D84315; color: #fff; border: none; cursor: pointer; font-weight: bold; }
 .fcd-x213 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 1750; padding: 20px; backdrop-filter: blur(6px); }
 .fcd-x214 { display: flex; justify-content: space-between; margin-bottom: 18px; border-bottom: 1px solid #30363d; padding-bottom: 14px; }
 .fcd-x215 { color: #f0f6fc; margin: 0; font-size: 1.15rem; }
@@ -244,7 +229,6 @@
 .fcd-x241 { background-color: #010409; border: 1px dashed #30363d; border-radius: 8px; padding: 12px 14px; margin-bottom: 18px; font-size: 0.82rem; color: #8b949e; }
 .fcd-x242 { color: #f59e0b; }
 .fcd-x243 { width: 100%; padding: 10px; background-color: #161b22; color: #fff; border: 1px solid #30363d; border-radius: 6px; box-sizing: border-box; color-scheme: dark; }
-.fcd-x244 { width: 100%; padding: 10px; background-color: #161b22; color: #10b981; border: 1px solid #30363d; border-radius: 6px; font-weight: bold; box-sizing: border-box; }
 .fcd-x245 { width: 100%; padding: 10px; background-color: #161b22; color: #3fb950; border: 1px solid #30363d; border-radius: 6px; font-weight: bold; box-sizing: border-box; }
 .fcd-x246 { display: flex; justify-content: flex-end; gap: 12px; border-top: 1px solid #30363d; padding-top: 18px; }
 .fcd-x247 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.85); z-index: 1800; display: flex; justify-content: center; align-items: center; padding: 20px; backdrop-filter: blur(4px); }
@@ -299,18 +283,6 @@
 .fcd-x296 { font-size: 2.5rem; color: #10b981; font-weight: bold; }
 .fcd-x297 { padding: 12px 32px; display: flex; justify-content: flex-end; border-top: 1px solid #30363d; background-color: #161b22; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; flex-shrink: 0; }
 .fcd-x298 { padding: 10px 32px; border-radius: 6px; color: #c9d1d9; border: 1px solid #30363d; background: transparent; cursor: pointer; }
-.fcd-x299 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 1900; padding: 20px; backdrop-filter: blur(6px); }
-.fcd-x300 { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; width: 100%; max-width: 760px; max-height: 92vh; overflow-y: auto; padding: 24px; }
-.fcd-x301 { display: flex; justify-content: space-between; margin-bottom: 8px; border-bottom: 1px solid #30363d; padding-bottom: 14px; }
-.fcd-x302 { color: #8b949e; font-size: 0.82rem; margin: 12px 0 20px; }
-.fcd-x303 { color: #3b82f6; }
-.fcd-x304 { color: #10b981; }
-.fcd-x305 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
-.fcd-x306 { border: 1px solid #3b82f6; border-radius: 10px; padding: 16px; background-color: rgba(59,130,246,0.05); }
-.fcd-x307 { color: #3b82f6; font-weight: bold; font-size: 0.9rem; margin-bottom: 12px; }
-.fcd-x308 { margin-bottom: 10px; }
-.fcd-x309 { border: 1px solid #10b981; border-radius: 10px; padding: 16px; background-color: rgba(16,185,129,0.05); }
-.fcd-x310 { color: #10b981; font-weight: bold; font-size: 0.9rem; margin-bottom: 12px; }
 .fcd-x311 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.85); display: flex; align-items: flex-start; justify-content: center; z-index: 1850; padding: 20px; backdrop-filter: blur(6px); overflow-y: auto; }
 .fcd-x312 { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; width: 100%; max-width: 960px; margin: auto; padding: 24px; }
 .fcd-x313 { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; border-bottom: 1px solid #30363d; padding-bottom: 14px; }
@@ -361,12 +333,11 @@
   .fcd-x92 { padding: 14px 12px; }
   .fcd-x94 { flex-wrap: wrap; }
   .fcd-x101 { flex-wrap: wrap; }
-  .fcd-x103 { grid-template-columns: 1fr; }
-  .fcd-x106 { font-size: 1.3rem; }
-  .fcd-x107 { font-size: 1.3rem; }
-  .fcd-x109 { font-size: 1.3rem; }
-  .fcd-x110 { font-size: 1.3rem; }
-  .fcd-x111 { flex-wrap: wrap; }
+  .fcd-x103 { grid-template-columns: 1fr 1fr; }
+  .fcd-x106 { font-size: 1.15rem; }
+  .fcd-x107 { font-size: 1.15rem; }
+  .fcd-x109 { font-size: 1.15rem; }
+  .fcd-x110 { font-size: 1.15rem; }
   .fcd-x112 { padding: 14px 12px; }
   .fcd-x114 { flex-wrap: wrap; }
   .fcd-x115 { flex-wrap: wrap; }
@@ -399,10 +370,6 @@
   .fcd-x178 { grid-template-columns: 1fr; }
   .fcd-x179 { flex-wrap: wrap; }
   .fcd-x196 { flex-wrap: wrap; }
-  .fcd-x198 { flex-wrap: wrap; }
-  .fcd-x202 { padding: 14px 12px; }
-  .fcd-x205 { grid-template-columns: 1fr; }
-  .fcd-x211 { flex-wrap: wrap; }
   .fcd-x213 { flex-wrap: wrap; }
   .fcd-x214 { flex-wrap: wrap; }
   .fcd-x223 { flex-wrap: wrap; }
@@ -431,10 +398,6 @@
   .fcd-x294 { padding: 14px 12px; }
   .fcd-x296 { font-size: 1.3rem; }
   .fcd-x297 { flex-wrap: wrap; }
-  .fcd-x299 { flex-wrap: wrap; }
-  .fcd-x300 { padding: 14px 12px; }
-  .fcd-x301 { flex-wrap: wrap; }
-  .fcd-x305 { grid-template-columns: 1fr; }
   .fcd-x311 { flex-wrap: wrap; }
   .fcd-x312 { padding: 14px 12px; }
   .fcd-x313 { flex-wrap: wrap; }
@@ -457,10 +420,6 @@
 .fac-sin-pago { color: #8b949e; }
 
 /* ✅ V00262: buscador visible sobre la tabla del historial */
-.fac-buscador-tabla { position: relative; display: inline-flex; align-items: center; }
-.fac-buscador-tabla__input { width: 300px; max-width: 40vw; padding: 8px 30px 8px 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; font-size: 0.85rem; }
-.fac-buscador-tabla__input:focus { outline: none; border-color: #58a6ff; }
-.fac-buscador-tabla__limpiar { position: absolute; right: 6px; background: none; border: none; color: #8b949e; cursor: pointer; font-size: 0.8rem; padding: 2px 4px; }
 
 /* ✅ V00262: modal Exportar a Excel con orden por Drag & Drop */
 .fac-export-modal { width: 880px; max-width: 94vw; max-height: 86vh; display: flex; flex-direction: column; }
@@ -481,7 +440,7 @@
 .fac-export-modal__separador { flex: 1; }
 .fac-export-modal__exportar { padding: 8px 18px; border: none; border-radius: 6px; background: #1a7f37; color: #fff; font-weight: bold; cursor: pointer; }
 .fac-export-modal__exportar:disabled { background: #30363d; color: #8b949e; cursor: wait; }
-@media (max-width: 760px) { .fac-export-cuadricula { grid-template-columns: 1fr; } .fac-buscador-tabla__input { width: 100%; max-width: none; } }
+@media (max-width: 760px) { .fac-export-cuadricula { grid-template-columns: 1fr; } }
 
 /* ✅ V00264: tarjetas del resumen clicables + modal de detalle */
 .fac-tarjeta-clicable { cursor: pointer; transition: border-color 0.15s ease, transform 0.1s ease; }
@@ -530,3 +489,20 @@
 .fcd-tab-revision--con.fcd-tab-revision--activa { color: #ff7b72; border-bottom-color: #f85149; }
 .fcd-tab-revision__n { min-width: 20px; padding: 1px 7px; border-radius: 999px; background: #21262d; color: #c9d1d9; font-size: 0.72rem; font-weight: 700; text-align: center; }
 .fcd-tab-revision--con .fcd-tab-revision__n { background: rgba(248, 81, 73, 0.18); color: #ff7b72; }
+
+/* ✅ V00481: moneda fija del cliente, avisos, cancelación y Editar desde el detalle de la operación */
+.modal-overlay.fcd-detras-editor { z-index: 900; }
+.fcd-moneda-fija { display: block; width: 100%; box-sizing: border-box; padding: 10px; border: 1px dashed #30363d; border-radius: 6px; background-color: #010409; cursor: default; }
+.fcd-edit-aviso:empty { display: none; }
+.fcd-aviso-crear { margin: -12px 0 20px; }
+.fcd-aviso-moneda { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+.fcd-aviso-moneda > p { flex: 1 1 260px; }
+.fcd-btn-corregir-moneda { padding: 8px 14px; border: 1px solid #d29922; border-radius: 6px; background: transparent; color: #e3b341; font-weight: 700; font-size: 0.82rem; cursor: pointer; }
+.fcd-btn-corregir-moneda:hover { background: rgba(210, 153, 34, 0.15); }
+.fcd-btn-editar-detalle { margin-right: auto; padding: 10px 20px; border: 1px solid #58a6ff; border-radius: 6px; background: transparent; color: #58a6ff; font-weight: 700; cursor: pointer; }
+.fcd-btn-editar-detalle:hover { background: rgba(88, 166, 255, 0.12); }
+.fcd-total-op { font-weight: 700; }
+
+/* ✅ V00482: "+N" cuando una factura tiene más de 3 referencias (el resto se ve en la ficha) */
+.fcd-mas-refs { padding: 3px 8px; border: 1px dashed #484f58; border-radius: 6px; background: transparent; color: #8b949e; font-size: 0.78rem; font-weight: 700; cursor: pointer; }
+.fcd-mas-refs:hover { color: #c9d1d9; border-color: #8b949e; }

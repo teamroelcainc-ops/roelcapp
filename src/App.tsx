@@ -110,6 +110,8 @@ import { irARevision, NOMBRE_MODULO_REVISION, useAvisos } from './shared/data/av
 import type { ModuloRevision } from './shared/data/avisos';
 import PestanasOperaciones from './features/operaciones/components/PestanasOperaciones'; // ✅ V00477
 import { esModuloOperaciones, pestanaDeEntrada } from './features/operaciones/services/modulosOperaciones';
+import PestanasFacturacion from './features/facturacion/components/PestanasFacturacion'; // ✅ V00480
+import { esModuloFacturacion, pestanaDeFacturacion } from './features/facturacion/services/modulosFacturacion';
 
 // ============================================================================
 // Mapa: etiqueta del módulo (como se guarda en el rol) -> clave interna (moduloActivo).
@@ -1439,6 +1441,8 @@ function AppContenido() {
   const puede = (clave: string) => clavesPermitidas.has(clave);
   // ✅ V00477: a qué pestaña lleva el menú "Operaciones" (null = sin ninguna de las tres)
   const pestanaOperaciones = pestanaDeEntrada(moduloActivo, puede);
+  // ✅ V00480: igual para "Facturación" (Clientes / Proveedores)
+  const pestanaFacturacion = pestanaDeFacturacion(moduloActivo, puede);
 
   // ✅ V00224: publica los permisos para que otros módulos los consulten
   //   (p. ej. el botón "Tarifa (Origen/Destino)" en operaciones).
@@ -1482,16 +1486,16 @@ function AppContenido() {
   }
 
   const esBaseDeDatosActiva = moduloActivo === 'empresas' || moduloActivo === 'contactos' || moduloActivo === 'tipoCambio' || moduloActivo === 'saldosPuentes' || moduloActivo === 'combustible' || moduloActivo === 'proveedoresUnidad' || moduloActivo === 'unidadesProveedor' || moduloActivo === 'unidades' || moduloActivo === 'remolques' || moduloActivo === 'direcciones';
-  const esClientesActivo = moduloActivo === 'conveniosClientes' || moduloActivo === 'tarifarioClientes' || moduloActivo === 'facturacionClientes' || moduloActivo === 'detallesConvenioClientes';
-  const esProveedoresActivo = moduloActivo === 'conveniosProveedores' || moduloActivo === 'facturacionProveedores' || moduloActivo === 'detallesConvenioProveedores' || moduloActivo === 'tarifarioProveedores'; // ✅ V00211
+  const esClientesActivo = moduloActivo === 'conveniosClientes' || moduloActivo === 'tarifarioClientes' || moduloActivo === 'detallesConvenioClientes'; // ✅ V00480: Facturación tiene su propio apartado
+  const esProveedoresActivo = moduloActivo === 'conveniosProveedores' || moduloActivo === 'detallesConvenioProveedores' || moduloActivo === 'tarifarioProveedores'; // ✅ V00211 · V00480
   const esEmpleadosActivo = moduloActivo === 'colaboradores' || moduloActivo === 'historialAsistencia' || moduloActivo === 'referenciasNomina' || moduloActivo === 'deducciones';
   const esConfiguracionActivo = moduloActivo === 'roles' || moduloActivo === 'usuarios' || moduloActivo === 'logs' || moduloActivo === 'flujosOperacion' || moduloActivo === 'datosEmpresa' || moduloActivo === 'autorizaciones';
   const esGastosActivo = moduloActivo === 'mtto' || moduloActivo === 'referenciasDiesel' || moduloActivo === 'referenciasPuentes' || moduloActivo === 'costosAdicionales';
 
   // Visibilidad de cada grupo: se muestra si al menos un hijo está permitido.
   const verGastos = puede('mtto') || puede('referenciasDiesel') || puede('referenciasPuentes') || puede('costosAdicionales');
-  const verClientes = puede('conveniosClientes') || puede('tarifarioClientes') || puede('facturacionClientes');
-  const verProveedores = puede('conveniosProveedores') || puede('facturacionProveedores') || puede('tarifarioProveedores') || puede('detallesConvenioProveedores'); // ✅ V00211
+  const verClientes = puede('conveniosClientes') || puede('tarifarioClientes') || puede('detallesConvenioClientes'); // ✅ V00480: sin Facturación (apartado propio)
+  const verProveedores = puede('conveniosProveedores') || puede('tarifarioProveedores') || puede('detallesConvenioProveedores'); // ✅ V00211 · V00480
   const verEmpleados = puede('colaboradores') || puede('historialAsistencia') || puede('referenciasNomina') || puede('deducciones');
   const verBasesDatos = puede('empresas') || puede('contactos') || puede('direcciones') || puede('tipoCambio') || puede('saldosPuentes') || puede('combustible') || puede('unidades') || puede('remolques') || puede('proveedoresUnidad') || puede('unidadesProveedor');
   const verConfiguracion = puede('usuarios') || puede('roles') || puede('logs') || puede('flujosOperacion') || puede('datosEmpresa') || puede('autorizaciones');
@@ -1739,6 +1743,13 @@ function AppContenido() {
             <span className="sidebar-label">{etq('menu.analisis_clientes', 'Análisis de Clientes')}</span>
           </div>
         )}{/* ✅ V00479 */}
+        {/* ✅ V00480: Facturación de Clientes y de Proveedores en un solo apartado (pestañas arriba del módulo) */}
+        {pestanaFacturacion && (
+          <div className={`sidebar-item ${esModuloFacturacion(moduloActivo) ? 'active' : ''}`} title="Facturación: clientes y proveedores" onClick={() => navegarA(pestanaFacturacion)}>
+            <span className="sidebar-icon">{ICON.facturacionClientes}</span>
+            <span className="sidebar-label">{etq('menu.facturaci_n', 'Facturación')}</span>
+          </div>
+        )}
         {puede('pagos') && (
           <div className={`sidebar-item ${moduloActivo === 'pagos' ? 'active' : ''}`} title="Pagos" onClick={() => navegarA('pagos')}>
             <span className="sidebar-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></span>
@@ -1778,7 +1789,6 @@ function AppContenido() {
                 {puede('tarifarioClientes') && <div className={`sidebar-subitem ${moduloActivo === 'tarifarioClientes' ? 'active' : ''}`} onClick={() => navegarA('tarifarioClientes')}><span className="sidebar-icon">{ICON.tarifarioClientes}</span><span className="sidebar-label">{etq('menu.tarifario_clientes', 'Tarifario Clientes')}</span></div>}
                 {/* ✅ NUEVO (V00112): Detalles del Convenio (clientes) */}
                 {puede('detallesConvenioClientes') && <div className={`sidebar-subitem ${moduloActivo === 'detallesConvenioClientes' ? 'active' : ''}`} onClick={() => navegarA('detallesConvenioClientes')}><span className="sidebar-icon">{ICON.conveniosClientes}</span><span className="sidebar-label">{etq('menu.detalles_del_convenio', 'Convenio de Clientes')}</span></div>}{/* ✅ V00231: etiqueta nueva (la clave y el permiso no cambian) */}
-                {puede('facturacionClientes') && <div className={`sidebar-subitem ${moduloActivo === 'facturacionClientes' ? 'active' : ''}`} onClick={() => navegarA('facturacionClientes')}><span className="sidebar-icon">{ICON.facturacionClientes}</span><span className="sidebar-label">{etq('menu.facturaci_n', 'Facturación')}</span></div>}
               </div>
             )}
           </>
@@ -1799,7 +1809,6 @@ function AppContenido() {
                 {puede('tarifarioProveedores') && <div className={`sidebar-subitem ${moduloActivo === 'tarifarioProveedores' ? 'active' : ''}`} onClick={() => navegarA('tarifarioProveedores')}><span className="sidebar-icon">{ICON.tarifarioProveedores}</span><span className="sidebar-label">{etq('menu.tarifario_proveedores', 'Tarifario Proveedores')}</span></div>}
                 {/* ✅ NUEVO (V00112): Detalles del Convenio (proveedores) — ✅ V00211: permiso propio */}
                 {puede('detallesConvenioProveedores') && <div className={`sidebar-subitem ${moduloActivo === 'detallesConvenioProveedores' ? 'active' : ''}`} onClick={() => navegarA('detallesConvenioProveedores')}><span className="sidebar-icon">{ICON.conveniosProveedores}</span><span className="sidebar-label">{etq('menu.detalles_del_convenio', 'Detalles del Convenio')}</span></div>}
-                {puede('facturacionProveedores') && <div className={`sidebar-subitem ${moduloActivo === 'facturacionProveedores' ? 'active' : ''}`} onClick={() => navegarA('facturacionProveedores')}><span className="sidebar-icon">{ICON.facturacionProveedores}</span><span className="sidebar-label">{etq('menu.facturaci_n', 'Facturación')}</span></div>}
               </div>
             )}
           </>
@@ -2108,6 +2117,9 @@ function AppContenido() {
             {moduloActivo === 'logs' && puede('logs') && <LogsDashboard />}
             {moduloActivo === 'flujosOperacion' && puede('flujosOperacion') && <ConfiguradorStatus />}
             {moduloActivo === 'datosEmpresa' && puede('datosEmpresa') && <ConfiguracionEmpresa />}
+            {esModuloFacturacion(moduloActivo) && puede(moduloActivo) && (
+              <PestanasFacturacion activo={moduloActivo} puede={puede} onCambiar={navegarA} />
+            )}{/* ✅ V00480 */}
             <MantenerVivo activo={moduloActivo === 'facturacionClientes' && puede('facturacionClientes')}><FacturacionClientesDashboard /></MantenerVivo>{/* ✅ V00264 */}
             <MantenerVivo activo={moduloActivo === 'facturacionProveedores' && puede('facturacionProveedores')}><FacturacionProveedoresDashboard /></MantenerVivo>{/* ✅ V00264 */}
           </Suspense>

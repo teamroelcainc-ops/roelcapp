@@ -1,10 +1,10 @@
 // src/features/empresas/components/EmpresasDashboard.tsx
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { Suspense, useState, useEffect, useMemo, useRef } from 'react';
+import { Pencil, RefreshCw } from 'lucide-react'; // ✅ V00484
 import { AuditoriaCadenaEmpresa } from './AuditoriaCadenaEmpresa'; // ✅ V00333
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { propagarMonedaEmpresa } from '../services/propagarMoneda';
 import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
-import { docsSinPruebas, sinPruebas } from '../../../utils/operacionPrueba';
 import { collection, onSnapshot, getDocs, query, where, limit, orderBy, writeBatch, doc, deleteDoc, getCountFromServer } from 'firebase/firestore'; // ✅ V00269
 import { db, eliminarRegistro, actualizarRegistro } from '../../../config/firebase';
 import { FormularioEmpresa, TIPOS_DOCUMENTO_EMPRESA } from './FormularioEmpresa';
@@ -24,7 +24,11 @@ import { idReal, useCatalogo, useCatalogos } from '../../../shared/data/catalogo
 import type { DocCatalogo } from '../../../shared/data/catalogos';
 import { monedaCanonica } from '../../../shared/dominio/moneda';
 import { useFlags, useFlagsCargadas } from '../../../shared/data/flags';
-import { paginaOperacionesDeEmpresa, todasLasPaginas, usosEnCache } from '../../../shared/data/consultas';
+import { paginaOperacionesDeEmpresa, usosEnCache } from '../../../shared/data/consultas';
+import { leerReferenciasEmpresa, releerOperacionReferencia } from '../services/referenciasEmpresa'; // ✅ V00484
+import type { OperacionReferencia } from '../services/referenciasEmpresa';
+import { lazyWithRetry } from '../../../utils/lazyWithRetry';
+import { avisar } from '../../../shared/data/avisos';
 import { buscarDuplicados, nombreComparable } from '../services/duplicadosEmpresas'; // ✅ V00478
 import type { CriterioDuplicado, GrupoDuplicados } from '../services/duplicadosEmpresas';
 
@@ -85,8 +89,11 @@ const COLUMNAS_BASE = [
   { id: 'fechaServicio', label: 'Fecha Serv.', visible: true }
 ];
 
-/** ✅ V00443 (Fase 7.6): tope de operaciones en la pestaña Referencias (las más recientes). */
-const TOPE_REFS_OPS = 3000;
+// ✅ V00484: el formulario de operación se carga al editar desde Referencias (no al entrar a Empresas).
+const EditorOperacionEmbebido = lazyWithRetry(
+  () => import('../../operaciones/components/EditorOperacionEmbebido').then((m) => ({ default: m.EditorOperacionEmbebido })),
+  'EditorOperacionEmbebido',
+);
 
 const EmpresasDashboard = () => {
   const flags = useFlags();
@@ -115,6 +122,11 @@ const EmpresasDashboard = () => {
   const [seccionRefs, setSeccionRefs] = useState<'operaciones' | 'convenios' | 'facturas' | 'pagos'>('operaciones');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc de operación sin tipo canónico.
   const [opDetalle, setOpDetalle] = useState<any | null>(null);
+  // ✅ V00484: editar una operación desde Referencias y Actualizar sin quitar la vista.
+  const [opEditandoRef, setOpEditandoRef] = useState<OperacionReferencia | null>(null);
+  const [actualizandoRefs, setActualizandoRefs] = useState(false);
+  /** Cada lectura de Referencias lleva un número: solo se aplica la última (al cambiar de empresa se descarta). */
+  const lecturaRefs = useRef(0);
 
   // ✅ NUEVO (V00191): conteo GLOBAL de operaciones por empresa, para la columna
   //   "Cantidad de Operaciones" y para el conteo de la pestaña Referencias.
@@ -194,93 +206,63 @@ const EmpresasDashboard = () => {
   //   origen y destino), se cargan los CONVENIOS, FACTURAS y PAGOS ligados.
   //   Todo se descarga una sola vez por empresa (al cambiar de pestaña y
   //   volver, no se vuelve a leer de Firestore).
+  // ✅ V00484: la lectura vive en services/referenciasEmpresa.ts (también la usa Actualizar).
   useEffect(() => {
     if (!empresaViendo?.id || activeTabDetalle !== 'referencias') return;
     if (refsCliente !== null) return; // ya cargado para esta empresa
     let activo = true;
+    const lectura = ++lecturaRefs.current;
     setCargandoRefs(true);
-    (async () => {
-      try {
-        const idEmp = String(empresaViendo.id);
-
-        // 1) OPERACIONES en cualquier papel, deduplicadas por id, con etiqueta
-        //    de rol para mostrar en qué participó la empresa.
-        const ROLES: [string, string][] = [
-          ['clientePaga', 'Cliente que Paga'],
-          ['clienteMercancia', 'Cliente (Mercancía)'],
-          ['provServicios', 'Proveedor (Servicios)'],
-          ['proveedorUnidad', 'Proveedor (Unidad)'],
-          ['origen', 'Origen'],
-          ['destino', 'Destino'],
-        ];
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docs de operación sin tipo canónico.
-        const porOp = new Map<string, any>();
-        // ✅ V00443 (Fase 7.6): con `consultasCanonicas`, UNA consulta (empresasIds contiene la
-        //   empresa, de la más reciente) en lugar de 6 (una por papel); el papel sale de los IDs canónicos.
-        if (flags.consultasCanonicas) {
-          // Su propio try: si falla (p. ej. índice en construcción), convenios, facturas y pagos
-          // se muestran igual y la pestaña dice qué pasó.
-          try {
-            const r = await todasLasPaginas((c) => paginaOperacionesDeEmpresa(idEmp, 500, c), TOPE_REFS_OPS);
-            sinPruebas(r.docs).forEach((op) => {
-              const roles = ROLES.filter(([campo]) => String(op[`${campo}Id`] ?? op[campo] ?? '') === idEmp).map(([, etiqueta]) => etiqueta);
-              porOp.set(String(op._docId), { ...op, _roles: roles });
-            });
-            if (r.truncado && activo) setRefsOpsAviso(`Se muestran las ${TOPE_REFS_OPS.toLocaleString('es-MX')} operaciones más recientes.`);
-          } catch (e: unknown) {
-            console.error('No se pudieron leer las operaciones de la empresa:', e);
-            if (activo) setRefsOpsAviso(`No se pudieron leer las operaciones: ${String((e as { message?: string })?.message || e)}`);
-          }
-        } else await Promise.all(ROLES.map(async ([campo, etiqueta]) => {
-          try {
-            const snap = await getDocs(query(collection(db, 'operaciones'), where(campo, '==', idEmp), limit(1000)));
-            docsSinPruebas(snap.docs).forEach((d) => { // ✅ V00380
-              const previo = porOp.get(d.id);
-              if (previo) { previo._roles.push(etiqueta); return; }
-              porOp.set(d.id, { id: d.id, ...d.data(), _roles: [etiqueta] });
-            });
-          } catch { /* índice o colección faltante: seguir con los demás papeles */ }
-        }));
-        const lista = Array.from(porOp.values())
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc de operación sin tipo canónico.
-          .sort((a: any, b: any) => String(b.fechaServicio || '').localeCompare(String(a.fechaServicio || '')));
-
-        // 2) CONVENIOS, FACTURAS y PAGOS ligados a la empresa.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docs sin tipo canónico.
-        const cargar = async (col: string, campo: string, extra: Record<string, any> = {}) => {
-          try {
-            const snap = await getDocs(query(collection(db, col), where(campo, '==', idEmp), limit(500)));
-            return snap.docs.map((d) => ({ id: d.id, ...d.data(), ...extra }));
-          } catch { return []; }
-        };
-        const [convCli, convProv, factCli, factProv, pagosEmp] = await Promise.all([
-          cargar('convenios_clientes', 'clienteId', { _tipo: 'Cliente' }),
-          cargar('convenios_proveedores', 'proveedorId', { _tipo: 'Proveedor' }),
-          cargar('facturas_clientes', 'clienteId', { _tipo: 'Cliente' }),
-          cargar('facturas_proveedores', 'proveedorId', { _tipo: 'Proveedor' }),
-          cargar('pagos', 'entidadId'),
-        ]);
-
-        if (!activo) return;
-        setRefsCliente(lista);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docs sin tipo canónico.
-        const ordenarPor = (arr: any[], campo: string) =>
-          [...arr].sort((a, b) => String(b[campo] || '').localeCompare(String(a[campo] || '')));
-        setRefsConvenios(ordenarPor([...convCli, ...convProv], 'fechaConvenio'));
-        setRefsFacturas(ordenarPor([...factCli, ...factProv], 'fecha'));
-        setRefsPagos(ordenarPor(pagosEmp, 'fecha'));
-      } catch (e) {
+    leerReferenciasEmpresa(String(empresaViendo.id), flags.consultasCanonicas)
+      .then((r) => {
+        if (!activo || lectura !== lecturaRefs.current) return;
+        setRefsCliente(r.operaciones); setRefsOpsAviso(r.avisoOperaciones);
+        setRefsConvenios(r.convenios); setRefsFacturas(r.facturas); setRefsPagos(r.pagos);
+      })
+      .catch((e: unknown) => {
         console.error('No se pudieron cargar las referencias del cliente:', e);
-        if (activo) { setRefsCliente([]); setRefsConvenios([]); setRefsFacturas([]); setRefsPagos([]); }
-      } finally {
-        if (activo) setCargandoRefs(false);
-      }
-    })();
+        if (activo && lectura === lecturaRefs.current) { setRefsCliente([]); setRefsConvenios([]); setRefsFacturas([]); setRefsPagos([]); }
+      })
+      .finally(() => { if (activo) setCargandoRefs(false); });
     return () => { activo = false; };
   }, [empresaViendo?.id, activeTabDetalle, refsCliente, flags.consultasCanonicas]);
 
+  // ✅ V00484: Actualizar — vuelve a leer y cambia los datos SIN quitar la tabla: la sección, la
+  //   búsqueda y la posición de la lista se quedan como estaban.
+  const actualizarReferencias = async () => {
+    if (!empresaViendo?.id || actualizandoRefs) return;
+    const lectura = ++lecturaRefs.current;
+    setActualizandoRefs(true);
+    try {
+      const r = await leerReferenciasEmpresa(String(empresaViendo.id), flags.consultasCanonicas);
+      if (lectura !== lecturaRefs.current) return;
+      setRefsCliente(r.operaciones); setRefsOpsAviso(r.avisoOperaciones);
+      setRefsConvenios(r.convenios); setRefsFacturas(r.facturas); setRefsPagos(r.pagos);
+    } catch (e: unknown) {
+      console.error('No se pudieron actualizar las referencias:', e);
+      avisar({ tipo: 'alerta', titulo: 'No se pudieron actualizar las referencias', texto: `Se quedan las que ya se veían. ${String((e as { message?: string })?.message || e)}` });
+    } finally {
+      if (lectura === lecturaRefs.current) setActualizandoRefs(false);
+    }
+  };
+
+  // ✅ V00484: después de guardar la operación en el formulario, su fila se relee (1 lectura).
+  const alGuardarOperacionRef = async (op: OperacionReferencia) => {
+    if (!empresaViendo?.id) return;
+    const idOp = idReal(op);
+    const idEmp = String(empresaViendo.id);
+    try {
+      const nueva = await releerOperacionReferencia(idOp, idEmp, op._roles);
+      if (String(empresaViendo.id) !== idEmp) return;
+      setRefsCliente((prev) => (prev ? (nueva ? prev.map((o) => (idReal(o) === idOp ? nueva : o)) : prev.filter((o) => idReal(o) !== idOp)) : prev));
+    } catch (e: unknown) {
+      console.error('No se pudo releer la operación editada:', e);
+    }
+  };
+
   // Al cambiar de empresa, las referencias del anterior se descartan.
   useEffect(() => {
+    lecturaRefs.current++; setActualizandoRefs(false); // ✅ V00484: una lectura en curso ya no se aplica
     setRefsCliente(null); setBusquedaRefs(''); setRefsOpsAviso('');
     setRefsConvenios(null); setRefsFacturas(null); setRefsPagos(null);
     setSeccionRefs('operaciones'); setOpDetalle(null);
@@ -1927,6 +1909,12 @@ const EmpresasDashboard = () => {
                         <button type="button" className="ed-refs-chip ed-refs-chip--excel" disabled={!refsCliente || !refsFacturas || !refsPagos} title="Descargar UN Excel con tres hojas: Operaciones, Facturación y Pagos de esta empresa" onClick={descargarExcelReferencias}>
                           ⬇ Excel (ops + facturación + pagos)
                         </button>
+                        {/* ✅ V00484: vuelve a leer sin quitar la vista (sección, búsqueda y posición se quedan) */}
+                        <button type="button" className="ed-refs-chip ed-refs-chip--actualizar" disabled={actualizandoRefs} onClick={actualizarReferencias}
+                          title="Volver a leer operaciones, convenios, facturas y pagos de esta empresa; la búsqueda se conserva">
+                          <RefreshCw size={13} className={actualizandoRefs ? 'ed-refs-girando' : undefined} aria-hidden="true" />
+                          {actualizandoRefs ? 'Actualizando…' : 'Actualizar'}
+                        </button>
                       </div>
 
                       {seccionRefs === 'operaciones' && (
@@ -1963,11 +1951,20 @@ const EmpresasDashboard = () => {
                                   </thead>
                                   <tbody>
                                     {visibles.map(op => (
-                                      <tr key={op.id}>
-                                        <td className="ed-refs-ref ed-refs-ref--clic"
-                                          title="Ver el detalle de esta operación (convenio, facturas y pagos ligados)"
-                                          onClick={() => setOpDetalle(op)}>
-                                          {op.ref || op.id}
+                                      <tr key={idReal(op)}>
+                                        <td className="ed-refs-ref">
+                                          <span className="ed-refs-ref-celda">
+                                            <button type="button" className="ed-refs-ref-btn"
+                                              title="Ver el detalle de esta operación (convenio, facturas y pagos ligados)"
+                                              onClick={() => setOpDetalle(op)}>
+                                              {op.ref || op.id}
+                                            </button>
+                                            {/* ✅ V00484: abre el formulario de edición de la operación */}
+                                            <button type="button" className="ed-refs-editar" title="Editar esta operación"
+                                              aria-label={`Editar la operación ${op.ref || op.id}`} onClick={() => setOpEditandoRef(op)}>
+                                              <Pencil size={13} aria-hidden="true" />
+                                            </button>
+                                          </span>
                                         </td>
                                         <td className="ed-refs-roles">{(op._roles || []).join(' · ') || '—'}</td>
                                         <td>{op.fechaServicio || '—'}</td>
@@ -2093,6 +2090,11 @@ const EmpresasDashboard = () => {
                     title="Copiar la referencia para buscarla en Operaciones"
                     onClick={() => { navigator.clipboard?.writeText(String(opDetalle.ref || opDetalle.id)).catch(() => {}); }}>
                     Copiar Ref.
+                  </button>
+                  {/* ✅ V00484: editar desde el detalle (el detalle se cierra; el formulario queda encima) */}
+                  <button type="button" className="ed-opdet-copiar ed-opdet-editar" title="Abrir el formulario de edición de esta operación"
+                    onClick={() => { const op = opDetalle; setOpDetalle(null); setOpEditandoRef(op); }}>
+                    <Pencil size={13} aria-hidden="true" /> Editar operación
                   </button>
                   <button type="button" className="ed-x46" onClick={() => setOpDetalle(null)}>✕</button>
                 </div>
@@ -2467,6 +2469,13 @@ const EmpresasDashboard = () => {
         </div>
       )}
       {audEmpresa && <AuditoriaCadenaEmpresa empresaId={audEmpresa.id} empresaNombre={audEmpresa.nombre} onCerrar={() => setAudEmpresa(null)} />}{/* ✅ V00333 */}
+      {/* ✅ V00484: formulario de la operación abierto desde Referencias */}
+      {opEditandoRef && (
+        <Suspense fallback={<CargandoDatos texto="Abriendo la operación…" />}>
+          <EditorOperacionEmbebido operacionId={idReal(opEditandoRef)} operacion={opEditandoRef}
+            onClose={() => setOpEditandoRef(null)} onSave={() => { void alGuardarOperacionRef(opEditandoRef); }} />
+        </Suspense>
+      )}
     </div>
   );
 };

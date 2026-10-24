@@ -1,0 +1,40 @@
+/* ✅ V00484: tablas de facturas de Pagos con Expandir */
+.pte-bloque { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.pte-encabezado { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.pte-titulo { color: #8b949e; font-size: 0.74rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; }
+.pte-btn {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
+  border: 1px solid #30363d; border-radius: 6px; background-color: #161b22;
+  color: #c9d1d9; font-size: 0.8rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+  order: 1; /* al final de la fila, antes de un aviso que ocupe su propio renglón */
+}
+.pte-btn:hover { border-color: #58a6ff; color: #58a6ff; }
+.pte-btn:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
+
+.pte-marco { border: 1px solid #30363d; border-radius: 8px; overflow: auto; scrollbar-gutter: stable; }
+.pte-marco--normal { max-height: 320px; }
+.pte-marco--bajo { max-height: 260px; }
+.pte-marco--libre { max-height: none; }
+.pte-marco::-webkit-scrollbar { width: 10px; height: 10px; }
+.pte-marco::-webkit-scrollbar-track { background: #0d1117; }
+.pte-marco::-webkit-scrollbar-thumb { background: #30363d; border-radius: 5px; }
+.pte-marco::-webkit-scrollbar-thumb:hover { background: #484f58; }
+
+/* Expandida: encima de la ventana del pago, casi toda la pantalla; la tabla toma el alto que sobra */
+.pte-bloque.pte-bloque--expandida {
+  position: fixed; inset: 16px; z-index: 60; gap: 10px;
+  padding: 16px 18px; background-color: #0d1117;
+  border: 1px solid #444; border-radius: 12px; box-shadow: 0 24px 64px rgba(0, 0, 0, 0.65);
+}
+.pte-bloque--expandida .pte-marco { flex: 1 1 auto; min-height: 0; max-height: none; }
+.pte-pie {
+  display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px 24px;
+  padding-top: 10px; border-top: 1px solid #30363d; color: #8b949e; font-size: 0.9rem;
+}
+
+@media (max-width: 980px) {
+  .pte-marco--normal { max-height: 260px; }
+}
+@media (max-width: 768px) {
+  .pte-bloque.pte-bloque--expandida { inset: 0; border-radius: 0; padding: 12px; }
+}

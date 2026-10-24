@@ -1,0 +1,7 @@
+/* ✅ V00481: Pesos en verde, Dólares en azul (importes y nombre de la moneda). Doble clase para
+   ganarle al color del contenedor (.fcd-x…, .fpd-x…). */
+.imp { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.imp.imp--mxn { color: #3fb950; }
+.imp.imp--usd { color: #58a6ff; }
+.imp.imp--sin { color: #8b949e; }
+.imp-nombre { font-weight: 700; }

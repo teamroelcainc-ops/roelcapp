@@ -1,0 +1,20 @@
+/* ✅ V00482 */
+.ahi-barra { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
+.ahi-buscar { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px 0 10px; border: 1px solid #30363d; border-radius: 6px; background: #0d1117; color: #8b949e; }
+.ahi-buscar:focus-within { border-color: #58a6ff; }
+.ahi-buscar__input { width: 280px; max-width: 46vw; padding: 8px 0; border: none; background: transparent; color: #c9d1d9; font: inherit; font-size: 0.86rem; outline: none; }
+.ahi-buscar__input::-webkit-search-cancel-button { display: none; }
+.ahi-buscar__limpiar { display: inline-flex; border: none; background: none; color: #8b949e; cursor: pointer; padding: 2px; }
+.ahi-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border: 1px solid #30363d; border-radius: 6px; background: #21262d; color: #c9d1d9; font: inherit; font-size: 0.85rem; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.ahi-btn:hover { border-color: #8b949e; }
+.ahi-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.ahi-btn--corregir { border-color: rgba(88, 166, 255, 0.6); color: #58a6ff; }
+.ahi-btn--corregir:hover { background: rgba(88, 166, 255, 0.1); border-color: #58a6ff; }
+.ahi-btn--exportar { border-color: #1a7f37; background: #1a7f37; color: #fff; }
+.ahi-btn--exportar:hover { background: #238636; border-color: #238636; }
+
+@media (max-width: 768px) {
+  .ahi-barra { margin-left: 0; width: 100%; }
+  .ahi-buscar { flex: 1 1 100%; }
+  .ahi-buscar__input { width: 100%; max-width: none; }
+}

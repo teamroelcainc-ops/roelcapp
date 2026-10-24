@@ -62,7 +62,7 @@ import type { EscrituraDocs } from '../services/documentosFactura';
 import { agregarDocsFactura, guardarDocsFactura, rescatarDocsDeBorradas } from '../services/guardarDocsFactura';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
-import { esUSD as esMonedaUSD, monedaCanonica as monedaCanonicaComun } from '../../../shared/dominio/moneda';
+import { esUSD as esMonedaUSD, monedaCanonica as monedaCanonicaComun, nombreMoneda } from '../../../shared/dominio/moneda';
 import { ID_MXN, ID_USD, STATUS_COMPLETADOS } from '../../../shared/dominio/constantes'; // ✅ V00439 (Fase 3.x)
 import { obtenerCatalogo, useCatalogo, useCatalogos } from '../../../shared/data/catalogos';
 import type { DocCatalogo } from '../../../shared/data/catalogos'; // ✅ V00439 (Fase 3.x)
@@ -91,7 +91,22 @@ import {
 } from '../selectores'; // ✅ V00444 (Fase 8.1): una sola copia (antes idéntica en Clientes y Proveedores)
 import { useOperacionesFacturables } from '../hooks/useOperacionesFacturables'; // ✅ V00444 (Fase 8.1)
 import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
-import { conversionOperacion, montoOperacion } from '../../../shared/dominio/dinero';
+import { conversionOperacion, monedaDeFactura, montoOperacion } from '../../../shared/dominio/dinero';
+import type { Moneda } from '../../../shared/dominio/moneda';
+import Importe, { NombreMoneda } from './Importe'; // ✅ V00481: Pesos en verde, Dólares en azul
+import AvisoMonedaFactura from './AvisoMonedaFactura';
+import CamposCancelacion from './CamposCancelacion';
+import ModalCancelarFactura from './ModalCancelarFactura';
+import CancelacionFicha from './CancelacionFicha';
+import AccionesHistorial from './AccionesHistorial'; // ✅ V00482
+import CorregirFacturasModal from './CorregirFacturasModal';
+import {
+  AVISO_AGREGAR_FACTURADA, AVISO_REMISION_FACTURADA, CANCELACION_VACIA, STATUS_AL_CREAR, avisoMonedaDistinta, avisoSinMoneda,
+  cancelacionDe, estaCancelada, importesDeRenglones, monedaDeEmpresa, puedeAgregarOperaciones, puedeGenerarRemision,
+  totalSugeridoEn, validarCancelacion,
+} from '../services/reglasFactura';
+import type { DatosCancelacion } from '../services/reglasFactura';
+import { escribirEnGrupo, escrituraCancelacion } from '../services/statusFacturaDatos';
 import { leerParaDocumento } from '../../../utils/direccionPdf'; // ✅ V00448
 import TagPuenteUnidad from '../../puentes/components/TagPuenteUnidad'; // ✅ V00465
 import { grupoTagDeOperacion } from '../../puentes/services/tagPuente';
@@ -459,7 +474,7 @@ export const FacturacionProveedoresDashboard = () => {
   const [guardandoCostoAdic, setGuardandoCostoAdic] = useState(false);
 
   const [opInfoMap, setOpInfoMap] = useState<Record<string, any>>({});
-  const [modalDiagnostico, setModalDiagnostico] = useState(false);
+  const [corrigiendoFacturas, setCorrigiendoFacturas] = useState(false); // ✅ V00482: Corregir monedas y montos
 
   const [facturaEditando, setFacturaEditando] = useState<any | null>(null);
   const [guardandoEdit, setGuardandoEdit] = useState(false);
@@ -467,9 +482,12 @@ export const FacturacionProveedoresDashboard = () => {
   const [editFecha, setEditFecha] = useState('');
   const [editCcp, setEditCcp] = useState('');
   const [editStatus, setEditStatus] = useState('Facturado');
-  const [editMoneda, setEditMoneda] = useState('');
   const [editTotal, setEditTotal] = useState('');
   const [editProveedorId, setEditProveedorId] = useState(''); // ✅ NUEVO: reasignar proveedor
+  type FacturaACancelar = { id?: unknown; invoice?: unknown; proveedorId?: unknown; statusFactura?: unknown; __groupIds?: unknown };
+  // ✅ V00481: la moneda ya no se elige (es la del proveedor); cancelar pide nota y factura de reemplazo.
+  const [editCancelacion, setEditCancelacion] = useState<DatosCancelacion>(CANCELACION_VACIA);
+  const [cancelarDe, setCancelarDe] = useState<FacturaACancelar | null>(null);
 
   const [gestionOp, setGestionOp] = useState<any | null>(null);
   const [gestionInvoice, setGestionInvoice] = useState('');
@@ -915,6 +933,29 @@ export const FacturacionProveedoresDashboard = () => {
     return monedaDeProveedor(f.proveedorId) || 'N/A';
   };
 
+  // ✅ V00481: la moneda de una factura es SIEMPRE la del proveedor en Empresas (null si no tiene).
+  const monedaProveedorDe = (provId: unknown): Moneda | null =>
+    monedaDeEmpresa(empresasList.find((e) => e.id === provId), 'monedaProveedor', (id) => mapaCatalogos[id]);
+  const avisoMonedaDe = (f: { proveedorId?: unknown } | null | undefined): string | null =>
+    f ? avisoMonedaDistinta(monedaDeFactura(f), monedaProveedorDe(f.proveedorId), 'proveedor') : null;
+  // Folios del mismo proveedor que se sugieren como la factura que reemplaza a una cancelada.
+  const foliosDelProveedor = (f: { proveedorId?: unknown; invoice?: unknown } | null | undefined): string[] => {
+    const propio = String(f?.invoice || '').trim();
+    return Array.from(new Set(facturasGlobales
+      .filter((x) => String(x.proveedorId || '') === String(f?.proveedorId || '') && !estaCancelada(x.statusFactura))
+      .map((x) => String(x.invoice || '').trim())
+      .filter((inv) => inv && inv !== propio))).slice(0, 200);
+  };
+  // Total que se precarga en Editar Factura: el de la factura; si su moneda no es la del proveedor,
+  //   la suma de sus operaciones en la moneda del proveedor (Dólares o Conversión Final).
+  const totalEditPara = (f: { operacionesGuardadas?: unknown }, provId: string): number => {
+    const actual = r2(totalDeGrupo(f));
+    const mon = monedaProveedorDe(provId);
+    if (!mon || mon === monedaDeFactura(f)) return actual;
+    const sugerido = r2(totalSugeridoEn(mon, f.operacionesGuardadas));
+    return sugerido > 0 ? sugerido : actual;
+  };
+
   const esFacturada = (op: any) => opIndex.has(String(op.id)) || !!op.facturaProveedorId || !!op.facturadoProveedor;
   const invoiceDeOp = (op: any): string => op.facturaProveedorFolio || opIndex.get(String(op.id))?.invoice || '';
 
@@ -951,19 +992,12 @@ export const FacturacionProveedoresDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proveedorFacturaId, empresasList, operacionesGlobales]);
 
-  const monedaProveedor = useMemo(() => {
-    if (!proveedorFacturaId) return '-';
-    const empresa = empresasList.find(e => e.id === proveedorFacturaId);
-    if (!empresa) {
-      const op = operacionesGlobales.find(o => String(provDeOp(o) || '') === proveedorFacturaId);
-      return op?.monedaUnidadNombre || '-';
-    }
-    const idMoneda = empresa.monedaRef || empresa.moneda;
-    if (idMoneda === ID_MXN) return 'MXN';
-    if (idMoneda === ID_USD) return 'USD';
-    return idMoneda || 'No definida en catálogo';
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [proveedorFacturaId, empresasList, operacionesGlobales]);
+  // ✅ V00481: SIEMPRE la moneda del proveedor en Empresas ('USD' / 'MXN'); sin ella no se factura
+  //   (antes caía a la moneda de una operación o a lo que tuviera el campo).
+  const monedaProveedor = useMemo((): 'USD' | 'MXN' | '' => {
+    if (!proveedorFacturaId) return '';
+    return monedaDeEmpresa(empresasList.find(e => e.id === proveedorFacturaId), 'monedaProveedor', (id) => mapaCatalogos[id]) ?? '';
+  }, [proveedorFacturaId, empresasList, mapaCatalogos]);
 
   const formatearValorGenericoOp = (val: any, tipo?: string): string => {
     if (val === '' || val === null || val === undefined) return '-';
@@ -1100,37 +1134,6 @@ export const FacturacionProveedoresDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [operacionesGlobales, fechaDesdeOps, fechaHastaOps, facturasGlobales, filtroProveedor, filtroTipoOp]);
 
-  const diagnostico = useMemo(() => {
-    const totalFacturas = facturasGlobales.length;
-    const opsFacturadasUnicas = opIndex.size;
-    const porClave = new Map<string, number>();
-    facturasGlobales.forEach((f: any) => {
-      const k = `${String(f.invoice || '').trim().toLowerCase()}__${String(f.proveedorId || '')}`;
-      porClave.set(k, (porClave.get(k) || 0) + 1);
-    });
-    let invoicesDuplicados = 0;
-    porClave.forEach(v => { if (v > 1) invoicesDuplicados++; });
-    let sinMoneda = 0, sinFecha = 0, sinTotal = 0;
-    facturasGlobales.forEach((f: any) => {
-      if (monedaFacturaMostrar(f) === 'N/A') sinMoneda++;
-      if (!String(f.fecha || '').trim()) sinFecha++;
-      if (!(Number(f.subtotalFactura) > 0)) sinTotal++;
-    });
-    const enRango = operacionesGlobales.filter(op => dentroRangoFecha(op));
-    const rangoTotal = enRango.length;
-    const rangoFacturadas = enRango.filter(op => esFacturada(op)).length;
-    const rangoPorFacturar = rangoTotal - rangoFacturadas;
-    const huerfanas = enRango.filter(op => (op.facturadoProveedor || op.facturaProveedorId) && !opIndex.has(String(op.id))).length;
-    return {
-      totalFacturas, opsFacturadasUnicas, invoicesDuplicados,
-      sinMoneda, sinFecha, sinTotal,
-      rangoTotal, rangoFacturadas, rangoPorFacturar, huerfanas,
-      topeFacturas: totalFacturas >= LIMITE_FACTURAS_TODAS,
-      topeOps: topeOpsAlcanzado,
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [facturasGlobales, opIndex, operacionesGlobales, fechaDesdeOps, fechaHastaOps, empresasList, topeOpsAlcanzado]);
-
   const toggleOrdenOps = (campo: string) =>
     setOrdenOps(prev => prev.campo === campo ? { campo, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { campo, dir: 'asc' });
   const flechaOps = (campo: string) => ordenOps.campo === campo ? (ordenOps.dir === 'asc' ? ' ▲' : ' ▼') : '';
@@ -1157,7 +1160,7 @@ export const FacturacionProveedoresDashboard = () => {
   };
 
   const renderCeldaOps = (op: any, key: string, m: any) => {
-    const tdBase: React.CSSProperties = { padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' };
+    const tdBase: React.CSSProperties = { padding: '10px 12px', color: '#c9d1d9', whiteSpace: 'nowrap' }; // ✅ V00482: filas más bajas
     switch (key) {
       case 'factura': {
         const inv = invoiceDeOp(op);
@@ -1183,12 +1186,13 @@ export const FacturacionProveedoresDashboard = () => {
       case 'proveedor': return <td key={key} style={tdBase}>{getNombreEmpresa(provDeOp(op) || op.proveedorUnidadNombre)}</td>;
       case 'cartaPorte': return <td key={key} style={tdBase}>{op.cartaPorte || op.numeroCartaPorte || op.numDoda || '-'}</td>;
       case 'destino': return <td key={key} style={tdBase}>{op.destinoNombre || op.destino || '-'}</td>;
-      case 'moneda': return <td key={key} style={tdBase}>{op.monedaUnidadNombre || mostrarMoneda(op.facturadoEnUnidad)}</td>;
-      case 'subtotal': return <td key={key} style={tdBase}>{formatoMoneda(m.subtotal)}</td>;
-      case 'total': return <td key={key} style={{ ...tdBase, fontWeight: 700, color: '#f0f6fc' }}>{formatoMoneda(m.total)}</td>;
-      case 'dolares': return <td key={key} style={{ ...tdBase, color: '#10b981' }}>{formatoMoneda(m.dol)}</td>;
-      case 'pesos': return <td key={key} style={{ ...tdBase, color: '#3b82f6' }}>{formatoMoneda(m.pes)}</td>;
-      case 'conv': return <td className="fpd-x6" key={key}>{formatoMoneda(m.conv)}</td>;
+      // ✅ V00481: Pesos en verde y Dólares en azul (antes al revés); subtotal y total en la moneda en que se factura.
+      case 'moneda': return <td key={key} style={tdBase}><NombreMoneda moneda={op.monedaUnidadNombre || op.facturadoEnUnidad} respaldo={op.monedaUnidadNombre || mostrarMoneda(op.facturadoEnUnidad)} /></td>;
+      case 'subtotal': return <td key={key} style={tdBase}><Importe monto={m.subtotal} moneda={monedaFacturacionOp(op)} /></td>;
+      case 'total': return <td key={key} style={tdBase}><Importe monto={m.total} moneda={monedaFacturacionOp(op)} className="fpd-total-op" /></td>;
+      case 'dolares': return <td key={key} style={tdBase}><Importe monto={m.dol} moneda="USD" /></td>;
+      case 'pesos': return <td key={key} style={tdBase}><Importe monto={m.pes} moneda="MXN" /></td>;
+      case 'conv': return <td className="fpd-x6" key={key}><Importe monto={m.conv} moneda="MXN" /></td>;
       default: {
         const col = columnasOps.find(c => c.id === key);
         const text = formatearValorGenericoOp(valorGenericoOp(op, col), col?.tipo);
@@ -1222,8 +1226,6 @@ export const FacturacionProveedoresDashboard = () => {
   // ═══════════════════════════════════════════════════════════════════
   const [emisorMXN, setEmisorMXN] = useState<EmisorRemision>(EMISOR_MXN_DEFAULT);
   const [emisorUSD, setEmisorUSD] = useState<EmisorRemision>(EMISOR_USD_DEFAULT);
-  const [modalEmisores, setModalEmisores] = useState(false);
-  const [guardandoEmisores, setGuardandoEmisores] = useState(false);
   const [remisionPreview, setRemisionPreview] = useState<any | null>(null);
   const [cargandoRemision, setCargandoRemision] = useState(false);
 
@@ -1251,24 +1253,11 @@ export const FacturacionProveedoresDashboard = () => {
     return () => { activo = false; };
   }, []);
 
-  const guardarEmisores = async () => {
-    setGuardandoEmisores(true);
-    try {
-      const payload = { mxn: emisorMXN, usd: emisorUSD, updatedAt: new Date().toISOString() };
-      try { localStorage.setItem(LS_REMISION_EMISORES, JSON.stringify({ mxn: emisorMXN, usd: emisorUSD })); } catch { /* noop */ }
-      await setDoc(doc(db, CONFIG_COLUMNAS_COLLECTION, DOC_REMISION_EMISORES), payload);
-      setModalEmisores(false);
-    } catch (e) {
-      console.error('Error guardando encabezados de remisión:', e);
-      alert('No se pudo guardar el encabezado de remisiones para todos los usuarios.\nRevisa tus permisos de escritura en Firestore (colección config_columnas).');
-    } finally {
-      setGuardandoEmisores(false);
-    }
-  };
 
   // Preparar la remisión de una factura de PROVEEDOR → abre el modal editable.
   const abrirRemision = async (f: any) => {
     if (!f) return;
+    if (!puedeGenerarRemision(f.statusFactura)) { alert(AVISO_REMISION_FACTURADA); return; } // ✅ V00481
     setCargandoRemision(true);
     try {
       // ✅ Fase 1.8 (e): resolverMoneda puede devolver el NOMBRE del catálogo
@@ -2042,6 +2031,15 @@ export const FacturacionProveedoresDashboard = () => {
     });
     return { subtotal, refs };
   }, [seleccionadas, operacionesGlobales]);
+  // ✅ V00481: lo que se va a facturar EN LA MONEDA DEL PROVEEDOR: Dólares → Dólares;
+  //   Pesos → Conversión Final (la misma regla del total de la factura).
+  const totalSeleccionEnMoneda = useMemo(() => {
+    const renglones = seleccionadas.map((id) => operacionesGlobales.find((o) => o.id === id)).filter(Boolean).map((op) => {
+      const m = obtenerMontoOperacion(op);
+      return { monto: m.conv, dol: m.dol, pes: m.pes, subtotalBase: m.subtotal };
+    });
+    return monedaProveedor ? totalNativoDeOperaciones(monedaProveedor, renglones) : 0; // la misma regla con que se guarda el total
+  }, [seleccionadas, operacionesGlobales, monedaProveedor]);
 
   // ✅ Fase 1.8: la factura FRESCA del servidor (facturasGlobales puede tener
   //   hasta 30 min), con la misma forma que la lista. null si ya no existe.
@@ -2075,6 +2073,9 @@ export const FacturacionProveedoresDashboard = () => {
     }
     // ✅ Fase 1.8: 1 escritura por operación + la factura; avisar antes de que falle el commit.
     if (seleccionadas.length + 1 > MAX_ESCRITURAS_LOTE) return alert(avisoLoteGrande(seleccionadas.length + 1));
+    // ✅ V00481: la moneda es la del proveedor en Empresas y es obligatoria.
+    if (monedaProveedor !== 'USD' && monedaProveedor !== 'MXN') return alert(avisoSinMoneda('proveedor'));
+    if (estaCancelada(statusFacturaForm)) return alert('Una factura nueva no se crea Cancelada: se cancela después desde su ficha.');
     // ✅ V00279: el documento NO es obligatorio para facturar — sin adjunto se
     //   factura directo y la fila queda con ⚠ como recordatorio visual.
     setGuardando(true);
@@ -2253,17 +2254,23 @@ export const FacturacionProveedoresDashboard = () => {
     }
   };
 
-  const handleCambiarStatusFactura = async (factura: any, nuevoStatus: string) => {
+  // ✅ V00481: pasar a Cancelado abre la ventana que pide la nota y la factura que la reemplaza;
+  //   con esos datos (cancelacion) se guarda. Al salir de Cancelado se borran.
+  const handleCambiarStatusFactura = async (factura: any, nuevoStatus: string, cancelacion: DatosCancelacion | null = null) => {
     if (!factura?.id) return;
+    if (estaCancelada(nuevoStatus) && !cancelacion && !estaCancelada(factura.statusFactura)) { setCancelarDe(factura); return; }
     const ids: string[] = Array.isArray(factura.__groupIds) && factura.__groupIds.length ? factura.__groupIds : [factura.id];
+    const canc = escrituraCancelacion(factura, nuevoStatus, cancelacion);
     try {
-      const batch = writeBatch(db);
-      ids.forEach(id => batch.set(doc(db, 'facturas_proveedores', id), { statusFactura: nuevoStatus }, { merge: true }));
-      await batch.commit();
-      setFacturasGlobales(prev => prev.map(f => ids.includes(f.id) ? { ...f, statusFactura: nuevoStatus } : f));
-      setFacturaViendo((prev: any) => (prev && (ids.includes(prev.id) || prev.id === factura.id)) ? { ...prev, statusFactura: nuevoStatus } : prev);
+      await escribirEnGrupo('facturas_proveedores', ids, { statusFactura: nuevoStatus, ...canc.firestore });
+      setFacturasGlobales(prev => prev.map(f => ids.includes(f.id) ? canc.local({ ...f, statusFactura: nuevoStatus }) : f));
+      setFacturaViendo((prev: any) => (prev && (ids.includes(prev.id) || prev.id === factura.id)) ? canc.local({ ...prev, statusFactura: nuevoStatus }) : prev);
+      void registrarLog('Facturación Proveedores', 'Edición', cancelacion
+        ? `Canceló la factura ${factura.invoice}: la reemplaza ${cancelacion.reemplazo.trim()}. Nota: ${cancelacion.nota.trim()}`
+        : `Cambió el status de la factura ${factura.invoice} a ${nuevoStatus}.`);
     } catch (e) {
       console.error('Error actualizando status de factura:', e);
+      if (cancelacion) throw new Error('No se pudo cancelar la factura. Revisa la conexión e intenta de nuevo.');
       alert('No se pudo actualizar el status de la factura.');
     }
   };
@@ -2276,30 +2283,43 @@ export const FacturacionProveedoresDashboard = () => {
     setEditFecha(String(f.fecha || '').slice(0, 10));
     setEditCcp(String(f.facturaCcp || ''));
     setEditStatus(String(f.statusFactura || 'Facturado'));
-    setEditMoneda(resolverMoneda(f.monedaProveedor) || '');
+    const cancelada = cancelacionDe(f); // ✅ V00481
+    setEditCancelacion(cancelada ? { nota: cancelada.nota, reemplazo: cancelada.reemplazo } : CANCELACION_VACIA);
     // ✅ V00441: con la bandera, el total EN LA MONEDA de la factura (el que se ve en la
     //   tabla y el que guarda el servidor); antes se precargaba la conversión a pesos.
     // ✅ V00451: el total EN LA MONEDA de la factura también sin la bandera (antes, la conversión).
-    setEditTotal(String(r2(totalDeGrupo(f))));
+    // ✅ V00481: si la factura no está en la moneda del proveedor, el total sugerido ya es el de esa moneda.
+    setEditTotal(String(totalEditPara(f, String(f.proveedorId || ''))));
     setEditProveedorId(String(f.proveedorId || '')); // ✅ NUEVO
   };
 
   const handleGuardarEdicionFactura = async () => {
     if (!facturaEditando) return;
     if (!editInvoice.trim()) return alert('El # de Invoice es obligatorio.');
+    // ✅ V00481: la moneda es la del proveedor (Empresas) y es obligatoria; cancelar pide nota y reemplazo.
+    const monedaEdit = monedaProveedorDe(editProveedorId);
+    if (!monedaEdit) return alert(editProveedorId ? avisoSinMoneda('proveedor') : 'Elige el proveedor de la factura: la moneda es la del proveedor en Empresas.');
+    const cancelando = estaCancelada(editStatus);
+    if (cancelando) { const falta = validarCancelacion(editCancelacion, editInvoice); if (falta) return alert(falta); }
+    const canc = escrituraCancelacion(facturaEditando, editStatus, cancelando ? editCancelacion : null);
     setGuardandoEdit(true);
     try {
       const ids: string[] = Array.isArray(facturaEditando.__groupIds) && facturaEditando.__groupIds.length ? facturaEditando.__groupIds : [facturaEditando.id];
       const totalNum = Number(editTotal) || 0;
       // ✅ V00441 (Fase 5.5): con la bandera, el servidor guarda el total como MANUAL.
       if (flags.dineroPorServidor) {
+        // ✅ V00481: los datos de la cancelación van ANTES (si el servidor falla quedan sin efecto: solo se
+        //   muestran con status Cancelado); al salir de Cancelado se borran DESPUÉS.
+        if (cancelando) await escribirEnGrupo('facturas_proveedores', ids, canc.firestore);
         const r = await llamarDinero('editarFactura', {
           lado: 'proveedor', origen: 'facturacion', facturaIds: ids, invoice: editInvoice.trim(), fecha: editFecha || '', facturaCcp: editCcp.trim(),
-          statusFactura: editStatus, moneda: editMoneda || 'N/A', total: totalNum, ...(editProveedorId ? { empresaId: editProveedorId } : {}),
+          statusFactura: editStatus, moneda: monedaEdit, total: totalNum, ...(editProveedorId ? { empresaId: editProveedorId } : {}),
         });
-        setFacturasGlobales(prev => aplicarFacturas(prev, r.facturas, normalizarFactura));
+        if (!cancelando) await escribirEnGrupo('facturas_proveedores', ids, canc.firestore);
+        setFacturasGlobales(prev => aplicarFacturas(prev, r.facturas, normalizarFactura).map((f) => (ids.includes(f.id) ? canc.local(f) : f)));
         const primera = r.facturas[ids[0]];
-        if (primera) setFacturaViendo((prev: Record<string, unknown> | null) => (prev && ids.includes(String(prev.id))) ? { ...prev, ...camposEditadosFactura(primera) } : prev);
+        if (primera) setFacturaViendo((prev: Record<string, unknown> | null) => (prev && ids.includes(String(prev.id))) ? canc.local({ ...prev, ...camposEditadosFactura(primera) }) : prev);
+        if (!canc.vacia) void registrarLog('Facturación Proveedores', 'Edición', cancelando ? `Canceló la factura ${editInvoice.trim()}: la reemplaza ${editCancelacion.reemplazo.trim()}. Nota: ${editCancelacion.nota.trim()}` : `La factura ${editInvoice.trim()} dejó de estar Cancelada (${editStatus}).`);
         await guardarDocsDeEdicion(facturaEditando); // ✅ V00451
         setFacturaEditando(null);
         return;
@@ -2309,7 +2329,7 @@ export const FacturacionProveedoresDashboard = () => {
         fecha: editFecha || '',
         facturaCcp: editCcp.trim(),
         statusFactura: editStatus,
-        monedaProveedor: editMoneda || 'N/A',
+        monedaProveedor: monedaEdit, // ✅ V00481: la del proveedor
         updatedAt: new Date().toISOString(),
       };
       // ✅ NUEVO — REASIGNAR PROVEEDOR (se refleja también en Pagos).
@@ -2333,6 +2353,7 @@ export const FacturacionProveedoresDashboard = () => {
       ids.forEach((id, idx) => {
         batch.set(doc(db, 'facturas_proveedores', id), {
           ...baseUpdate,
+          ...canc.firestore, // ✅ V00481
           ...(totalCambio ? {
             subtotalFactura: idx === 0 ? totalNum : 0,
             subtotalMonedaFactura: idx === 0 ? totalNum : 0, // ✅ FIX: el campo que se muestra
@@ -2349,11 +2370,12 @@ export const FacturacionProveedoresDashboard = () => {
       await guardarDocsDeEdicion(facturaEditando); // ✅ V00451: varios documentos (del grupo, en el primero)
       setFacturasGlobales(prev => prev.map(f => {
         if (!ids.includes(f.id)) return f;
-        if (!totalCambio) return normalizarFactura({ ...f, ...baseUpdate });
+        if (!totalCambio) return normalizarFactura(canc.local({ ...f, ...baseUpdate }));
         const esPrimero = f.id === ids[0];
-        return normalizarFactura({ ...f, ...baseUpdate, subtotalFactura: esPrimero ? totalNum : 0, subtotalMonedaFactura: esPrimero ? totalNum : 0, totalManualCentavos: esPrimero ? aCentavos(totalNum) : 0, ...(esPrimero ? extraPago : {}) });
+        return normalizarFactura(canc.local({ ...f, ...baseUpdate, subtotalFactura: esPrimero ? totalNum : 0, subtotalMonedaFactura: esPrimero ? totalNum : 0, totalManualCentavos: esPrimero ? aCentavos(totalNum) : 0, ...(esPrimero ? extraPago : {}) }));
       }));
-      setFacturaViendo((prev: any) => (prev && ids.includes(prev.id)) ? { ...prev, ...baseUpdate, ...(totalCambio ? { subtotalFactura: totalNum, subtotalMonedaFactura: totalNum, ...extraPago } : {}) } : prev);
+      setFacturaViendo((prev: any) => (prev && ids.includes(prev.id)) ? canc.local({ ...prev, ...baseUpdate, ...(totalCambio ? { subtotalFactura: totalNum, subtotalMonedaFactura: totalNum, ...extraPago } : {}) }) : prev);
+      if (!canc.vacia) void registrarLog('Facturación Proveedores', 'Edición', cancelando ? `Canceló la factura ${editInvoice.trim()}: la reemplaza ${editCancelacion.reemplazo.trim()}. Nota: ${editCancelacion.nota.trim()}` : `La factura ${editInvoice.trim()} dejó de estar Cancelada (${editStatus}).`);
       setFacturaEditando(null);
     } catch (e) {
       console.error('Error guardando edición de factura:', e);
@@ -2580,6 +2602,7 @@ export const FacturacionProveedoresDashboard = () => {
   };
 
   const agregarOpAFactura = async (facturaGrupo: any, op: any) => {
+    if (!puedeAgregarOperaciones(facturaGrupo?.statusFactura)) { alert(AVISO_AGREGAR_FACTURADA); return; } // ✅ V00481
     const opId = String(op.id);
     const rawId = (Array.isArray(facturaGrupo.__groupIds) && facturaGrupo.__groupIds.length) ? facturaGrupo.__groupIds[0] : facturaGrupo.id;
     const resumen = buildResumenOp(op);
@@ -3060,7 +3083,7 @@ export const FacturacionProveedoresDashboard = () => {
       case 'fecha': return <span className="fpd-x8">{formatearFechaSpanish(f.fecha)}</span>;
       case 'proveedor': return <span className="fpd-x9">{nombreProveedorFactura_(f)}</span>;
       case 'numeroPago': { const nums = numerosPagoDe(f); return nums.length ? <span className="fac-chips-pago">{nums.map(n => <span key={n} className="fac-chip-pago" title="Número de pago aplicado">{n}</span>)}</span> : <span className="fac-sin-pago">—</span>; }
-      case 'moneda': { const mon = monedaFacturaMostrar(f); return <span style={{ color: mon === 'N/A' ? '#8b949e' : '#10b981', fontWeight: 'bold' }}>{mon}</span>; }
+      case 'moneda': { const mon = monedaFacturaMostrar(f); return <NombreMoneda moneda={mon} respaldo={mon} />; } // ✅ V00481
       case 'facturaCcp': return <span className="fpd-x8">{f.facturaCcp || '-'}</span>;
       case 'cantOps': return <span className="fpd-x10">{f.operacionesIds?.length || 0}</span>;
       case 'referencias': {
@@ -3068,7 +3091,7 @@ export const FacturacionProveedoresDashboard = () => {
         if (ops.length === 0) return <span className="fpd-x10">-</span>;
         return (
           <div className="fpd-x11">
-            {ops.map((op: any, idx: number) => (
+            {ops.slice(0, 3).map((op: any, idx: number) => (
               <button className="fpd-x12"
                 key={`${f.id}_ref_${op?.id || idx}`}
                 onClick={(e) => { e.stopPropagation(); if (op?.id) setOpEditandoId(String(op.id)); }} /* ✅ V00274: abre el EDITOR de la operación */
@@ -3076,10 +3099,13 @@ export const FacturacionProveedoresDashboard = () => {
                 {refDeOp(op)}
               </button>
             ))}
+            {ops.length > 3 && (/* ✅ V00482: el resto en la ficha */
+              <button type="button" className="fpd-mas-refs" onClick={(e) => { e.stopPropagation(); setFacturaViendo(f); }} title="Ver todas en la ficha">+{ops.length - 3}</button>
+            )}
           </div>
         );
       }
-      case 'total': return <span className="fpd-x13">{formatoMoneda(totalDeGrupo(f))}</span>;
+      case 'total': return <Importe monto={totalDeGrupo(f)} moneda={monedaFacturaMostrar(f)} className="fpd-x13" />; // ✅ V00481
       case 'createdAt': return <span className="fpd-x10">{f.createdAt ? formatearFechaHora(f.createdAt) : '-'}</span>;
       default: return '-';
     }
@@ -3146,6 +3172,9 @@ export const FacturacionProveedoresDashboard = () => {
   };
 
   const det = operacionDetalle;
+  // ✅ V00481: moneda e importes por operación de la ficha abierta (en la moneda de la factura).
+  const monedaFicha = facturaViendo ? monedaFacturaMostrar(facturaViendo) : '';
+  const importesFicha = facturaViendo ? importesDeRenglones(monedaFicha, facturaViendo.operacionesGuardadas) : [];
   const evalTipoOpText = String(det?.tipoOperacionNombre || det?.tipoOperacionId || '').toLowerCase();
   const evalIsFletes = evalTipoOpText.includes('fletes') || evalTipoOpText.includes('flete');
   const evalIsLogistica = evalTipoOpText.includes('logistica') || evalTipoOpText.includes('logística');
@@ -3167,7 +3196,7 @@ export const FacturacionProveedoresDashboard = () => {
     color: active ? '#f0f6fc' : '#8b949e', borderBottom: active ? '2px solid #D84315' : '2px solid transparent',
     fontWeight: active ? 'bold' : 'normal' as any,
   });
-  const thOrdenStyle: React.CSSProperties = { padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' };
+  const thOrdenStyle: React.CSSProperties = { padding: '10px 12px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' };
   const selectOrdenStyle: React.CSSProperties = { backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', padding: '8px 10px', fontSize: '0.85rem' };
   const btnDirStyle: React.CSSProperties = { backgroundColor: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', padding: '8px 12px', cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' };
   const dateInputStyle: React.CSSProperties = { backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', padding: '9px 10px', fontSize: '0.9rem', colorScheme: 'dark' };
@@ -3238,6 +3267,17 @@ export const FacturacionProveedoresDashboard = () => {
         <DocumentosFacturaModal lado="proveedores" fila={docsFacturaDe} onGuardado={aplicarDocsLocal} onCerrar={() => setDocsFacturaDe(null)} />
       )}
       {hiloFacturaId && <HiloModal tipo="proveedor" facturaId={hiloFacturaId} onClose={() => setHiloFacturaId(null)} onEditarOperacion={(id) => setOpEditandoId(id)} />}
+      {corrigiendoFacturas && (
+        <CorregirFacturasModal lado="proveedor" facturas={facturasGlobales} conServidor={flags.dineroPorServidor}
+          monedaDe={monedaProveedorDe} nombreDe={(id, f) => { const n = getNombreEmpresa(id); return n && n !== id && n !== '-' ? n : String(f.proveedorNombre || id || ''); }}
+          onCorregidas={(cambios) => setFacturasGlobales(prev => prev.map(f => (cambios[f.id] ? normalizarFactura({ ...f, ...cambios[f.id] }) : f)))}
+          onCerrar={() => setCorrigiendoFacturas(false)} />
+      )}{/* ✅ V00482 */}
+      {cancelarDe && (
+        <ModalCancelarFactura invoice={String(cancelarDe.invoice || '')} sugerencias={foliosDelProveedor(cancelarDe)}
+          onVolver={() => setCancelarDe(null)}
+          onConfirmar={async (datos) => { await handleCambiarStatusFactura(cancelarDe, 'Cancelado', datos); setCancelarDe(null); }} />
+      )}{/* ✅ V00481 */}
       {opEditandoId && (
         <EditorOperacionEmbebido operacionId={opEditandoId} operacion={operacionesGlobales.find((o: any) => String(o.id) === opEditandoId)} onClose={() => setOpEditandoId(null)} />
       )}
@@ -3271,6 +3311,14 @@ export const FacturacionProveedoresDashboard = () => {
             {nombreProveedorSeleccionado}
             <button className="fpd-x36" onClick={() => { setFiltroProveedor(''); setTextoBuscarProveedor(''); }}>✕</button>
           </span>
+        )}
+        {/* ✅ V00482: buscar y acciones del historial en esta misma fila (antes, un panel aparte) */}
+        {esHistorial && (
+          <AccionesHistorial
+            buscar={{ valor: textoBuscarFactura, onCambiar: setTextoBuscarFactura, placeholder: 'Buscar: factura, proveedor, referencia, remolque…' }}
+            onCorregir={() => setCorrigiendoFacturas(true)} corregirDeshabilitado={cargandoFacturas || facturasGlobales.length === 0}
+            onColumnas={() => setModalColumnas(true)} onExportar={exportarCSV} exportando={exportandoExcelHist}
+          />
         )}
       </div>
 
@@ -3331,8 +3379,8 @@ export const FacturacionProveedoresDashboard = () => {
                 <div className="fpd-x42">
                   <label className="fpd-x51">MONEDA</label>
                   <div className="fpd-x52">
-                    <button onClick={() => { setMonedaVistaOps('USD'); setSeleccionadas([]); }} style={{ ...segBtnStyle(monedaVistaOps === 'USD', '#10b981'), flex: 1 }}>Dólares ({resumenMonedaOps.usd})</button>
-                    <button onClick={() => { setMonedaVistaOps('MXN'); setSeleccionadas([]); }} style={{ ...segBtnStyle(monedaVistaOps === 'MXN', '#3b82f6'), flex: 1 }}>Pesos ({resumenMonedaOps.mxn})</button>
+                    <button onClick={() => { setMonedaVistaOps('USD'); setSeleccionadas([]); }} style={{ ...segBtnStyle(monedaVistaOps === 'USD', '#58a6ff'), flex: 1 }}>Dólares ({resumenMonedaOps.usd})</button>
+                    <button onClick={() => { setMonedaVistaOps('MXN'); setSeleccionadas([]); }} style={{ ...segBtnStyle(monedaVistaOps === 'MXN', '#3fb950'), flex: 1 }}>Pesos ({resumenMonedaOps.mxn})</button>
                     <button onClick={() => { setMonedaVistaOps('todas'); setSeleccionadas([]); }} style={{ ...segBtnStyle(monedaVistaOps === 'todas', '#8b949e'), flex: 1 }}>Todas ({resumenMonedaOps.todas})</button>
                   </div>
                 </div>
@@ -3451,7 +3499,6 @@ export const FacturacionProveedoresDashboard = () => {
             <div className="fpd-x68">
               <button onClick={recargarTodo} disabled={cargandoOperaciones || cargandoFacturas} style={{ ...btnDirStyle, borderColor: '#58a6ff', color: '#58a6ff', fontWeight: 700 }} title="Vuelve a leer operaciones y facturas desde Firestore (limpia la caché) y recalcula todos los montos">{cargandoOperaciones ? '⏳ Actualizando…' : '↻ Actualizar'}</button>
               <button onClick={() => setModalColumnasOps(true)} style={btnDirStyle} title="Elegir y reordenar columnas">⚙ Configurar Columnas</button>
-              <button title="Editar el encabezado de las remisiones (emisor por moneda: USD→Camila, MXN→Rolando)" onClick={() => setModalEmisores(true)} style={{ ...btnDirStyle, borderColor: '#fb923c', color: '#fb923c' }}>⚙ Encabezado Remisión</button>
               <button onClick={exportarExcelOps} disabled={operacionesMostradas.length === 0}
                 style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap',
                   cursor: operacionesMostradas.length === 0 ? 'not-allowed' : 'pointer',
@@ -3514,7 +3561,7 @@ export const FacturacionProveedoresDashboard = () => {
                 </div>
                 <div>
                   <span className="fpd-x74">Moneda</span>
-                  <span className="fpd-x77">{monedaProveedor}</span>
+                  <span className="fpd-x77"><NombreMoneda moneda={monedaProveedor} respaldo="Sin moneda en Empresas" /></span>{/* ✅ V00481 */}
                 </div>
               </div>
             </div>
@@ -3612,23 +3659,12 @@ export const FacturacionProveedoresDashboard = () => {
               {cargandoFacturas ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fpd-x104">{resumenHistorial.totalOps}</span>}
             </div>
             <div className="fpd-x101">
-              <span className="fpd-x105">Total Facturado (USD)</span>
+              <span className="fpd-x105">Total Facturado (<NombreMoneda moneda="USD" forma="codigo" />)</span>
               {cargandoFacturas ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fpd-x106">{formatoMoneda(resumenHistorial.totalUSD)}</span>}
             </div>
             <div className="fpd-x101">
-              <span className="fpd-x105">Total Facturado (MXN)</span>
+              <span className="fpd-x105">Total Facturado (<NombreMoneda moneda="MXN" forma="codigo" />)</span>
               {cargandoFacturas ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fpd-x107">{formatoMoneda(resumenHistorial.totalMXN)}</span>}
-            </div>
-          </div>
-
-          <div className="fpd-x66">
-            <div className="fpd-x108">
-              <span className="fpd-x3">{historialOrdenado.length} {historialOrdenado.length === 1 ? 'factura' : 'facturas'}</span>
-            </div>
-            <div className="fpd-x109">
-              <button title="Verificar consistencia de la facturación" onClick={() => setModalDiagnostico(true)} style={{ ...btnDirStyle, borderColor: '#58a6ff', color: '#58a6ff' }}>Verificar</button>
-              <button title="Configurar columnas" onClick={() => setModalColumnas(true)} style={btnDirStyle}>⚙ Configurar Columnas</button>
-              <button title="Exportar a Excel (resuelve las referencias de todo el rango antes de generar)" onClick={exportarCSV} disabled={exportandoExcelHist} style={{ ...btnDirStyle, backgroundColor: exportandoExcelHist ? '#30363d' : '#1a7f37', color: exportandoExcelHist ? '#8b949e' : '#fff', border: 'none', cursor: exportandoExcelHist ? 'wait' : 'pointer' }}>{exportandoExcelHist ? '⏳ Exportando…' : 'Exportar Excel'}</button>
             </div>
           </div>
 
@@ -3842,13 +3878,15 @@ export const FacturacionProveedoresDashboard = () => {
               </div>
               <div className="fpd-x156">
                 <span className="fpd-x155">Moneda Proveedor</span>
-                <span className="fpd-x157">{monedaProveedor}</span>
+                <span className="fpd-x157"><NombreMoneda moneda={monedaProveedor} respaldo="Sin moneda" /></span>
               </div>
               <div className="fpd-x158">
-                <span className="fpd-x155">Conversión ({seleccionadas.length} Ops)</span>
-                <span className="fpd-x159">{formatoMoneda(resumenSeleccion.subtotal)}</span>
+                {/* ✅ V00481: en la moneda del proveedor (Dólares → Dólares; Pesos → Conversión Final) */}
+                <span className="fpd-x155">Total ({seleccionadas.length} Ops)</span>
+                <span className="fpd-x159"><Importe monto={totalSeleccionEnMoneda} moneda={monedaProveedor} /></span>
               </div>
             </div>
+            {proveedorFacturaId && !monedaProveedor && <div className="fpd-aviso-crear"><AvisoMonedaFactura texto={avisoSinMoneda('proveedor')} error /></div>}
             <FormularioConfigurable modulo="facturacionProveedores">{/* ✅ V00385 */}
             <form onSubmit={handleGuardarFactura}>
               <div className="fpd-x160">
@@ -3856,7 +3894,7 @@ export const FacturacionProveedoresDashboard = () => {
                   <label className="fpd-x143">STATUS DE LA FACTURA</label>
                   <select value={statusFacturaForm} onChange={e => setStatusFacturaForm(e.target.value)}
                     style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: colorStatusFactura(statusFacturaForm), border: `1px solid ${colorStatusFactura(statusFacturaForm)}`, borderRadius: '4px', fontWeight: 'bold' }}>
-                    {STATUS_FACTURA_OPCIONES.map(s => <option key={s} value={s}>{s}</option>)}
+                    {STATUS_AL_CREAR.map(s => <option key={s} value={s}>{s}</option>)}{/* ✅ V00481: se cancela después, desde la ficha */}
                   </select>
                 </div>
                 <div className="fpd-x161">
@@ -3923,7 +3961,7 @@ export const FacturacionProveedoresDashboard = () => {
       )}
 
       {facturaViendo && (
-        <div className="modal-overlay fpd-x178">
+        <div className={`modal-overlay fpd-x178${opEditandoId ? ' fpd-detras-editor' : ''}`}>{/* ✅ V00481: detrás del editor de la operación */}
           <div className="fpd-x179">
             <div className="fpd-x180">
               <h2 className="fpd-x181">Ficha de Factura</h2>
@@ -3942,6 +3980,13 @@ export const FacturacionProveedoresDashboard = () => {
                   </select>
                 </div>
               </div>
+              <CancelacionFicha factura={facturaViendo} />{/* ✅ V00481 */}
+              {avisoMonedaDe(facturaViendo) && (
+                <div className="fpd-aviso-moneda">
+                  <AvisoMonedaFactura texto={`${avisoMonedaDe(facturaViendo)} Corrígela con Editar factura.`} />
+                  <button type="button" className="fpd-btn-corregir-moneda" onClick={(e) => abrirEditarFactura(e, facturaViendo)}>Editar factura</button>
+                </div>
+              )}
 
               <div className="fpd-x186">
                 <div className="fpd-x187">
@@ -3951,7 +3996,7 @@ export const FacturacionProveedoresDashboard = () => {
                   </div>
                   <div className="fpd-x190">
                     <span className="fpd-x188">Moneda</span>
-                    <span className="fpd-x157">{monedaFacturaMostrar(facturaViendo)}</span>
+                    <span className="fpd-x157"><NombreMoneda moneda={monedaFicha} respaldo={monedaFicha} /></span>
                   </div>
                   <div className="fpd-x158">
                     <span className="fpd-x188">Fecha de Facturación</span>
@@ -3968,7 +4013,8 @@ export const FacturacionProveedoresDashboard = () => {
                 </div>
                 <div>
                   <span className="fpd-x188">Total Facturado</span>
-                  <span className="fpd-x193">{formatoMoneda(facturaViendo.subtotalFactura)}</span>
+                  {/* ✅ V00481: el total EN LA MONEDA de la factura (antes la conversión a pesos aunque fuera en dólares) */}
+                  <span className="fpd-x193"><Importe monto={totalDeGrupo(facturaViendo)} moneda={monedaFicha} conNombre /></span>
                 </div>
 
                 {/* ✅ V00381: documento de la factura bien visible */}
@@ -3980,20 +4026,22 @@ export const FacturacionProveedoresDashboard = () => {
                     <span className="fpd-x184">
                       Referencias / Operaciones Facturadas ({facturaViendo.operacionesGuardadas?.length || 0}) — haz clic para ver el detalle
                     </span>
+{puedeAgregarOperaciones(facturaViendo.statusFactura) && (/* ✅ V00481: a una factura Facturada no se le agregan */
                     <button className="fpd-x198"
                       onClick={() => { setAgregarRefFactura(facturaViendo); setBusquedaRefPendiente(''); if (operacionesGlobales.length === 0) descargarOpsCompletadas(); }}
                       title="Agregar una operación pendiente (sin facturar) a esta factura">
                       ＋ Agregar referencia
-                    </button>
+                    </button>)}
                   </div>
                   <div className="fpd-x199">
-                    {facturaViendo.operacionesGuardadas?.map((op: any) => (
+                    {facturaViendo.operacionesGuardadas?.map((op: any, i: number) => (
                       <button className="fpd-x200" key={op.id} onClick={() => verDetalleOperacion(op.id)} title="Ver detalle de la operación"
                         onMouseEnter={(e: any) => { e.currentTarget.style.backgroundColor = '#1f2d44'; e.currentTarget.style.borderColor = '#79b8ff'; }}
                         onMouseLeave={(e: any) => { e.currentTarget.style.backgroundColor = '#21262d'; e.currentTarget.style.borderColor = '#58a6ff'; }}>
                         <span className="fpd-x201">{refDeOp(op)}</span>
                         {op.convenioNombre && (<span style={{ color: '#8b949e', fontSize: '0.72rem' }}>Convenio: {op.convenioNombre}</span>)}
-                          <span className="fpd-x202">{formatoMoneda(op.monto)}</span>
+                          {/* ✅ V00481: en la moneda de la factura (Dólares → Dólares; Pesos → Conversión Final) */}
+                          <span className="fpd-x202"><Importe monto={importesFicha[i]} moneda={monedaFicha} /></span>
                       </button>
                     )) || <span className="fpd-x10">Sin detalle de operaciones.</span>}
                   </div>
@@ -4006,88 +4054,18 @@ export const FacturacionProveedoresDashboard = () => {
                 style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#10b981', color: '#0d1117', border: 'none', borderRadius: '6px', padding: '8px 16px', cursor: cargandoRate ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem', opacity: cargandoRate ? 0.7 : 1, marginRight: '8px' }}>
                 {cargandoRate ? 'Preparando...' : 'Rate Proveedor'}
               </button>
+{puedeGenerarRemision(facturaViendo.statusFactura) && (/* ✅ V00481: con la factura Facturada ya no hay Remisión */
               <button onClick={() => abrirRemision(facturaViendo)} disabled={cargandoRemision}
                 title="Generar la Remisión en PDF de esta factura"
                 style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#fb923c', color: '#0d1117', border: 'none', borderRadius: '6px', padding: '8px 16px', cursor: cargandoRemision ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem', opacity: cargandoRemision ? 0.7 : 1, marginRight: '8px' }}>
                 {cargandoRemision ? 'Preparando...' : 'Remisión'}
-              </button>
+              </button>)}
               <button onClick={() => setFacturaViendo(null)} className="btn btn-outline fpd-x204">Cerrar Ficha</button>
             </div>
           </div>
         </div>
       )}
 
-      {modalDiagnostico && (
-        <div className="modal-overlay fpd-x205" onClick={() => setModalDiagnostico(false)}>
-          <div className="fpd-x206" onClick={(e) => e.stopPropagation()}>
-            <div className="fpd-x180">
-              <span className="fpd-x207">Verificación de Facturación (Proveedores)</span>
-              <button className="fpd-x208" onClick={() => setModalDiagnostico(false)}>×</button>
-            </div>
-            <div className="fpd-x209">
-              {cargandoFacturas && (
-                <CargandoDatos compacto texto="Cargando facturas… los números pueden cambiar al terminar." />
-              )}
-              <div>
-                <div className="fpd-x211">Resumen global (facturas cargadas)</div>
-                <div className="fpd-x212">
-                  {[
-                    { lbl: 'Facturas', val: diagnostico.totalFacturas, col: '#58a6ff' },
-                    { lbl: 'Ops facturadas (únicas)', val: diagnostico.opsFacturadasUnicas, col: '#3fb950' },
-                    { lbl: 'Invoices duplicados', val: diagnostico.invoicesDuplicados, col: diagnostico.invoicesDuplicados > 0 ? '#f85149' : '#3fb950' },
-                  ].map((c, i) => (
-                    <div className="fpd-x213" key={i}>
-                      <div className="fpd-x214">{c.lbl}</div>
-                      <div style={{ color: c.col, fontSize: '1.5rem', fontWeight: 'bold' }}>{c.val}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <div className="fpd-x211">Operaciones cargadas (pestaña “Asignar Operaciones”)</div>
-                <div className="fpd-x212">
-                  {[
-                    { lbl: (fechaDesdeOps || fechaHastaOps) ? 'Completadas en rango' : 'Completadas (todas)', val: diagnostico.rangoTotal, col: '#c9d1d9' },
-                    { lbl: 'Ya facturadas', val: diagnostico.rangoFacturadas, col: '#3fb950' },
-                    { lbl: 'Por facturar', val: diagnostico.rangoPorFacturar, col: '#f59e0b' },
-                  ].map((c, i) => (
-                    <div className="fpd-x213" key={i}>
-                      <div className="fpd-x214">{c.lbl}</div>
-                      <div style={{ color: c.col, fontSize: '1.5rem', fontWeight: 'bold' }}>{c.val}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <div className="fpd-x211">Posibles pendientes a revisar</div>
-                <div className="fpd-x215">
-                  {[
-                    { ok: diagnostico.huerfanas === 0, txt: diagnostico.huerfanas === 0 ? 'No hay operaciones marcadas como facturadas sin factura asociada.' : `${diagnostico.huerfanas} operación(es) marcadas como facturadas pero sin factura que las referencie.` },
-                    { ok: diagnostico.invoicesDuplicados === 0, txt: diagnostico.invoicesDuplicados === 0 ? 'No hay invoices duplicados (mismo # y proveedor).' : `${diagnostico.invoicesDuplicados} invoice(s) aparecen duplicados (mismo # y proveedor).` },
-                    { ok: diagnostico.sinMoneda === 0, txt: diagnostico.sinMoneda === 0 ? 'Todas las facturas resuelven su moneda.' : `${diagnostico.sinMoneda} factura(s) sin moneda (ni propia ni por proveedor).`, warn: true },
-                    { ok: diagnostico.sinFecha === 0, txt: diagnostico.sinFecha === 0 ? 'Todas las facturas tienen fecha.' : `${diagnostico.sinFecha} factura(s) sin fecha de facturación.`, warn: true },
-                    { ok: diagnostico.sinTotal === 0, txt: diagnostico.sinTotal === 0 ? 'Todas las facturas tienen total.' : `${diagnostico.sinTotal} factura(s) con total en $0 (datos importados sin monto).`, warn: true },
-                    { ok: !diagnostico.topeFacturas, txt: diagnostico.topeFacturas ? `Se alcanzó el tope de ${LIMITE_FACTURAS_TODAS} facturas cargadas: podría faltar información.` : `Se cargaron todas las facturas (sin alcanzar el tope de ${LIMITE_FACTURAS_TODAS}).` },
-                  ].map((r, i) => (
-                    <div key={i} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', color: r.ok ? '#3fb950' : (r.warn ? '#f59e0b' : '#f85149') }}>
-                      <span className="fpd-x216">{r.ok ? '✓' : (r.warn ? '' : '✕')}</span>
-                      <span className="fpd-x8">{r.txt}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="fpd-x217">
-                Nota: el total en $0 y la fecha vacía en facturas importadas vienen del sistema anterior. La moneda se completa con la del proveedor cuando la factura no la trae. El # de referencia (TR) y el # de remolque se resuelven al ver cada página del historial.
-              </div>
-            </div>
-            <div className="fpd-x218">
-              <button onClick={() => { opsPedidasRef.current.clear(); setFacturasGlobales([]); setOpInfoMap({}); setModalDiagnostico(false); }}
-                style={{ ...btnDirStyle }} title="Volver a leer todas las facturas desde la base de datos">↻ Recargar facturas</button>
-              <button className="fpd-x219" onClick={() => setModalDiagnostico(false)}>Cerrar</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {gestionOp && (
         <div className="modal-overlay fpd-x220">
@@ -4162,7 +4140,7 @@ export const FacturacionProveedoresDashboard = () => {
                       <div className="fpd-x239">
                         <div className="fpd-x240">{op.numReferencia || op.referencia || op.ref || String(op.id).substring(0, 6)}</div>
                         <div className="fpd-x241">
-                          {formatearFechaSpanish(op.fechaServicio || op.createdAt)} · {txt(op.remolqueNombre, op.remolquePlaca, op.numeroRemolque)} · {formatoMoneda(mm.conv)}
+                          {formatearFechaSpanish(op.fechaServicio || op.createdAt)} · {txt(op.remolqueNombre, op.remolquePlaca, op.numeroRemolque)} · <Importe monto={esMonedaUSD(monedaFacturaMostrar(agregarRefFactura)) ? mm.dol : mm.conv} moneda={esMonedaUSD(monedaFacturaMostrar(agregarRefFactura)) ? 'USD' : 'MXN'} />
                         </div>
                       </div>
                       <button onClick={() => agregarOpAFactura(agregarRefFactura, op)} disabled={agregandoRef}
@@ -4198,7 +4176,11 @@ export const FacturacionProveedoresDashboard = () => {
                   .sort((a: any, b: any) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' }))
                   .map((e: any) => ({ value: e.id, label: String(e.nombre || e.id) }))}
                 value={editProveedorId}
-                onChange={setEditProveedorId}
+                onChange={(id: string) => {
+                  // ✅ V00481: otro proveedor con otra moneda → el total sugerido pasa a esa moneda.
+                  if (monedaProveedorDe(id) !== monedaProveedorDe(editProveedorId)) setEditTotal(String(totalEditPara(facturaEditando, id)));
+                  setEditProveedorId(id);
+                }}
                 placeholder="Buscar proveedor..."
               />
               {Array.isArray(facturaEditando.__groupIds) && facturaEditando.__groupIds.length > 1 && (
@@ -4215,6 +4197,12 @@ export const FacturacionProveedoresDashboard = () => {
                   {!STATUS_FACTURA_OPCIONES.includes(editStatus) && editStatus && <option value={editStatus}>{editStatus}</option>}
                 </select>
               </div>
+              {estaCancelada(editStatus) && (
+                <div className="fpd-x161">{/* ✅ V00481: cancelar pide nota y la factura que la reemplaza */}
+                  <CamposCancelacion idBase="fpd-edit-canc" valor={editCancelacion} onCambiar={setEditCancelacion}
+                    sugerencias={foliosDelProveedor({ ...facturaEditando, proveedorId: editProveedorId || facturaEditando.proveedorId })} deshabilitado={guardandoEdit} />
+                </div>
+              )}
               <div className="fpd-x161">
                 <label className="fpd-x143">NÚMERO DE FACTURA</label>
                 <input className="fpd-x147" type="text" value={editInvoice} onChange={e => setEditInvoice(e.target.value)} placeholder="Ej. A-1234" />
@@ -4230,12 +4218,23 @@ export const FacturacionProveedoresDashboard = () => {
                 <input className="fpd-x249" type="date" value={editFecha} onChange={e => setEditFecha(e.target.value)} />
               </div>
               <div>
-                <label className="fpd-x143">MONEDA</label>
-                <select className="fpd-x250" value={editMoneda} onChange={e => setEditMoneda(e.target.value)}>
-                  <option value="">(Sin definir / del proveedor)</option>
-                  <option value="USD">USD</option>
-                  <option value="MXN">MXN</option>
-                </select>
+                {/* ✅ V00481: SIEMPRE la del proveedor en Empresas; no se elige ni se quita */}
+                <span className="fpd-x143">MONEDA</span>
+                <span className="fpd-moneda-fija" title="Es la moneda del proveedor en Empresas"><NombreMoneda moneda={monedaProveedorDe(editProveedorId)} respaldo="Sin moneda en Empresas" /></span>
+              </div>
+              <div className="fpd-x161 fpd-edit-aviso">{/* ✅ V00481: la moneda es la del proveedor */}
+                {!monedaProveedorDe(editProveedorId) ? (
+                  <AvisoMonedaFactura error texto={editProveedorId ? avisoSinMoneda('proveedor') : 'Elige el proveedor de la factura: la moneda es la del proveedor en Empresas.'} />
+                ) : (
+                  <AvisoMonedaFactura texto={(() => {
+                    const aviso = avisoMonedaDistinta(monedaDeFactura(facturaEditando), monedaProveedorDe(editProveedorId), 'proveedor');
+                    if (!aviso) return null;
+                    const pagos = tienePagosAplicados(facturaEditando) ? ' Tiene pagos aplicados: revisa su saldo en Pagos.' : '';
+                    const monNueva = monedaProveedorDe(editProveedorId);
+                    const recalculado = monNueva ? totalSugeridoEn(monNueva, facturaEditando.operacionesGuardadas) > 0 : false;
+                    return `${aviso} Al guardar queda en ${nombreMoneda(monNueva)}; ${recalculado ? 'el total sugerido es el de sus operaciones en esa moneda' : 'sus operaciones no traen importe en esa moneda: captura el total'}. Revísalo.${pagos}`;
+                  })()} />
+                )}
               </div>
               <div>
                 <label className="fpd-x143">TOTAL FACTURADO</label>
@@ -4337,9 +4336,9 @@ export const FacturacionProveedoresDashboard = () => {
                       </div>
                       <div className="fpd-x278">
                         <div className="fpd-x279">
-                          <div><span className="fpd-x271">Facturado En:</span><span className="fpd-x267">{det.monedaUnidadNombre || mostrarMoneda(det.facturadoEnUnidad)}</span></div>
+                          <div><span className="fpd-x271">Facturado En:</span><span className="fpd-x267"><NombreMoneda moneda={det.monedaUnidadNombre || det.facturadoEnUnidad} respaldo={det.monedaUnidadNombre || mostrarMoneda(det.facturadoEnUnidad)} /></span></div>
                           <div><span className="fpd-x271">Convenio Proveedor</span><span className="fpd-x267">{txt(det.convenioProveedorNombre, det.convenioProveedor)}</span></div>
-                          <div><span className="fpd-x271">Moneda del Convenio (Base)</span><span className="fpd-x267">{mostrarMoneda(det.monedaConvenioProv)}</span></div>
+                          <div><span className="fpd-x271">Moneda del Convenio (Base)</span><span className="fpd-x267"><NombreMoneda moneda={det.monedaConvenioProv} respaldo={mostrarMoneda(det.monedaConvenioProv)} /></span></div>
                         </div>
                         <div className="fpd-x280">
                           <div><span className="fpd-x271">Monto a Pagar (Base)</span><span className="fpd-x267">{formatoMoneda(det.totalAPagarProv)}</span></div>
@@ -4347,9 +4346,10 @@ export const FacturacionProveedoresDashboard = () => {
                           <div><span className="fpd-x266">Subtotal (Convenio + Costos)</span><span className="fpd-x281">{formatoMoneda(det.subtotalProv)}</span></div>
                         </div>
                         <div className="fpd-x282">
-                          <div><span className="fpd-x271">Dólares</span><span className="fpd-x283">{formatoMoneda(det.dolaresProv)}</span></div>
-                          <div><span className="fpd-x271">Pesos</span><span className="fpd-x283">{formatoMoneda(det.pesosProv)}</span></div>
-                          <div><span className="fpd-x284">Conversión Final (Gasto)</span><span className="fpd-x285">{formatoMoneda(det.conversionProv)}</span></div>
+                          {/* ✅ V00481: Dólares en azul, Pesos en verde (la Conversión Final es en pesos) */}
+                          <div><span className="fpd-x271"><NombreMoneda moneda="USD" /></span><span className="fpd-x283"><Importe monto={det.dolaresProv} moneda="USD" /></span></div>
+                          <div><span className="fpd-x271"><NombreMoneda moneda="MXN" /></span><span className="fpd-x283"><Importe monto={det.pesosProv} moneda="MXN" /></span></div>
+                          <div><span className="fpd-x284">Conversión Final (Gasto)</span><span className="fpd-x285"><Importe monto={det.conversionProv} moneda="MXN" /></span></div>
                         </div>
                       </div>
 
@@ -4394,17 +4394,17 @@ export const FacturacionProveedoresDashboard = () => {
                   {pestañaDetalleActiva === 'cobrar' && (
                     <div>
                       <div className="fpd-x276">
-                        <div><span className="fpd-x271">Facturado En:</span><span className="fpd-x267">{det.monedaCobroNombre || mostrarMoneda(det.facturadoEnCobrar)}</span></div>
-                        <div><span className="fpd-x271">Moneda Convenio (Cliente)</span><span className="fpd-x267">{mostrarMoneda(det.monedaConvenioCliente)}</span></div>
+                        <div><span className="fpd-x271">Facturado En:</span><span className="fpd-x267"><NombreMoneda moneda={det.monedaCobroNombre || det.facturadoEnCobrar} respaldo={det.monedaCobroNombre || mostrarMoneda(det.facturadoEnCobrar)} /></span></div>
+                        <div><span className="fpd-x271">Moneda Convenio (Cliente)</span><span className="fpd-x267"><NombreMoneda moneda={det.monedaConvenioCliente} respaldo={mostrarMoneda(det.monedaConvenioCliente)} /></span></div>
                         <div><span className="fpd-x271">Convenio Seleccionado (Base)</span><span className="fpd-x267">{formatoMoneda(det.montoConvenioCliente)}</span></div>
                         <div><span className="fpd-x271">Cargos Adicionales</span><span className="fpd-x267">{formatoMoneda(det.cargosAdicionales)}</span></div>
                         <div><span className="fpd-x266">Subtotal (Convenio + Cargos)</span><span className="fpd-x296">{formatoMoneda(det.subtotalCliente)}</span></div>
                         <div><span className="fpd-x271">Tipo de Cambio del Día</span><span className="fpd-x267">{mostrarDato(det.tipoCambioAprobado)}</span></div>
                       </div>
                       <div className="fpd-x297">
-                        <div><span className="fpd-x271">Dólares (Cliente)</span><span className="fpd-x298">{formatoMoneda(det.dolaresCliente)}</span></div>
-                        <div><span className="fpd-x271">Pesos (Cliente)</span><span className="fpd-x283">{formatoMoneda(det.pesosCliente)}</span></div>
-                        <div><span className="fpd-x266">Conversión Final (Ingreso)</span><span className="fpd-x299">{formatoMoneda(det.conversionCliente)}</span></div>
+                        <div><span className="fpd-x271"><NombreMoneda moneda="USD" /> (Cliente)</span><span className="fpd-x298"><Importe monto={det.dolaresCliente} moneda="USD" /></span></div>
+                        <div><span className="fpd-x271"><NombreMoneda moneda="MXN" /> (Cliente)</span><span className="fpd-x283"><Importe monto={det.pesosCliente} moneda="MXN" /></span></div>
+                        <div><span className="fpd-x266">Conversión Final (Ingreso)</span><span className="fpd-x299"><Importe monto={det.conversionCliente} moneda="MXN" /></span></div>
                       </div>
                       <div className="fpd-x300">
                         <span className="fpd-x301">Utilidad Estimada de la Operación (Ingreso - Gasto)</span>
@@ -4419,6 +4419,8 @@ export const FacturacionProveedoresDashboard = () => {
                 </div>
 
                 <div className="form-actions fpd-x303">
+                  {/* ✅ V00481: editar la operación en el formulario de Operaciones (la ficha queda detrás) */}
+                  <button type="button" className="fpd-btn-editar-detalle" onClick={() => { const id = String(det.id); setOperacionDetalle(null); setOpEditandoId(id); }}>✎ Editar operación</button>
                   <button onClick={() => setOperacionDetalle(null)} className="btn btn-outline fpd-x304">Cerrar Detalle</button>
                 </div>
               </>
@@ -4427,71 +4429,6 @@ export const FacturacionProveedoresDashboard = () => {
         </div>
       )}
 
-      {/* ════════════════ MODAL ENCABEZADO (EMISOR) DE REMISIONES ════════════════ */}
-      {modalEmisores && (
-        <div className="modal-overlay fpd-x305">
-          <div className="fpd-x306">
-            <div className="fpd-x307">
-              <h2 className="fpd-x140">Encabezado de las Remisiones</h2>
-              <button className="fpd-x41" onClick={() => setModalEmisores(false)}>✕</button>
-            </div>
-            <p className="fpd-x308">
-              El nombre y los datos que van en la parte superior de la remisión dependen de la <b className="fpd-x8">moneda</b> de la factura:
-              las remisiones en <b className="fpd-x309">PESOS (MXN)</b> salen a nombre de <b className="fpd-x8">Rolando</b> y las de
-              <b className="fpd-x310"> DÓLARES (USD)</b> a nombre de <b className="fpd-x8">Camila</b>. Esta configuración se guarda para todos los usuarios.
-            </p>
-
-            <div className="fpd-x311">
-              {/* MXN → Rolando */}
-              <div className="fpd-x312">
-                <div className="fpd-x313">PESOS (MXN) · Rolando</div>
-                <div className="fpd-x314">
-                  <label style={rLabelStyle}>NOMBRE (aparece arriba)</label>
-                  <input type="text" value={emisorMXN.facturaNombre} onChange={e => setEmisorMXN({ ...emisorMXN, facturaNombre: e.target.value })} style={rInputStyle} />
-                </div>
-                <div className="fpd-x314">
-                  <label style={rLabelStyle}>DIRECCIÓN</label>
-                  <input type="text" value={emisorMXN.direccion} onChange={e => setEmisorMXN({ ...emisorMXN, direccion: e.target.value })} style={rInputStyle} />
-                </div>
-                <div className="fpd-x314">
-                  <label style={rLabelStyle}>CIUDAD / ESTADO / TEL.</label>
-                  <input type="text" value={emisorMXN.ciudadEstado} onChange={e => setEmisorMXN({ ...emisorMXN, ciudadEstado: e.target.value })} style={rInputStyle} />
-                </div>
-                <div>
-                  <label style={rLabelStyle}>EMAIL</label>
-                  <input type="text" value={emisorMXN.email} onChange={e => setEmisorMXN({ ...emisorMXN, email: e.target.value })} style={rInputStyle} />
-                </div>
-              </div>
-
-              {/* USD → Camila */}
-              <div className="fpd-x315">
-                <div className="fpd-x316">DÓLARES (USD) · Camila</div>
-                <div className="fpd-x314">
-                  <label style={rLabelStyle}>NOMBRE (aparece arriba)</label>
-                  <input type="text" value={emisorUSD.facturaNombre} onChange={e => setEmisorUSD({ ...emisorUSD, facturaNombre: e.target.value })} style={rInputStyle} />
-                </div>
-                <div className="fpd-x314">
-                  <label style={rLabelStyle}>DIRECCIÓN</label>
-                  <input type="text" value={emisorUSD.direccion} onChange={e => setEmisorUSD({ ...emisorUSD, direccion: e.target.value })} style={rInputStyle} />
-                </div>
-                <div className="fpd-x314">
-                  <label style={rLabelStyle}>CIUDAD / ESTADO / TEL.</label>
-                  <input type="text" value={emisorUSD.ciudadEstado} onChange={e => setEmisorUSD({ ...emisorUSD, ciudadEstado: e.target.value })} style={rInputStyle} />
-                </div>
-                <div>
-                  <label style={rLabelStyle}>EMAIL</label>
-                  <input type="text" value={emisorUSD.email} onChange={e => setEmisorUSD({ ...emisorUSD, email: e.target.value })} style={rInputStyle} />
-                </div>
-              </div>
-            </div>
-
-            <div className="fpd-x149">
-              <button className="fpd-x150" onClick={() => setModalEmisores(false)} disabled={guardandoEmisores}>Cancelar</button>
-              <button onClick={guardarEmisores} disabled={guardandoEmisores} style={{ padding: '8px 24px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: guardandoEmisores ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: guardandoEmisores ? 0.7 : 1 }}>{guardandoEmisores ? 'Guardando...' : 'Guardar para todos'}</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ════════════════ MODAL VISTA PREVIA DE REMISIÓN (editable) ════════════════ */}
       {remisionPreview && (
@@ -4500,7 +4437,7 @@ export const FacturacionProveedoresDashboard = () => {
             <div className="fpd-x319">
               <div>
                 <h2 className="fpd-x140">Remisión · vista previa</h2>
-                <span style={{ color: remisionPreview.esUSD ? '#10b981' : '#3b82f6', fontSize: '0.82rem', fontWeight: 'bold' }}>
+                <span style={{ color: remisionPreview.esUSD ? '#58a6ff' : '#3fb950', fontSize: '0.82rem', fontWeight: 'bold' }}>
                   {remisionPreview.esUSD ? 'DÓLARES (USD) → Camila' : 'PESOS (MXN) → Rolando'}
                 </span>
               </div>

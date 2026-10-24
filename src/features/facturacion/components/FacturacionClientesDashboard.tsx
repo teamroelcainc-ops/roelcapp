@@ -6,7 +6,8 @@
 // D) VER TODO POR DEFECTO + SEPARAR PENDIENTES/FACTURADAS + FILTRO STATUS.
 // E) EXPORTACIÓN A EXCEL PROFESIONAL (ExcelJS: estilos, colores, logo).
 // F) REMISIÓN EN PDF DESDE REACT (emisor por moneda: USD→Camila, MXN→Rolando)
-//    con encabezado editable ("⚙ Encabezado Remisión").
+//    con el encabezado guardado en config_columnas/facturacion_remision_emisores
+//    (✅ V00482: se quitó el botón "⚙ Encabezado Remisión"; el encabezado guardado se sigue usando).
 // ═══════════════════════════════════════════════════════════════════════
 
 import React, { useState, useEffect, useMemo, useRef, useCallback, useDeferredValue, useEffectEvent } from 'react';
@@ -55,7 +56,6 @@ import { claveRefCliente } from '../../operaciones/services/refClienteDuplicado'
 import type { OpRefResumen } from '../../operaciones/services/refClienteDuplicado';
 import { olvidarRefsConsultadas } from '../../operaciones/services/refClienteDuplicadoServidor'; // ✅ V00450
 import { pestanaAtendida, usePestanaPedida } from '../../../shared/data/avisos'; // ✅ V00450
-import { limpiarCachesPorPrefijo } from '../../../utils/cacheMemoria'; // ✅ V00262
 import { registrarLog } from '../../../utils/logger'; // ✅ V00262
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
@@ -86,7 +86,22 @@ import {
   moverIdAlInicio, PAG_FACTURAS, pareceReferencia, parseFechaFactura, refNaturalKey, STATUS_FACTURA_OPCIONES, valorGenericoOp,
 } from '../selectores'; // ✅ V00444 (Fase 8.1): una sola copia (antes idéntica en Clientes y Proveedores)
 import { useOperacionesFacturables } from '../hooks/useOperacionesFacturables'; // ✅ V00444 (Fase 8.1)
-import { conversionOperacion, montoOperacion } from '../../../shared/dominio/dinero';
+import { conversionOperacion, monedaDeFactura, montoOperacion } from '../../../shared/dominio/dinero';
+import type { Moneda } from '../../../shared/dominio/moneda';
+import Importe, { NombreMoneda } from './Importe'; // ✅ V00481: Pesos en verde, Dólares en azul
+import AvisoMonedaFactura from './AvisoMonedaFactura';
+import CamposCancelacion from './CamposCancelacion';
+import ModalCancelarFactura from './ModalCancelarFactura';
+import CancelacionFicha from './CancelacionFicha';
+import AccionesHistorial from './AccionesHistorial'; // ✅ V00482
+import CorregirFacturasModal from './CorregirFacturasModal';
+import {
+  AVISO_AGREGAR_FACTURADA, AVISO_REMISION_FACTURADA, CANCELACION_VACIA, STATUS_AL_CREAR, avisoMonedaDistinta, avisoSinMoneda,
+  cancelacionDe, estaCancelada, importesDeRenglones, monedaDeEmpresa, puedeAgregarOperaciones, puedeGenerarRemision,
+  totalSugeridoEn, validarCancelacion,
+} from '../services/reglasFactura';
+import type { DatosCancelacion } from '../services/reglasFactura';
+import { escribirEnGrupo, escrituraCancelacion } from '../services/statusFacturaDatos';
 import TagPuenteUnidad from '../../puentes/components/TagPuenteUnidad'; // ✅ V00465
 import { grupoTagDeOperacion } from '../../puentes/services/tagPuente';
 
@@ -115,7 +130,7 @@ const EMISOR_MXN_DEFAULT: EmisorRemision = {
   email: 'COBRANZA@ROELCA.COM',
 };
 // Emisor por defecto para remisiones en DÓLARES (USD) → Camila.
-// ⚠️ EDITA el nombre y datos reales de Camila en "⚙ Encabezado Remisión".
+// ⚠️ Respaldo: manda el encabezado guardado en config_columnas (V00482: sin botón para editarlo).
 const EMISOR_USD_DEFAULT: EmisorRemision = {
   facturaNombre: 'CAMILA (EDITAR NOMBRE REAL)',
   direccion: 'MAR DE LAS ANTILLAS 947, COL. LA PAZ',
@@ -457,7 +472,7 @@ export const FacturacionClientesDashboard = () => {
   const [guardandoCostoAdic, setGuardandoCostoAdic] = useState(false);
 
   const [opInfoMap, setOpInfoMap] = useState<Record<string, any>>({});
-  const [modalDiagnostico, setModalDiagnostico] = useState(false);
+  const [corrigiendoFacturas, setCorrigiendoFacturas] = useState(false); // ✅ V00482: Corregir monedas y montos
 
   const [facturaEditando, setFacturaEditando] = useState<any | null>(null);
   const [guardandoEdit, setGuardandoEdit] = useState(false);
@@ -465,9 +480,12 @@ export const FacturacionClientesDashboard = () => {
   const [editFecha, setEditFecha] = useState('');
   const [editCcp, setEditCcp] = useState('');
   const [editStatus, setEditStatus] = useState('Facturado');
-  const [editMoneda, setEditMoneda] = useState('');
   const [editTotal, setEditTotal] = useState('');
   const [editClienteId, setEditClienteId] = useState(''); // ✅ NUEVO: reasignar cliente
+  type FacturaACancelar = { id?: unknown; invoice?: unknown; clienteId?: unknown; statusFactura?: unknown; __groupIds?: unknown };
+  // ✅ V00481: la moneda ya no se elige (es la del cliente); cancelar pide nota y factura de reemplazo.
+  const [editCancelacion, setEditCancelacion] = useState<DatosCancelacion>(CANCELACION_VACIA);
+  const [cancelarDe, setCancelarDe] = useState<FacturaACancelar | null>(null);
 
   const [gestionOp, setGestionOp] = useState<any | null>(null);
   const [gestionInvoice, setGestionInvoice] = useState('');
@@ -479,8 +497,6 @@ export const FacturacionClientesDashboard = () => {
   // ✅ (REMISIÓN) Encabezados (emisores) por moneda + preview editable.
   const [emisorMXN, setEmisorMXN] = useState<EmisorRemision>(EMISOR_MXN_DEFAULT);
   const [emisorUSD, setEmisorUSD] = useState<EmisorRemision>(EMISOR_USD_DEFAULT);
-  const [modalEmisores, setModalEmisores] = useState(false);
-  const [guardandoEmisores, setGuardandoEmisores] = useState(false);
   const [remisionPreview, setRemisionPreview] = useState<any | null>(null);
   const [cargandoRemision, setCargandoRemision] = useState(false);
 
@@ -659,20 +675,6 @@ export const FacturacionClientesDashboard = () => {
     return () => { activo = false; };
   }, []);
 
-  const guardarEmisores = async () => {
-    setGuardandoEmisores(true);
-    try {
-      const payload = { mxn: emisorMXN, usd: emisorUSD, updatedAt: new Date().toISOString() };
-      try { localStorage.setItem(LS_REMISION_EMISORES, JSON.stringify({ mxn: emisorMXN, usd: emisorUSD })); } catch { /* noop */ }
-      await setDoc(doc(db, CONFIG_COLUMNAS_COLLECTION, DOC_REMISION_EMISORES), payload);
-      setModalEmisores(false);
-    } catch (e) {
-      console.error('Error guardando encabezados de remisión:', e);
-      alert('No se pudo guardar el encabezado de remisiones para todos los usuarios.\nRevisa tus permisos de escritura en Firestore (colección config_columnas).');
-    } finally {
-      setGuardandoEmisores(false);
-    }
-  };
 
   const guardarConfigColumnasOps = async () => {
     setGuardandoCols(true);
@@ -904,16 +906,6 @@ export const FacturacionClientesDashboard = () => {
     return monedaCanonica(idMoneda); // ✅ V00262: siempre canónica
   };
 
-  const resolverMoneda = (val: any): string => {
-    const s = String(val || '').trim();
-    if (!s) return '';
-    if (s === ID_USD || s.toUpperCase() === 'USD') return 'USD';
-    if (s === ID_MXN || s.toUpperCase() === 'MXN') return 'MXN';
-    if (s.toUpperCase() === 'N/A') return '';
-    const nombre = mapaCatalogos[s];
-    return nombre || s;
-  };
-
   const monedaFacturaMostrar = (f: any): string => {
     // ✅ V00265 (corrige el V00262): manda la moneda EN QUE SE EMITIÓ la
     //   factura (monedaFacturacion, o el campo viejo `moneda` de importadas),
@@ -925,6 +917,29 @@ export const FacturacionClientesDashboard = () => {
     const emitida = monedaCanonica(f.monedaFacturacion) || monedaCanonica(f.moneda);
     if (emitida) return emitida;
     return monedaDeCliente(f.clienteId) || 'N/A';
+  };
+
+  // ✅ V00481: la moneda de una factura es SIEMPRE la del cliente en Empresas (null si no tiene).
+  const monedaClienteDe = (clienteId: unknown): Moneda | null =>
+    monedaDeEmpresa(empresasList.find((e) => e.id === clienteId), 'monedaFacturacion', (id) => mapaCatalogos[id]);
+  const avisoMonedaDe = (f: { clienteId?: unknown } | null | undefined): string | null =>
+    f ? avisoMonedaDistinta(monedaDeFactura(f), monedaClienteDe(f.clienteId), 'cliente') : null;
+  // Folios del mismo cliente que se sugieren como la factura que reemplaza a una cancelada.
+  const foliosDelCliente = (f: { clienteId?: unknown; invoice?: unknown } | null | undefined): string[] => {
+    const propio = String(f?.invoice || '').trim();
+    return Array.from(new Set(facturasGlobales
+      .filter((x) => String(x.clienteId || '') === String(f?.clienteId || '') && !estaCancelada(x.statusFactura))
+      .map((x) => String(x.invoice || '').trim())
+      .filter((inv) => inv && inv !== propio))).slice(0, 200);
+  };
+  // Total que se precarga en Editar Factura: el de la factura; si su moneda no es la del cliente,
+  //   la suma de sus operaciones en la moneda del cliente (Dólares (Cliente) o Conversión Final).
+  const totalEditPara = (f: { operacionesGuardadas?: unknown }, clienteId: string): number => {
+    const actual = r2(totalDeGrupo(f));
+    const mon = monedaClienteDe(clienteId);
+    if (!mon || mon === monedaDeFactura(f)) return actual;
+    const sugerido = r2(totalSugeridoEn(mon, f.operacionesGuardadas));
+    return sugerido > 0 ? sugerido : actual;
   };
 
   const esFacturada = (op: any) => opIndex.has(String(op.id)) || !!op.facturaClienteId || !!op.facturado;
@@ -1010,18 +1025,12 @@ export const FacturacionClientesDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clienteFacturaId, empresasList, operacionesGlobales]);
 
-  const monedaFacturacion = useMemo(() => {
-    if (!clienteFacturaId) return '-';
-    const empresa = empresasList.find(e => e.id === clienteFacturaId);
-    if (!empresa) {
-      const op = operacionesGlobales.find(o => String(o.clientePaga || o.clienteId || '') === clienteFacturaId);
-      return op?.monedaCobroNombre || '-';
-    }
-    const idMoneda = empresa.monedaRef || empresa.moneda;
-    if (idMoneda === ID_MXN) return 'MXN';
-    if (idMoneda === ID_USD) return 'USD';
-    return idMoneda || 'No definida en catálogo';
-  }, [clienteFacturaId, empresasList, operacionesGlobales]);
+  // ✅ V00481: SIEMPRE la moneda del cliente en Empresas ('USD' / 'MXN'); sin ella no se factura
+  //   (antes caía a la moneda de una operación o a lo que tuviera el campo).
+  const monedaFacturacion = useMemo((): 'USD' | 'MXN' | '' => {
+    if (!clienteFacturaId) return '';
+    return monedaDeEmpresa(empresasList.find(e => e.id === clienteFacturaId), 'monedaFacturacion', (id) => mapaCatalogos[id]) ?? '';
+  }, [clienteFacturaId, empresasList, mapaCatalogos]);
 
   const formatearValorGenericoOp = (val: any, tipo?: string): string => {
     if (val === '' || val === null || val === undefined) return '-';
@@ -1218,43 +1227,12 @@ export const FacturacionClientesDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [operacionesGlobales, fechaDesdeOps, fechaHastaOps, facturasGlobales, filtroCliente, filtroTipoOp, enRevisionRef]);
 
-  const diagnostico = useMemo(() => {
-    const totalFacturas = facturasGlobales.length;
-    const opsFacturadasUnicas = opIndex.size;
-    const porClave = new Map<string, number>();
-    facturasGlobales.forEach((f: any) => {
-      const k = `${String(f.invoice || '').trim().toLowerCase()}__${String(f.clienteId || '')}`;
-      porClave.set(k, (porClave.get(k) || 0) + 1);
-    });
-    let invoicesDuplicados = 0;
-    porClave.forEach(v => { if (v > 1) invoicesDuplicados++; });
-    let sinMoneda = 0, sinFecha = 0, sinTotal = 0;
-    facturasGlobales.forEach((f: any) => {
-      if (monedaFacturaMostrar(f) === 'N/A') sinMoneda++;
-      if (!String(f.fecha || '').trim()) sinFecha++;
-      if (!(Number(f.subtotalFactura) > 0)) sinTotal++;
-    });
-    const enRango = operacionesGlobales.filter(op => dentroRangoFecha(op));
-    const rangoTotal = enRango.length;
-    const rangoFacturadas = enRango.filter(op => esFacturada(op)).length;
-    const rangoPorFacturar = rangoTotal - rangoFacturadas;
-    const huerfanas = enRango.filter(op => (op.facturado || op.facturaClienteId) && !opIndex.has(String(op.id))).length;
-    return {
-      totalFacturas, opsFacturadasUnicas, invoicesDuplicados,
-      sinMoneda, sinFecha, sinTotal,
-      rangoTotal, rangoFacturadas, rangoPorFacturar, huerfanas,
-      topeFacturas: totalFacturas >= LIMITE_FACTURAS_TODAS,
-      topeOps: topeOpsAlcanzado,
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [facturasGlobales, opIndex, operacionesGlobales, fechaDesdeOps, fechaHastaOps, empresasList, topeOpsAlcanzado]);
-
   const toggleOrdenOps = (campo: string) =>
     setOrdenOps(prev => prev.campo === campo ? { campo, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { campo, dir: 'asc' });
   const flechaOps = (campo: string) => ordenOps.campo === campo ? (ordenOps.dir === 'asc' ? ' ▲' : ' ▼') : '';
 
   const renderCeldaOps = (op: any, key: string, m: any) => {
-    const tdBase: React.CSSProperties = { padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' };
+    const tdBase: React.CSSProperties = { padding: '10px 12px', color: '#c9d1d9', whiteSpace: 'nowrap' }; // ✅ V00482: filas más bajas
     switch (key) {
       case 'factura': {
         const inv = invoiceDeOp(op);
@@ -1267,12 +1245,13 @@ export const FacturacionClientesDashboard = () => {
       case 'cliente': return <td key={key} style={tdBase}>{getNombreCliente(op.clientePaga || op.clientePagaId || op.clienteId)}</td>;
       case 'cartaPorte': return <td key={key} style={tdBase}>{op.cartaPorte || op.numeroCartaPorte || op.numDoda || '-'}</td>;
       case 'destino': return <td key={key} style={tdBase}>{op.destinoNombre || op.destino || '-'}</td>;
-      case 'moneda': return <td key={key} style={tdBase}>{op.monedaCobroNombre || mostrarMoneda(op.facturadoEnCobrar)}</td>;
-      case 'subtotal': return <td key={key} style={tdBase}>{formatoMoneda(m.subtotal)}</td>;
-      case 'total': return <td key={key} style={{ ...tdBase, fontWeight: 700, color: '#f0f6fc' }}>{formatoMoneda(m.total)}</td>;
-      case 'dolares': return <td key={key} style={{ ...tdBase, color: '#10b981' }}>{formatoMoneda(m.dol)}</td>;
-      case 'pesos': return <td key={key} style={{ ...tdBase, color: '#3b82f6' }}>{formatoMoneda(m.pes)}</td>;
-      case 'conv': return <td className="fcd-x9" key={key}>{formatoMoneda(m.conv)}</td>;
+      // ✅ V00481: Pesos en verde y Dólares en azul (antes al revés); subtotal y total en la moneda en que se factura.
+      case 'moneda': return <td key={key} style={tdBase}><NombreMoneda moneda={op.monedaCobroNombre || op.facturadoEnCobrar} respaldo={op.monedaCobroNombre || mostrarMoneda(op.facturadoEnCobrar)} /></td>;
+      case 'subtotal': return <td key={key} style={tdBase}><Importe monto={m.subtotal} moneda={monedaFacturacionOp(op)} /></td>;
+      case 'total': return <td key={key} style={tdBase}><Importe monto={m.total} moneda={monedaFacturacionOp(op)} className="fcd-total-op" /></td>;
+      case 'dolares': return <td key={key} style={tdBase}><Importe monto={m.dol} moneda="USD" /></td>;
+      case 'pesos': return <td key={key} style={tdBase}><Importe monto={m.pes} moneda="MXN" /></td>;
+      case 'conv': return <td className="fcd-x9" key={key}><Importe monto={m.conv} moneda="MXN" /></td>;
       default: {
         const col = columnasOps.find(c => c.id === key);
         const text = formatearValorGenericoOp(valorGenericoOp(op, col), col?.tipo);
@@ -1428,6 +1407,15 @@ export const FacturacionClientesDashboard = () => {
     });
     return { subtotal, refs };
   }, [seleccionadas, operacionesGlobales]);
+  // ✅ V00481: lo que se va a facturar EN LA MONEDA DEL CLIENTE: Dólares → Dólares (Cliente);
+  //   Pesos → Conversión Final (la misma regla del total de la factura).
+  const totalSeleccionEnMoneda = useMemo(() => {
+    const renglones = seleccionadas.map((id) => operacionesGlobales.find((o) => o.id === id)).filter(Boolean).map((op) => {
+      const m = obtenerMontoOperacion(op);
+      return { monto: m.conv, dol: m.dol, pes: m.pes, subtotalBase: m.subtotal };
+    });
+    return monedaFacturacion ? totalNativoDeOperaciones(monedaFacturacion, renglones) : 0; // la misma regla con que se guarda el total
+  }, [seleccionadas, operacionesGlobales, monedaFacturacion]);
 
   // ✅ Fase 1.8: la factura FRESCA del servidor (facturasGlobales puede tener
   //   hasta 30 min), con la misma forma que la lista. null si ya no existe.
@@ -1463,6 +1451,9 @@ export const FacturacionClientesDashboard = () => {
     if (seleccionadas.length + 1 > MAX_ESCRITURAS_LOTE) return alert(avisoLoteGrande(seleccionadas.length + 1));
     const bloqueo = bloqueoPorRevision(opsDeSeleccion()); // ✅ V00450
     if (bloqueo) return alert(bloqueo);
+    // ✅ V00481: la moneda es la del cliente en Empresas y es obligatoria.
+    if (monedaFacturacion !== 'USD' && monedaFacturacion !== 'MXN') return alert(avisoSinMoneda('cliente'));
+    if (estaCancelada(statusFacturaForm)) return alert('Una factura nueva no se crea Cancelada: se cancela después desde su ficha.');
     // ✅ V00279: el documento NO es obligatorio para facturar — sin adjunto se
     //   factura directo y la fila queda con ⚠ como recordatorio visual.
     setGuardando(true);
@@ -1643,17 +1634,23 @@ export const FacturacionClientesDashboard = () => {
     }
   };
 
-  const handleCambiarStatusFactura = async (factura: any, nuevoStatus: string) => {
+  // ✅ V00481: pasar a Cancelado abre la ventana que pide la nota y la factura que la reemplaza;
+  //   con esos datos (cancelacion) se guarda. Al salir de Cancelado se borran.
+  const handleCambiarStatusFactura = async (factura: any, nuevoStatus: string, cancelacion: DatosCancelacion | null = null) => {
     if (!factura?.id) return;
+    if (estaCancelada(nuevoStatus) && !cancelacion && !estaCancelada(factura.statusFactura)) { setCancelarDe(factura); return; }
     const ids: string[] = Array.isArray(factura.__groupIds) && factura.__groupIds.length ? factura.__groupIds : [factura.id];
+    const canc = escrituraCancelacion(factura, nuevoStatus, cancelacion);
     try {
-      const batch = writeBatch(db);
-      ids.forEach(id => batch.set(doc(db, 'facturas_clientes', id), { statusFactura: nuevoStatus }, { merge: true }));
-      await batch.commit();
-      setFacturasGlobales(prev => prev.map(f => ids.includes(f.id) ? { ...f, statusFactura: nuevoStatus } : f));
-      setFacturaViendo((prev: any) => (prev && (ids.includes(prev.id) || prev.id === factura.id)) ? { ...prev, statusFactura: nuevoStatus } : prev);
+      await escribirEnGrupo('facturas_clientes', ids, { statusFactura: nuevoStatus, ...canc.firestore });
+      setFacturasGlobales(prev => prev.map(f => ids.includes(f.id) ? canc.local({ ...f, statusFactura: nuevoStatus }) : f));
+      setFacturaViendo((prev: any) => (prev && (ids.includes(prev.id) || prev.id === factura.id)) ? canc.local({ ...prev, statusFactura: nuevoStatus }) : prev);
+      void registrarLog('Facturación Clientes', 'Edición', cancelacion
+        ? `Canceló la factura ${factura.invoice}: la reemplaza ${cancelacion.reemplazo.trim()}. Nota: ${cancelacion.nota.trim()}`
+        : `Cambió el status de la factura ${factura.invoice} a ${nuevoStatus}.`);
     } catch (e) {
       console.error('Error actualizando status de factura:', e);
+      if (cancelacion) throw new Error('No se pudo cancelar la factura. Revisa la conexión e intenta de nuevo.');
       alert('No se pudo actualizar el status de la factura.');
     }
   };
@@ -1665,13 +1662,15 @@ export const FacturacionClientesDashboard = () => {
     setEditFecha(String(f.fecha || '').slice(0, 10));
     setEditCcp(String(f.facturaCcp || ''));
     setEditStatus(String(f.statusFactura || 'Facturado'));
-    setEditMoneda(resolverMoneda(f.monedaFacturacion) || '');
+    const cancelada = cancelacionDe(f); // ✅ V00481
+    setEditCancelacion(cancelada ? { nota: cancelada.nota, reemplazo: cancelada.reemplazo } : CANCELACION_VACIA);
     // ✅ V00441: con la bandera, el total EN LA MONEDA de la factura (el que se ve en la
     //   tabla y el que guarda el servidor); antes se precargaba la conversión a pesos.
     // ✅ V00451: el total EN LA MONEDA de la factura también sin la bandera (antes se precargaba
     //   subtotalFactura = la conversión a pesos; guardar el editor solo para adjuntar el documento
     //   cambiaba el total de una factura en dólares y en Pagos quedaba saldo pendiente).
-    setEditTotal(String(r2(totalDeGrupo(f))));
+    // ✅ V00481: si la factura no está en la moneda del cliente, el total sugerido ya es el de esa moneda.
+    setEditTotal(String(totalEditPara(f, String(f.clienteId || ''))));
     setEditClienteId(String(f.clienteId || '')); // ✅ NUEVO
     setAdjuntosEdicion(desdeGuardados(docsDeFactura(f))); // ✅ V00451: los documentos actuales (de todo el grupo)
   };
@@ -1679,19 +1678,30 @@ export const FacturacionClientesDashboard = () => {
   const handleGuardarEdicionFactura = async () => {
     if (!facturaEditando) return;
     if (!editInvoice.trim()) return alert('El # de Invoice es obligatorio.');
+    // ✅ V00481: la moneda es la del cliente (Empresas) y es obligatoria; cancelar pide nota y reemplazo.
+    const monedaEdit = monedaClienteDe(editClienteId);
+    if (!monedaEdit) return alert(editClienteId ? avisoSinMoneda('cliente') : 'Elige el cliente de la factura: la moneda es la del cliente en Empresas.');
+    const cancelando = estaCancelada(editStatus);
+    if (cancelando) { const falta = validarCancelacion(editCancelacion, editInvoice); if (falta) return alert(falta); }
+    const canc = escrituraCancelacion(facturaEditando, editStatus, cancelando ? editCancelacion : null);
     setGuardandoEdit(true);
     try {
       const ids: string[] = Array.isArray(facturaEditando.__groupIds) && facturaEditando.__groupIds.length ? facturaEditando.__groupIds : [facturaEditando.id];
       const totalNum = Number(editTotal) || 0;
       // ✅ V00441 (Fase 5.5): con la bandera, el servidor guarda el total como MANUAL.
       if (flags.dineroPorServidor) {
+        // ✅ V00481: los datos de la cancelación van ANTES (si el servidor falla quedan sin efecto: solo se
+        //   muestran con status Cancelado); al salir de Cancelado se borran DESPUÉS.
+        if (cancelando) await escribirEnGrupo('facturas_clientes', ids, canc.firestore);
         const r = await llamarDinero('editarFactura', {
           lado: 'cliente', origen: 'facturacion', facturaIds: ids, invoice: editInvoice.trim(), fecha: editFecha || '', facturaCcp: editCcp.trim(),
-          statusFactura: editStatus, moneda: editMoneda || 'N/A', total: totalNum, ...(editClienteId ? { empresaId: editClienteId } : {}),
+          statusFactura: editStatus, moneda: monedaEdit, total: totalNum, ...(editClienteId ? { empresaId: editClienteId } : {}),
         });
-        setFacturasGlobales(prev => aplicarFacturas(prev, r.facturas, normalizarFactura));
+        if (!cancelando) await escribirEnGrupo('facturas_clientes', ids, canc.firestore);
+        setFacturasGlobales(prev => aplicarFacturas(prev, r.facturas, normalizarFactura).map((f) => (ids.includes(f.id) ? canc.local(f) : f)));
         const primera = r.facturas[ids[0]];
-        if (primera) setFacturaViendo((prev: Record<string, unknown> | null) => (prev && ids.includes(String(prev.id))) ? { ...prev, ...camposEditadosFactura(primera) } : prev);
+        if (primera) setFacturaViendo((prev: Record<string, unknown> | null) => (prev && ids.includes(String(prev.id))) ? canc.local({ ...prev, ...camposEditadosFactura(primera) }) : prev);
+        if (!canc.vacia) void registrarLog('Facturación Clientes', 'Edición', cancelando ? `Canceló la factura ${editInvoice.trim()}: la reemplaza ${editCancelacion.reemplazo.trim()}. Nota: ${editCancelacion.nota.trim()}` : `La factura ${editInvoice.trim()} dejó de estar Cancelada (${editStatus}).`);
         await guardarDocsDeEdicion(facturaEditando); // ✅ V00451
         setFacturaEditando(null);
         return;
@@ -1701,7 +1711,7 @@ export const FacturacionClientesDashboard = () => {
         fecha: editFecha || '',
         facturaCcp: editCcp.trim(),
         statusFactura: editStatus,
-        monedaFacturacion: editMoneda || 'N/A',
+        monedaFacturacion: monedaEdit, // ✅ V00481: la del cliente
         updatedAt: new Date().toISOString(),
       };
       // ✅ NUEVO — REASIGNAR CLIENTE: corrige facturas que quedaron a nombre
@@ -1729,6 +1739,7 @@ export const FacturacionClientesDashboard = () => {
       ids.forEach((id, idx) => {
         batch.set(doc(db, 'facturas_clientes', id), {
           ...baseUpdate,
+          ...canc.firestore, // ✅ V00481
           ...(totalCambio ? {
             subtotalFactura: idx === 0 ? totalNum : 0,
             subtotalMonedaFactura: idx === 0 ? totalNum : 0, // ✅ FIX: el campo que se muestra
@@ -1745,11 +1756,12 @@ export const FacturacionClientesDashboard = () => {
       await guardarDocsDeEdicion(facturaEditando); // ✅ V00451: varios documentos (del grupo, en el primero)
       setFacturasGlobales(prev => prev.map(f => {
         if (!ids.includes(f.id)) return f;
-        if (!totalCambio) return normalizarFactura({ ...f, ...baseUpdate });
+        if (!totalCambio) return normalizarFactura(canc.local({ ...f, ...baseUpdate }));
         const esPrimero = f.id === ids[0];
-        return normalizarFactura({ ...f, ...baseUpdate, subtotalFactura: esPrimero ? totalNum : 0, subtotalMonedaFactura: esPrimero ? totalNum : 0, totalManualCentavos: esPrimero ? aCentavos(totalNum) : 0, ...(esPrimero ? extraPago : {}) });
+        return normalizarFactura(canc.local({ ...f, ...baseUpdate, subtotalFactura: esPrimero ? totalNum : 0, subtotalMonedaFactura: esPrimero ? totalNum : 0, totalManualCentavos: esPrimero ? aCentavos(totalNum) : 0, ...(esPrimero ? extraPago : {}) }));
       }));
-      setFacturaViendo((prev: any) => (prev && ids.includes(prev.id)) ? { ...prev, ...baseUpdate, ...(totalCambio ? { subtotalFactura: totalNum, subtotalMonedaFactura: totalNum, ...extraPago } : {}) } : prev);
+      setFacturaViendo((prev: any) => (prev && ids.includes(prev.id)) ? canc.local({ ...prev, ...baseUpdate, ...(totalCambio ? { subtotalFactura: totalNum, subtotalMonedaFactura: totalNum, ...extraPago } : {}) }) : prev);
+      if (!canc.vacia) void registrarLog('Facturación Clientes', 'Edición', cancelando ? `Canceló la factura ${editInvoice.trim()}: la reemplaza ${editCancelacion.reemplazo.trim()}. Nota: ${editCancelacion.nota.trim()}` : `La factura ${editInvoice.trim()} dejó de estar Cancelada (${editStatus}).`);
       setFacturaEditando(null);
     } catch (e) {
       console.error('Error guardando edición de factura:', e);
@@ -1978,6 +1990,7 @@ export const FacturacionClientesDashboard = () => {
   };
 
   const agregarOpAFactura = async (facturaGrupo: any, op: any) => {
+    if (!puedeAgregarOperaciones(facturaGrupo?.statusFactura)) { alert(AVISO_AGREGAR_FACTURADA); return; } // ✅ V00481
     const bloqueo = bloqueoPorRevision([op]); // ✅ V00450
     if (bloqueo) { alert(bloqueo); return; }
     const opId = String(op.id);
@@ -2634,7 +2647,7 @@ export const FacturacionClientesDashboard = () => {
       case 'cliente': return <span className="fcd-x12">{nombreClienteFactura_(f)}</span>;
       case 'refCliente': { const rc = refClienteDeFactura(f); return rc ? <span className="fcd-x11">{rc}</span> : <span className="fcd-x1">-</span>; }
       case 'numeroPago': { const nums = numerosPagoDe(f); return nums.length ? <span className="fac-chips-pago">{nums.map(n => <span key={n} className="fac-chip-pago" title="Número de pago aplicado">{n}</span>)}</span> : <span className="fac-sin-pago">—</span>; }
-      case 'moneda': { const mon = monedaFacturaMostrar(f); return <span style={{ color: mon === 'N/A' ? '#8b949e' : '#10b981', fontWeight: 'bold' }}>{mon}</span>; }
+      case 'moneda': { const mon = monedaFacturaMostrar(f); return <NombreMoneda moneda={mon} respaldo={mon} />; } // ✅ V00481
       case 'facturaCcp': return <span className="fcd-x11">{f.facturaCcp || '-'}</span>;
       case 'cantOps': return <span className="fcd-x1">{f.operacionesIds?.length || 0}</span>;
       case 'referencias': {
@@ -2642,7 +2655,7 @@ export const FacturacionClientesDashboard = () => {
         if (ops.length === 0) return <span className="fcd-x1">-</span>;
         return (
           <div className="fcd-x13">
-            {ops.map((op: any, idx: number) => (
+            {ops.slice(0, 3).map((op: any, idx: number) => (
               <button className="fcd-x14"
                 key={`${f.id}_ref_${op?.id || idx}`}
                 onClick={(e) => { e.stopPropagation(); if (op?.id) setOpEditandoId(String(op.id)); }} /* ✅ V00274: abre el EDITOR de la operación */
@@ -2650,10 +2663,13 @@ export const FacturacionClientesDashboard = () => {
                 {refDeOp(op)}
               </button>
             ))}
+            {ops.length > 3 && (/* ✅ V00482: el resto en la ficha */
+              <button type="button" className="fcd-mas-refs" onClick={(e) => { e.stopPropagation(); setFacturaViendo(f); }} title="Ver todas en la ficha">+{ops.length - 3}</button>
+            )}
           </div>
         );
       }
-      case 'total': return <span className="fcd-x15">{formatoMoneda(totalDeGrupo(f))}</span>;
+      case 'total': return <Importe monto={totalDeGrupo(f)} moneda={monedaFacturaMostrar(f)} className="fcd-x15" />; // ✅ V00481
       case 'createdAt': return <span className="fcd-x1">{f.createdAt ? formatearFechaHora(f.createdAt) : '-'}</span>;
       default: return '-';
     }
@@ -2662,16 +2678,6 @@ export const FacturacionClientesDashboard = () => {
   // ✅ (E) Exportación PROFESIONAL a Excel del Historial (ExcelJS con estilos + logo).
   const [exportandoExcelHist, setExportandoExcelHist] = useState(false); // ✅ V00261
 
-  // ✅ V00262: SINCRONIZAR FACTURAS CON EMPRESAS — recorre TODA la colección
-  //   facturas_clientes y escribe, solo donde difiera:
-  //   · clienteNombre → el nombre oficial de Empresas (resuelto por clienteId
-  //     o por el nombre guardado); si la factura no traía clienteId y se
-  //     encontró la empresa, también se guarda el clienteId.
-  //   · monedaFacturacion → la moneda del cliente en Empresas, canónica
-  //     (solo "Dólares" o "Pesos"); si el cliente no tiene moneda en
-  //     Empresas, se canoniza la guardada (USD/DÓLARES→Dólares, MXN→Pesos).
-  //   No toca montos, fechas, invoices ni referencias.
-  const [sincronizandoEmpresas, setSincronizandoEmpresas] = useState(false);
   // ✅ V00262: modal "Exportar a Excel" con selección y ORDEN de columnas
   //   (mismo patrón de Servicios Completados: cuadrícula + Drag & Drop).
   const [modalExportarFac, setModalExportarFac] = useState(false);
@@ -2758,60 +2764,6 @@ export const FacturacionClientesDashboard = () => {
       return arr;
     });
   };
-  const sincronizarFacturasConEmpresas = async () => {
-    if (sincronizandoEmpresas) return;
-    if (!window.confirm('¿Sincronizar TODAS las facturas con Empresas?\n\n· El nombre del cliente quedará como está en Empresas.\n· La moneda quedará como la del cliente en Empresas, unificada a "Dólares" o "Pesos" (se acaban los USD/DOLARES/MXN mezclados).\n\nNo se tocan montos, fechas, invoices ni referencias.')) return;
-    setSincronizandoEmpresas(true);
-    try {
-      const plano = (t: unknown) => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
-      type EmpresaLike = { id?: unknown; nombre?: unknown; nombreCorto?: unknown; monedaRef?: unknown; moneda?: unknown; monedaFacturacion?: unknown };
-      const empresaPorNombre = new Map<string, EmpresaLike>();
-      (empresasList as EmpresaLike[]).forEach((e) => {
-        [e.nombre, e.nombreCorto].forEach((n) => { const k = plano(n); if (k && !empresaPorNombre.has(k)) empresaPorNombre.set(k, e); });
-      });
-      const snap = await getDocs(collection(db, 'facturas_clientes'));
-      let lote = writeBatch(db); let enLote = 0;
-      let nFact = 0, nNombre = 0, nMoneda = 0, sinEmpresa = 0;
-      for (const d of snap.docs) {
-        const x = d.data() as Record<string, unknown>;
-        const cambios: Record<string, string> = {};
-        // 1) Resolver la EMPRESA del cliente (por id o por nombre guardado).
-        let empresa: EmpresaLike | null = x.clienteId ? ((empresasList as EmpresaLike[]).find((e) => e.id === x.clienteId) || null) : null;
-        if (!empresa) empresa = empresaPorNombre.get(plano(x.clienteNombre || x.cliente)) || null;
-        if (empresa) {
-          const nombreOficial = String(empresa.nombre || empresa.nombreCorto || '').trim();
-          if (nombreOficial && String(x.clienteNombre || '') !== nombreOficial) { cambios.clienteNombre = nombreOficial; nNombre += 1; }
-          if (!x.clienteId) cambios.clienteId = String(empresa.id);
-        } else if (String(x.clienteNombre || x.cliente || '').trim()) {
-          sinEmpresa += 1;
-        }
-        // 2) Moneda — ✅ V00265 (corrige el V00262): la factura CONSERVA la
-        //    moneda en que se emitió; aquí solo se CANONIZA (USD/DOLARES →
-        //    Dólares, MXN/PESOS → Pesos). El campo viejo `moneda` (intacto en
-        //    las importadas) tiene prioridad: así se RECUPERAN las facturas a
-        //    las que la corrida anterior les puso la moneda del cliente. La
-        //    de Empresas solo se usa si la factura no trae moneda alguna.
-        const monedaEmpresa = empresa ? monedaCanonica(empresa.monedaRef || empresa.moneda || empresa.monedaFacturacion) : '';
-        const monedaFinal = monedaCanonica(x.moneda) || monedaCanonica(x.monedaFacturacion) || monedaEmpresa;
-        if (monedaFinal && String(x.monedaFacturacion || '') !== monedaFinal) { cambios.monedaFacturacion = monedaFinal; nMoneda += 1; }
-        if (Object.keys(cambios).length > 0) {
-          lote.update(d.ref, cambios);
-          nFact += 1; enLote += 1;
-          if (enLote >= 400) { await lote.commit(); lote = writeBatch(db); enLote = 0; }
-        }
-      }
-      if (enLote > 0) await lote.commit();
-      limpiarCachesPorPrefijo('roelca_'); // los módulos releerán datos frescos
-      await registrarLog('Facturación Clientes', 'Edición', `Sincronizó ${nFact} factura(s) con Empresas: ${nNombre} nombre(s), ${nMoneda} moneda(s); ${sinEmpresa} sin empresa encontrada.`);
-      alert(`Facturas sincronizadas con Empresas. ✅\n\n· Facturas actualizadas: ${nFact} (de ${snap.size})\n· Ya estaban correctas: ${snap.size - nFact}\n· Nombres corregidos: ${nNombre}\n· Monedas unificadas: ${nMoneda}\n· Sin empresa encontrada en Empresas: ${sinEmpresa}\n\nSe recargará el historial para mostrar los datos nuevos.`);
-      await recargarTodo();
-    } catch (e) {
-      console.error('No se pudieron sincronizar las facturas con Empresas:', e);
-      alert('No se pudieron sincronizar las facturas con Empresas.');
-    } finally {
-      setSincronizandoEmpresas(false);
-    }
-  };
   const exportarCSV = async () => {
     if (exportandoExcelHist) return;
     if (historialOrdenado.length === 0) return alert('No hay datos para exportar.');
@@ -2889,6 +2841,7 @@ export const FacturacionClientesDashboard = () => {
   //    Emisor según moneda: USD → Camila (emisorUSD), MXN → Rolando (emisorMXN).
   const abrirRemision = async (f: any) => {
     if (!f) return;
+    if (!puedeGenerarRemision(f.statusFactura)) { alert(AVISO_REMISION_FACTURADA); return; } // ✅ V00481
     setCargandoRemision(true);
     try {
       // ✅ El encabezado toma la MONEDA YA FACTURADA, la misma de la columna
@@ -3074,6 +3027,9 @@ export const FacturacionClientesDashboard = () => {
   };
 
   const det = operacionDetalle;
+  // ✅ V00481: moneda e importes por operación de la ficha abierta (en la moneda de la factura).
+  const monedaFicha = facturaViendo ? monedaFacturaMostrar(facturaViendo) : '';
+  const importesFicha = facturaViendo ? importesDeRenglones(monedaFicha, facturaViendo.operacionesGuardadas) : [];
   const evalTipoOpText = String(det?.tipoOperacionNombre || det?.tipoOperacionId || '').toLowerCase();
   const evalIsFletes = evalTipoOpText.includes('fletes') || evalTipoOpText.includes('flete');
   const evalIsLogistica = evalTipoOpText.includes('logistica') || evalTipoOpText.includes('logística');
@@ -3095,7 +3051,7 @@ export const FacturacionClientesDashboard = () => {
     color: active ? '#f0f6fc' : '#8b949e', borderBottom: active ? '2px solid #D84315' : '2px solid transparent',
     fontWeight: active ? 'bold' : 'normal' as any,
   });
-  const thOrdenStyle: React.CSSProperties = { padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' };
+  const thOrdenStyle: React.CSSProperties = { padding: '10px 12px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' };
   const selectOrdenStyle: React.CSSProperties = { backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', padding: '8px 10px', fontSize: '0.85rem' };
   const btnDirStyle: React.CSSProperties = { backgroundColor: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', padding: '8px 12px', cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' };
   const dateInputStyle: React.CSSProperties = { backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', padding: '9px 10px', fontSize: '0.9rem', colorScheme: 'dark' };
@@ -3171,6 +3127,17 @@ export const FacturacionClientesDashboard = () => {
         <DocumentosFacturaModal lado="clientes" fila={docsFacturaDe} onGuardado={aplicarDocsLocal} onCerrar={() => setDocsFacturaDe(null)} />
       )}
       {hiloFacturaId && <HiloModal tipo="cliente" facturaId={hiloFacturaId} onClose={() => setHiloFacturaId(null)} onEditarOperacion={(id) => setOpEditandoId(id)} />}
+      {corrigiendoFacturas && (
+        <CorregirFacturasModal lado="cliente" facturas={facturasGlobales} conServidor={flags.dineroPorServidor}
+          monedaDe={monedaClienteDe} nombreDe={(id, f) => { const n = getNombreCliente(id); return n && n !== id ? n : String(f.clienteNombre || id || ''); }}
+          onCorregidas={(cambios) => setFacturasGlobales(prev => prev.map(f => (cambios[f.id] ? normalizarFactura({ ...f, ...cambios[f.id] }) : f)))}
+          onCerrar={() => setCorrigiendoFacturas(false)} />
+      )}{/* ✅ V00482 */}
+      {cancelarDe && (
+        <ModalCancelarFactura invoice={String(cancelarDe.invoice || '')} sugerencias={foliosDelCliente(cancelarDe)}
+          onVolver={() => setCancelarDe(null)}
+          onConfirmar={async (datos) => { await handleCambiarStatusFactura(cancelarDe, 'Cancelado', datos); setCancelarDe(null); }} />
+      )}{/* ✅ V00481 */}
       {opEditandoId && (
         <EditorOperacionEmbebido operacionId={opEditandoId} operacion={operacionesGlobales.find((o: any) => String(o.id) === opEditandoId)} onClose={() => setOpEditandoId(null)} />
       )}
@@ -3219,7 +3186,7 @@ export const FacturacionClientesDashboard = () => {
           </span>
         )}
         {esHistorial && filtroMonedaHist !== 'todas' && (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: filtroMonedaHist === 'USD' ? 'rgba(16,185,129,0.1)' : 'rgba(59,130,246,0.1)', border: `1px solid ${filtroMonedaHist === 'USD' ? '#10b981' : '#3b82f6'}`, borderRadius: '14px', color: filtroMonedaHist === 'USD' ? '#10b981' : '#3b82f6', fontSize: '0.8rem', fontWeight: 'bold' }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: filtroMonedaHist === 'USD' ? 'rgba(88,166,255,0.1)' : 'rgba(63,185,80,0.1)', border: `1px solid ${filtroMonedaHist === 'USD' ? '#58a6ff' : '#3fb950'}`, borderRadius: '14px', color: filtroMonedaHist === 'USD' ? '#58a6ff' : '#3fb950', fontSize: '0.8rem', fontWeight: 'bold' }}>
             {filtroMonedaHist === 'USD' ? '$ Dólares (USD)' : '$ Pesos (MXN)'}
             <button className="fcd-x38" onClick={() => setFiltroMonedaHist('todas')}>✕</button>
           </span>
@@ -3229,6 +3196,14 @@ export const FacturacionClientesDashboard = () => {
             {nombreClienteSeleccionado}
             <button className="fcd-x40" onClick={() => { setFiltroCliente(''); setTextoBuscarCliente(''); }}>✕</button>
           </span>
+        )}
+        {/* ✅ V00482: buscar y acciones del historial en esta misma fila (antes, un panel aparte con 6 botones) */}
+        {esHistorial && (
+          <AccionesHistorial
+            buscar={{ valor: textoBuscarFactura, onCambiar: setTextoBuscarFactura, placeholder: 'Buscar: invoice, cliente, CCP, referencia, remolque…' }}
+            onCorregir={() => setCorrigiendoFacturas(true)} corregirDeshabilitado={cargandoFacturas || facturasGlobales.length === 0}
+            onColumnas={() => setModalColumnas(true)} onExportar={abrirModalExportarFac} exportando={exportandoExcelHist}
+          />
         )}
       </div>
       )}
@@ -3290,8 +3265,8 @@ export const FacturacionClientesDashboard = () => {
                 <div className="fcd-x46">
                   <label className="fcd-x55">MONEDA</label>
                   <div className="fcd-x56">
-                    <button onClick={() => { setMonedaVistaOps('USD'); setSeleccionadas([]); }} style={{ ...segBtnStyle(monedaVistaOps === 'USD', '#10b981'), flex: 1 }}>Dólares ({resumenMonedaOps.usd})</button>
-                    <button onClick={() => { setMonedaVistaOps('MXN'); setSeleccionadas([]); }} style={{ ...segBtnStyle(monedaVistaOps === 'MXN', '#3b82f6'), flex: 1 }}>Pesos ({resumenMonedaOps.mxn})</button>
+                    <button onClick={() => { setMonedaVistaOps('USD'); setSeleccionadas([]); }} style={{ ...segBtnStyle(monedaVistaOps === 'USD', '#58a6ff'), flex: 1 }}>Dólares ({resumenMonedaOps.usd})</button>
+                    <button onClick={() => { setMonedaVistaOps('MXN'); setSeleccionadas([]); }} style={{ ...segBtnStyle(monedaVistaOps === 'MXN', '#3fb950'), flex: 1 }}>Pesos ({resumenMonedaOps.mxn})</button>
                     <button onClick={() => { setMonedaVistaOps('todas'); setSeleccionadas([]); }} style={{ ...segBtnStyle(monedaVistaOps === 'todas', '#8b949e'), flex: 1 }}>Todas ({resumenMonedaOps.todas})</button>
                   </div>
                 </div>
@@ -3355,8 +3330,8 @@ export const FacturacionClientesDashboard = () => {
                   <label className="fcd-x47">MONEDA DE FACTURACIÓN</label>
                   <div className="fcd-x56">
                     <button onClick={() => setFiltroMonedaHist('todas')} style={{ ...segBtnStyle(filtroMonedaHist === 'todas', '#58a6ff'), flex: 1 }}>Todas ({conteoMonedaHist.todas})</button>
-                    <button onClick={() => setFiltroMonedaHist('USD')} style={{ ...segBtnStyle(filtroMonedaHist === 'USD', '#10b981'), flex: 1 }}>$ Dólares ({conteoMonedaHist.USD})</button>
-                    <button onClick={() => setFiltroMonedaHist('MXN')} style={{ ...segBtnStyle(filtroMonedaHist === 'MXN', '#3b82f6'), flex: 1 }}>$ Pesos ({conteoMonedaHist.MXN})</button>
+                    <button onClick={() => setFiltroMonedaHist('USD')} style={{ ...segBtnStyle(filtroMonedaHist === 'USD', '#58a6ff'), flex: 1 }}>$ Dólares ({conteoMonedaHist.USD})</button>
+                    <button onClick={() => setFiltroMonedaHist('MXN')} style={{ ...segBtnStyle(filtroMonedaHist === 'MXN', '#3fb950'), flex: 1 }}>$ Pesos ({conteoMonedaHist.MXN})</button>
                   </div>
                 </div>
                 <div className="fcd-x46">
@@ -3480,7 +3455,7 @@ export const FacturacionClientesDashboard = () => {
                 </div>
                 <div>
                   <span className="fcd-x78">Moneda</span>
-                  <span className="fcd-x81">{monedaFacturacion}</span>
+                  <span className="fcd-x81"><NombreMoneda moneda={monedaFacturacion} respaldo="Sin moneda en Empresas" /></span>{/* ✅ V00481 */}
                 </div>
               </div>
             </div>
@@ -3588,39 +3563,12 @@ export const FacturacionClientesDashboard = () => {
               {cargandoFacturas ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fcd-x107">{resumenHistorial.totalOps}</span>}
             </div>
             <div className="fcd-x104 fac-tarjeta-clicable" role="button" tabIndex={0} title="Ver de dónde sale este monto" onClick={() => setTarjetaAbierta('usd')}>
-              <span className="fcd-x108">Total Facturado (USD)</span>
+              <span className="fcd-x108">Total Facturado (<NombreMoneda moneda="USD" forma="codigo" />)</span>
               {cargandoFacturas ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fcd-x109">{formatoMoneda(resumenHistorial.totalUSD)}</span>}
             </div>
             <div className="fcd-x104 fac-tarjeta-clicable" role="button" tabIndex={0} title="Ver de dónde sale este monto" onClick={() => setTarjetaAbierta('mxn')}>
-              <span className="fcd-x108">Total Facturado (MXN)</span>
+              <span className="fcd-x108">Total Facturado (<NombreMoneda moneda="MXN" forma="codigo" />)</span>
               {cargandoFacturas ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fcd-x110">{formatoMoneda(resumenHistorial.totalMXN)}</span>}
-            </div>
-          </div>
-
-          <div className="fcd-x70">
-            <div className="fcd-x111">
-              <span className="fcd-x7">{historialOrdenado.length} {historialOrdenado.length === 1 ? 'factura' : 'facturas'}</span>
-            </div>
-            <div className="fcd-x72">
-              {/* ✅ V00262: buscador SIEMPRE visible sobre la tabla (mismo estado del panel de Filtros) */}
-              <span className="fac-buscador-tabla">
-                <input
-                  className="fac-buscador-tabla__input"
-                  type="text"
-                  placeholder="Buscar: invoice, cliente, CCP, referencia, remolque…"
-                  value={textoBuscarFactura}
-                  onChange={(e) => setTextoBuscarFactura(e.target.value)}
-                />
-                {textoBuscarFactura && (
-                  <button className="fac-buscador-tabla__limpiar" onClick={() => setTextoBuscarFactura('')} title="Limpiar búsqueda">✕</button>
-                )}
-              </span>
-              <button title="Editar el encabezado de las remisiones (emisor por moneda: USD→Camila, MXN→Rolando)" onClick={() => setModalEmisores(true)} style={{ ...btnDirStyle, borderColor: '#fb923c', color: '#fb923c' }}>⚙ Encabezado Remisión</button>
-              <button title="Verificar consistencia de la facturación" onClick={() => setModalDiagnostico(true)} style={{ ...btnDirStyle, borderColor: '#58a6ff', color: '#58a6ff' }}>Verificar</button>
-              {/* ✅ V00262: nombre y moneda de TODAS las facturas guardadas = los de Empresas (Dólares/Pesos) */}
-              <button title="Escribe en todas las facturas el nombre del cliente y la moneda tal como están en Empresas (unifica USD/DOLARES→Dólares y MXN/PESOS→Pesos)" onClick={sincronizarFacturasConEmpresas} disabled={sincronizandoEmpresas} style={{ ...btnDirStyle, borderColor: '#a371f7', color: sincronizandoEmpresas ? '#8b949e' : '#a371f7', cursor: sincronizandoEmpresas ? 'wait' : 'pointer' }}>{sincronizandoEmpresas ? '⏳ Sincronizando…' : '⇄ Sincronizar con Empresas'}</button>
-              <button title="Configurar columnas" onClick={() => setModalColumnas(true)} style={btnDirStyle}>⚙ Configurar Columnas</button>
-              <button title="Elegir y ordenar las columnas del Excel antes de exportar" onClick={abrirModalExportarFac} disabled={exportandoExcelHist} style={{ ...btnDirStyle, backgroundColor: exportandoExcelHist ? '#30363d' : '#1a7f37', color: exportandoExcelHist ? '#8b949e' : '#fff', border: 'none', cursor: exportandoExcelHist ? 'wait' : 'pointer' }}>{exportandoExcelHist ? '⏳ Exportando…' : 'Exportar Excel'}</button>
             </div>
           </div>
 
@@ -3663,9 +3611,10 @@ export const FacturacionClientesDashboard = () => {
                           <button className="fcd-x115" title="Ver Ficha" onClick={() => setFacturaViendo(f)}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                           </button>
+{puedeGenerarRemision(f.statusFactura) && (/* ✅ V00481: con la factura Facturada ya no hay Remisión */
                           <button className="fcd-x116" title="Generar Remisión (PDF)" onClick={() => abrirRemision(f)}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
-                          </button>
+                          </button>)}
                           <button className="fcd-x117" title="Editar Factura" onClick={(e) => abrirEditarFactura(e, f)}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                           </button>
@@ -3702,7 +3651,7 @@ export const FacturacionClientesDashboard = () => {
               <button type="button" className="fac-export-modal__cerrar" onClick={() => setTarjetaAbierta(null)}>✕</button>
             </div>
             <div className="fac-tarjeta-modal__resumen">
-              {facturasDeTarjeta.length.toLocaleString('es-MX')} factura(s) · {opsTarjetaAbierta.toLocaleString('es-MX')} operación(es) · Total {formatoMoneda(totalTarjetaAbierta)}
+              {facturasDeTarjeta.length.toLocaleString('es-MX')} factura(s) · {opsTarjetaAbierta.toLocaleString('es-MX')} operación(es) · Total <Importe monto={totalTarjetaAbierta} moneda={tarjetaAbierta === 'usd' ? 'USD' : tarjetaAbierta === 'mxn' ? 'MXN' : ''} />
               <span className="fac-tarjeta-modal__nota"> — con los filtros actuales del historial{tarjetaAbierta === 'usd' ? ', solo facturas en Dólares' : tarjetaAbierta === 'mxn' ? ', solo facturas en Pesos' : ''}.</span>
             </div>
             <div className="fac-tarjeta-modal__lista">
@@ -3720,8 +3669,8 @@ export const FacturacionClientesDashboard = () => {
                   <span className="fac-tarjeta-modal__c-fecha">{String(f.fecha || '').slice(0, 10) || '—'}</span>
                   <span className="fac-tarjeta-modal__c-cliente" title={nombreClienteFactura_(f)}>{nombreClienteFactura_(f)}</span>
                   <span className="fac-tarjeta-modal__c-ops">{Number(f.operacionesIds?.length || 0)}</span>
-                  <span className="fac-tarjeta-modal__c-moneda">{monedaFacturaMostrar(f)}</span>
-                  <span className="fac-tarjeta-modal__c-total">{formatoMoneda(totalFactura(f))}</span>
+                  <span className="fac-tarjeta-modal__c-moneda"><NombreMoneda moneda={monedaFacturaMostrar(f)} respaldo={monedaFacturaMostrar(f)} /></span>
+                  <span className="fac-tarjeta-modal__c-total"><Importe monto={totalFactura(f)} moneda={monedaFacturaMostrar(f)} /></span>
                 </div>
               ))}
               {facturasDeTarjeta.length === 0 && <div className="fac-tarjeta-modal__vacio">Sin facturas con los filtros actuales.</div>}
@@ -3917,13 +3866,15 @@ export const FacturacionClientesDashboard = () => {
               </div>
               <div className="fcd-x159">
                 <span className="fcd-x158">Moneda Cliente</span>
-                <span className="fcd-x160">{monedaFacturacion}</span>
+                <span className="fcd-x160"><NombreMoneda moneda={monedaFacturacion} respaldo="Sin moneda" /></span>
               </div>
               <div className="fcd-x161">
-                <span className="fcd-x158">Conversión ({seleccionadas.length} Ops)</span>
-                <span className="fcd-x162">{formatoMoneda(resumenSeleccion.subtotal)}</span>
+                {/* ✅ V00481: en la moneda del cliente (Dólares → Dólares (Cliente); Pesos → Conversión Final) */}
+                <span className="fcd-x158">Total ({seleccionadas.length} Ops)</span>
+                <span className="fcd-x162"><Importe monto={totalSeleccionEnMoneda} moneda={monedaFacturacion} /></span>
               </div>
             </div>
+            {clienteFacturaId && !monedaFacturacion && <div className="fcd-aviso-crear"><AvisoMonedaFactura texto={avisoSinMoneda('cliente')} error /></div>}
             <FormularioConfigurable modulo="facturacionClientes">{/* ✅ V00385 */}
             <form onSubmit={handleGuardarFactura}>
               <div className="fcd-x163">
@@ -3931,7 +3882,7 @@ export const FacturacionClientesDashboard = () => {
                   <label className="fcd-x146">STATUS DE LA FACTURA</label>
                   <select value={statusFacturaForm} onChange={e => setStatusFacturaForm(e.target.value)}
                     style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: colorStatusFactura(statusFacturaForm), border: `1px solid ${colorStatusFactura(statusFacturaForm)}`, borderRadius: '4px', fontWeight: 'bold' }}>
-                    {STATUS_FACTURA_OPCIONES.map(s => <option key={s} value={s}>{s}</option>)}
+                    {STATUS_AL_CREAR.map(s => <option key={s} value={s}>{s}</option>)}{/* ✅ V00481: se cancela después, desde la ficha */}
                   </select>
                 </div>
                 <div className="fcd-x164">
@@ -3964,17 +3915,18 @@ export const FacturacionClientesDashboard = () => {
       )}
 
       {facturaViendo && (
-        <div className="modal-overlay fcd-x169">
+        <div className={`modal-overlay fcd-x169${opEditandoId ? ' fcd-detras-editor' : ''}`}>{/* ✅ V00481: detrás del editor de la operación */}
           <div className="fcd-x170">
             <div className="fcd-x171">
               <h2 className="fcd-x172">Ficha de Factura</h2>
               <div className="fcd-x173">
                 
+{puedeGenerarRemision(facturaViendo.statusFactura) && (/* ✅ V00481: con la factura Facturada ya no hay Remisión */
                 <button onClick={() => abrirRemision(facturaViendo)} disabled={cargandoRemision}
                   title="Generar la Remisión en PDF de esta factura"
                   style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#fb923c', color: '#0d1117', border: 'none', borderRadius: '6px', padding: '8px 16px', cursor: cargandoRemision ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem', opacity: cargandoRemision ? 0.7 : 1 }}>
                   {cargandoRemision ? 'Preparando...' : 'Remisión'}
-                </button>
+                </button>)}
                 <button className="fcd-x45" onClick={() => setFacturaViendo(null)}>✕</button>
               </div>
             </div>
@@ -3990,6 +3942,13 @@ export const FacturacionClientesDashboard = () => {
                   </select>
                 </div>
               </div>
+              <CancelacionFicha factura={facturaViendo} />{/* ✅ V00481 */}
+              {avisoMonedaDe(facturaViendo) && (
+                <div className="fcd-aviso-moneda">
+                  <AvisoMonedaFactura texto={`${avisoMonedaDe(facturaViendo)} Corrígela con Editar factura.`} />
+                  <button type="button" className="fcd-btn-corregir-moneda" onClick={(e) => abrirEditarFactura(e, facturaViendo)}>Editar factura</button>
+                </div>
+              )}
 
               <div className="fcd-x178">
                 <div className="fcd-x179">
@@ -3999,7 +3958,7 @@ export const FacturacionClientesDashboard = () => {
                   </div>
                   <div className="fcd-x182">
                     <span className="fcd-x180">Moneda</span>
-                    <span className="fcd-x160">{monedaFacturaMostrar(facturaViendo)}</span>
+                    <span className="fcd-x160"><NombreMoneda moneda={monedaFicha} respaldo={monedaFicha} /></span>
                   </div>
                   <div className="fcd-x161">
                     <span className="fcd-x180">Fecha de Facturación</span>
@@ -4016,7 +3975,8 @@ export const FacturacionClientesDashboard = () => {
                 </div>
                 <div>
                   <span className="fcd-x180">Total Facturado</span>
-                  <span className="fcd-x185">{formatoMoneda(facturaViendo.subtotalFactura)}</span>
+                  {/* ✅ V00481: el total EN LA MONEDA de la factura (antes la conversión a pesos aunque fuera en dólares) */}
+                  <span className="fcd-x185"><Importe monto={totalDeGrupo(facturaViendo)} moneda={monedaFicha} conNombre /></span>
                 </div>
 
                 {/* ✅ V00381: documento de la factura bien visible */}
@@ -4028,14 +3988,15 @@ export const FacturacionClientesDashboard = () => {
                     <span className="fcd-x176">
                       Referencias / Operaciones Facturadas ({facturaViendo.operacionesGuardadas?.length || 0}) — haz clic para ver el detalle
                     </span>
+{puedeAgregarOperaciones(facturaViendo.statusFactura) && (/* ✅ V00481: a una factura Facturada no se le agregan */
                     <button className="fcd-x190"
                       onClick={() => { setAgregarRefFactura(facturaViendo); setBusquedaRefPendiente(''); if (operacionesGlobales.length === 0) descargarOpsCompletadas(); }}
                       title="Agregar una operación pendiente (sin facturar) a esta factura">
                       ＋ Agregar referencia
-                    </button>
+                    </button>)}
                   </div>
                   <div className="fcd-x191">
-                    {facturaViendo.operacionesGuardadas?.map((op: any) => {
+                    {facturaViendo.operacionesGuardadas?.map((op: any, i: number) => {
                       const numeroCaja = remolqueDeOp(op);
                       return (
                         <button className="fcd-x192" key={op.id} onClick={() => verDetalleOperacion(op.id)} title="Ver detalle de la operación"
@@ -4050,7 +4011,8 @@ export const FacturacionClientesDashboard = () => {
                           {op.convenioNombre && (
                             <span className="fcd-x194"><span className="fcd-x1">Convenio:</span> {op.convenioNombre}</span>
                           )}
-                          <span className="fcd-x195">{formatoMoneda(op.monto)}</span>
+                          {/* ✅ V00481: en la moneda de la factura (Dólares → Dólares (Cliente); Pesos → Conversión Final) */}
+                          <span className="fcd-x195"><Importe monto={importesFicha[i]} moneda={monedaFicha} /></span>
                           {/* ✅ NUEVO: quitar esta referencia de la factura */}
                           <span
                             role="button"
@@ -4074,77 +4036,6 @@ export const FacturacionClientesDashboard = () => {
         </div>
       )}
 
-      {modalDiagnostico && (
-        <div className="modal-overlay fcd-x198" onClick={() => setModalDiagnostico(false)}>
-          <div className="fcd-x199" onClick={(e) => e.stopPropagation()}>
-            <div className="fcd-x171">
-              <span className="fcd-x200">Verificación de Facturación</span>
-              <button className="fcd-x201" onClick={() => setModalDiagnostico(false)}>×</button>
-            </div>
-            <div className="fcd-x202">
-              {cargandoFacturas && (
-                <CargandoDatos compacto texto="Cargando facturas… los números pueden cambiar al terminar." />
-              )}
-              <div>
-                <div className="fcd-x204">Resumen global (facturas cargadas)</div>
-                <div className="fcd-x205">
-                  {[
-                    { lbl: 'Facturas', val: diagnostico.totalFacturas, col: '#58a6ff' },
-                    { lbl: 'Ops facturadas (únicas)', val: diagnostico.opsFacturadasUnicas, col: '#3fb950' },
-                    { lbl: 'Invoices duplicados', val: diagnostico.invoicesDuplicados, col: diagnostico.invoicesDuplicados > 0 ? '#f85149' : '#3fb950' },
-                  ].map((c, i) => (
-                    <div className="fcd-x206" key={i}>
-                      <div className="fcd-x207">{c.lbl}</div>
-                      <div style={{ color: c.col, fontSize: '1.5rem', fontWeight: 'bold' }}>{c.val}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <div className="fcd-x204">Operaciones cargadas (pestaña “Asignar Operaciones”)</div>
-                <div className="fcd-x205">
-                  {[
-                    { lbl: (fechaDesdeOps || fechaHastaOps) ? 'Completadas en rango' : 'Completadas (todas)', val: diagnostico.rangoTotal, col: '#c9d1d9' },
-                    { lbl: 'Ya facturadas', val: diagnostico.rangoFacturadas, col: '#3fb950' },
-                    { lbl: 'Por facturar', val: diagnostico.rangoPorFacturar, col: '#f59e0b' },
-                  ].map((c, i) => (
-                    <div className="fcd-x206" key={i}>
-                      <div className="fcd-x207">{c.lbl}</div>
-                      <div style={{ color: c.col, fontSize: '1.5rem', fontWeight: 'bold' }}>{c.val}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <div className="fcd-x204">Posibles pendientes a revisar</div>
-                <div className="fcd-x208">
-                  {[
-                    { ok: diagnostico.huerfanas === 0, txt: diagnostico.huerfanas === 0 ? 'No hay operaciones marcadas como facturadas sin factura asociada.' : `${diagnostico.huerfanas} operación(es) marcadas como facturadas pero sin factura que las referencie.` },
-                    { ok: diagnostico.invoicesDuplicados === 0, txt: diagnostico.invoicesDuplicados === 0 ? 'No hay invoices duplicados (mismo # y cliente).' : `${diagnostico.invoicesDuplicados} invoice(s) aparecen duplicados (mismo # y cliente).` },
-                    { ok: diagnostico.sinMoneda === 0, txt: diagnostico.sinMoneda === 0 ? 'Todas las facturas resuelven su moneda.' : `${diagnostico.sinMoneda} factura(s) sin moneda (ni propia ni por cliente).`, warn: true },
-                    { ok: diagnostico.sinFecha === 0, txt: diagnostico.sinFecha === 0 ? 'Todas las facturas tienen fecha.' : `${diagnostico.sinFecha} factura(s) sin fecha de facturación.`, warn: true },
-                    { ok: diagnostico.sinTotal === 0, txt: diagnostico.sinTotal === 0 ? 'Todas las facturas tienen total.' : `${diagnostico.sinTotal} factura(s) con total en $0 (datos importados sin monto).`, warn: true },
-                    { ok: !diagnostico.topeFacturas, txt: diagnostico.topeFacturas ? `Se alcanzó el tope de ${LIMITE_FACTURAS_TODAS} facturas cargadas: podría faltar información.` : `Se cargaron todas las facturas (sin alcanzar el tope de ${LIMITE_FACTURAS_TODAS}).` },
-                  ].map((r, i) => (
-                    <div key={i} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', color: r.ok ? '#3fb950' : (r.warn ? '#f59e0b' : '#f85149') }}>
-                      <span className="fcd-x209">{r.ok ? '✓' : (r.warn ? '' : '✕')}</span>
-                      <span className="fcd-x11">{r.txt}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="fcd-x210">
-                Nota: el total en $0 y la fecha vacía en muchas facturas vienen de la importación del sistema anterior. La moneda se completa con la del cliente cuando la factura no la trae. El # de referencia (TR) y el # de remolque se resuelven al ver cada página del historial.
-              </div>
-            </div>
-            <div className="fcd-x211">
-              <button onClick={() => { opsPedidasRef.current.clear(); setFacturasGlobales([]); setOpInfoMap({}); setModalDiagnostico(false); }}
-                style={{ ...btnDirStyle }} title="Volver a leer todas las facturas desde la base de datos">↻ Recargar facturas</button>
-              <button className="fcd-x212" onClick={() => setModalDiagnostico(false)}>Cerrar</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {gestionOp && (
         <div className="modal-overlay fcd-x213">
@@ -4224,7 +4115,7 @@ export const FacturacionClientesDashboard = () => {
                       <div className="fcd-x233">
                         <div className="fcd-x234">{op.numReferencia || op.referencia || op.ref || String(op.id).substring(0, 6)}</div>
                         <div className="fcd-x235">
-                          {formatearFechaSpanish(op.fechaServicio || op.createdAt)} · {txt(op.remolqueNombre, op.remolquePlaca, op.numeroRemolque)} · {formatoMoneda(mm.conv)}
+                          {formatearFechaSpanish(op.fechaServicio || op.createdAt)} · {txt(op.remolqueNombre, op.remolquePlaca, op.numeroRemolque)} · <Importe monto={esMonedaUSD(monedaFacturaMostrar(agregarRefFactura)) ? mm.dol : mm.conv} moneda={esMonedaUSD(monedaFacturaMostrar(agregarRefFactura)) ? 'USD' : 'MXN'} />
                         </div>
                       </div>
                       <button onClick={() => agregarOpAFactura(agregarRefFactura, op)} disabled={agregandoRef}
@@ -4263,7 +4154,11 @@ export const FacturacionClientesDashboard = () => {
                   .sort((a: any, b: any) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' }))
                   .map((e: any) => ({ value: e.id, label: String(e.nombre || e.id) }))}
                 value={editClienteId}
-                onChange={setEditClienteId}
+                onChange={(id: string) => {
+                  // ✅ V00481: otro cliente con otra moneda → el total sugerido pasa a esa moneda.
+                  if (monedaClienteDe(id) !== monedaClienteDe(editClienteId)) setEditTotal(String(totalEditPara(facturaEditando, id)));
+                  setEditClienteId(id);
+                }}
                 placeholder="Buscar cliente..."
               />
               {Array.isArray(facturaEditando.__groupIds) && facturaEditando.__groupIds.length > 1 && (
@@ -4280,6 +4175,12 @@ export const FacturacionClientesDashboard = () => {
                   {!STATUS_FACTURA_OPCIONES.includes(editStatus) && editStatus && <option value={editStatus}>{editStatus}</option>}
                 </select>
               </div>
+              {estaCancelada(editStatus) && (
+                <div className="fcd-x164">{/* ✅ V00481: cancelar pide nota y la factura que la reemplaza */}
+                  <CamposCancelacion idBase="fcd-edit-canc" valor={editCancelacion} onCambiar={setEditCancelacion}
+                    sugerencias={foliosDelCliente({ ...facturaEditando, clienteId: editClienteId || facturaEditando.clienteId })} deshabilitado={guardandoEdit} />
+                </div>
+              )}
               <div className="fcd-x164">
                 <label className="fcd-x146">NÚMERO DE INVOICE</label>
                 <input className="fcd-x150" type="text" value={editInvoice} onChange={e => setEditInvoice(e.target.value)} placeholder="Ej. INV-2026-001" />
@@ -4295,12 +4196,23 @@ export const FacturacionClientesDashboard = () => {
                 <input className="fcd-x243" type="date" value={editFecha} onChange={e => setEditFecha(e.target.value)} />
               </div>
               <div>
-                <label className="fcd-x146">MONEDA</label>
-                <select className="fcd-x244" value={editMoneda} onChange={e => setEditMoneda(e.target.value)}>
-                  <option value="">(Sin definir / del cliente)</option>
-                  <option value="USD">USD</option>
-                  <option value="MXN">MXN</option>
-                </select>
+                {/* ✅ V00481: SIEMPRE la del cliente en Empresas; no se elige ni se quita */}
+                <span className="fcd-x146">MONEDA</span>
+                <span className="fcd-moneda-fija" title="Es la moneda del cliente en Empresas"><NombreMoneda moneda={monedaClienteDe(editClienteId)} respaldo="Sin moneda en Empresas" /></span>
+              </div>
+              <div className="fcd-x164 fcd-edit-aviso">{/* ✅ V00481: la moneda es la del cliente */}
+                {!monedaClienteDe(editClienteId) ? (
+                  <AvisoMonedaFactura error texto={editClienteId ? avisoSinMoneda('cliente') : 'Elige el cliente de la factura: la moneda es la del cliente en Empresas.'} />
+                ) : (
+                  <AvisoMonedaFactura texto={(() => {
+                    const aviso = avisoMonedaDistinta(monedaDeFactura(facturaEditando), monedaClienteDe(editClienteId), 'cliente');
+                    if (!aviso) return null;
+                    const pagos = tienePagosAplicados(facturaEditando) ? ' Tiene pagos aplicados: revisa su saldo en Pagos.' : '';
+                    const monNueva = monedaClienteDe(editClienteId);
+                    const recalculado = monNueva ? totalSugeridoEn(monNueva, facturaEditando.operacionesGuardadas) > 0 : false;
+                    return `${aviso} Al guardar queda en ${nombreMoneda(monNueva)}; ${recalculado ? 'el total sugerido es el de sus operaciones en esa moneda' : 'sus operaciones no traen importe en esa moneda: captura el total'}. Revísalo.${pagos}`;
+                  })()} />
+                )}
               </div>
               <div>
                 <label className="fcd-x146">TOTAL FACTURADO</label>
@@ -4402,9 +4314,9 @@ export const FacturacionClientesDashboard = () => {
                       </div>
                       <div className="fcd-x272">
                         <div className="fcd-x273">
-                          <div><span className="fcd-x265">Facturado En:</span><span className="fcd-x261">{det.monedaUnidadNombre || mostrarMoneda(det.facturadoEnUnidad)}</span></div>
+                          <div><span className="fcd-x265">Facturado En:</span><span className="fcd-x261"><NombreMoneda moneda={det.monedaUnidadNombre || det.facturadoEnUnidad} respaldo={det.monedaUnidadNombre || mostrarMoneda(det.facturadoEnUnidad)} /></span></div>
                           <div><span className="fcd-x265">Convenio Proveedor</span><span className="fcd-x261">{txt(det.convenioProveedorNombre, det.convenioProveedor)}</span></div>
-                          <div><span className="fcd-x265">Moneda del Convenio (Base)</span><span className="fcd-x261">{mostrarMoneda(det.monedaConvenioProv)}</span></div>
+                          <div><span className="fcd-x265">Moneda del Convenio (Base)</span><span className="fcd-x261"><NombreMoneda moneda={det.monedaConvenioProv} respaldo={mostrarMoneda(det.monedaConvenioProv)} /></span></div>
                         </div>
                         <div className="fcd-x274">
                           <div><span className="fcd-x265">Monto a Pagar (Base)</span><span className="fcd-x261">{formatoMoneda(det.totalAPagarProv)}</span></div>
@@ -4412,9 +4324,9 @@ export const FacturacionClientesDashboard = () => {
                           <div><span className="fcd-x260">Subtotal (Convenio + Costos)</span><span className="fcd-x275">{formatoMoneda(det.subtotalProv)}</span></div>
                         </div>
                         <div className="fcd-x276">
-                          <div><span className="fcd-x265">Dólares</span><span className="fcd-x277">{formatoMoneda(det.dolaresProv)}</span></div>
-                          <div><span className="fcd-x265">Pesos</span><span className="fcd-x277">{formatoMoneda(det.pesosProv)}</span></div>
-                          <div><span className="fcd-x278">Conversión Final (Gasto)</span><span className="fcd-x279">{formatoMoneda(det.conversionProv)}</span></div>
+                          <div><span className="fcd-x265"><NombreMoneda moneda="USD" /></span><span className="fcd-x277"><Importe monto={det.dolaresProv} moneda="USD" /></span></div>
+                          <div><span className="fcd-x265"><NombreMoneda moneda="MXN" /></span><span className="fcd-x277"><Importe monto={det.pesosProv} moneda="MXN" /></span></div>
+                          <div><span className="fcd-x278">Conversión Final (Gasto)</span><span className="fcd-x279"><Importe monto={det.conversionProv} moneda="MXN" /></span></div>
                         </div>
                       </div>
 
@@ -4459,17 +4371,18 @@ export const FacturacionClientesDashboard = () => {
                   {pestañaDetalleActiva === 'cobrar' && (
                     <div>
                       <div className="fcd-x270">
-                        <div><span className="fcd-x265">Facturado En:</span><span className="fcd-x261">{det.monedaCobroNombre || mostrarMoneda(det.facturadoEnCobrar)}</span></div>
-                        <div><span className="fcd-x265">Moneda Convenio (Cliente)</span><span className="fcd-x261">{mostrarMoneda(det.monedaConvenioCliente)}</span></div>
+                        <div><span className="fcd-x265">Facturado En:</span><span className="fcd-x261"><NombreMoneda moneda={det.monedaCobroNombre || det.facturadoEnCobrar} respaldo={det.monedaCobroNombre || mostrarMoneda(det.facturadoEnCobrar)} /></span></div>
+                        <div><span className="fcd-x265">Moneda Convenio (Cliente)</span><span className="fcd-x261"><NombreMoneda moneda={det.monedaConvenioCliente} respaldo={mostrarMoneda(det.monedaConvenioCliente)} /></span></div>
                         <div><span className="fcd-x265">Convenio Seleccionado (Base)</span><span className="fcd-x261">{formatoMoneda(det.montoConvenioCliente)}</span></div>
                         <div><span className="fcd-x265">Cargos Adicionales</span><span className="fcd-x261">{formatoMoneda(det.cargosAdicionales)}</span></div>
                         <div><span className="fcd-x260">Subtotal (Convenio + Cargos)</span><span className="fcd-x290">{formatoMoneda(det.subtotalCliente)}</span></div>
                         <div><span className="fcd-x265">Tipo de Cambio del Día</span><span className="fcd-x261">{mostrarDato(det.tipoCambioAprobado)}</span></div>
                       </div>
                       <div className="fcd-x291">
-                        <div><span className="fcd-x265">Dólares (Cliente)</span><span className="fcd-x292">{formatoMoneda(det.dolaresCliente)}</span></div>
-                        <div><span className="fcd-x265">Pesos (Cliente)</span><span className="fcd-x277">{formatoMoneda(det.pesosCliente)}</span></div>
-                        <div><span className="fcd-x260">Conversión Final (Ingreso)</span><span className="fcd-x293">{formatoMoneda(det.conversionCliente)}</span></div>
+                        {/* ✅ V00481: Dólares en azul, Pesos en verde (la Conversión Final es en pesos) */}
+                        <div><span className="fcd-x265"><NombreMoneda moneda="USD" /> (Cliente)</span><span className="fcd-x292"><Importe monto={det.dolaresCliente} moneda="USD" /></span></div>
+                        <div><span className="fcd-x265"><NombreMoneda moneda="MXN" /> (Cliente)</span><span className="fcd-x277"><Importe monto={det.pesosCliente} moneda="MXN" /></span></div>
+                        <div><span className="fcd-x260">Conversión Final (Ingreso)</span><span className="fcd-x293"><Importe monto={det.conversionCliente} moneda="MXN" /></span></div>
                       </div>
                       <div className="fcd-x294">
                         <span className="fcd-x295">Utilidad Estimada de la Operación (Ingreso - Gasto)</span>
@@ -4484,6 +4397,8 @@ export const FacturacionClientesDashboard = () => {
                 </div>
 
                 <div className="form-actions fcd-x297">
+                  {/* ✅ V00481: editar la operación en el formulario de Operaciones (la ficha queda detrás) */}
+                  <button type="button" className="fcd-btn-editar-detalle" onClick={() => { const id = String(det.id); setOperacionDetalle(null); setOpEditandoId(id); }}>✎ Editar operación</button>
                   <button onClick={() => setOperacionDetalle(null)} className="btn btn-outline fcd-x298">Cerrar Detalle</button>
                 </div>
               </>
@@ -4492,71 +4407,6 @@ export const FacturacionClientesDashboard = () => {
         </div>
       )}
 
-      {/* ════════════════ MODAL ENCABEZADO DE REMISIONES (emisores) ════════════════ */}
-      {modalEmisores && (
-        <div className="modal-overlay fcd-x299">
-          <div className="fcd-x300">
-            <div className="fcd-x301">
-              <h2 className="fcd-x143">Encabezado de las Remisiones</h2>
-              <button className="fcd-x45" onClick={() => setModalEmisores(false)}>✕</button>
-            </div>
-            <p className="fcd-x302">
-              El nombre y los datos que van en la parte superior de la remisión dependen de la <b className="fcd-x11">moneda</b> de la factura:
-              las remisiones en <b className="fcd-x303">PESOS (MXN)</b> salen a nombre de <b className="fcd-x11">Rolando</b> y las de
-              <b className="fcd-x304"> DÓLARES (USD)</b> a nombre de <b className="fcd-x11">Camila</b>. Esta configuración se guarda para todos los usuarios.
-            </p>
-
-            <div className="fcd-x305">
-              {/* MXN → Rolando */}
-              <div className="fcd-x306">
-                <div className="fcd-x307">PESOS (MXN) · Rolando</div>
-                <div className="fcd-x308">
-                  <label style={rLabelStyle}>NOMBRE (aparece arriba)</label>
-                  <input type="text" value={emisorMXN.facturaNombre} onChange={e => setEmisorMXN({ ...emisorMXN, facturaNombre: e.target.value })} style={rInputStyle} />
-                </div>
-                <div className="fcd-x308">
-                  <label style={rLabelStyle}>DIRECCIÓN</label>
-                  <input type="text" value={emisorMXN.direccion} onChange={e => setEmisorMXN({ ...emisorMXN, direccion: e.target.value })} style={rInputStyle} />
-                </div>
-                <div className="fcd-x308">
-                  <label style={rLabelStyle}>CIUDAD / ESTADO / TEL.</label>
-                  <input type="text" value={emisorMXN.ciudadEstado} onChange={e => setEmisorMXN({ ...emisorMXN, ciudadEstado: e.target.value })} style={rInputStyle} />
-                </div>
-                <div>
-                  <label style={rLabelStyle}>EMAIL</label>
-                  <input type="text" value={emisorMXN.email} onChange={e => setEmisorMXN({ ...emisorMXN, email: e.target.value })} style={rInputStyle} />
-                </div>
-              </div>
-
-              {/* USD → Camila */}
-              <div className="fcd-x309">
-                <div className="fcd-x310">DÓLARES (USD) · Camila</div>
-                <div className="fcd-x308">
-                  <label style={rLabelStyle}>NOMBRE (aparece arriba)</label>
-                  <input type="text" value={emisorUSD.facturaNombre} onChange={e => setEmisorUSD({ ...emisorUSD, facturaNombre: e.target.value })} style={rInputStyle} />
-                </div>
-                <div className="fcd-x308">
-                  <label style={rLabelStyle}>DIRECCIÓN</label>
-                  <input type="text" value={emisorUSD.direccion} onChange={e => setEmisorUSD({ ...emisorUSD, direccion: e.target.value })} style={rInputStyle} />
-                </div>
-                <div className="fcd-x308">
-                  <label style={rLabelStyle}>CIUDAD / ESTADO / TEL.</label>
-                  <input type="text" value={emisorUSD.ciudadEstado} onChange={e => setEmisorUSD({ ...emisorUSD, ciudadEstado: e.target.value })} style={rInputStyle} />
-                </div>
-                <div>
-                  <label style={rLabelStyle}>EMAIL</label>
-                  <input type="text" value={emisorUSD.email} onChange={e => setEmisorUSD({ ...emisorUSD, email: e.target.value })} style={rInputStyle} />
-                </div>
-              </div>
-            </div>
-
-            <div className="fcd-x152">
-              <button className="fcd-x153" onClick={() => setModalEmisores(false)} disabled={guardandoEmisores}>Cancelar</button>
-              <button onClick={guardarEmisores} disabled={guardandoEmisores} style={{ padding: '8px 24px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: guardandoEmisores ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: guardandoEmisores ? 0.7 : 1 }}>{guardandoEmisores ? 'Guardando...' : 'Guardar para todos'}</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ════════════════ MODAL VISTA PREVIA DE REMISIÓN (editable) ════════════════ */}
       {remisionPreview && (
@@ -4568,12 +4418,12 @@ export const FacturacionClientesDashboard = () => {
                 <div className="fcd-x314">
                   <button type="button" onClick={() => aplicarEmisorEnPreview(false)}
                     title="Usar el encabezado de PESOS (Rolando)"
-                    style={{ padding: '4px 12px', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', backgroundColor: !remisionPreview.esUSD ? '#1f3a5f' : 'transparent', color: !remisionPreview.esUSD ? '#58a6ff' : '#8b949e', border: `1px solid ${!remisionPreview.esUSD ? '#3b82f6' : '#30363d'}` }}>
+                    style={{ padding: '4px 12px', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', backgroundColor: !remisionPreview.esUSD ? '#12352a' : 'transparent', color: !remisionPreview.esUSD ? '#3fb950' : '#8b949e', border: `1px solid ${!remisionPreview.esUSD ? '#3fb950' : '#30363d'}` }}>
                     PESOS (MXN) · Rolando
                   </button>
                   <button type="button" onClick={() => aplicarEmisorEnPreview(true)}
                     title="Usar el encabezado de DÓLARES (Camila)"
-                    style={{ padding: '4px 12px', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', backgroundColor: remisionPreview.esUSD ? '#12352a' : 'transparent', color: remisionPreview.esUSD ? '#10b981' : '#8b949e', border: `1px solid ${remisionPreview.esUSD ? '#10b981' : '#30363d'}` }}>
+                    style={{ padding: '4px 12px', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', backgroundColor: remisionPreview.esUSD ? '#1f3a5f' : 'transparent', color: remisionPreview.esUSD ? '#58a6ff' : '#8b949e', border: `1px solid ${remisionPreview.esUSD ? '#58a6ff' : '#30363d'}` }}>
                     DÓLARES (USD) · Camila
                   </button>
                 </div>

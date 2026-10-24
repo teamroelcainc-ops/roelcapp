@@ -1,0 +1,4 @@
+/* ✅ V00481 */
+.amf-aviso { display: flex; gap: 8px; align-items: flex-start; margin: 0; padding: 10px 12px; border: 1px solid rgba(210, 153, 34, 0.55); border-radius: 8px; background: rgba(210, 153, 34, 0.12); color: #e3b341; font-size: 0.85rem; line-height: 1.4; }
+.amf-aviso svg { flex-shrink: 0; margin-top: 1px; }
+.amf-aviso--error { border-color: rgba(248, 81, 73, 0.6); background: rgba(248, 81, 73, 0.12); color: #ff7b72; }

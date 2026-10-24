@@ -2,17 +2,17 @@
    estáticos (convención CLAUDE.md). Los style={{...}} que quedan en el .tsx
    son dinámicos (runtime) y por regla permanecen inline. */
 
-.fpd-x1 { padding: 16px; white-space: nowrap; }
+.fpd-x1 { padding: 10px 12px; white-space: nowrap; } /* ✅ V00482: filas más bajas */
 .fpd-x2 { padding: 3px 10px; border-radius: 12px; font-size: 0.78rem; font-weight: bold; color: #58a6ff; border: 1px solid #58a6ff; background-color: rgba(88,166,255,0.1); font-family: monospace; }
 .fpd-x3 { color: #8b949e; font-size: 0.8rem; }
 .fpd-x4 { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 12px; font-size: 0.78rem; font-weight: bold; color: #3fb950; border: 1px solid #3fb950; background-color: rgba(63,185,80,0.12); font-family: monospace; cursor: pointer; }
-.fpd-x5 { padding: 16px; color: #58a6ff; font-weight: bold; font-family: monospace; white-space: nowrap; }
-.fpd-x6 { padding: 16px; color: #3fb950; font-weight: bold; white-space: nowrap; }
+.fpd-x5 { padding: 10px 12px; color: #58a6ff; font-weight: bold; font-family: monospace; white-space: nowrap; }
+.fpd-x6 { padding: 10px 12px; color: #3fb950; font-weight: bold; white-space: nowrap; }
 .fpd-x7 { color: #D84315; font-weight: bold; font-family: monospace; }
 .fpd-x8 { color: #c9d1d9; }
 .fpd-x9 { color: #f0f6fc; }
 .fpd-x10 { color: #8b949e; }
-.fpd-x11 { display: flex; flex-wrap: wrap; gap: 6px; max-width: 420px; white-space: normal; }
+.fpd-x11 { display: flex; flex-wrap: nowrap; gap: 6px; white-space: nowrap; } /* ✅ V00482: en una línea (máx. 3 y "+N") */
 .fpd-x12 { background-color: #21262d; border: 1px solid #58a6ff; color: #58a6ff; padding: 3px 8px; border-radius: 6px; cursor: pointer; font-size: 0.78rem; font-family: monospace; font-weight: bold; }
 .fpd-x13 { color: #58a6ff; font-weight: bold; }
 .fpd-x14 { flex: 1; min-width: 280px; position: relative; }
@@ -79,10 +79,10 @@
 .fpd-x75 { color: #3fb950; font-size: 1.8rem; font-weight: bold; }
 .fpd-x76 { color: #f0f6fc; font-size: 1.1rem; font-weight: bold; }
 .fpd-x77 { color: #D84315; font-size: 1.8rem; font-weight: bold; }
-.fpd-x78 { border: 1px solid #30363d; border-radius: 8px; overflow-x: auto; overflow-y: auto; max-height: calc(100vh - 380px); background-color: #161b22; }
+.fpd-x78 { border: 1px solid #30363d; border-radius: 8px; overflow-x: auto; overflow-y: auto; max-height: calc(100vh - 290px); background-color: #161b22; }
 .fpd-x79 { width: 100%; border-collapse: collapse; text-align: left; }
 .fpd-x80 { background-color: #1f2937; color: #8b949e; font-size: 0.8rem; position: sticky; top: 0; z-index: 10; }
-.fpd-x81 { padding: 16px; text-align: center; border-bottom: 1px solid #30363d; white-space: nowrap; }
+.fpd-x81 { padding: 10px 12px; text-align: center; border-bottom: 1px solid #30363d; white-space: nowrap; }
 .fpd-x82 { padding: 16px; width: 50px; text-align: center; border-bottom: 1px solid #30363d; white-space: nowrap; }
 .fpd-x83 { padding: 64px 24px; text-align: center; }
 .fpd-x84 { display: flex; flex-direction: column; align-items: center; gap: 14px; }
@@ -96,20 +96,19 @@
 .fpd-x92 { background-color: transparent; border: 1px solid #f59e0b; color: #f59e0b; border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 0.78rem; font-weight: bold; white-space: nowrap; }
 .fpd-x93 { background-color: transparent; border: 1px solid #ef4444; color: #ef4444; border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 0.78rem; font-weight: bold; white-space: nowrap; }
 .fpd-x94 { background-color: transparent; border: 1px solid #58a6ff; color: #58a6ff; border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 0.78rem; font-weight: bold; white-space: nowrap; }
-.fpd-x95 { padding: 16px; text-align: center; white-space: nowrap; }
+.fpd-x95 { padding: 8px 12px; text-align: center; white-space: nowrap; }
 .fpd-x96 { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background-color: #10b981; }
 .fpd-x97 { cursor: pointer; width: 16px; height: 16px; accent-color: #ffffff; }
 .fpd-x98 { display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 16px; }
 .fpd-x99 { color: #8b949e; font-size: 0.85rem; }
-.fpd-x100 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
-.fpd-x101 { background-color: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 20px; }
-.fpd-x102 { display: block; color: #8b949e; font-size: 0.8rem; font-weight: bold; text-transform: uppercase; margin-bottom: 6px; }
-.fpd-x103 { color: #58a6ff; font-size: 2rem; font-weight: bold; }
-.fpd-x104 { color: #3fb950; font-size: 2rem; font-weight: bold; }
-.fpd-x105 { display: block; color: #D84315; font-size: 0.8rem; font-weight: bold; text-transform: uppercase; margin-bottom: 6px; }
-.fpd-x106 { color: #10b981; font-size: 1.5rem; font-weight: bold; }
-.fpd-x107 { color: #3b82f6; font-size: 1.5rem; font-weight: bold; }
-.fpd-x108 { display: flex; align-items: center; gap: 8px; }
+.fpd-x100 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; } /* ✅ V00482: tarjetas más compactas */
+.fpd-x101 { background-color: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 12px 16px; }
+.fpd-x102 { display: block; color: #8b949e; font-size: 0.74rem; font-weight: bold; text-transform: uppercase; margin-bottom: 4px; }
+.fpd-x103 { color: #c9d1d9; font-size: 1.4rem; font-weight: bold; }
+.fpd-x104 { color: #c9d1d9; font-size: 1.4rem; font-weight: bold; }
+.fpd-x105 { display: block; color: #8b949e; font-size: 0.74rem; font-weight: bold; text-transform: uppercase; margin-bottom: 4px; }
+.fpd-x106 { color: #58a6ff; font-size: 1.4rem; font-weight: bold; } /* ✅ V00481: Dólares en azul (antes verde) */
+.fpd-x107 { color: #3fb950; font-size: 1.4rem; font-weight: bold; } /* ✅ V00481: Pesos en verde (antes azul) */
 .fpd-x109 { display: flex; gap: 10px; }
 .fpd-x110 { text-align: center; padding: 40px; color: #8b949e; }
 .fpd-x111 { border-bottom: 1px solid #21262d; }
@@ -206,20 +205,6 @@
 .fpd-x202 { color: #3fb950; font-size: 0.85rem; }
 .fpd-x203 { padding: 16px 24px; display: flex; justify-content: flex-end; border-top: 1px solid #30363d; background-color: #161b22; }
 .fpd-x204 { padding: 8px 24px; border-radius: 6px; color: #c9d1d9; border: 1px solid #30363d; background: transparent; cursor: pointer; }
-.fpd-x205 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.85); z-index: 1900; display: flex; justify-content: center; align-items: center; padding: 20px; backdrop-filter: blur(4px); }
-.fpd-x206 { width: 720px; max-width: 100%; max-height: 92vh; overflow-y: auto; background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; }
-.fpd-x207 { color: #f0f6fc; font-size: 1.15rem; font-weight: bold; }
-.fpd-x208 { background: transparent; border: none; color: #8b949e; font-size: 1.4rem; cursor: pointer; }
-.fpd-x209 { padding: 24px; display: flex; flex-direction: column; gap: 18px; }
-.fpd-x211 { color: #8b949e; font-size: 0.78rem; font-weight: bold; text-transform: uppercase; margin-bottom: 10px; }
-.fpd-x212 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.fpd-x213 { background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 14px; }
-.fpd-x214 { color: #8b949e; font-size: 0.72rem; text-transform: uppercase; }
-.fpd-x215 { display: flex; flex-direction: column; gap: 8px; font-size: 0.88rem; }
-.fpd-x216 { flex-shrink: 0; }
-.fpd-x217 { background-color: rgba(88,166,255,0.06); border: 1px solid rgba(88,166,255,0.3); border-radius: 8px; padding: 12px 14px; color: #8b949e; font-size: 0.8rem; }
-.fpd-x218 { padding: 16px 24px; border-top: 1px solid #30363d; display: flex; justify-content: flex-end; gap: 10px; }
-.fpd-x219 { padding: 8px 24px; border-radius: 6px; background-color: #D84315; color: #fff; border: none; cursor: pointer; font-weight: bold; }
 .fpd-x220 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 1750; padding: 20px; backdrop-filter: blur(6px); }
 .fpd-x221 { display: flex; justify-content: space-between; margin-bottom: 18px; border-bottom: 1px solid #30363d; padding-bottom: 14px; }
 .fpd-x222 { color: #f0f6fc; margin: 0; font-size: 1.15rem; }
@@ -250,7 +235,6 @@
 .fpd-x247 { background-color: #010409; border: 1px dashed #30363d; border-radius: 8px; padding: 12px 14px; margin-bottom: 18px; font-size: 0.82rem; color: #8b949e; }
 .fpd-x248 { color: #f59e0b; }
 .fpd-x249 { width: 100%; padding: 10px; background-color: #161b22; color: #fff; border: 1px solid #30363d; border-radius: 6px; box-sizing: border-box; color-scheme: dark; }
-.fpd-x250 { width: 100%; padding: 10px; background-color: #161b22; color: #10b981; border: 1px solid #30363d; border-radius: 6px; font-weight: bold; box-sizing: border-box; }
 .fpd-x251 { width: 100%; padding: 10px; background-color: #161b22; color: #3fb950; border: 1px solid #30363d; border-radius: 6px; font-weight: bold; box-sizing: border-box; }
 .fpd-x252 { display: flex; justify-content: flex-end; gap: 12px; border-top: 1px solid #30363d; padding-top: 18px; }
 .fpd-x253 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.85); z-index: 1800; display: flex; justify-content: center; align-items: center; padding: 20px; backdrop-filter: blur(4px); }
@@ -305,18 +289,8 @@
 .fpd-x302 { font-size: 2.5rem; color: #10b981; font-weight: bold; }
 .fpd-x303 { padding: 12px 32px; display: flex; justify-content: flex-end; border-top: 1px solid #30363d; background-color: #161b22; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; flex-shrink: 0; }
 .fpd-x304 { padding: 10px 32px; border-radius: 6px; color: #c9d1d9; border: 1px solid #30363d; background: transparent; cursor: pointer; }
-.fpd-x305 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 1900; padding: 20px; backdrop-filter: blur(6px); }
-.fpd-x306 { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; width: 100%; max-width: 760px; max-height: 92vh; overflow-y: auto; padding: 24px; }
-.fpd-x307 { display: flex; justify-content: space-between; margin-bottom: 8px; border-bottom: 1px solid #30363d; padding-bottom: 14px; }
-.fpd-x308 { color: #8b949e; font-size: 0.82rem; margin: 12px 0 20px; }
-.fpd-x309 { color: #3b82f6; }
-.fpd-x310 { color: #10b981; }
-.fpd-x311 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
-.fpd-x312 { border: 1px solid #3b82f6; border-radius: 10px; padding: 16px; background-color: rgba(59,130,246,0.05); }
-.fpd-x313 { color: #3b82f6; font-weight: bold; font-size: 0.9rem; margin-bottom: 12px; }
-.fpd-x314 { margin-bottom: 10px; }
-.fpd-x315 { border: 1px solid #10b981; border-radius: 10px; padding: 16px; background-color: rgba(16,185,129,0.05); }
-.fpd-x316 { color: #10b981; font-weight: bold; font-size: 0.9rem; margin-bottom: 12px; }
+.fpd-x309 { color: #3fb950; } /* ✅ V00481: Pesos verde, Dólares azul */
+.fpd-x310 { color: #58a6ff; }
 .fpd-x317 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.85); display: flex; align-items: flex-start; justify-content: center; z-index: 1850; padding: 20px; backdrop-filter: blur(6px); overflow-y: auto; }
 .fpd-x318 { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; width: 100%; max-width: 960px; margin: auto; padding: 24px; }
 .fpd-x319 { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; border-bottom: 1px solid #30363d; padding-bottom: 14px; }
@@ -401,12 +375,11 @@
   .fpd-x88 { padding: 14px 12px; }
   .fpd-x90 { flex-wrap: wrap; }
   .fpd-x98 { flex-wrap: wrap; }
-  .fpd-x100 { grid-template-columns: 1fr; }
-  .fpd-x103 { font-size: 1.3rem; }
-  .fpd-x104 { font-size: 1.3rem; }
-  .fpd-x106 { font-size: 1.3rem; }
-  .fpd-x107 { font-size: 1.3rem; }
-  .fpd-x108 { flex-wrap: wrap; }
+  .fpd-x100 { grid-template-columns: 1fr 1fr; }
+  .fpd-x103 { font-size: 1.15rem; }
+  .fpd-x104 { font-size: 1.15rem; }
+  .fpd-x106 { font-size: 1.15rem; }
+  .fpd-x107 { font-size: 1.15rem; }
   .fpd-x109 { flex-wrap: wrap; }
   .fpd-x110 { padding: 14px 12px; }
   .fpd-x112 { flex-wrap: wrap; }
@@ -441,10 +414,6 @@
   .fpd-x186 { grid-template-columns: 1fr; }
   .fpd-x187 { flex-wrap: wrap; }
   .fpd-x203 { flex-wrap: wrap; }
-  .fpd-x205 { flex-wrap: wrap; }
-  .fpd-x209 { padding: 14px 12px; }
-  .fpd-x212 { grid-template-columns: 1fr; }
-  .fpd-x218 { flex-wrap: wrap; }
   .fpd-x220 { flex-wrap: wrap; }
   .fpd-x221 { flex-wrap: wrap; }
   .fpd-x231 { padding: 14px 12px; }
@@ -472,10 +441,6 @@
   .fpd-x300 { padding: 14px 12px; }
   .fpd-x302 { font-size: 1.3rem; }
   .fpd-x303 { flex-wrap: wrap; }
-  .fpd-x305 { flex-wrap: wrap; }
-  .fpd-x306 { padding: 14px 12px; }
-  .fpd-x307 { flex-wrap: wrap; }
-  .fpd-x311 { grid-template-columns: 1fr; }
   .fpd-x317 { flex-wrap: wrap; }
   .fpd-x318 { padding: 14px 12px; }
   .fpd-x319 { flex-wrap: wrap; }
@@ -518,3 +483,20 @@
 .fcd-docfactura-ver { background: none; border: 1px solid #238636; border-radius: 6px; color: #3fb950; padding: 4px 10px; font-size: 0.8rem; cursor: pointer; }
 .fcd-docfactura-ver:hover { background: rgba(35, 134, 54, 0.12); }
 .fcd-docfactura-btn { cursor: pointer; }
+
+/* ✅ V00481: moneda fija del proveedor, avisos, cancelación y Editar desde el detalle de la operación */
+.modal-overlay.fpd-detras-editor { z-index: 900; }
+.fpd-moneda-fija { display: block; width: 100%; box-sizing: border-box; padding: 10px; border: 1px dashed #30363d; border-radius: 6px; background-color: #010409; cursor: default; }
+.fpd-edit-aviso:empty { display: none; }
+.fpd-aviso-crear { margin: -12px 0 20px; }
+.fpd-aviso-moneda { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+.fpd-aviso-moneda > p { flex: 1 1 260px; }
+.fpd-btn-corregir-moneda { padding: 8px 14px; border: 1px solid #d29922; border-radius: 6px; background: transparent; color: #e3b341; font-weight: 700; font-size: 0.82rem; cursor: pointer; }
+.fpd-btn-corregir-moneda:hover { background: rgba(210, 153, 34, 0.15); }
+.fpd-btn-editar-detalle { margin-right: auto; padding: 10px 20px; border: 1px solid #58a6ff; border-radius: 6px; background: transparent; color: #58a6ff; font-weight: 700; cursor: pointer; }
+.fpd-btn-editar-detalle:hover { background: rgba(88, 166, 255, 0.12); }
+.fpd-total-op { font-weight: 700; }
+
+/* ✅ V00482: "+N" cuando una factura tiene más de 3 referencias (el resto se ve en la ficha) */
+.fpd-mas-refs { padding: 3px 8px; border: 1px dashed #484f58; border-radius: 6px; background: transparent; color: #8b949e; font-size: 0.78rem; font-weight: 700; cursor: pointer; }
+.fpd-mas-refs:hover { color: #c9d1d9; border-color: #8b949e; }

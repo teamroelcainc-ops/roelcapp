@@ -26,17 +26,7 @@
 
 .pg-tabla-marco { border: 1px solid #30363d; border-radius: 8px; overflow: hidden; overflow-x: auto; }
 .pg-tabla-scroll { max-height: 260px; overflow-y: auto; }
-.pg-tabla-facturas {
-  max-height: 320px;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
-}
-
-/* Scrollbar visible (WebKit) para que se note que el área desplaza */
-.pg-tabla-facturas::-webkit-scrollbar { width: 10px; }
-.pg-tabla-facturas::-webkit-scrollbar-track { background: #0d1117; }
-.pg-tabla-facturas::-webkit-scrollbar-thumb { background: #30363d; border-radius: 5px; }
-.pg-tabla-facturas::-webkit-scrollbar-thumb:hover { background: #484f58; }
+/* ✅ V00484: el alto y el scroll de la tabla de Transacciones pendientes están en TablaExpandible.css */
 
 .pg-tabla { width: 100%; border-collapse: collapse; text-align: left; }
 .pg-tabla thead { background-color: #161b22; position: sticky; top: 0; z-index: 5; }
@@ -184,7 +174,6 @@
   .pg-modal-registro { height: auto; max-height: 92vh; }
   .pg-registro-cols { grid-template-columns: 1fr; }
   .pg-registro-col { overflow-y: visible; }
-  .pg-tabla-facturas { max-height: 260px; }
 }
 
 /* ✅ Flujo tipo QuickBooks: columna PAGO editable y totales en vivo */
@@ -346,14 +335,7 @@
   .pg-qb-recibido { align-items: flex-start; text-align: left; }
 }
 
-/* ✅ Encabezado de Transacciones pendientes con buscador de facturas */
-.pg-trans-encabezado {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
-}
-
+/* ✅ Buscador de facturas de Transacciones pendientes (✅ V00484: el encabezado es el de TablaExpandible) */
 .pg-buscador-factura {
   max-width: 280px;
   flex: 1;
@@ -444,3 +426,6 @@
 .pd-paginacion { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
 .pd-pag-info { color: #8b949e; font-size: 0.78rem; margin-right: auto; }
 .pd-pag-num { color: #f0f6fc; font-weight: 700; font-size: 0.82rem; }
+
+/* ✅ V00481: nota y factura de reemplazo al cancelar (ocupa todo el ancho de la cuadrícula) */
+.pg-cancelacion { grid-column: 1 / -1; }

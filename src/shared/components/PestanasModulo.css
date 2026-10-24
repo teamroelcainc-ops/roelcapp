@@ -1,0 +1,13 @@
+/* ✅ V00480: pestañas de un apartado con varios módulos (antes PestanasOperaciones.css, V00477) */
+.pmo-barra { display: flex; flex-shrink: 0; gap: 4px; padding: 14px 24px 0; border-bottom: 1px solid #30363d; box-sizing: border-box; width: 100%; overflow-x: auto; }
+.pmo-tab { display: inline-flex; align-items: center; gap: 8px; margin-bottom: -1px; padding: 10px 18px; border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; color: #8b949e; font-family: inherit; font-size: 0.95rem; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.pmo-tab svg { color: var(--pmo-color, currentColor); }
+.pmo-tab:hover { border-bottom-color: transparent; color: #c9d1d9; }
+.pmo-tab:focus { outline: none; }
+.pmo-tab:focus-visible { outline: 2px solid #58a6ff; outline-offset: -2px; border-radius: 6px 6px 0 0; }
+.pmo-tab--activa, .pmo-tab--activa:hover { border-bottom-color: #d84315; color: #f0f6fc; }
+
+@media (max-width: 768px) {
+  .pmo-barra { padding: 10px 12px 0; }
+  .pmo-tab { padding: 9px 12px; font-size: 0.88rem; }
+}

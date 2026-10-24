@@ -21,6 +21,7 @@ const CATALOGO: { seccion: string; items: { clave: string; porDefecto: string }[
       { clave: 'menu.reportes', porDefecto: 'Reportes' },
       { clave: 'menu.estad_sticas', porDefecto: 'Estadísticas' },
       { clave: 'menu.analisis_clientes', porDefecto: 'Análisis de Clientes' }, // ✅ V00479
+      { clave: 'menu.facturaci_n', porDefecto: 'Facturación' }, // ✅ V00480: Clientes y Proveedores son pestañas
       { clave: 'menu.pagos', porDefecto: 'Pagos' },
       { clave: 'menu.gastos', porDefecto: 'Gastos' },
       { clave: 'menu.mtto', porDefecto: 'MTTO' },
@@ -29,10 +30,8 @@ const CATALOGO: { seccion: string; items: { clave: string; porDefecto: string }[
       { clave: 'menu.costos_adicionales', porDefecto: 'Costos Adicionales' },
       { clave: 'menu.clientes', porDefecto: 'Clientes' },
       { clave: 'menu.convenio_de_clientes', porDefecto: 'Convenio de Clientes' },
-      { clave: 'menu.facturaci_n_de_clientes', porDefecto: 'Facturación de Clientes' },
       { clave: 'menu.proveedores', porDefecto: 'Proveedores' },
       { clave: 'menu.convenio_de_proveedores', porDefecto: 'Convenio de Proveedores' },
-      { clave: 'menu.facturaci_n_de_proveedores', porDefecto: 'Facturación de Proveedores' },
       { clave: 'menu.empleados', porDefecto: 'Empleados' },
       { clave: 'menu.colaboradores', porDefecto: 'Colaboradores' },
       { clave: 'menu.historial_de_asistencia', porDefecto: 'Historial de Asistencia' },

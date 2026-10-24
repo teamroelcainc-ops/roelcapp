@@ -48,6 +48,14 @@ import {
 import type { FacturaPagable as FacturaPagableBase, PagoAplicado } from '../services/facturasPagables';
 import { obtenerFacturasPagables, useFacturasPagables } from '../hooks/useFacturasPagables';
 import './PagosDashboard.css';
+import CamposCancelacion from '../../facturacion/components/CamposCancelacion'; // ✅ V00481
+import { CANCELACION_VACIA, cancelacionDe, estaCancelada, validarCancelacion } from '../../facturacion/services/reglasFactura';
+import type { DatosCancelacion } from '../../facturacion/services/reglasFactura';
+import { escribirEnGrupo, escrituraCancelacion } from '../../facturacion/services/statusFacturaDatos';
+import { olvidarPagoPedido, pagoPedido } from '../services/pagoPedido'; // ✅ V00483
+import PlantillaFacturas from './PlantillaFacturas'; // ✅ V00484
+import TablaExpandible from './TablaExpandible'; // ✅ V00484
+import type { FacturaConocida, FacturaParaCruce } from '../services/plantillaFacturas';
 
 // ✅ V00452: lo que solo se usa al hacer clic se carga en ese momento (antes, entrar a Pagos
 //   descargaba y ejecutaba el formulario completo de operaciones, Excel y el generador de PDF:
@@ -117,7 +125,10 @@ export function PagosDashboard() {
   const flags = useFlags(); // ✅ V00441 (Fase 5): dinero por servidor
   const usuario = useUsuarioStore((s) => s.usuario);
 
-  const [tab, setTab] = useState<TipoPago>('cliente');
+  // ✅ V00483: si se llegó desde la ficha de una factura, se abre en la pestaña de ese pago.
+  const [tab, setTab] = useState<TipoPago>(() => pagoPedido()?.tipo ?? 'cliente');
+  const [pagoPedidoId, setPagoPedidoId] = useState<string | null>(() => pagoPedido()?.id ?? null);
+  useEffect(() => { olvidarPagoPedido(); }, []);
 
   // ✅ V00170: paginación (50 pagos por página) en todas las pestañas
 
@@ -136,6 +147,12 @@ export function PagosDashboard() {
     .sort((a, b) => claveFecha(b.fecha).localeCompare(claveFecha(a.fecha))), [pagosVivos.datos]);
   const [busqueda, setBusqueda] = useState('');
   const [pagoViendo, setPagoViendo] = useState<PagoDoc | null>(null);
+  // ✅ V00483: el pago pedido se abre en cuanto llega la lista (o se olvida si ya no existe).
+  if (pagoPedidoId && pagosVivos.listo) {
+    const pedidoEncontrado = pagos.find((p) => p.id === pagoPedidoId) ?? null;
+    setPagoPedidoId(null);
+    if (pedidoEncontrado) setPagoViendo(pedidoEncontrado);
+  }
 
   // ✅ NUEVO — EDICIÓN de un pago (solo metadata: fecha, número, referencia,
   //   método, observaciones y comprobante). Los MONTOS y las FACTURAS
@@ -173,6 +190,8 @@ export function PagosDashboard() {
   const [fEditStatus, setFEditStatus] = useState('Facturado');
   const [fEditTotal, setFEditTotal] = useState('');
   const [fEditMoneda, setFEditMoneda] = useState('');
+  // ✅ V00481: cancelar una factura pide la nota y la factura que la reemplaza (como en Facturación).
+  const [fEditCancelacion, setFEditCancelacion] = useState<DatosCancelacion>(CANCELACION_VACIA);
   const [guardandoFactura, setGuardandoFactura] = useState(false);
   const [opsFactura, setOpsFactura] = useState<any[]>([]);
   const [cargandoOpsFactura, setCargandoOpsFactura] = useState(false);
@@ -215,6 +234,8 @@ export function PagosDashboard() {
     setFEditFecha(String(fac.raw?.fecha || fac.fecha || '').slice(0, 10));
     setFEditCcp(String(fac.raw?.facturaCcp || fac.raw?.ccp || ''));
     setFEditStatus(String(fac.raw?.statusFactura || 'Facturado'));
+    const cancelada = cancelacionDe(fac.raw); // ✅ V00481
+    setFEditCancelacion(cancelada ? { nota: cancelada.nota, reemplazo: cancelada.reemplazo } : CANCELACION_VACIA);
     setFEditTotal(String(fac.total || ''));
     // ✅ V00126: moneda de la factura = moneda de la EMPRESA (tabla Empresas); solo respaldo la de la factura
     const monEmpresa = monedaEmpresaDe({ entidadNombre: fac.entidadNombre, entidadId: (fac as any).entidadId });
@@ -271,6 +292,11 @@ export function PagosDashboard() {
       alert(`El total (${money(totalNuevo)}) no puede ser MENOR a lo ya pagado (${money(facturaViendo.montoPagado)}).\n\nPara bajarlo, primero elimina el/los pagos aplicados.`);
       return;
     }
+    // ✅ V00481: Cancelado exige nota y la factura que la reemplaza (facturas de clientes y proveedores).
+    const conCancelacion = tab !== 'mtto';
+    const cancelando = conCancelacion && estaCancelada(fEditStatus);
+    if (cancelando) { const falta = validarCancelacion(fEditCancelacion, fEditInvoice); if (falta) { alert(falta); return; } }
+    const canc = escrituraCancelacion(conCancelacion ? facturaViendo.raw : {}, fEditStatus, cancelando ? fEditCancelacion : null);
     setGuardandoFactura(true);
     try {
       const coleccion = tab === 'cliente' ? 'facturas_clientes' : 'facturas_proveedores';
@@ -295,10 +321,13 @@ export function PagosDashboard() {
       let saldoFinal = saldoNuevo;
       if (flags.dineroPorServidor && tab !== 'mtto') {
         // ✅ V00441 (Fase 5.5): el servidor valida contra lo pagado ACTUAL (el saldo es el suyo).
+        // ✅ V00481: los datos de la cancelación van antes; al salir de Cancelado se borran después.
+        if (cancelando) await escribirEnGrupo(coleccion, [facturaViendo.id], canc.firestore);
         const r = await llamarDinero('editarFactura', {
           lado: tab, origen: 'pagos', facturaIds: [facturaViendo.id], invoice: cambios.invoice, fecha: fEditFecha, facturaCcp: cambios.facturaCcp,
           statusFactura: fEditStatus, moneda: fEditMoneda, total: totalNuevo,
         });
+        if (!cancelando) await escribirEnGrupo(coleccion, [facturaViendo.id], canc.firestore);
         const nueva = r.facturas[facturaViendo.id] ?? {};
         Object.assign(cambios, nueva);
         if (typeof nueva.saldoPendiente === 'number') saldoFinal = nueva.saldoPendiente;
@@ -308,7 +337,7 @@ export function PagosDashboard() {
         //   mano (totalManualCentavos): sin la marca, el recálculo del servidor lo regresaba a la suma
         //   de los renglones y la factura volvía a quedar con saldo pendiente.
         const totalCambio = Math.abs(totalNuevo - (Number(facturaViendo.total) || 0)) > 0.009;
-        const escribir: Record<string, unknown> = { ...cambios };
+        const escribir: Record<string, unknown> = { ...cambios, ...canc.firestore }; // ✅ V00481
         if (totalCambio) escribir.totalManualCentavos = aCentavos(totalNuevo);
         else { delete escribir.subtotalFactura; delete escribir.subtotalMonedaFactura; delete escribir.saldoPendiente; delete escribir.statusPago; }
         batch.set(doc(db, coleccion, facturaViendo.id), escribir, { merge: true });
@@ -324,7 +353,7 @@ export function PagosDashboard() {
         if (isNaN(cap) || cap <= saldoFinal) return pp;
         return { ...pp, [facturaViendo.id]: saldoFinal.toFixed(2) };
       });
-      setFacturaViendo((prev) => prev ? { ...prev, invoice: cambios.invoice, fecha: fEditFecha, total: totalNuevo, saldo: saldoFinal, moneda: fEditMoneda, raw: { ...(prev.raw || {}), ...cambios } } : prev);
+      setFacturaViendo((prev) => prev ? { ...prev, invoice: cambios.invoice, fecha: fEditFecha, total: totalNuevo, saldo: saldoFinal, moneda: fEditMoneda, raw: canc.local({ ...(prev.raw || {}), ...cambios }) } : prev);
       setEditandoFactura(false);
     } catch (e) {
       console.error('No se pudo guardar la edición de la factura:', e);
@@ -594,6 +623,12 @@ export function PagosDashboard() {
   };
 
   const sumaAgregadaEdicion = editFacturasSel.reduce((s, id) => s + (Number(editPagoPorFactura[id]) || 0), 0);
+  // ✅ V00484: plantilla en Editar pago (mismas reglas que en Registrar).
+  const marcarEdicionDesdePlantilla = (marcadas: FacturaParaCruce[]) => {
+    const ids = marcadas.map((f) => f.id);
+    setEditFacturasSel((prev) => Array.from(new Set([...prev, ...ids])));
+    setEditPagoPorFactura((pp) => ({ ...pp, ...Object.fromEntries(marcadas.map((f) => [f.id, f.saldo.toFixed(2)])) }));
+  };
 
   const guardarEdicionPago = async () => {
     if (!pagoEditando) return;
@@ -1235,6 +1270,19 @@ export function PagosDashboard() {
     setMontoEditado(false);
   };
 
+  // ✅ V00484: PLANTILLA — las facturas que coinciden se marcan con su saldo completo (si ya estaban
+  //   marcadas, su monto pasa al saldo). Las demás facturas conocidas explican por qué un renglón
+  //   no se marcó (pagada o de otra empresa).
+  const conocidasDe = (entidad: string): FacturaConocida[] => {
+    const k = claveEntidad(entidad);
+    return facturasPendientes.map((f) => ({ invoice: f.invoice, saldo: f.saldo, entidad: f.entidadNombre, propia: claveEntidad(f.entidadNombre) === k }));
+  };
+  const marcarDesdePlantilla = (marcadas: FacturaParaCruce[]) => {
+    const ids = marcadas.map((f) => f.id);
+    setFacturasSel(Array.from(new Set([...facturasSel, ...ids])));
+    setPagosPorFactura((pp) => ({ ...pp, ...Object.fromEntries(marcadas.map((f) => [f.id, f.saldo.toFixed(2)])) }));
+  };
+
 
   // ── Guardar el pago ──
   const guardarPago = async () => {
@@ -1593,6 +1641,8 @@ export function PagosDashboard() {
                   <FileText size={14} /> {c.nombre || 'Ver comprobante'}
                 </a>
               ))}
+              {/* ✅ V00484: la lista de facturas del pago se puede expandir */}
+              <TablaExpandible titulo={`Facturas de este pago (${(pagoViendo.facturas || []).length})`} alto="libre">
               <table className="pg-tabla pg-tabla-aplicacion">
                 <thead>
                   <tr><th>FACTURA</th><th>FECHA</th><th>TOTAL</th><th>APLICADO</th><th>SALDO RESULTANTE</th></tr>
@@ -1618,6 +1668,7 @@ export function PagosDashboard() {
                   ))}
                 </tbody>
               </table>
+              </TablaExpandible>
             </div>
             <div className="pg-modal-pie">
               <button className="pg-btn-secundario" style={{ marginRight: 'auto', color: '#58a6ff', borderColor: 'rgba(88,166,255,0.4)' }}
@@ -1750,6 +1801,11 @@ export function PagosDashboard() {
                         placeholder="Buscar status..."
                       />
                     </div>
+                    {tab !== 'mtto' && estaCancelada(fEditStatus) && (
+                      <div className="pg-cancelacion">{/* ✅ V00481 */}
+                        <CamposCancelacion idBase="pg-canc" valor={fEditCancelacion} onCambiar={setFEditCancelacion} deshabilitado={guardandoFactura} />
+                      </div>
+                    )}
                     <div><label style={etiquetaCampo}>Factura CCP</label><input style={inputF} type="text" value={fEditCcp} onChange={(e) => setFEditCcp(e.target.value)} /></div>
                     <div>
                       <label style={etiquetaCampo}>Moneda</label>
@@ -1886,7 +1942,9 @@ export function PagosDashboard() {
 
               {/* ✅ NUEVO — AGREGAR FACTURAS A ESTE PAGO */}
               <div className="pg-campo">
-                <label>Agregar facturas a este pago (con saldo abierto de {pagoEditando.entidadNombre})</label>
+                {(cargandoEditFacturas || editFacturasDisp.length === 0) && (
+                  <label>Agregar facturas a este pago (con saldo abierto de {pagoEditando.entidadNombre})</label>
+                )}
                 {cargandoEditFacturas ? (
                   <CargandoDatos texto="Buscando facturas con saldo…" compacto />
                 ) : editFacturasDisp.length === 0 ? (
@@ -1901,8 +1959,11 @@ export function PagosDashboard() {
                         editFacturasSel.includes(fx.id))
                     : editFacturasDisp;
                   return (
-                  <>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                  // ✅ V00484: Expandir y plantilla
+                  <TablaExpandible titulo={`Agregar facturas a este pago (con saldo abierto de ${pagoEditando.entidadNombre})`} alto="bajo"
+                    pie={sumaAgregadaEdicion > 0 ? <span>Se agregarán <b className="pg-monto">{money(sumaAgregadaEdicion)}</b> al pago · {editFacturasSel.length} factura(s)</span> : <span>Marca las facturas que se agregan al pago.</span>}
+                    acciones={<>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <div style={{ position: 'relative', flex: 1, maxWidth: '320px' }}>
                       <Search size={13} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} />
                       <input
@@ -1921,7 +1982,10 @@ export function PagosDashboard() {
                     </div>
                     <span style={{ color: '#8b949e', fontSize: '0.78rem' }}>{visiblesEdit.length} de {editFacturasDisp.length}</span>
                   </div>
-                  <div style={{ border: '1px solid #30363d', borderRadius: '8px', maxHeight: '260px', overflowY: 'auto' }}>
+                  <PlantillaFacturas entidad={pagoEditando.entidadNombre} pendientes={editFacturasDisp}
+                    conocidas={() => conocidasDe(pagoEditando.entidadNombre)} enEstePago={(pagoEditando.facturas || []).map((fa) => fa.invoice)}
+                    onMarcar={marcarEdicionDesdePlantilla} />
+                    </>}>
                     <table className="pg-tabla">
                       <thead>
                         <tr><th style={{ width: '34px' }}></th><th>FACTURA</th><th>SALDO</th><th>MONEDA</th><th>APLICAR</th></tr>
@@ -1952,8 +2016,7 @@ export function PagosDashboard() {
                         ))}
                       </tbody>
                     </table>
-                  </div>
-                  </>
+                  </TablaExpandible>
                   );
                 })()}
                 {sumaAgregadaEdicion > 0 && (
@@ -2084,9 +2147,15 @@ export function PagosDashboard() {
                     </div>
                   </div>
 
-                  {/* ═══ Transacciones pendientes ═══ */}
-                  <div className="pg-trans-encabezado">
-                    <label className="pg-etq">Transacciones pendientes</label>
+                  {/* ═══ Transacciones pendientes ═══ (✅ V00484: Expandir y plantilla) */}
+                  <TablaExpandible titulo="Transacciones pendientes"
+                    pie={<>
+                      <span>{seleccionadasOrdenadas.length} factura(s) marcada(s)</span>
+                      <span>Monto a aplicar <b className="pg-monto">{money(totalAplicado, monedasSel[0])}</b></span>
+                      <span>Monto a favor <b>{money(Math.max(0, diferencia), monedasSel[0])}</b></span>
+                      {diferencia < -0.009 && <span className="pg-total-contra">En contra -{money(-diferencia, monedasSel[0])}</span>}
+                    </>}
+                    acciones={<>
                     {/* ✅ V00452: la lista está en vivo; mientras el servidor confirma los saldos, se avisa. */}
                     {facturasVivas.error ? (
                       <span className="pg-actualizando pg-actualizando--error">
@@ -2113,8 +2182,8 @@ export function PagosDashboard() {
                     {busquedaFactura && (
                       <span className="pg-trans-conteo">{facturasVisibles.length} de {facturasDeEntidad.length}</span>
                     )}
-                  </div>
-                  <div className="pg-tabla-marco pg-tabla-facturas">
+                    <PlantillaFacturas entidad={entidadSel} pendientes={facturasDeEntidad} conocidas={() => conocidasDe(entidadSel)} onMarcar={marcarDesdePlantilla} />
+                    </>}>
                     <table className="pg-tabla">
                       <thead>
                         <tr>
@@ -2166,7 +2235,7 @@ export function PagosDashboard() {
                         })}
                       </tbody>
                     </table>
-                  </div>
+                  </TablaExpandible>
 
                   {monedasSel.length > 1 && (
                     <div className="pg-alerta">Las facturas seleccionadas mezclan monedas ({monedasSel.join(', ')}). Un pago solo puede cubrir facturas de la misma moneda.</div>
