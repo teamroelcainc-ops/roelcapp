@@ -6,6 +6,7 @@
 // Ahora hay una sola copia, tipada y con pruebas. No es la fusión de los dos módulos
 // (8.2, pendiente de decisión): cada tablero sigue siendo el suyo.
 // ---------------------------------------------------------------------------
+import { aFechaISO } from '../../shared/dominio/fechas';
 
 /** Tope y tamaño de página de las descargas de operaciones y facturas. */
 export const LIMITE_OPS_TODAS = 20000;
@@ -53,13 +54,44 @@ export const colorStatusFactura = (s: unknown): string => {
   return '#8b949e';
 };
 
+/** Día local de un Date como AAAA-MM-DD ('' si no es válido). */
+const isoLocal = (d: Date): string => (Number.isNaN(d.getTime()) ? ''
+  : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+
+/**
+ * ✅ V00488: número → fecha. Serial de Excel (días desde 1899-12-30: así llegan las fechas de
+ * una hoja importada como número, p. ej. 46188), segundos o milisegundos desde 1970.
+ */
+const fechaDeNumero = (n: number): string => {
+  if (!Number.isFinite(n) || n <= 0) return '';
+  if (n >= 20000 && n < 80000) {
+    const d = new Date(Date.UTC(1899, 11, 30) + Math.floor(n) * 86400000);
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  }
+  if (n >= 1e9 && n < 1e11) return isoLocal(new Date(n * 1000));
+  if (n >= 1e11) return isoLocal(new Date(n));
+  return '';
+};
+
+const MESES: Record<string, number> = {
+  ene: 1, jan: 1, feb: 2, mar: 3, abr: 4, apr: 4, may: 5, jun: 6, jul: 7, ago: 8, aug: 8,
+  sep: 9, set: 9, oct: 10, nov: 11, dic: 12, dec: 12,
+};
+const mesDeNombre = (t: string): number => MESES[t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().slice(0, 3)] ?? 0;
+
 /**
  * Fecha de una factura a AAAA-MM-DD. A/B/AAAA es ambiguo (D/M vs M/D): se descartan las
  * imposibles y, si ambas son válidas, se prefiere D/M salvo que caiga en el futuro y M/D no
  * (una factura no puede tener fecha posterior a hoy). Lo que no se reconoce se devuelve tal cual.
+ * ✅ V00488: también Timestamp de Firestore y Date (día local), números (serial de Excel o
+ * epoch), un Timestamp guardado como texto, años de 2 dígitos (15/06/26) y meses con nombre
+ * ("15 jun 2026", "15 de junio de 2026", "Jun 15, 2026"). Antes esas fechas se devolvían tal cual
+ * y el filtro de fechas del Historial dejaba fuera la factura sin avisar.
  */
 export const parseFechaFactura = (val: unknown): string => {
   if (!val) return '';
+  if (typeof val === 'object') return aFechaISO(val) ?? '';
+  if (typeof val === 'number') return fechaDeNumero(val);
   const s = String(val).trim();
   if (!s) return '';
   // ISO (YYYY-MM-DD) → tal cual
@@ -71,11 +103,16 @@ export const parseFechaFactura = (val: unknown): string => {
   const mISO = s.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
   if (mISO) return `${mISO[1]}-${mISO[2].padStart(2, '0')}-${mISO[3].padStart(2, '0')}`;
 
-  const m = s.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})/);
+  // Un Timestamp de Firestore que quedó guardado como texto
+  const ts = s.match(/^Timestamp\(seconds=(\d+)/);
+  if (ts) return isoLocal(new Date(Number(ts[1]) * 1000)) || s;
+
+  // A/B/AAAA (o A/B/AA)
+  const m = s.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4}|\d{2})(?!\d)/);
   if (m) {
     const a = parseInt(m[1], 10);
     const b = parseInt(m[2], 10);
-    const y = m[3];
+    const y = m[3].length === 2 ? String(2000 + Number(m[3])) : m[3];
     const hoy = new Date(); hoy.setHours(23, 59, 59, 999);
     const arma = (dia: number, mes: number) => `${y}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
     const valido = (dia: number, mes: number) => mes >= 1 && mes <= 12 && dia >= 1 && dia <= 31;
@@ -91,7 +128,24 @@ export const parseFechaFactura = (val: unknown): string => {
       return dm;
     }
   }
+  // Solo número escrito como texto (serial de Excel)
+  if (/^\d{5}(\.\d+)?$/.test(s)) return fechaDeNumero(Number(s)) || s;
+  // Mes con nombre: "15 jun 2026", "15 de junio de 2026", "15-jun-26"
+  const dmy = s.match(/^(\d{1,2})[\s\-/.]*(?:de\s+)?([A-Za-zÁÉÍÓÚáéíóú]{3,})\.?[\s\-/.,]*(?:de(?:l)?\s+)?(\d{4}|\d{2})(?!\d)/);
+  if (dmy && mesDeNombre(dmy[2])) {
+    const y = dmy[3].length === 2 ? 2000 + Number(dmy[3]) : Number(dmy[3]);
+    return `${y}-${String(mesDeNombre(dmy[2])).padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+  }
+  // "Jun 15, 2026" / "junio 15 2026"
+  const mdy = s.match(/^([A-Za-zÁÉÍÓÚáéíóú]{3,})\.?\s+(\d{1,2}),?\s+(\d{4})/);
+  if (mdy && mesDeNombre(mdy[1])) return `${mdy[3]}-${String(mesDeNombre(mdy[1])).padStart(2, '0')}-${mdy[2].padStart(2, '0')}`;
   return s;
+};
+
+/** ✅ V00488: la fecha de la factura como AAAA-MM-DD, o '' si no tiene o no se reconoce (para filtrar por rango). */
+export const fechaFacturaISO = (val: unknown): string => {
+  const f = parseFechaFactura(val);
+  return /^\d{4}-\d{2}-\d{2}$/.test(f) ? f : '';
 };
 
 /** Valor de una columna "genérica" de la tabla de operaciones: el primer `sourceField` con dato. */

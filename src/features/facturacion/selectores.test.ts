@@ -1,7 +1,7 @@
 // ✅ V00444 (Fase 8.1) — selectores puros de Facturación (antes copiados en los dos tableros).
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  aplicarConfigColumnasGuardada, colorStatusFactura, fechaOrdenKey, moverIdAlInicio, pareceReferencia,
+  aplicarConfigColumnasGuardada, colorStatusFactura, fechaFacturaISO, fechaOrdenKey, moverIdAlInicio, pareceReferencia,
   parseFechaFactura, refNaturalKey, valorGenericoOp,
 } from './selectores';
 
@@ -30,6 +30,34 @@ describe('parseFechaFactura', () => {
     expect(parseFechaFactura(null)).toBe('');
     expect(parseFechaFactura('   ')).toBe('');
     expect(parseFechaFactura('ayer')).toBe('ayer');
+  });
+});
+
+describe('✅ V00488 — fechas que antes quedaban fuera del filtro de fechas', () => {
+  it('Timestamp de Firestore, {seconds} y Date (día local)', () => {
+    const d = new Date(2026, 5, 15, 10, 30);
+    expect(parseFechaFactura({ toDate: () => d })).toBe('2026-06-15');
+    expect(parseFechaFactura({ seconds: Math.floor(d.getTime() / 1000), nanoseconds: 0 })).toBe('2026-06-15');
+    expect(parseFechaFactura(d)).toBe('2026-06-15');
+    expect(parseFechaFactura(`Timestamp(seconds=${Math.floor(d.getTime() / 1000)}, nanoseconds=0)`)).toBe('2026-06-15');
+  });
+  it('serial de Excel (número o texto) y milisegundos', () => {
+    expect(parseFechaFactura(46188)).toBe('2026-06-15');
+    expect(parseFechaFactura('46188')).toBe('2026-06-15');
+    expect(parseFechaFactura(new Date(2026, 6, 1, 12).getTime())).toBe('2026-07-01');
+  });
+  it('año de 2 dígitos y meses con nombre', () => {
+    expect(parseFechaFactura('15/06/26')).toBe('2026-06-15');
+    expect(parseFechaFactura('15 jun 2026')).toBe('2026-06-15');
+    expect(parseFechaFactura('15 de junio de 2026')).toBe('2026-06-15');
+    expect(parseFechaFactura('15-Jul-26')).toBe('2026-07-15');
+    expect(parseFechaFactura('Jun 15, 2026')).toBe('2026-06-15');
+  });
+  it('fechaFacturaISO: solo AAAA-MM-DD; lo que no se reconoce o falta → vacío', () => {
+    expect(fechaFacturaISO('2026-06-15T00:00:00Z')).toBe('2026-06-15');
+    expect(fechaFacturaISO('ayer')).toBe('');
+    expect(fechaFacturaISO('')).toBe('');
+    expect(fechaFacturaISO(undefined)).toBe('');
   });
 });
 

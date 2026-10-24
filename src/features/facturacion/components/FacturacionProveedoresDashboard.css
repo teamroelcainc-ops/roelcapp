@@ -513,3 +513,6 @@
   .fpd-x186 > * { grid-column: 1 / -1; min-width: 0; }
   .fpd-x187 { flex-wrap: wrap; gap: 12px; }
 }
+
+/* ✅ V00488: facturas sin fecha que no entran en el filtro de fechas */
+.fpd-aviso-sin-fecha { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid rgba(210, 153, 34, 0.6); border-radius: 14px; background-color: rgba(210, 153, 34, 0.1); color: #e3b341; font-size: 0.8rem; font-weight: bold; cursor: help; }

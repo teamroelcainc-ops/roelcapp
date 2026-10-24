@@ -83,7 +83,7 @@ import { aplicarFacturas, aplicarOperaciones, llamarDinero, mensajeDinero } from
 import { useFlags, useFlagsCargadas } from '../../../shared/data/flags';
 import {
   aplicarConfigColumnasGuardada, colorStatusFactura, DOC_REMISION_EMISORES, fechaOrdenKey, LIMITE_FACTURAS_TODAS, LIMITE_OPS_TODAS,
-  moverIdAlInicio, PAG_FACTURAS, pareceReferencia, parseFechaFactura, refNaturalKey, STATUS_FACTURA_OPCIONES, valorGenericoOp,
+  fechaFacturaISO, moverIdAlInicio, PAG_FACTURAS, pareceReferencia, parseFechaFactura, refNaturalKey, STATUS_FACTURA_OPCIONES, valorGenericoOp,
 } from '../selectores'; // ✅ V00444 (Fase 8.1): una sola copia (antes idéntica en Clientes y Proveedores)
 import { useOperacionesFacturables } from '../hooks/useOperacionesFacturables'; // ✅ V00444 (Fase 8.1)
 import { conversionOperacion, monedaDeFactura, montoOperacion } from '../../../shared/dominio/dinero';
@@ -2158,6 +2158,11 @@ export const FacturacionClientesDashboard = () => {
     }
   };
 
+  // ✅ V00488: facturas sin fecha (o con una que no se reconoce): no entran en un filtro de fechas y se avisa cuántas.
+  const sinFechaHist = useMemo(
+    () => facturasGlobales.filter((f) => (!filtroCliente || String(f.clienteId || '') === filtroCliente) && !fechaFacturaISO(f.fecha)).length,
+    [facturasGlobales, filtroCliente],
+  );
   const historialOrdenado = useMemo(() => {
     const dir = ordenFac.dir === 'asc' ? 1 : -1;
     const q = textoBuscarFacturaDiferido.trim().toLowerCase();
@@ -2185,7 +2190,7 @@ export const FacturacionClientesDashboard = () => {
     const coincideMoneda = (f: any) => filtroMonedaHist === 'todas' || codigoMonedaFactura(f) === filtroMonedaHist; // ✅ V00485
     const coincideFechas = (f: any) => {
       if (!fechaDesdeHist && !fechaHastaHist) return true;
-      const fc = String(f.fecha || '').slice(0, 10);
+      const fc = fechaFacturaISO(f.fecha); // ✅ V00488: cualquier formato guardado (antes solo AAAA-MM-DD)
       if (!fc) return false;
       if (fechaDesdeHist && fc < fechaDesdeHist) return false;
       if (fechaHastaHist && fc > fechaHastaHist) return false;
@@ -2272,7 +2277,7 @@ export const FacturacionClientesDashboard = () => {
     const coincideCliente = (f: any) => !filtroCliente || String(f.clienteId || '') === filtroCliente;
     const coincideFechas = (f: any) => {
       if (!fechaDesdeHist && !fechaHastaHist) return true;
-      const fc = String(f.fecha || '').slice(0, 10);
+      const fc = fechaFacturaISO(f.fecha); // ✅ V00488: cualquier formato guardado (antes solo AAAA-MM-DD)
       if (!fc) return false;
       if (fechaDesdeHist && fc < fechaDesdeHist) return false;
       if (fechaHastaHist && fc > fechaHastaHist) return false;
@@ -2307,7 +2312,7 @@ export const FacturacionClientesDashboard = () => {
     const coincideCliente = (f: any) => !filtroCliente || String(f.clienteId || '') === filtroCliente;
     const coincideFechas = (f: any) => {
       if (!fechaDesdeHist && !fechaHastaHist) return true;
-      const fc = String(f.fecha || '').slice(0, 10);
+      const fc = fechaFacturaISO(f.fecha); // ✅ V00488: cualquier formato guardado (antes solo AAAA-MM-DD)
       if (!fc) return false;
       if (fechaDesdeHist && fc < fechaDesdeHist) return false;
       if (fechaHastaHist && fc > fechaHastaHist) return false;
@@ -3204,6 +3209,13 @@ export const FacturacionClientesDashboard = () => {
           <span className="fcd-x39">
             {nombreClienteSeleccionado}
             <button className="fcd-x40" onClick={() => { setFiltroCliente(''); setTextoBuscarCliente(''); }}>✕</button>
+          </span>
+        )}
+        {/* ✅ V00488: las que no tienen fecha (o no se reconoce) no entran en un filtro de fechas: se avisa */}
+        {esHistorial && (fechaDesdeHist || fechaHastaHist) && sinFechaHist > 0 && (
+          <span className="fcd-aviso-sin-fecha" role="status"
+            title="Estas facturas no tienen fecha, o su fecha no se reconoce, y por eso no entran en un filtro de fechas. Para verlas, quita las fechas del filtro y corrige su fecha en Editar factura.">
+            ⚠ {sinFechaHist.toLocaleString('es-MX')} factura{sinFechaHist === 1 ? '' : 's'} sin fecha no entra{sinFechaHist === 1 ? '' : 'n'} en el rango
           </span>
         )}
         {/* ✅ V00482: buscar y acciones del historial en esta misma fila (antes, un panel aparte con 6 botones) */}
