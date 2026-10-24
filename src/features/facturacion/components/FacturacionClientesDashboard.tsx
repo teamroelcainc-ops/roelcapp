@@ -95,6 +95,11 @@ import ModalCancelarFactura from './ModalCancelarFactura';
 import CancelacionFicha from './CancelacionFicha';
 import AccionesHistorial from './AccionesHistorial'; // ✅ V00482
 import CorregirFacturasModal from './CorregirFacturasModal';
+import PagosDeFactura from './PagosDeFactura'; // ✅ V00483
+import { indexarPagos, numerosPorFactura, pagosDeFacturas } from '../services/pagosDeFactura';
+import type { PagoDeFactura } from '../services/pagosDeFactura';
+import { abrirPagoEnPagos } from '../../pagos/services/pagoPedido';
+import { puedeClave } from '../../../utils/permisos';
 import {
   AVISO_AGREGAR_FACTURADA, AVISO_REMISION_FACTURADA, CANCELACION_VACIA, STATUS_AL_CREAR, avisoMonedaDistinta, avisoSinMoneda,
   cancelacionDe, estaCancelada, importesDeRenglones, monedaDeEmpresa, puedeAgregarOperaciones, puedeGenerarRemision,
@@ -319,7 +324,9 @@ export const FacturacionClientesDashboard = () => {
   // ✅ V00126: "Pagadas" reutiliza toda la vista de Historial filtrando facturas liquidadas
   const esHistorial = activeTab === 'historial' || activeTab === 'pagadas';
   // ✅ V00126: mapa facturaId → número(s) de pago (colección `pagos`, en vivo)
-  const [pagosPorFactura, setPagosPorFactura] = useState<Record<string, string[]>>({});
+  // ✅ V00483: además de los números, el detalle de cada pago (para la ficha de la factura).
+  const [pagosDetalle, setPagosDetalle] = useState<Map<string, PagoDeFactura[]>>(() => new Map());
+  const pagosPorFactura = useMemo(() => numerosPorFactura(pagosDetalle), [pagosDetalle]);
   // ✅ V00438 (Fase 2.7): el listener de pagos se cierra mientras el módulo está
   //   oculto (MantenerVivo); al volver se re-suscribe sin limpiar lo ya pintado.
   const moduloVisible = useModuloEscuchando(); // ✅ V00446: sigue escuchando unos minutos oculto
@@ -327,13 +334,7 @@ export const FacturacionClientesDashboard = () => {
     if (!moduloVisible) return;
     const q = query(collection(db, 'pagos'), where('tipo', '==', 'cliente'));
     const unsub = onSnapshot(q, (snap) => {
-      const mapa: Record<string, string[]> = {};
-      snap.docs.forEach(d => {
-        const pg: any = d.data();
-        const num = String(pg.numeroPago || d.id);
-        (Array.isArray(pg.facturas) ? pg.facturas : []).forEach((fa: any) => { const fid = String(fa?.facturaId || ''); if (!fid) return; (mapa[fid] = mapa[fid] || []); if (!mapa[fid].includes(num)) mapa[fid].push(num); });
-      });
-      setPagosPorFactura(mapa);
+      setPagosDetalle(indexarPagos(snap.docs.map((d) => ({ ...d.data(), id: d.id })))); // ✅ V00483: id = el del documento
     }, (e) => console.warn('[Facturación] pagos:', e));
     return () => unsub();
   }, [moduloVisible]);
@@ -3030,6 +3031,10 @@ export const FacturacionClientesDashboard = () => {
   // ✅ V00481: moneda e importes por operación de la ficha abierta (en la moneda de la factura).
   const monedaFicha = facturaViendo ? monedaFacturaMostrar(facturaViendo) : '';
   const importesFicha = facturaViendo ? importesDeRenglones(monedaFicha, facturaViendo.operacionesGuardadas) : [];
+  // ✅ V00483: pagos aplicados a la factura abierta (todos los documentos de su folio).
+  const pagosFicha = facturaViendo
+    ? pagosDeFacturas(pagosDetalle, (Array.isArray(facturaViendo.__groupIds) && facturaViendo.__groupIds.length ? facturaViendo.__groupIds : [facturaViendo.id]).map(String))
+    : [];
   const evalTipoOpText = String(det?.tipoOperacionNombre || det?.tipoOperacionId || '').toLowerCase();
   const evalIsFletes = evalTipoOpText.includes('fletes') || evalTipoOpText.includes('flete');
   const evalIsLogistica = evalTipoOpText.includes('logistica') || evalTipoOpText.includes('logística');
@@ -3916,7 +3921,7 @@ export const FacturacionClientesDashboard = () => {
 
       {facturaViendo && (
         <div className={`modal-overlay fcd-x169${opEditandoId ? ' fcd-detras-editor' : ''}`}>{/* ✅ V00481: detrás del editor de la operación */}
-          <div className="fcd-x170">
+          <div className={`fcd-x170${pagosFicha.length > 0 ? ' fcd-ficha--con-pagos' : ''}`}>
             <div className="fcd-x171">
               <h2 className="fcd-x172">Ficha de Factura</h2>
               <div className="fcd-x173">
@@ -3930,6 +3935,7 @@ export const FacturacionClientesDashboard = () => {
                 <button className="fcd-x45" onClick={() => setFacturaViendo(null)}>✕</button>
               </div>
             </div>
+            <div className="fcd-ficha-cuerpo">{/* ✅ V00483: con pagos, la ficha es más ancha y los pagos van a la derecha */}
             <div className="fcd-x174">
               <div className="fcd-x175">
                 <span className="fcd-x176">Status de la factura</span>
@@ -4028,6 +4034,11 @@ export const FacturacionClientesDashboard = () => {
                   </div>
                 </div>
               </div>
+            </div>
+            {pagosFicha.length > 0 && (
+              <PagosDeFactura pagos={pagosFicha} moneda={monedaFicha} total={totalDeGrupo(facturaViendo)}
+                onAbrir={puedeClave('pagos') ? (pago) => abrirPagoEnPagos({ id: pago.id, tipo: 'cliente' }) : undefined} />
+            )}
             </div>
             <div className="fcd-x196">
               <button onClick={() => setFacturaViendo(null)} className="btn btn-outline fcd-x197">Cerrar Ficha</button>

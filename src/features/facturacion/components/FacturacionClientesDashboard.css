@@ -506,3 +506,16 @@
 /* ✅ V00482: "+N" cuando una factura tiene más de 3 referencias (el resto se ve en la ficha) */
 .fcd-mas-refs { padding: 3px 8px; border: 1px dashed #484f58; border-radius: 6px; background: transparent; color: #8b949e; font-size: 0.78rem; font-weight: 700; cursor: pointer; }
 .fcd-mas-refs:hover { color: #c9d1d9; border-color: #8b949e; }
+
+/* ✅ V00483: ficha más ancha cuando la factura tiene pagos; los pagos van a la derecha */
+.fcd-x170.fcd-ficha--con-pagos { width: 1180px; }
+.fcd-ficha--con-pagos .fcd-ficha-cuerpo { display: grid; grid-template-columns: minmax(0, 1fr) 340px; align-items: stretch; }
+@media (max-width: 900px) {
+  .fcd-ficha--con-pagos .fcd-ficha-cuerpo { display: block; }
+}
+/* ✅ V00483: en el teléfono los datos de la ficha van en una columna (antes se salían a la derecha) */
+@media (max-width: 600px) {
+  .fcd-x178 { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .fcd-x178 > * { grid-column: 1 / -1; min-width: 0; }
+  .fcd-x179 { flex-wrap: wrap; gap: 12px; }
+}

@@ -121,6 +121,7 @@ export default function CorregirFacturasModal({ lado, facturas, monedaDe, nombre
             <p className="crf-sub">
               Cada factura queda en la moneda de su {quien} en Empresas, con el total de sus operaciones:
               en <NombreMoneda moneda="USD" /> la suma de Dólares; en <NombreMoneda moneda="MXN" /> la Conversión Final.
+              Las que tienen pagos también: su saldo se recalcula con lo ya pagado (los pagos no se tocan).
             </p>
           </div>
           <button type="button" className="crf-cerrar" onClick={onCerrar} disabled={trabajando} aria-label="Cerrar">✕</button>
@@ -145,16 +146,22 @@ export default function CorregirFacturasModal({ lado, facturas, monedaDe, nombre
                 <li className="crf-cifra"><b>{fase.resumen.bien.toLocaleString('es-MX')}</b> ya están bien</li>
                 <li className="crf-cifra crf-cifra--saltar"><b>{fase.resumen.omitidas.length.toLocaleString('es-MX')}</b> se saltan</li>
               </ul>
+              {fase.resumen.conPagos > 0 && (/* ✅ V00483 */
+                <p className="crf-aviso-pagos">
+                  {fase.resumen.conPagos.toLocaleString('es-MX')} de las que se corrigen tienen pagos: su saldo se recalcula.
+                  {fase.resumen.deMas > 0 && <> <b>{fase.resumen.deMas.toLocaleString('es-MX')}</b> quedan <b>pagadas de más</b> (lo pagado pasa del total nuevo): quedan Pagadas con saldo $0; revísalas en Pagos.</>}
+                </p>
+              )}
 
               {fase.resumen.corregir.length > 0 ? (
                 <div className="crf-tabla-caja">
                   <table className="crf-tabla">
                     <thead>
-                      <tr><th>Factura</th><th>{lado === 'cliente' ? 'Cliente' : 'Proveedor'}</th><th>Moneda</th><th className="crf-num">Total antes</th><th className="crf-num">Total nuevo</th></tr>
+                      <tr><th>Factura</th><th>{lado === 'cliente' ? 'Cliente' : 'Proveedor'}</th><th>Moneda</th><th className="crf-num">Total antes</th><th className="crf-num">Total nuevo</th><th className="crf-num">Pagado</th></tr>
                     </thead>
                     <tbody>
                       {fase.resumen.corregir.slice(0, MAX_FILAS).map((r) => (
-                        <tr key={r.id}>
+                        <tr key={r.id} className={r.pagadoDeMas > 0.009 ? 'crf-fila--demas' : undefined}>
                           <td className="crf-folio">{r.invoice}</td>
                           <td className="crf-empresa">{r.empresa || '—'}</td>
                           <td>
@@ -164,6 +171,10 @@ export default function CorregirFacturasModal({ lado, facturas, monedaDe, nombre
                           </td>
                           <td className="crf-num"><Importe monto={r.totalAntes} moneda={r.monedaAntes} /></td>
                           <td className="crf-num"><Importe monto={r.totalNuevo} moneda={r.monedaNueva} /></td>
+                          <td className="crf-num">
+                            {r.pagado > 0.009 ? <Importe monto={r.pagado} moneda={r.monedaNueva} /> : <span className="crf-nada">—</span>}
+                            {r.pagadoDeMas > 0.009 && <span className="crf-demas">de más <Importe monto={r.pagadoDeMas} moneda={r.monedaNueva} /></span>}
+                          </td>
                         </tr>
                       ))}
                     </tbody>

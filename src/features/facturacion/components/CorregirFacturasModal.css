@@ -42,6 +42,12 @@
 .crf-btn--principal:hover { background: #2ea043; border-color: #2ea043; }
 .crf-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* ✅ V00483: facturas con pagos */
+.crf-aviso-pagos { margin: 0; padding: 8px 12px; border: 1px solid rgba(210, 153, 34, 0.45); border-radius: 8px; background: rgba(210, 153, 34, 0.08); color: #e3b341; font-size: 0.84rem; line-height: 1.45; }
+.crf-nada { color: #484f58; }
+.crf-demas { display: block; color: #e3b341; font-size: 0.75rem; }
+.crf-tabla tr.crf-fila--demas td { background: rgba(210, 153, 34, 0.07); }
+
 @media (max-width: 640px) {
   .crf-ventana { border-radius: 0; }
   .crf-cabecera, .crf-cuerpo, .crf-pie { padding-left: 14px; padding-right: 14px; }

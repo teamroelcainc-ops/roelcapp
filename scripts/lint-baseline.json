@@ -40,8 +40,8 @@
     "src/features/estadisticas/components/DesgloseJerarquico.tsx": 2,
     "src/features/estadisticas/components/EstadisticasDashboard.tsx": 17,
     "src/features/estadisticas/components/EstadisticasOperativas.tsx": 1,
-    "src/features/facturacion/components/FacturacionClientesDashboard.tsx": 226,
-    "src/features/facturacion/components/FacturacionProveedoresDashboard.tsx": 256,
+    "src/features/facturacion/components/FacturacionClientesDashboard.tsx": 224,
+    "src/features/facturacion/components/FacturacionProveedoresDashboard.tsx": 254,
     "src/features/facturacion/components/exportarExcelProfesional.ts": 12,
     "src/features/facturacion/components/generarDocumentosProveedorPDF.ts": 2,
     "src/features/facturacion/components/generarRemisionPDF.ts": 4,
@@ -85,6 +85,6 @@
     "src/utils/lazyWithRetry.ts": 2,
     "functions/src/index.ts": 13
   },
-  "anyTotal": 2251,
+  "anyTotal": 2247,
   "desactivadosDeps": 87
 }

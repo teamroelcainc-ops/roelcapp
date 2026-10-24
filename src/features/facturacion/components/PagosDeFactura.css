@@ -1,0 +1,28 @@
+/* ✅ V00483: pagos en la ficha de la factura (columna derecha) */
+.pfa-panel { display: flex; flex-direction: column; gap: 14px; min-width: 0; padding: 24px 20px; border-left: 1px solid #30363d; background: #0b1016; }
+.pfa-titulo { display: flex; align-items: center; gap: 8px; margin: 0; color: #f0f6fc; font-size: 0.95rem; }
+.pfa-titulo svg { color: #3fb950; }
+.pfa-resumen { display: grid; gap: 6px; margin: 0; padding: 10px 12px; border: 1px solid #21262d; border-radius: 8px; font-size: 0.86rem; }
+.pfa-resumen > div { display: flex; justify-content: space-between; gap: 10px; }
+.pfa-resumen dt { color: #8b949e; }
+.pfa-resumen dd { margin: 0; font-weight: 700; }
+.pfa-resumen .pfa-saldo { color: #e3b341; }
+.pfa-resumen .pfa-liquidada { color: #3fb950; }
+.pfa-lista { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; overflow-y: auto; }
+.pfa-pago { position: relative; display: grid; gap: 4px; width: 100%; box-sizing: border-box; padding: 10px 34px 10px 12px; border: 1px solid #30363d; border-radius: 8px; background: #161b22; color: #c9d1d9; font: inherit; text-align: left; cursor: pointer; }
+.pfa-pago:hover { border-color: #58a6ff; background: #1c2330; }
+.pfa-pago.pfa-pago--fijo { padding-right: 12px; cursor: default; }
+.pfa-pago.pfa-pago--fijo:hover { border-color: #30363d; background: #161b22; }
+.pfa-pago:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
+.pfa-pago__linea { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; min-width: 0; }
+.pfa-pago__numero { color: #f0883e; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 700; font-size: 0.88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pfa-pago__fecha { flex-shrink: 0; color: #8b949e; font-size: 0.8rem; }
+.pfa-pago__metodo { color: #8b949e; font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pfa-pago__aplicado { flex-shrink: 0; font-weight: 700; }
+.pfa-pago__total { color: #6e7681; font-size: 0.75rem; }
+.pfa-pago__ir { position: absolute; top: 50%; right: 10px; transform: translateY(-50%); color: #484f58; }
+.pfa-pago:hover .pfa-pago__ir { color: #58a6ff; }
+
+@media (max-width: 900px) {
+  .pfa-panel { border-left: none; border-top: 1px solid #30363d; padding: 18px 16px; }
+}

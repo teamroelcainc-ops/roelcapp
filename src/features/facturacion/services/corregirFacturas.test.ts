@@ -1,7 +1,7 @@
 // ✅ V00482 — Corregir monedas y montos: moneda de la empresa y total de sus operaciones.
 import { describe, expect, it } from 'vitest';
 import { ID_MXN, ID_USD } from '../../../shared/dominio/constantes';
-import { MOTIVO_CANCELADA, MOTIVO_CON_PAGOS, MOTIVO_SIN_MONEDA, MOTIVO_SIN_OPERACIONES, resumirRevision, revisarFactura } from './corregirFacturas';
+import { MOTIVO_CANCELADA, MOTIVO_SIN_MONEDA, MOTIVO_SIN_OPERACIONES, resumirRevision, revisarFactura } from './corregirFacturas';
 
 const AHORA = '2026-10-24T12:00:00.000Z';
 // Operación cobrada en dólares: convenio USD 95, TC 18.50 → Dólares (Cliente) 95, Conversión 1,757.50.
@@ -33,11 +33,26 @@ describe('revisar una factura', () => {
     const r = revisarFactura('cliente', factura({ monedaFacturacion: 'USD', subtotalMonedaFactura: 190 }), [opUsd('o1'), opUsd('o2')], 'USD', 'Torve', AHORA, 'Omar');
     expect([r.estado, r.datos]).toEqual(['bien', null]);
   });
-  it('se saltan: cancelada, con pagos, sin moneda, sin operaciones y recálculo en $0', () => {
+  it('con pagos también se corrige: el saldo se recalcula con lo pagado (V00483)', () => {
+    const ops = [opUsd('o1'), opUsd('o2')]; // total nuevo 190
+    const parcial = revisarFactura('cliente', factura({ monedaFacturacion: 'MXN', montoPagado: 100, statusPago: 'PARCIAL' }), ops, 'USD', '', AHORA, '');
+    expect([parcial.estado, parcial.pagado, parcial.pagadoDeMas]).toEqual(['corregir', 100, 0]);
+    expect(parcial.datos).toMatchObject({ subtotalMonedaFactura: 190, saldoPendiente: 90, statusPago: 'PARCIAL' });
+    const pagada = revisarFactura('cliente', factura({ monedaFacturacion: 'USD', subtotalMonedaFactura: 150, montoPagado: 190 }), ops, 'USD', '', AHORA, '');
+    expect(pagada.datos).toMatchObject({ saldoPendiente: 0, statusPago: 'PAGADA' });
+    // lo pagado pasa del total nuevo: PAGADA, saldo 0 y se marca la diferencia
+    const deMas = revisarFactura('cliente', factura({ monedaFacturacion: 'USD', subtotalMonedaFactura: 300, montoPagado: 300 }), ops, 'USD', '', AHORA, '');
+    expect([deMas.estado, deMas.pagadoDeMas]).toEqual(['corregir', 110]);
+    expect(deMas.datos).toMatchObject({ subtotalMonedaFactura: 190, saldoPendiente: 0, statusPago: 'PAGADA' });
+    // PAGADA importada sin montoPagado: su estado de pago no se toca
+    const vieja = revisarFactura('cliente', factura({ monedaFacturacion: 'MXN', statusPago: 'PAGADA' }), ops, 'USD', '', AHORA, '');
+    expect(vieja.estado).toBe('corregir');
+    expect(vieja.datos && 'saldoPendiente' in vieja.datos).toBe(false);
+    expect(vieja.datos && 'statusPago' in vieja.datos).toBe(false);
+  });
+  it('se saltan: cancelada, sin moneda, sin operaciones y recálculo en $0', () => {
     const ops = [opUsd('o1'), opUsd('o2')];
     expect(revisarFactura('cliente', factura({ statusFactura: 'Cancelado' }), ops, 'USD', '', AHORA, '').motivo).toBe(MOTIVO_CANCELADA);
-    expect(revisarFactura('cliente', factura({ montoPagado: 10 }), ops, 'USD', '', AHORA, '').motivo).toBe(MOTIVO_CON_PAGOS);
-    expect(revisarFactura('cliente', factura({ statusPago: 'PAGADA' }), ops, 'USD', '', AHORA, '').motivo).toBe(MOTIVO_CON_PAGOS);
     expect(revisarFactura('cliente', factura({}), ops, null, '', AHORA, '').motivo).toBe(MOTIVO_SIN_MONEDA);
     expect(revisarFactura('cliente', factura({ operacionesIds: [] }), ops, 'USD', '', AHORA, '').motivo).toBe(MOTIVO_SIN_OPERACIONES);
     const enCero = revisarFactura('cliente', factura({}), [opUsd('o1', 0), opUsd('o2', 0)], 'USD', '', AHORA, '');
@@ -53,10 +68,12 @@ describe('resumen', () => {
       revisarFactura('cliente', factura({ monedaFacturacion: 'MXN' }), ops, 'USD', '', AHORA, ''),
       revisarFactura('cliente', factura({ monedaFacturacion: 'USD', subtotalMonedaFactura: 190 }), ops, 'USD', '', AHORA, ''),
       revisarFactura('cliente', factura({ montoPagado: 5 }), ops, 'USD', '', AHORA, ''),
-      revisarFactura('cliente', factura({ montoPagado: 5 }), ops, 'USD', '', AHORA, ''),
+      revisarFactura('cliente', factura({ montoPagado: 500 }), ops, 'USD', '', AHORA, ''),
+      revisarFactura('cliente', factura({ statusFactura: 'Cancelado' }), ops, 'USD', '', AHORA, ''),
+      revisarFactura('cliente', factura({}), ops, null, '', AHORA, ''),
       revisarFactura('cliente', factura({}), ops, null, '', AHORA, ''),
     ]);
-    expect([r.corregir.length, r.bien, r.omitidas.length]).toEqual([1, 1, 3]);
-    expect(r.porMotivo).toEqual([{ motivo: MOTIVO_CON_PAGOS, n: 2 }, { motivo: MOTIVO_SIN_MONEDA, n: 1 }]);
+    expect([r.corregir.length, r.bien, r.omitidas.length, r.conPagos, r.deMas]).toEqual([3, 1, 3, 2, 1]);
+    expect(r.porMotivo).toEqual([{ motivo: MOTIVO_SIN_MONEDA, n: 2 }, { motivo: MOTIVO_CANCELADA, n: 1 }]);
   });
 });
