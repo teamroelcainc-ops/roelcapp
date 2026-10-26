@@ -25,6 +25,7 @@ import type { Lado } from '../../../shared/dominio/dinero';
 import { idMoneda, monedaCanonica, nombreMoneda } from '../../../shared/dominio/moneda';
 import type { Moneda } from '../../../shared/dominio/moneda';
 import { r2 } from '../../../shared/dominio/numeros';
+import { facturadaCliente, facturadaProveedor } from '../../../shared/dominio/operacionCanonica';
 
 type Datos = Record<string, unknown>;
 
@@ -135,6 +136,8 @@ export interface RevisionOperacion {
 }
 
 export const MOTIVO_SIN_DATOS = 'Sin moneda en su convenio ni conversión guardada: captúrala en el formulario.';
+/** ✅ V00495: el lado ya está en una factura: no se corrige aquí (se cambia a mano, una por una). */
+export const MOTIVO_FACTURADA_OP = 'Ya facturada: no se corrige aquí; si hay que cambiarla, ábrela y corrige su factura a mano (Editar factura)';
 const motivoChoque = (convenio: Moneda, conversion: Moneda): string =>
   `Su convenio es en ${nombreMoneda(convenio)} pero la conversión guardada dice ${nombreMoneda(conversion)}: revísala en el formulario.`;
 
@@ -232,6 +235,8 @@ export const revisarOperacion = (id: string, op: Datos, cat: CatalogoConvenios, 
     const r = revisarLado(op, lado, cat);
     if (!r) return;
     if ('aviso' in r) { avisos.push(r.aviso); return; }
+    // ✅ V00495: ya facturada de ese lado → no se toca (su factura solo cambia a mano, 1 x 1): se lista.
+    if (lado === 'cliente' ? facturadaCliente(op) : facturadaProveedor(op)) { avisos.push({ lado, motivo: MOTIVO_FACTURADA_OP }); return; }
     Object.assign(datos, r.propios);
     cambios.push(r.cambio);
   });

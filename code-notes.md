@@ -207,6 +207,14 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - Modales con `createPortal` a `document.body` (la tarjeta usa `transform` al pasar el mouse) y perezosos desde la tarjeta (`lazyWithRetry`): la carga inicial crece 0.3 KB (sin eso, ~20 KB por FormularioConfigurable).
 - Se quitaron las reglas `.rd-dos*` de App.css (solo las usaba la tarjeta TC · Diesel).
 
+## V00495 (una factura emitida solo cambia de valor a mano, 1 x 1)
+- Roelca (26-oct): "una vez facturado, la única forma de cambiar el valor de la factura es manual, 1 x 1". Cambia la decisión de la V00494 ("un cambio A MANO en la operación sí llega a la factura"): ahora no llega si la factura está emitida.
+- **Emitida** = `valorCongelado(statusFactura)`: todo status salvo "No Facturado" (sin status = Facturado, como lo muestra la app; Cancelado también). Regla pura en `shared/dominio/cascadaFacturas.ts`, la usan web y servidor.
+- **Qué la respeta**: cascada `operacionEscrita` (solo copia convenioNombre / refCliente), Corregir monedas y montos (`MOTIVO_FACTURADA`), propagación de moneda de Empresas (`facturasSinTocar`), Corregir monedas de Operaciones (`MOTIVO_FACTURADA_OP`: la operación facturada de ese lado no se toca; si se corrigiera, la operación quedaría distinta de su factura).
+- **Qué sí cambia el valor (manual, una factura)**: Editar factura, agregar/quitar/mover una operación de esa factura, Pagos → Recalcular montos (callable `recalcularFactura`, sin cambios). El script `reconciliar` no cambia `subtotalMonedaFactura` (solo saldo y agregados).
+- Una operación facturada editada a mano queda distinta de su factura emitida: la Auditoría de la cadena lo muestra como "Cambió después de facturarse". Es lo esperado con esta regla.
+- **PENDIENTE**: las facturas emitidas que quedaron mal por la doble conversión (V00489) o la moneda deducida (V00486) y no se corrigieron antes con Corregir monedas y montos ya solo se corrigen una por una.
+
 ## V00494 (facturadas que volvían a Pendientes; importes facturados que cambiaban solos)
 - Roelca (26-oct): "metemos las facturas y al día siguiente vuelven a salir pendientes → facturas duplicadas" y "bloquear que no se modifiquen los importes una vez facturados automáticamente". Ambos ya pasaban antes de la V00493.
 - **Tope de 12,000 facturas** (`LIMITE_FACTURAS_TODAS`, orden por `documentId`): con más, las del final no se cargaban y cada factura nueva (ID al azar) sacaba otra → un día distinto cada vez. `esFacturada` del tablero depende de esa lista para las operaciones SIN marca (las de facturas importadas de AppSheet: `operacionesIds` en texto, que `array-contains(-any)` del servidor tampoco encuentra). Ahora `descargarTodasLasFacturas` baja todas (tope de seguridad 100,000 con aviso). No se pudo ver cuántas hay en producción: si "Facturas Listadas" sin filtros pasa de 12,000, era esto.

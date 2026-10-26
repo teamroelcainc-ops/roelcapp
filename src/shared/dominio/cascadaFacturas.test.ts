@@ -1,6 +1,6 @@
 // ✅ V00494 — la cascada a las facturas solo recalcula importes cuando cambia dinero.
 import { describe, expect, it } from 'vitest';
-import { cambioParaFacturas } from './cascadaFacturas';
+import { cambioParaFacturas, valorCongelado } from './cascadaFacturas';
 
 const base = {
   montoConvenioCliente: 130, cargosAdicionales: 0, facturadoEnCobrar: 'mxn', monedaConvenioCliente: 'usd', tipoCambioAprobado: 17.91,
@@ -22,5 +22,13 @@ describe('cambioParaFacturas', () => {
   it('copias de nombres de moneda, tipoCambioDia o el mismo monto en otro formato → nada', () => {
     expect(cambioParaFacturas(base, { ...base, monedaCobroNombre: 'MXN', monedaUnidadNombre: 'MXN', tipoCambioDia: 18.3 })).toEqual({ cliente: null, proveedor: null });
     expect(cambioParaFacturas(base, { ...base, conversionCliente: '2328.30', cargosAdicionales: '' })).toEqual({ cliente: null, proveedor: null });
+  });
+});
+
+// ✅ V00495: una factura emitida no cambia de valor sola.
+describe('valorCongelado', () => {
+  it('Facturado, sin status, Cancelado u otro: congelada; solo el borrador No Facturado sigue a sus operaciones', () => {
+    expect(['Facturado', '', undefined, 'Cancelado', 'Pagada'].map(valorCongelado)).toEqual([true, true, true, true, true]);
+    expect(['No Facturado', 'no  facturado', 'NO FACTURADO'].map(valorCongelado)).toEqual([false, false, false]);
   });
 });

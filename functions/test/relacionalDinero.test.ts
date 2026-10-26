@@ -85,7 +85,7 @@ describe('saldo de la factura (facturaClienteMontoCambiado)', () => {
 describe('cascada operación → factura (dentro de operacionEscrita desde la V00442)', () => {
   const opAntes = { montoConvenioCliente: 100, monedaConvenioCliente: '7dca62b3', facturadoEnCobrar: '', monedaCobroNombre: 'f95d8894', tipoCambioAprobado: 18 };
   const correr = async () => {
-    estado.docs.set('facturas_clientes/F1', { monedaFacturacion: 'MXN', operacionesIds: ['o1'], operacionesGuardadas: [{ id: 'o1', monto: 1, subtotalBase: 1, dol: 0, pes: 1 }] });
+    estado.docs.set('facturas_clientes/F1', { statusFactura: 'No Facturado', monedaFacturacion: 'MXN', operacionesIds: ['o1'], operacionesGuardadas: [{ id: 'o1', monto: 1, subtotalBase: 1, dol: 0, pes: 1 }] });
     const despues = { ...opAntes, montoConvenioCliente: 200 };
     estado.docs.set('operaciones/o1', despues); // la cascada lee la operación ACTUAL
     await (mod.operacionEscrita as unknown as Trigger)({
@@ -100,9 +100,9 @@ describe('cascada operación → factura (dentro de operacionEscrita desde la V0
 });
 
 describe('✅ V00489 — cascada con la moneda de factura de una sola fuente', () => {
-  const correrCon = async (antes: Datos, despues: Datos) => {
+  const correrCon = async (antes: Datos, despues: Datos, statusFactura = 'No Facturado') => {
     estado.actualizaciones.length = 0;
-    estado.docs.set('facturas_clientes/F1', { monedaFacturacion: 'MXN', operacionesIds: ['o1'], operacionesGuardadas: [{ id: 'o1', monto: 801373.63, subtotalBase: 46082.97, dol: 46082.97, pes: 0 }] });
+    estado.docs.set('facturas_clientes/F1', { statusFactura, monedaFacturacion: 'MXN', operacionesIds: ['o1'], operacionesGuardadas: [{ id: 'o1', monto: 801373.63, subtotalBase: 46082.97, dol: 46082.97, pes: 0 }] });
     estado.docs.set('operaciones/o1', despues);
     await (mod.operacionEscrita as unknown as Trigger)({
       id: 'e3', time: new Date().toISOString(), params: { opId: 'o1' },
@@ -121,6 +121,21 @@ describe('✅ V00489 — cascada con la moneda de factura de una sola fuente', (
     const antes = { ...base, facturadoEnCobrar: ID_MXN_PRUEBA, monedaCobroNombre: 'Dólares', conversionCliente: 46082.97 };
     const despues = { ...antes, conversionCliente: 2650, pesosCliente: 2650, subtotalCliente: 2650 };
     expect((await correrCon(antes, despues))?.[0]).toMatchObject({ monto: 2650, pes: 2650, dol: 0 });
+  });
+  // ✅ V00495: "una vez facturado, el valor de la factura solo se cambia a mano, 1 x 1".
+  it('factura emitida (Facturado o sin status): un cambio de dinero NO cambia su renglón ni su total', async () => {
+    const antes = { ...base, facturadoEnCobrar: ID_MXN_PRUEBA, monedaCobroNombre: 'Dólares', conversionCliente: 46082.97 };
+    const despues = { ...antes, conversionCliente: 2650, pesosCliente: 2650, subtotalCliente: 2650 };
+    expect(await correrCon(antes, despues, 'Facturado')).toBeUndefined();
+    expect(await correrCon(antes, despues, '')).toBeUndefined();
+    expect(estado.actualizaciones).toHaveLength(0);
+  });
+  it('factura emitida: la Ref Cliente sí se copia, los importes se quedan', async () => {
+    const antes = { ...base, facturadoEnCobrar: ID_MXN_PRUEBA, conversionCliente: 46082.97, refCliente: 'PO-1' };
+    const despues = { ...antes, montoConvenioCliente: 3000, refCliente: 'PO-2' };
+    const r = await correrCon(antes, despues, 'Facturado');
+    expect(r?.[0]).toMatchObject({ monto: 801373.63, subtotalBase: 46082.97, dol: 46082.97, pes: 0, refCliente: 'PO-2' });
+    expect(estado.actualizaciones[0]?.datos).not.toHaveProperty('subtotalMonedaFactura');
   });
 });
 

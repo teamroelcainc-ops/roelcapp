@@ -26,6 +26,7 @@ import type { Moneda } from '../../../shared/dominio/moneda';
 import { revisarOperacion } from '../../operaciones/services/corregirMonedaConvenio';
 import type { CatalogoConvenios } from '../../operaciones/services/corregirMonedaConvenio';
 import { corregirOperacion, leerConvenios } from '../../operaciones/services/corregirMonedaConvenioDatos';
+import { valorCongelado } from '../../../shared/dominio/cascadaFacturas'; // ✅ V00495
 
 export interface ReporteMoneda {
   monedaNombre: string;
@@ -34,10 +35,12 @@ export interface ReporteMoneda {
   conveniosProveedores: number;
   opsCliente: number;
   opsProveedor: number;
-  /** ✅ V00490: operaciones de la empresa con otra moneda que no se tocaron (sin moneda del convenio conocida o con error). */
+  /** ✅ V00490: operaciones de la empresa con otra moneda que no se tocaron (sin moneda del convenio conocida, ✅ V00495 ya facturadas, o con error). */
   opsSinTocar: number;
   facturasClientes: number;
   facturasProveedores: number;
+  /** ✅ V00495: facturas ya emitidas con otra moneda: no se tocan (su valor solo cambia a mano, 1 x 1). */
+  facturasSinTocar: number;
   /** ✅ V00490: pagos de la empresa con otra moneda (solo la etiqueta; el monto no se toca). */
   pagos: number;
 }
@@ -72,7 +75,7 @@ export const propagarMonedaEmpresa = async (empresaId: string): Promise<ReporteM
   const canon: 'USD' | 'MXN' | '' = monedaCanonica(monNom) ?? monedaCanonica(monId) ?? '';
   if (!monNom && canon) monNom = nombreMoneda(canon);
 
-  const rep: ReporteMoneda = { monedaNombre: monNom, canon, conveniosClientes: 0, conveniosProveedores: 0, opsCliente: 0, opsProveedor: 0, opsSinTocar: 0, facturasClientes: 0, facturasProveedores: 0, pagos: 0 };
+  const rep: ReporteMoneda = { monedaNombre: monNom, canon, conveniosClientes: 0, conveniosProveedores: 0, opsCliente: 0, opsProveedor: 0, opsSinTocar: 0, facturasClientes: 0, facturasProveedores: 0, facturasSinTocar: 0, pagos: 0 };
 
   let batch = writeBatch(db);
   let enBatch = 0;
@@ -95,6 +98,9 @@ export const propagarMonedaEmpresa = async (empresaId: string): Promise<ReporteM
     const snap = await getDocs(query(collection(db, p.col), where(p.campo, '==', empresaId)));
     for (const d of snap.docs) {
       if (!p.distinto(d.data())) continue;
+      // ✅ V00495: una factura ya emitida no cambia de moneda (ni de valor) sola: "una vez facturado, la única
+      //   forma de cambiar el valor de la factura es manual, 1 x 1". Solo los borradores (No Facturado).
+      if ((p.col === 'facturas_clientes' || p.col === 'facturas_proveedores') && valorCongelado(d.data().statusFactura)) { rep.facturasSinTocar++; continue; }
       marcar(d.ref, p.cambios);
       (rep[p.cuenta] as number)++;
       if (enBatch >= 400) await flush();

@@ -909,9 +909,10 @@ const EmpresasDashboard = () => {
         `· Convenios de proveedores: ${r.conveniosProveedores}\n` +
         `· Operaciones (Facturado En · cliente): ${r.opsCliente}\n` +
         `· Operaciones (Facturado En · proveedor): ${r.opsProveedor}\n` +
-        (r.opsSinTocar > 0 ? `· Operaciones sin tocar (sin moneda del convenio; revísalas en Operaciones → Corregir monedas): ${r.opsSinTocar}\n` : '') + // ✅ V00490
+        (r.opsSinTocar > 0 ? `· Operaciones sin tocar (ya facturadas o sin moneda del convenio; revísalas en Operaciones → Corregir monedas): ${r.opsSinTocar}\n` : '') + // ✅ V00490 · V00495
         `· Facturas de clientes: ${r.facturasClientes}\n` +
         `· Facturas de proveedores: ${r.facturasProveedores}\n` +
+        (r.facturasSinTocar > 0 ? `· Facturas ya emitidas sin tocar (su valor solo cambia a mano, una por una, en Editar factura): ${r.facturasSinTocar}\n` : '') + // ✅ V00495
         `· Pagos: ${r.pagos}\n\n` + // ✅ V00490
         'Después corre Corregir monedas y montos en Facturación para que los totales de sus facturas queden con esta moneda. Las monedas de los DETALLES de convenio (tarifas por concepto) son independientes y se editan en el convenio.'
       );

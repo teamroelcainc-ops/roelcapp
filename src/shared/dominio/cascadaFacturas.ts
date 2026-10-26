@@ -5,13 +5,23 @@
 // modifiquen los importes una vez facturados automáticamente".
 //   · 'dinero': cambió una ENTRADA de dinero (monto del convenio, cargos, Facturado en, moneda del
 //     convenio, tipo de cambio aprobado) o un monto guardado (Subtotal, Dólares, Pesos, Conversión):
-//     el renglón y el total de la factura se recalculan (como antes).
+//     el renglón y el total de la factura se recalculan, ✅ V00495 SOLO si la factura es un borrador
+//     ("No Facturado"); en una emitida solo se copian los textos (valorCongelado).
 //   · 'texto': solo cambió el nombre del convenio o la Ref Cliente: se copian al renglón; los importes
 //     y el total NO se tocan (antes se recalculaban con la regla y la factura cambiaba sola).
 //   · Ya NO disparan nada: las copias de nombres de moneda (monedaCobroNombre / monedaUnidadNombre) y
 //     tipoCambioDia: las cambia el sistema (catálogos, tipo de cambio del día), no quien factura.
 // ---------------------------------------------------------------------------
+// ✅ V00495 — Regla de Roelca: "una vez facturado, la única forma de cambiar el valor de la factura es
+// manual, 1 x 1". Una factura emitida (todo status salvo "No Facturado") tiene el VALOR CONGELADO: la
+// cascada solo copia los textos, y ninguna corrección masiva ni la moneda de la empresa la tocan. Su
+// valor se cambia a mano en Editar factura (o con Recalcular montos, una factura a la vez).
 type Datos = Record<string, unknown>;
+
+const sinAcentos = (v: unknown): string => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+
+/** ¿Su valor ya no cambia solo? Todo status salvo el borrador "No Facturado" (sin status = Facturado). */
+export const valorCongelado = (statusFactura: unknown): boolean => sinAcentos(statusFactura).replace(/\s+/g, ' ') !== 'no facturado';
 
 export type CambioFactura = 'dinero' | 'texto' | null;
 

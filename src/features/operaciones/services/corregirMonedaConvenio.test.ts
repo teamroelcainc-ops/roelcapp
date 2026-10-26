@@ -1,7 +1,7 @@
 // ✅ V00487 — Corregir monedas de convenio: qué moneda le toca a cada operación sin ella.
 import { describe, expect, it } from 'vitest';
 import { ID_MXN, ID_USD } from '../../../shared/dominio/constantes';
-import { facturaContradice, indexarConvenios, MOTIVO_SIN_DATOS, monedaDelConvenio, monedaEmpresaDelLado, resumirOperaciones, revisarOperacion } from './corregirMonedaConvenio';
+import { facturaContradice, indexarConvenios, MOTIVO_FACTURADA_OP, MOTIVO_SIN_DATOS, monedaDelConvenio, monedaEmpresaDelLado, resumirOperaciones, revisarOperacion } from './corregirMonedaConvenio';
 import type { Moneda } from '../../../shared/dominio/moneda';
 import type { CatalogoConvenios } from './corregirMonedaConvenio';
 
@@ -125,6 +125,13 @@ describe('✅ V00490 — "Facturado en" = la moneda de su empresa', () => {
     expect(r?.cambios[0]).toMatchObject({ moneda: 'USD', fuente: 'guardada', facturadoAntes: 'USD', facturadoDespues: 'MXN', subtotalDespues: 2328.3, convDespues: 2328.3, cambiaFactura: true });
     expect(r?.datos).toEqual({ facturadoEnCobrar: ID_MXN, monedaCobroNombre: 'Pesos', subtotalCliente: 2328.3, dolaresCliente: 0, pesosCliente: 2328.3 });
     expect(resumirOperaciones([r!], 1).cambianFacturado).toBe(1);
+  });
+  // ✅ V00495: una operación ya facturada no se corrige en bloque (su factura solo cambia a mano, 1 x 1).
+  it('ya facturada de ese lado: se lista para revisar, sin cambios', () => {
+    const r = revisarOperacion('o1', { ...caroKar, facturaClienteId: 'f1', facturaClienteInvoice: 'A1' }, conEmpresas({ emp61: 'MXN' }));
+    expect(r).toMatchObject({ estado: 'revisar', cambios: [], datos: null });
+    expect(r?.avisos).toEqual([{ lado: 'cliente', motivo: MOTIVO_FACTURADA_OP }]);
+    expect(revisarOperacion('o1', { ...caroKar, facturado: true }, conEmpresas({ emp61: 'MXN' }))?.cambios).toEqual([]);
   });
   it('ya en la moneda de su empresa: nada que hacer', () => {
     const bien = { ...caroKar, facturadoEnCobrar: ID_MXN, monedaCobroNombre: 'Pesos', subtotalCliente: 2328.3, dolaresCliente: 0, pesosCliente: 2328.3 };

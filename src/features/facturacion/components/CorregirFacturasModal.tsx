@@ -122,6 +122,8 @@ export default function CorregirFacturasModal({ lado, facturas, monedaDe, nombre
               Cada factura queda en la moneda de su {quien} en Empresas, con el total de sus operaciones:
               en <NombreMoneda moneda="USD" /> la suma de Dólares; en <NombreMoneda moneda="MXN" /> la Conversión Final.
               Las que tienen pagos también: su saldo se recalcula con lo ya pagado (los pagos no se tocan).
+              {/* ✅ V00495 */}
+              {' '}Solo se corrigen los borradores (No Facturado): una factura ya facturada solo cambia de valor a mano, una por una, en Editar factura.
             </p>
           </div>
           <button type="button" className="crf-cerrar" onClick={onCerrar} disabled={trabajando} aria-label="Cerrar">✕</button>

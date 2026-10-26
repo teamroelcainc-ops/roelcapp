@@ -43,7 +43,7 @@ import { CAMPOS_CANONICOS, derivarDesdeConvenio } from './dominio/operacionCanon
 import { ESQUEMA_OPERACION_VERSION, ID_MXN, ID_USD } from './dominio/constantes.js';
 import { conversionOperacion, derivadosFactura, monedaConvenioDeducida, monedaDeFactura, monedaFacturaOperacion, totalNativoDeOperaciones, totalNativoDeRenglonesLegado } from './dominio/dinero.js';
 import { aNumero, deCentavos, r2 } from './dominio/numeros.js';
-import { cambioParaFacturas } from './dominio/cascadaFacturas.js'; // ✅ V00494
+import { cambioParaFacturas, valorCongelado } from './dominio/cascadaFacturas.js'; // ✅ V00494 · V00495
 import { borrarRenglones, proyectarRenglones } from './proyecciones.js';
 import { cambiosCobroPuente } from './puentesYDiesel.js';
 import { conReintento, OPCIONES_TRIGGER } from './eventos.js';
@@ -53,7 +53,7 @@ import { OPCIONES_PROPAGACION, propagarSiCambioNombre } from './propagacion.js';
 if (getApps().length === 0) initializeApp();
 const dbRel = getFirestore();
 
-const REL_VERSION = 'relacional-v1.8'; // ✅ V00494: la cascada a facturas solo recalcula con cambios de dinero · ✅ V00299: + sync INVERSA detalle→línea del tarifario · ✅ V00429: + guardián de integridad del convenio · ✅ V00440: + campos canónicos · ✅ V00441: + dinero y cobro del puente
+const REL_VERSION = 'relacional-v1.9'; // ✅ V00495: facturas emitidas con el valor congelado · ✅ V00494: la cascada a facturas solo recalcula con cambios de dinero · ✅ V00299: + sync INVERSA detalle→línea del tarifario · ✅ V00429: + guardián de integridad del convenio · ✅ V00440: + campos canónicos · ✅ V00441: + dinero y cobro del puente
 
 /** Normaliza: sin acentos, espacios colapsados, minúsculas (misma regla del cliente V00257). */
 const normR = (t: unknown): string =>
@@ -456,7 +456,9 @@ const propagarMontoOperacionAFacturas = async (opId: string, lado: 'cliente' | '
       const idx = ops.findIndex((o) => String(o?.id || '') === opId);
       if (idx === -1) return false; // factura sin snapshot detallado: no se inventa
       const viejo = ops[idx] as Dict;
-      if (soloTexto) {
+      // ✅ V00495: factura emitida = valor congelado ("una vez facturado, el valor solo se cambia a mano,
+      //   1 x 1"): de la operación solo se copian los textos. Solo el borrador "No Facturado" la sigue.
+      if (soloTexto || valorCongelado(fac.statusFactura)) {
         const texto: Dict = {
           ...viejo,
           convenioNombre: String((lado === 'cliente' ? (op.convenioNombre || op.convenioClienteNombre) : (op.convenioProveedorNombre || op.convenioNombre)) ?? viejo.convenioNombre ?? ''),

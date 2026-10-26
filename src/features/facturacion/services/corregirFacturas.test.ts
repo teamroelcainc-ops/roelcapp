@@ -1,7 +1,7 @@
 // ✅ V00482 — Corregir monedas y montos: moneda de la empresa y total de sus operaciones.
 import { describe, expect, it } from 'vitest';
 import { ID_MXN, ID_USD } from '../../../shared/dominio/constantes';
-import { MOTIVO_CANCELADA, MOTIVO_SIN_MONEDA, MOTIVO_SIN_OPERACIONES, MOTIVO_TOTAL_MANUAL, resumirRevision, revisarFactura } from './corregirFacturas';
+import { MOTIVO_CANCELADA, MOTIVO_FACTURADA, MOTIVO_SIN_MONEDA, MOTIVO_SIN_OPERACIONES, MOTIVO_TOTAL_MANUAL, resumirRevision, revisarFactura } from './corregirFacturas';
 
 const AHORA = '2026-10-24T12:00:00.000Z';
 // Operación cobrada en dólares: convenio USD 95, TC 18.50 → Dólares (Cliente) 95, Conversión 1,757.50.
@@ -10,7 +10,8 @@ const opUsd = (id: string, monto = 95) => ({
 });
 // Operación cobrada en pesos: 1,000 → Pesos (Cliente) 1,000 = Conversión 1,000.
 const opMxn = (id: string) => ({ id, datos: { montoConvenioCliente: 1000, monedaConvenioCliente: ID_MXN, facturadoEnCobrar: ID_MXN, tipoCambioAprobado: 18.5 } });
-const factura = (datos: Record<string, unknown>) => ({ id: 'f1', datos: { invoice: 'A5746', statusFactura: 'Facturado', operacionesIds: ['o1', 'o2'], ...datos } });
+// ✅ V00495: la herramienta solo corrige borradores (No Facturado); las emitidas se cambian a mano.
+const factura = (datos: Record<string, unknown>) => ({ id: 'f1', datos: { invoice: 'A5746', statusFactura: 'No Facturado', operacionesIds: ['o1', 'o2'], ...datos } });
 
 describe('revisar una factura', () => {
   it('en Dólares: la moneda de la empresa y la suma de Dólares (Cliente)', () => {
@@ -55,7 +56,9 @@ describe('revisar una factura', () => {
     expect(revisarFactura('cliente', factura({ statusFactura: 'Cancelado' }), ops, 'USD', '', AHORA, '').motivo).toBe(MOTIVO_CANCELADA);
     expect(revisarFactura('cliente', factura({}), ops, null, '', AHORA, '').motivo).toBe(MOTIVO_SIN_MONEDA);
     expect(revisarFactura('cliente', factura({ operacionesIds: [] }), ops, 'USD', '', AHORA, '').motivo).toBe(MOTIVO_SIN_OPERACIONES);
-    // ✅ V00494: el total capturado a mano no se pisa.
+    // ✅ V00494: el total capturado a mano no se pisa. ✅ V00495: una emitida (Facturado o sin status) tampoco.
+    expect(revisarFactura('cliente', factura({ statusFactura: 'Facturado' }), ops, 'USD', '', AHORA, '').motivo).toBe(MOTIVO_FACTURADA);
+    expect(revisarFactura('cliente', factura({ statusFactura: '' }), ops, 'USD', '', AHORA, '').motivo).toBe(MOTIVO_FACTURADA);
     expect(revisarFactura('cliente', factura({ totalManualCentavos: 123456, subtotalMonedaFactura: 1234.56 }), ops, 'USD', '', AHORA, '')).toMatchObject({ estado: 'omitida', motivo: MOTIVO_TOTAL_MANUAL });
     const enCero = revisarFactura('cliente', factura({}), [opUsd('o1', 0), opUsd('o2', 0)], 'USD', '', AHORA, '');
     expect([enCero.estado, enCero.motivo]).toEqual(['omitida', 'El recálculo dio $0.00 — revisa las operaciones (montos de convenio y tipo de cambio).']);

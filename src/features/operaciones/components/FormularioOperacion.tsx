@@ -3498,7 +3498,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
                   {!esFlotaPropiaRoelca && (
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconDollar /></div><h3 className="roelca-card-title">Pago al Proveedor</h3></div>
-                    {facturadaProv && <p className="fo-aviso-facturada">Ya está en la factura del proveedor {String(initialData?.facturaProveedorFolio || '').trim() || '(sin folio)'}: los importes no se recalculan solos. Si cambias uno a mano, al guardar también cambia esa factura.</p>}{/* ✅ V00494 */}
+                    {facturadaProv && <p className="fo-aviso-facturada">Ya está en la factura del proveedor {String(initialData?.facturaProveedorFolio || '').trim() || '(sin folio)'}: los importes no se recalculan solos. Si cambias uno aquí, cambia la operación, no la factura: el valor de una factura emitida solo se cambia a mano en Facturación → Editar factura.</p>}{/* ✅ V00494 · ✅ V00495 */}
                     <div className="form-grid">
                       <div className="form-group"><label className="form-label">Monto a Pagar Proveedor <span className="campo-badge">totalAPagarProv</span>
                         {/* ✅ V00245: mismo botón que en el cliente */}
@@ -3584,7 +3584,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
                 <>
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconDollar /></div><h3 className="roelca-card-title">Facturación al Cliente</h3></div>
-                    {facturadaCli && <p className="fo-aviso-facturada">Ya está en la factura {String(initialData?.facturaClienteInvoice || '').trim() || '(sin folio)'}: los importes no se recalculan solos (ni la moneda ni el tipo de cambio). Si cambias uno a mano, al guardar también cambia la factura.</p>}{/* ✅ V00494 */}
+                    {facturadaCli && <p className="fo-aviso-facturada">Ya está en la factura {String(initialData?.facturaClienteInvoice || '').trim() || '(sin folio)'}: los importes no se recalculan solos (ni la moneda ni el tipo de cambio). Si cambias uno aquí, cambia la operación, no la factura: el valor de una factura emitida solo se cambia a mano en Facturación → Editar factura.</p>}{/* ✅ V00494 · ✅ V00495 */}
                     <div className="form-grid">
                       <div className="form-group">
                         <label className="form-label">Facturado En <span className="campo-badge">facturadoEnCobrar</span></label>

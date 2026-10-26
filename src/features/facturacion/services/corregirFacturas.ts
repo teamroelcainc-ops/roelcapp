@@ -18,6 +18,7 @@ import { idMoneda } from '../../../shared/dominio/moneda';
 import type { Moneda } from '../../../shared/dominio/moneda';
 import { r2 } from '../../../shared/dominio/numeros';
 import { estaCancelada } from './reglasFactura';
+import { valorCongelado } from '../../../shared/dominio/cascadaFacturas';
 
 export type EstadoRevision = 'corregir' | 'bien' | 'omitida';
 
@@ -45,6 +46,9 @@ export const MOTIVO_SIN_OPERACIONES = 'No tiene operaciones ligadas';
 // ✅ V00494: un total capturado a mano en "Editar factura" no se pisa (antes el recálculo masivo lo
 //   regresaba a la suma de las operaciones y quitaba la marca: "volvía a calcularlos como quería").
 export const MOTIVO_TOTAL_MANUAL = 'Total capturado a mano en Editar factura (no se recalcula)';
+// ✅ V00495: "una vez facturado, la única forma de cambiar el valor de la factura es manual, 1 x 1"
+//   (Roelca). Solo se corrigen los borradores ("No Facturado").
+export const MOTIVO_FACTURADA = 'Ya facturada: su valor solo se cambia a mano, una por una (Editar factura)';
 
 /** IDs de operación de una factura que se pueden leer (sin rutas). */
 export const idsDeOperaciones = (factura: Record<string, unknown>): string[] =>
@@ -54,6 +58,7 @@ export const idsDeOperaciones = (factura: Record<string, unknown>): string[] =>
 export const motivoParaSaltar = (factura: Record<string, unknown>, monedaEmpresa: Moneda | null): string | null => {
   if (estaCancelada(factura.statusFactura)) return MOTIVO_CANCELADA;
   if (Number(factura.totalManualCentavos) > 0) return MOTIVO_TOTAL_MANUAL;
+  if (valorCongelado(factura.statusFactura)) return MOTIVO_FACTURADA;
   if (!monedaEmpresa) return MOTIVO_SIN_MONEDA;
   if (idsDeOperaciones(factura).length === 0) return MOTIVO_SIN_OPERACIONES;
   return null;
