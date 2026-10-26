@@ -1655,8 +1655,17 @@ export const FacturacionClientesDashboard = () => {
     }
   };
 
-  const abrirEditarFactura = (e: React.MouseEvent, f: any) => {
+  const abrirEditarFactura = (e: React.MouseEvent, f: Parameters<typeof prepararEdicionFactura>[0]) => {
     e.stopPropagation();
+    prepararEdicionFactura(f);
+  };
+  // ✅ V00491: desde la Auditoría de la cadena se abre ESTE formulario (antes tenía su editor propio).
+  //   Si la factura está en la lista se usa esa (con su grupo de folios); si no, el documento que trae.
+  const editarFacturaDesdeAuditoria = (raw: Record<string, unknown>) => {
+    const id = String(raw.id ?? '');
+    prepararEdicionFactura(facturasGlobales.find((f) => String(f.id) === id) ?? normalizarFactura({ ...raw, id }));
+  };
+  const prepararEdicionFactura = (f: any) => {
     setFacturaEditando(f);
     setEditInvoice(String(f.invoice || ''));
     setEditFecha(String(f.fecha || '').slice(0, 10));
@@ -3152,7 +3161,8 @@ export const FacturacionClientesDashboard = () => {
       )}
       <h1 className="fcd-x31">Facturación de Clientes</h1>
       {mostrarAuditoria && (
-        <AuditoriaCadenaCliente onCerrar={() => setMostrarAuditoria(false)} montoOperacion={(op) => obtenerMontoOperacion(op)} totalNativo={totalFactura} />
+        <AuditoriaCadenaCliente onCerrar={() => setMostrarAuditoria(false)} montoOperacion={(op) => obtenerMontoOperacion(op)} totalNativo={totalFactura}
+          onEditarFactura={editarFacturaDesdeAuditoria} detras={!!facturaEditando || !!cancelarDe} />
       )}{/* ✅ V00318 */}
 
       <div className="fcd-x32">

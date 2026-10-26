@@ -118,3 +118,16 @@
 /* ✅ V00341: documentos en el detalle de la operación */
 .acc-detalle-docs { margin-top: 14px; border-top: 1px solid #30363d; padding-top: 10px; }
 .acc-detalle-docs-titulo { color: #e6edf3; font-weight: 700; font-size: 0.85rem; margin-bottom: 8px; }
+
+/* ✅ V00491: lista de problemas con su motivo (se abre con la tarjeta de problemas) */
+.acc-problemas { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px; max-height: 30vh; overflow-y: auto; margin-bottom: 12px; padding: 10px; border: 1px solid rgba(248, 81, 73, 0.45); border-radius: 10px; background: #0d1117; }
+.acc-problemas-grupo { min-width: 0; }
+.acc-problemas-motivo { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; color: #f0f6fc; font-size: 0.82rem; font-weight: 700; }
+.acc-problemas-n { padding: 0 8px; border-radius: 999px; background: rgba(248, 81, 73, 0.15); color: #ff7b72; font-size: 0.72rem; }
+.acc-problemas-lista { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.acc-problema { display: grid; gap: 1px; width: 100%; padding: 6px 8px; border: 1px solid #30363d; border-radius: 6px; background: #161b22; color: #c9d1d9; font: inherit; text-align: left; cursor: pointer; }
+.acc-problema:hover { border-color: #58a6ff; }
+.acc-problema:focus-visible { outline: 2px solid #58a6ff; outline-offset: 1px; }
+.acc-problema--revisado { opacity: 0.55; }
+.acc-problema-ref { color: #58a6ff; font-size: 0.78rem; font-weight: 700; }
+.acc-problema-detalle { color: #c9d1d9; font-size: 0.74rem; }
