@@ -4,7 +4,7 @@ import { useHandlerEstable } from '../hooks/useHandlerEstable';
 import { datosAAplicar, suscribirOperacionGuardada } from '../../../utils/operacionesBus';
 import { CAMPOS_AJENOS_AL_FORMULARIO } from '../services/camposAjenos'; // ✅ V00451
 import { sinPruebas, esOperacionPrueba } from '../../../utils/operacionPrueba';
-import { addDoc, collection, query, getDocs, getDoc, orderBy, limit, where, startAfter, documentId, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
+import { collection, query, getDocs, getDoc, orderBy, limit, where, startAfter, documentId, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db, auth } from '../../../config/firebase';
 import { direccionCompletaDeEmpresa } from '../../../utils/direccionEmpresa'; // ✅ V00281
 import { EditorTarifaOrigenDestino } from './EditorTarifaOrigenDestino'; // ✅ V00224
@@ -15,7 +15,6 @@ import { registrarLog } from '../../../utils/logger';
 import { CambioSueldoOperador, HistorialCambiosSueldo } from './CambioSueldoOperador'; // ✅ V00433
 import { sincronizarNombresOperaciones } from '../../../utils/sincronizarNombresOperaciones';
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF } from '../../../utils/pdfGenerator'; 
-import * as XLSX from 'xlsx';
 // ✅ NUEVO: reglas de status (botones dinámicos + cascada) — igual que Operaciones Activas
 // ✅ NUEVO: visor y subida de documentos ligados a la operación
 import { DocumentosLista } from '../../documentos/DocumentosLista';
@@ -23,6 +22,8 @@ import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 import { FormularioOperacion, TIPOS_DOCUMENTO_OPERACION } from './FormularioOperacion';
 import './ServiciosCompletados.css';
 import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
+import ModalExportarExcel from './exportar/ModalExportarExcel'; // ✅ V00498
+import { descargarExcel, filasExcel } from '../services/excelOperaciones'; // ✅ V00498
 import { almacenSesion } from '../../../utils/cacheMemoria';
 import { obtenerFlags, useFlags } from '../../../shared/data/flags';
 import { paginaOperaciones, todasLasPaginas } from '../../../shared/data/consultas';
@@ -39,7 +40,7 @@ import { estadoGrupoDe } from '../../../shared/dominio/operacionCanonica';
 // ✅ V00444 (Fase 8.3): piezas sin estado del módulo, en archivos propios.
 import { describirCambiosLog, truncarValorLog } from '../services/auditoriaLog';
 import { COLUMNAS_STORAGE_KEY, cargarColumnasGuardadas } from './completados/columnas';
-import { describirFiltrosLog, fmtSaldoPuente, normalizarFechaServicioISO, normalizarMoneda } from './completados/formatos';
+import { describirFiltrosLog, fmtSaldoPuente, normalizarFechaServicioISO } from './completados/formatos';
 import { colorTipoOperacion, fmtFechaAuditoria } from '../services/formatosOperacion';
 import TagPuenteUnidad from '../../puentes/components/TagPuenteUnidad'; // ✅ V00465
 import RegresarStatus from './RegresarStatus'; // ✅ V00476
@@ -307,17 +308,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const [drawerFiltrosAbierto, setDrawerFiltrosAbierto] = useState(false);
 
   // ✅ NUEVO: modal de exportación a Excel con columnas seleccionables y ordenables.
+  // ✅ V00338: CONFIGURACIONES GUARDADAS del Excel (config_export_excel, compartidas).
+  // ✅ V00498: las ventanas viven en exportar/ModalExportarExcel.tsx (las usa también el Excel de Operaciones).
   const [modalExportar, setModalExportar] = useState(false);
-  // ✅ V00338: CONFIGURACIONES GUARDADAS del Excel (con nombre, en Firestore —
-  //   colección config_export_excel — compartidas entre usuarios y equipos).
-  const [modalConfigs, setModalConfigs] = useState(false);
-  const [presetsExport, setPresetsExport] = useState<{ id: string; nombre: string; columnas: { id: string; visible: boolean }[] }[]>([]);
-  const [presetNombre, setPresetNombre] = useState('');
-  const [presetIdActual, setPresetIdActual] = useState('');
-  const [columnasExport, setColumnasExport] = useState<{ id: string; label: string; visible: boolean }[]>([]);
-  const dragExportIdx = useRef<number | null>(null);
-  // ✅ V00254: índice sobre el que se está arrastrando, para resaltar el destino.
-  const [dragOverExportIdx, setDragOverExportIdx] = useState<number | null>(null);
   const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
   // ✅ NUEVO: buscador dentro del modal "Configurar Columnas".
   const [busquedaColumnas, setBusquedaColumnas] = useState('');
@@ -1815,184 +1808,21 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     return [...visibles, ...ocultas];
   };
 
-  // ✅ NUEVO: abre el modal restaurando la última configuración guardada del
-  //   usuario (tolerante a columnas nuevas: se agregan al final desmarcadas).
-  /** ✅ V00338: aplica una lista guardada {id, visible}[] sobre las columnas
-   *  reales de la tabla (respeta el orden guardado; lo nuevo va al final). */
-  const columnasDesdeGuardadas = (guardadas: { id: string; visible: boolean }[]) => {
-    const porId = new Map(columnasTabla.map(c => [c.id, c] as const));
-    const lista: { id: string; label: string; visible: boolean }[] = [];
-    guardadas.forEach(g => {
-      const c = porId.get(g.id);
-      if (c) { lista.push({ id: c.id, label: c.label, visible: !!g.visible }); porId.delete(g.id); }
-    });
-    porId.forEach(c => lista.push({ id: c.id, label: c.label, visible: false }));
-    return lista;
-  };
-
   /** ✅ V00338: el botón de Excel abre primero LAS CONFIGURACIONES guardadas. */
-  const abrirModalExportar = async () => {
+  const abrirModalExportar = () => {
     if (operacionesOrdenadas.length === 0) {
       alert('No hay datos para exportar. Realiza una búsqueda primero.');
       return;
     }
-    try {
-      const snap = await getDocs(query(collection(db, 'config_export_excel'), where('modulo', '==', 'serviciosCompletados')));
-      const lista = snap.docs.map(d => { const x = d.data() as Record<string, unknown>; return { id: d.id, nombre: String(x.nombre || ''), columnas: (x.columnas || []) as { id: string; visible: boolean }[] }; });
-      lista.sort((a, b) => a.nombre.localeCompare(b.nombre));
-      setPresetsExport(lista);
-    } catch (e) { console.error('Configuraciones de exportación:', e); setPresetsExport([]); }
-    setModalConfigs(true);
+    setModalExportar(true);
   };
 
-  /** ✅ V00338: usar una configuración guardada → abre el armado con ella. */
-  const usarPresetExport = (p: { id: string; nombre: string; columnas: { id: string; visible: boolean }[] }) => {
-    setColumnasExport(columnasDesdeGuardadas(p.columnas));
-    setPresetNombre(p.nombre); setPresetIdActual(p.id);
-    setModalConfigs(false); setModalExportar(true);
-  };
-
-  /** ✅ V00338: nueva configuración → parte de la última usada (o de la tabla). */
-  const nuevaConfigExport = () => {
-    try {
-      const str = localStorage.getItem(claveExportGuardado());
-      if (str) setColumnasExport(columnasDesdeGuardadas(JSON.parse(str) as { id: string; visible: boolean }[]));
-      else setColumnasExport(columnasExportPorDefecto());
-    } catch { setColumnasExport(columnasExportPorDefecto()); }
-    setPresetNombre(''); setPresetIdActual('');
-    setModalConfigs(false); setModalExportar(true);
-  };
-
-  /** ✅ V00338: guardar (o actualizar) la configuración con su nombre. */
-  const guardarPresetExport = async () => {
-    const nombre = presetNombre.trim();
-    if (!nombre) { alert('Ponle un NOMBRE a la configuración para guardarla.'); return; }
-    const columnas = columnasExport.map(c => ({ id: c.id, visible: c.visible }));
-    try {
-      if (presetIdActual) {
-        await updateDoc(doc(db, 'config_export_excel', presetIdActual), { nombre, columnas });
-      } else {
-        const ref = await addDoc(collection(db, 'config_export_excel'), { modulo: 'serviciosCompletados', nombre, columnas, creadoEn: new Date().toISOString() });
-        setPresetIdActual(ref.id);
-      }
-      alert(`Configuración "${nombre}" guardada. La encontrarás al presionar el botón de Excel.`);
-    } catch (e) { alert(`No se pudo guardar la configuración: ${(e as Error)?.message || e}`); }
-  };
-
-  /** ✅ V00338: borrar una configuración guardada. */
-  const borrarPresetExport = async (p: { id: string; nombre: string }) => {
-    if (!window.confirm(`¿Borrar la configuración "${p.nombre}"?`)) return;
-    try { await deleteDoc(doc(db, 'config_export_excel', p.id)); setPresetsExport(prev => prev.filter(x => x.id !== p.id)); }
-    catch (e) { alert(`No se pudo borrar: ${(e as Error)?.message || e}`); }
-  };
-
-  // ✅ NUEVO: mover una columna con las flechas ▲▼.
-  // ✅ V00254: se retiraron las flechas ▲▼ — el orden se cambia solo con Drag & Drop.
-
-  // ✅ NUEVO: soltar una columna arrastrada sobre la posición destino.
-  const soltarColumnaExport = (destino: number) => {
-    const origen = dragExportIdx.current;
-    dragExportIdx.current = null;
-    setDragOverExportIdx(null); // ✅ V00254
-    if (origen === null || origen === destino) return;
-    setColumnasExport(prev => {
-      const arr = [...prev];
-      const [item] = arr.splice(origen, 1);
-      arr.splice(destino, 0, item);
-      return arr;
-    });
-  };
-
-  const exportarExcel = async () => {
-    if (operacionesOrdenadas.length === 0) return alert("No hay datos para exportar.");
-
-    // ✅ MODIFICADO: usa la selección y el ORDEN elegidos en el modal.
-    const columnasVisibles = columnasExport.filter(c => c.visible);
-    if (columnasVisibles.length === 0) return alert('Selecciona al menos una columna para exportar.');
-
+  /** ✅ V00498: valores de cada columna en services/excelOperaciones.ts (los mismos de siempre). */
+  const exportarExcel = async (columnasVisibles: { id: string; label: string }[]): Promise<boolean> => {
+    if (operacionesOrdenadas.length === 0) { alert('No hay datos para exportar.'); return false; }
     // ✅ V00380: las operaciones de PRUEBA no salen en el Excel
-    const datosExcel = sinPruebas(operacionesOrdenadas).map(op => {
-      const fila: any = {};
-      columnasVisibles.forEach(col => {
-        let val: any = '-';
-        switch (col.id) {
-          case 'ref': val = op.ref || op.id?.substring(0,6) || ''; break;
-          case 'fechaServicio': val = (op._fechaISO != null ? op._fechaISO : normalizarFechaServicioISO(op.fechaServicio)) || op.fechaServicio || ''; break;
-          case 'fechaCita': val = formatearFechaHora(op.fechaCita); break;
-          case 'tipoOperacion': val = mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre); break;
-          case 'status': val = mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre); break; 
-          case 'refDiesel': val = op.referenciaDieselConsecutivo || ''; break;
-          case 'refNomina': val = op.referenciaNominaConsecutivo || ''; break;
-          case 'invoiceCliente': val = op.facturaClienteInvoice || (op.facturado ? 'Facturada' : ''); break;
-          case 'invoiceProveedor': val = op.facturaProveedorFolio || (op.facturadoProveedor ? 'Facturada' : ''); break;
-          case 'trafico': val = op.trafico || ''; break;
-          case 'cliente': val = mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente); break;
-          case 'saldoPuente': val = fmtSaldoPuente(op); break; // ✅ V00355
-          case 'convenioTarifa': val = obtenerNombreConvenioCliente(op.convenio, op.convenioNombre); break;
-          case 'refCliente': val = op.refCliente || ''; break;
-          case 'facturadoEnCobrar': val = normalizarMoneda(mostrarDatoMapeado(op.facturadoEnCobrar, 'catalogoMoneda', 'moneda', op.monedaCobroNombre)); break;
-          case 'montoConvenioCliente': val = Number(op.montoConvenioCliente) || 0; break;
-          case 'cargosAdicionales': val = Number(op.cargosAdicionales) || 0; break;
-          case 'subtotal': val = Number(op.subtotalCliente) || 0; break;
-          case 'tipoCambioAprobado': val = op.tipoCambioAprobado || ''; break;
-          case 'dolaresCliente': val = Number(op.dolaresCliente) || 0; break;
-          case 'pesosCliente': val = Number(op.pesosCliente) || 0; break;
-          case 'conversionCliente': val = Number(op.conversionCliente) || 0; break;
-          case 'origen': val = mostrarDatoMapeado(op.origen, 'empresas', 'nombre', op.origenNombre); break;
-          case 'destino': val = mostrarDatoMapeado(op.destino, 'empresas', 'nombre', op.destinoNombre); break;
-          case 'remolque': val = mostrarDatoMapeado(op.numeroRemolque, 'remolques', 'nombre', op.remolqueNombre); break;
-          case 'proveedor': val = mostrarDatoMapeado(op.proveedorUnidad, 'empresas', 'nombre', op.proveedorUnidadNombre); break;
-          case 'unidadProveedor': val = mostrarDatoMapeado(op.unidadProveedor, 'unidades_proveedor', 'numeroUnidad', op.unidadProveedorNombre); break;
-          case 'operadorProveedor': val = mostrarDatoMapeado(op.operadorProveedor, 'proveedores_unidad', 'nombre', op.operadorProveedorNombre); break;
-          case 'convenioProv': val = obtenerNombreConvenioProv(op.convenioProveedor, op.convenioProveedorNombre); break;
-          case 'facturadoEnUnidad': val = normalizarMoneda(mostrarDatoMapeado(op.facturadoEnUnidad, 'catalogoMoneda', 'moneda', op.monedaUnidadNombre)); break;
-          case 'monedaConvenioProv': val = normalizarMoneda(mostrarDatoMapeado(op.monedaConvenioProv, 'catalogoMoneda', 'moneda', op.monedaConvProvNombre)); break;
-          case 'totalAPagarProv': val = Number(op.totalAPagarProv) || 0; break;
-          case 'cargosAdicionalesProv': val = Number(op.cargosAdicionalesProv) || 0; break;
-          case 'subtotalProv': val = Number(op.subtotalProv) || 0; break;
-          case 'dolaresProv': val = Number(op.dolaresProv) || 0; break;
-          case 'pesosProv': val = Number(op.pesosProv) || 0; break;
-          case 'conversionProv': val = Number(op.conversionProv) || 0; break;
-          case 'unidad': val = mostrarDatoMapeado(op.unidad, 'unidades', 'unidad', op.unidadNombre); break;
-          case 'operador': val = mostrarDatoMapeado(op.operador, 'empleados', 'nombre', op.operadorNombre); break;
-          case 'sueldoOperador': val = Number(op.sueldoOperador) || 0; break;
-          case 'sueldoExtra': val = Number(op.sueldoExtra) || 0; break;
-          case 'sueldoTotal': val = Number(op.sueldoTotal) || 0; break;
-          case 'combustible': val = Number(op.combustible) || 0; break;
-          case 'combustibleExtra': val = Number(op.combustibleExtra) || 0; break;
-          case 'combustibleTotal': val = Number(op.combustibleTotal) || 0; break;
-          case 'clienteMercancia': val = mostrarDatoMapeado(op.clienteMercancia, 'empresas', 'nombre', op.clienteMercanciaNombre); break;
-          case 'descripcionMercancia': val = op.descripcionMercancia || ''; break;
-          case 'cantidad': val = op.cantidad || ''; break;
-          case 'embalaje': val = mostrarDatoMapeado(op.embalaje, 'embalajes', 'clave', op.embalajeNombre); break;
-          case 'pesoKg': val = op.pesoKg || ''; break;
-          case 'numDoda': val = op.numDoda || ''; break;
-          case 'fechaEmisionDoda': val = op.fechaEmisionDoda || ''; break;
-          case 'numeroEntrys': val = op.numeroEntrys || ''; break;
-          case 'cantEntrys': val = op.cantEntrys || ''; break;
-          case 'numManifiesto': val = op.numManifiesto || ''; break;
-          case 'provServicios': val = mostrarDatoMapeado(op.provServicios, 'empresas', 'nombre', op.provServiciosNombre); break;
-          case 'montoManifiesto': val = Number(op.montoManifiesto) || 0; break;
-          case 'totalGastos': val = Number(op.totalGastos) || 0; break;
-          case 'utilidadEstimada': val = Number(op.utilidadEstimada) || 0; break;
-          case 'observacionesEjecutivo': val = op.observacionesEjecutivo || ''; break;
-          case 'observacionesUnidad': val = op.observacionesUnidad || ''; break;
-          case 'observacionesCobrar': val = op.observacionesCobrar || ''; break;
-        }
-        
-        fila[col.label] = val;
-      });
-      return fila;
-    });
-
-    const worksheet = XLSX.utils.json_to_sheet(datosExcel);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Completados');
-    XLSX.writeFile(workbook, `Servicios_Completados_${new Date().toISOString().split('T')[0]}.xlsx`);
-
-    // ✅ NUEVO: recuerda la selección/orden de columnas de ESTE usuario y cierra el modal.
-    try { localStorage.setItem(claveExportGuardado(), JSON.stringify(columnasExport.map(c => ({ id: c.id, visible: c.visible })))); } catch { /* ignorar */ }
-    setModalExportar(false);
+    await descargarExcel(filasExcel(sinPruebas(operacionesOrdenadas), columnasVisibles), 'Completados', `Servicios_Completados_${new Date().toISOString().split('T')[0]}.xlsx`);
+    return true;
   };
 
   const tabsDetalle = [{ id: 'general', label: 'Información General' }, { id: 'pedimento', label: 'Pedimento y CT' }, { id: 'manifiestos', label: "Entry's y Manifiestos" }, { id: 'unidad', label: 'Unidad y Operador' }, { id: 'cobrar', label: 'Por Cobrar' }];
@@ -2375,113 +2205,15 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
             </>
           )}
 
-        {/* NUEVO: modal para ELEGIR Y ORDENAR las columnas del Excel.
-            Arrastrando ⋮⋮ (o con las flechas) se cambia el orden; el checkbox
-            incluye/excluye la columna. Por defecto usa las columnas de la tabla. */}
-        {/* ✅ V00338: modal de CONFIGURACIONES guardadas del Excel */}
-        {modalConfigs && (
-          <>
-            <div className="sc-x51" onClick={() => setModalConfigs(false)} />
-            <div className="sc-x52 sc-cfg-modal">
-              <div className="sc-x19">
-                <div className="sc-x20">
-                  <span className="sc-x21">📋 Configuraciones de exportación</span>
-                  <span className="sc-x53">({presetsExport.length})</span>
-                </div>
-                <button className="sc-x22" onClick={() => setModalConfigs(false)} title="Cerrar">✕</button>
-              </div>
-              <div className="sc-cfg-sub">Elige una configuración guardada para armar el Excel con ella, o crea una nueva.</div>
-              {presetsExport.length === 0 && <div className="sc-cfg-vacio">Aún no hay configuraciones guardadas.</div>}
-              <div className="sc-cfg-lista">
-                {presetsExport.map(pr => (
-                  <div key={pr.id} className="sc-cfg-item">
-                    <div className="sc-cfg-nombre">{pr.nombre}</div>
-                    <div className="sc-cfg-cols">{pr.columnas.filter(c => c.visible).length} columnas</div>
-                    <button className="sc-x62 sc-cfg-usar" onClick={() => usarPresetExport(pr)} title="Armar el Excel con esta configuración">Usar</button>
-                    <button className="sc-x61 sc-cfg-borrar" onClick={() => borrarPresetExport(pr)} title="Borrar esta configuración">🗑</button>
-                  </div>
-                ))}
-              </div>
-              <div className="sc-x58">
-                <div className="sc-cfg-pregunta">¿Quieres agregar una nueva configuración?</div>
-                <div className="sc-x60" />
-                <button className="sc-x61" onClick={() => setModalConfigs(false)}>Cancelar</button>
-                <button className="sc-x62" onClick={nuevaConfigExport}>➕ Nueva configuración</button>
-              </div>
-            </div>
-          </>
-        )}
-
+        {/* ✅ V00338 · V00498: configuraciones guardadas y columnas del Excel (ventanas compartidas) */}
         {modalExportar && (
-          <>
-            <div className="sc-x51" onClick={() => setModalExportar(false)} />
-            <div className="sc-x52">
-              <div className="sc-x19">
-                <div className="sc-x20">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                  <span className="sc-x21">Exportar a Excel</span>
-                  <span className="sc-x53">({columnasExport.filter(c => c.visible).length} columnas)</span>
-                </div>
-                <button className="sc-x22" onClick={() => setModalExportar(false)} title="Cerrar">✕</button>
-              </div>
-
-              <div className="sc-x54">
-                Arrastra <span className="sc-x1">⋮⋮</span> cualquier tarjeta para cambiar el orden. Marca las columnas que quieres incluir.
-              </div>
-
-              {/* ✅ V00254: cuadrícula de 3 columnas y reordenado SOLO por Drag & Drop
-                  (se retiraron las flechas ▲▼); la tarjeta destino se resalta. */}
-              <div className="sc-x55 sc-export-cuadricula">
-                {columnasExport.map((c, idx) => (
-                  <div
-                    key={c.id}
-                    draggable
-                    onDragStart={() => { dragExportIdx.current = idx; }}
-                    onDragOver={(e) => { e.preventDefault(); if (dragOverExportIdx !== idx) setDragOverExportIdx(idx); }}
-                    onDragLeave={() => { if (dragOverExportIdx === idx) setDragOverExportIdx(null); }}
-                    onDragEnd={() => { dragExportIdx.current = null; setDragOverExportIdx(null); }}
-                    onDrop={() => soltarColumnaExport(idx)}
-                    className={`sc-export-tarjeta${c.visible ? '' : ' sc-export-tarjeta--apagada'}${dragOverExportIdx === idx ? ' sc-export-tarjeta--destino' : ''}`}
-                  >
-                    <span className="sc-x56" title="Arrastrar para reordenar">⋮⋮</span>
-                    <input className="sc-x57"
-                      type="checkbox"
-                      checked={c.visible}
-                      onChange={() => setColumnasExport(prev => prev.map((x, i) => (i === idx ? { ...x, visible: !x.visible } : x)))}
-                    />
-                    <span className={`sc-export-etiqueta${c.visible ? '' : ' sc-export-etiqueta--apagada'}`} title={c.label}>{c.label}</span>
-                  </div>
-                ))}
-              </div>
-
-              {/* ✅ V00338: nombre de la configuración + guardar */}
-              <div className="sc-cfg-guardar">
-                <input
-                  type="text"
-                  className="form-control sc-cfg-input"
-                  placeholder="Nombre de la configuración (ej. Reporte semanal cliente)…"
-                  value={presetNombre}
-                  onChange={(e) => setPresetNombre(e.target.value)}
-                />
-                <button className="sc-x59" onClick={guardarPresetExport} title="Guardar esta selección y orden de columnas con el nombre indicado — quedará disponible para todos al presionar el botón de Excel">💾 Guardar configuración</button>
-              </div>
-              <div className="sc-x58">
-                <button className="sc-x59"
-                  onClick={() => setColumnasExport(columnasExportPorDefecto())}
-                  title="Restablecer con las columnas visibles de la tabla, en su orden actual"
-                >
-                  Columnas de la tabla
-                </button>
-                <div className="sc-x60" />
-                <button className="sc-x61" onClick={() => setModalExportar(false)}>Cancelar</button>
-                <button className="sc-x62"
-                  onClick={exportarExcel}
-                >
-                  Exportar
-                </button>
-              </div>
-            </div>
-          </>
+          <ModalExportarExcel
+            moduloConfigs="serviciosCompletados"
+            claveUltima={claveExportGuardado()}
+            columnasPorDefecto={columnasExportPorDefecto}
+            onExportar={exportarExcel}
+            onCerrar={() => setModalExportar(false)}
+          />
         )}
 
 

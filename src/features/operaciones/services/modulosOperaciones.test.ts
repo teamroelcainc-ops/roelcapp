@@ -13,7 +13,10 @@ describe('pestaña de entrada de Operaciones', () => {
     expect(pestanaDeEntrada('operaciones', (m) => m === 'serviciosCancelados')).toBe('serviciosCancelados');
     expect(pestanaDeEntrada('empresas', () => false)).toBeNull();
   });
-  it('reconoce los tres módulos', () => {
-    expect(['operaciones', 'serviciosCompletados', 'serviciosCancelados', 'misOperaciones'].map(esModuloOperaciones)).toEqual([true, true, true, false]);
+  it('reconoce sus módulos (✅ V00498: también Reportes)', () => {
+    expect(['operaciones', 'serviciosCompletados', 'serviciosCancelados', 'reportes', 'misOperaciones'].map(esModuloOperaciones)).toEqual([true, true, true, true, false]);
+  });
+  it('con permiso solo de Reportes, el menú Operaciones lleva a Reportes', () => {
+    expect(pestanaDeEntrada('empresas', (m) => m === 'reportes')).toBe('reportes');
   });
 });

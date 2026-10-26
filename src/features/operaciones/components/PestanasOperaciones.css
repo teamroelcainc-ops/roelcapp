@@ -6,3 +6,12 @@
 }
 .pop-btn-corregir:hover { border-color: #58a6ff; background: rgba(88, 166, 255, 0.16); }
 .pop-btn-corregir:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
+
+/* ✅ V00498: botón "Excel" (todas las operaciones de un rango de fechas) */
+.pop-btn-excel {
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px;
+  border: 1px solid rgba(16, 185, 129, 0.45); border-radius: 6px; background: rgba(16, 185, 129, 0.08);
+  color: #10b981; font: inherit; font-size: 0.82rem; font-weight: 600; white-space: nowrap; cursor: pointer;
+}
+.pop-btn-excel:hover { border-color: #10b981; background: rgba(16, 185, 129, 0.16); }
+.pop-btn-excel:focus-visible { outline: 2px solid #10b981; outline-offset: 2px; }

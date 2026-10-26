@@ -1690,17 +1690,11 @@ function AppContenido() {
           </div>
         )}
         {/* ✅ V00477: Activas, Completadas y Canceladas en un solo "Operaciones" (pestañas arriba del módulo) */}
+        {/* ✅ V00498: Reportes también es una pestaña de Operaciones (ya no tiene su propio ítem en el menú) */}
         {pestanaOperaciones && (
-          <div className={`sidebar-item ${esModuloOperaciones(moduloActivo) ? 'active' : ''}`} title="Operaciones: activas, completadas y canceladas" onClick={() => navegarA(pestanaOperaciones)}>
+          <div className={`sidebar-item ${esModuloOperaciones(moduloActivo) ? 'active' : ''}`} title="Operaciones: activas, completadas, canceladas y reportes" onClick={() => navegarA(pestanaOperaciones)}>
             <span className="sidebar-icon">{ICON.operaciones}</span>
             <span className="sidebar-label">{etq('menu.operaciones', 'Operaciones')}</span>
-          </div>
-        )}
-
-        {puede('reportes') && (
-          <div className={`sidebar-item ${moduloActivo === 'reportes' ? 'active' : ''}`} title="Reportes" onClick={() => navegarA('reportes')}>
-            <span className="sidebar-icon">{ICON.reportes}</span>
-            <span className="sidebar-label">{etq('menu.reportes', 'Reportes')}</span>
           </div>
         )}
         {/* ✅ V00154: Reporte de Vencimiento */}

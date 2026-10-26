@@ -1,10 +1,11 @@
 // src/features/operaciones/services/modulosOperaciones.ts
-// ✅ V00477 — los tres módulos que forman "Operaciones" (pestañas Activas / Completadas / Canceladas).
+// ✅ V00477 — los módulos que forman "Operaciones" (pestañas Activas / Completadas / Canceladas).
+// ✅ V00498: + Reportes (antes su propio ítem del menú), con su mismo permiso.
 import { pestanaDeEntrada as entradaDe } from '../../../shared/utils/pestanasModulo';
 
-export type ModuloOperaciones = 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados';
+export type ModuloOperaciones = 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'reportes';
 
-export const MODULOS_OPERACIONES: readonly ModuloOperaciones[] = ['operaciones', 'serviciosCompletados', 'serviciosCancelados'];
+export const MODULOS_OPERACIONES: readonly ModuloOperaciones[] = ['operaciones', 'serviciosCompletados', 'serviciosCancelados', 'reportes'];
 
 export const esModuloOperaciones = (m: string): m is ModuloOperaciones => (MODULOS_OPERACIONES as readonly string[]).includes(m);
 
