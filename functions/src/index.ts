@@ -373,3 +373,6 @@ export { referenciaDieselEscrita } from './puentesYDiesel';
 //   Empresas y detalles de convenio propagan desde empresaActualizada / convenioClienteDetalleEscrito.
 //   operacionMontoCambiado ya no existe (va dentro de operacionEscrita): el deploy pedirá borrarla.
 export { propagarEmpleado, propagarStatus, propagarTipoOperacion, propagarUnidad } from './propagacion';
+
+// ✅ V00492: T.C. del DOF automático (5:00 a. m. hora de Texas, desde Banxico SF43718).
+export { tipoCambioDofDiario } from './tipoCambioDof';
