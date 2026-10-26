@@ -141,3 +141,82 @@ export async function facturaExistenteFresca(
 export const avisoYaFacturadas = (ops: readonly OpYaFacturada[]): string =>
   `Estas operaciones YA están facturadas (otra persona u otra pestaña las facturó después de que se cargó tu lista):\n\n${
     ops.map((o) => `· ${o.ref || o.idLista} → factura ${o.folio || o.facturaId}`).join('\n')}\n\nNo se creó ninguna factura. La lista se va a refrescar.`;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ✅ V00494 — ELIMINAR UNA FACTURA SIN "DESFACTURAR" OPERACIONES QUE SIGUEN EN OTRA.
+//   Antes, borrar una factura (p. ej. el duplicado de otra) liberaba TODAS sus operaciones:
+//   quedaban sin marca aunque siguieran en la factura buena y volvían a "Pendientes". Ahora,
+//   igual que el servidor (planEliminarFacturas), solo se libera la que apunta a la factura
+//   borrada (o a ninguna) y no está en otra factura; si está en otra, se liga a esa.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Una factura con sus operaciones (ya como arreglo: la lista cargada viene normalizada). */
+export interface FacturaLigada {
+  id: string;
+  invoice: string;
+  operacionesIds: readonly string[];
+  statusFactura?: unknown;
+}
+
+export interface OpDeFacturaBorrada {
+  idLista: string;
+  idReal: string;
+  /** Datos frescos de la operación (null = ya no existe: no se escribe). */
+  datos: Record<string, unknown> | null;
+}
+
+export type DecisionLiberar =
+  | { idLista: string; idReal: string; accion: 'liberar' }
+  | { idLista: string; idReal: string; accion: 'ligar'; facturaId: string; folio: string }
+  | { idLista: string; idReal: string; accion: 'dejar' };
+
+const cancelada = (s: unknown): boolean => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().startsWith('cancelad');
+
+/** Puro: qué se hace con cada operación de las facturas que se borran. */
+export const decidirLiberacion = (
+  lado: LadoFactura, ops: readonly OpDeFacturaBorrada[], borradas: ReadonlySet<string>, otras: readonly FacturaLigada[],
+): DecisionLiberar[] => {
+  const salida: DecisionLiberar[] = [];
+  for (const o of ops) {
+    if (!o.datos) continue;
+    const apunta = facturaDeOperacion(lado, o.datos).facturaId;
+    const contenedoras = otras.filter((f) => !borradas.has(f.id) && (f.operacionesIds.includes(o.idLista) || f.operacionesIds.includes(o.idReal)));
+    const elegida = contenedoras.find((f) => f.id === apunta) ?? contenedoras.find((f) => !cancelada(f.statusFactura)) ?? contenedoras[0];
+    if (elegida) {
+      salida.push(elegida.id === apunta ? { idLista: o.idLista, idReal: o.idReal, accion: 'dejar' } : { idLista: o.idLista, idReal: o.idReal, accion: 'ligar', facturaId: elegida.id, folio: elegida.invoice });
+    } else if (apunta && !borradas.has(apunta)) {
+      salida.push({ idLista: o.idLista, idReal: o.idReal, accion: 'dejar' }); // apunta a otra factura viva: no se toca (como el servidor)
+    } else {
+      salida.push({ idLista: o.idLista, idReal: o.idReal, accion: 'liberar' });
+    }
+  }
+  return salida;
+};
+
+/**
+ * Lee del servidor las operaciones de las facturas que se van a borrar y las OTRAS facturas que las
+ * tienen (`array-contains-any`, más la lista cargada, que también trae las importadas con
+ * `operacionesIds` en texto) y decide qué hacer con cada una.
+ */
+export async function planLiberarAlEliminar(
+  lado: LadoFactura, ops: readonly { idLista: string; idReal: string }[], borradas: ReadonlySet<string>, cargadas: readonly FacturaLigada[],
+): Promise<DecisionLiberar[]> {
+  if (ops.length === 0) return [];
+  const c = CAMPOS[lado];
+  const datosPorReal = new Map<string, Record<string, unknown>>();
+  for (const lote of lotes([...new Set(ops.map((o) => o.idReal).filter(Boolean))])) {
+    const snap = await getDocs(query(collection(db, 'operaciones'), where(documentId(), 'in', lote)));
+    snap.docs.forEach((d) => datosPorReal.set(d.id, d.data()));
+  }
+  const otras = new Map<string, FacturaLigada>();
+  cargadas.forEach((f) => { if (!borradas.has(f.id)) otras.set(f.id, f); });
+  for (const lote of lotes([...new Set(ops.flatMap((o) => [o.idLista, o.idReal]).filter(Boolean))])) {
+    const snap = await getDocs(query(collection(db, c.coleccion), where('operacionesIds', 'array-contains-any', lote)));
+    snap.docs.forEach((d) => {
+      if (borradas.has(d.id)) return;
+      const x = d.data();
+      otras.set(d.id, { id: d.id, invoice: texto(x.invoice), statusFactura: x.statusFactura, operacionesIds: Array.isArray(x.operacionesIds) ? x.operacionesIds.map(String) : [] });
+    });
+  }
+  return decidirLiberacion(lado, ops.map((o) => ({ ...o, datos: datosPorReal.get(o.idReal) ?? null })), borradas, [...otras.values()]);
+}

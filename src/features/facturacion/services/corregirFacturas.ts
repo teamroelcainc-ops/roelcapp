@@ -42,6 +42,9 @@ export interface RevisionFactura {
 export const MOTIVO_CANCELADA = 'Cancelada';
 export const MOTIVO_SIN_MONEDA = 'Su empresa no tiene moneda en Empresas';
 export const MOTIVO_SIN_OPERACIONES = 'No tiene operaciones ligadas';
+// ✅ V00494: un total capturado a mano en "Editar factura" no se pisa (antes el recálculo masivo lo
+//   regresaba a la suma de las operaciones y quitaba la marca: "volvía a calcularlos como quería").
+export const MOTIVO_TOTAL_MANUAL = 'Total capturado a mano en Editar factura (no se recalcula)';
 
 /** IDs de operación de una factura que se pueden leer (sin rutas). */
 export const idsDeOperaciones = (factura: Record<string, unknown>): string[] =>
@@ -50,6 +53,7 @@ export const idsDeOperaciones = (factura: Record<string, unknown>): string[] =>
 /** Motivo para no tocar la factura (antes de mirar sus operaciones), o null si se puede corregir. */
 export const motivoParaSaltar = (factura: Record<string, unknown>, monedaEmpresa: Moneda | null): string | null => {
   if (estaCancelada(factura.statusFactura)) return MOTIVO_CANCELADA;
+  if (Number(factura.totalManualCentavos) > 0) return MOTIVO_TOTAL_MANUAL;
   if (!monedaEmpresa) return MOTIVO_SIN_MONEDA;
   if (idsDeOperaciones(factura).length === 0) return MOTIVO_SIN_OPERACIONES;
   return null;

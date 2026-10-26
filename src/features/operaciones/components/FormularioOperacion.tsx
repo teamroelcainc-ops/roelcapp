@@ -63,6 +63,7 @@ import { colorTipoOperacion, formatearDireccionPorPais, normalizarTxtDir, paisDe
 import { buscarTCAplicable, buscarTCDeFecha, normalizarFechaISO, tcParaOperacionGuardada } from './formulario/tipoCambioFila';
 import { facturadaCliente, facturadaProveedor } from '../../../shared/dominio/operacionCanonica'; // ✅ V00462
 import AvisoTipoCambio from './formulario/AvisoTipoCambio'; // ✅ V00461
+import { conservarMontosGuardados, facturadaDeLado, montosARestaurar } from '../services/montosCongelados'; // ✅ V00494
 import { adjuntosDeCampo, archivosDeCampo, referenciaDeOperacion, subirDocumentosOperacion, TIPOS_DOCUMENTO_OPERACION } from './formulario/documentosOperacion';
 import type { Adjunto } from '../../../shared/archivos/adjuntos'; // ✅ V00451: varios archivos por documento
 import { BotonAgregar, CampoArchivo } from './formulario/CampoArchivo';
@@ -1842,7 +1843,13 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     return { monto: m, convertido: false, sinTC: false };
   };
 
+  // ✅ V00494: facturada del proveedor y sin cambios a mano en sus entradas → se quedan los montos guardados.
   const recalcularConversionProveedor = useEffectEvent(() => {
+    if (initialData && conservarMontosGuardados('proveedor', formData, initialData)) {
+      const volver = montosARestaurar('proveedor', formData, initialData);
+      if (volver) setFormData(prev => ({ ...prev, ...volver }));
+      return;
+    }
     const tc = Number(formData.tipoCambioAprobado || tipoCambioDia) || 0; 
     const subtotal = Number(formData.totalAPagarProv || 0) + Number(formData.cargosAdicionalesProv || 0);
     // ✅ CORREGIDO: si la moneda del convenio del PROVEEDOR quedó VACÍA, se toma
@@ -1867,7 +1874,13 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
   });
   useEffect(() => recalcularConversionProveedor(), [formData.facturadoEnUnidad, formData.monedaConvenioProv, formData.totalAPagarProv, formData.cargosAdicionalesProv, tipoCambioDia, formData.tipoCambioAprobado, formData.convenioProveedor, listaConveniosProveedor, listaMonedasLocal]);
 
+  // ✅ V00494: facturada al cliente y sin cambios a mano en sus entradas → se quedan los montos guardados.
   const recalcularConversionCliente = useEffectEvent(() => {
+    if (initialData && conservarMontosGuardados('cliente', formData, initialData)) {
+      const volver = montosARestaurar('cliente', formData, initialData);
+      if (volver) setFormData(prev => ({ ...prev, ...volver }));
+      return;
+    }
     const tc = Number(formData.tipoCambioAprobado || tipoCambioDia) || 0; 
     const subtotal = Number(formData.montoConvenioCliente || 0) + Number(formData.cargosAdicionales || 0);
     // ✅ CORREGIDO: si la moneda del convenio quedó VACÍA (el detalle no se pudo
@@ -2234,8 +2247,12 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     const emp = (empresas || []).find((e) => String(e.id) === id);
     return emp ? resolverMonedaIdDeEmpresa(emp) : '';
   };
-  const monedaFijaCliente = monedaDeEmpresaId(formData.clientePaga);
-  const monedaFijaProveedor = esFlotaPropiaRoelca ? '' : monedaDeEmpresaId(formData.proveedorUnidad);
+  // ✅ V00494: una operación YA FACTURADA de ese lado conserva su "Facturado en" (no toma sola la moneda
+  //   de la empresa al abrirla: eso recalculaba los importes y, al guardar, cambiaba la factura).
+  const facturadaCli = facturadaDeLado('cliente', initialData);
+  const facturadaProv = facturadaDeLado('proveedor', initialData);
+  const monedaFijaCliente = facturadaCli ? '' : monedaDeEmpresaId(formData.clientePaga);
+  const monedaFijaProveedor = esFlotaPropiaRoelca || facturadaProv ? '' : monedaDeEmpresaId(formData.proveedorUnidad);
   const monedaFijaDe = (campo: string): string => (campo === 'facturadoEnCobrar' ? monedaFijaCliente : campo === 'facturadoEnUnidad' ? monedaFijaProveedor : '');
   useEffect(() => {
     if (monedaFijaCliente && formData.facturadoEnCobrar !== monedaFijaCliente) setFormData(prev => ({ ...prev, facturadoEnCobrar: monedaFijaCliente }));
@@ -3328,7 +3345,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
                             pero puedes corregir en qué moneda se factura. */}
                         {/* ✅ V00132: EDITABLE otra vez a petición — se precarga de la empresa (y "⟳ Actualizar moneda" la re-sincroniza), pero aquí puedes corregirla para esta operación */}
                         {/* ✅ V00490: fija a la moneda de la empresa; solo se elige si la empresa no tiene moneda */}
-                        <div onMouseDownCapture={() => campoBloqueadoAut('facturadoEnUnidad') && clicCampoBloqueado('facturadoEnUnidad')}><select disabled={campoBloqueadoAut('facturadoEnUnidad') || !!monedaFijaProveedor} title={monedaFijaProveedor ? 'Es la moneda del proveedor en Empresas; no se cambia aquí' : campoBloqueadoAut('facturadoEnUnidad') ? 'La moneda viene de la tabla Empresas y está bloqueada por Autorizaciones para tu rol (usa ⟳ Actualizar moneda para re-sincronizarla)' : 'El proveedor no tiene moneda en Empresas: elígela aquí'} style={campoBloqueadoAut('facturadoEnUnidad') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} className="form-control fo-moneda-fija" value={formData.facturadoEnUnidad || ''}
+                        <div onMouseDownCapture={() => campoBloqueadoAut('facturadoEnUnidad') && clicCampoBloqueado('facturadoEnUnidad')}><select disabled={campoBloqueadoAut('facturadoEnUnidad') || !!monedaFijaProveedor || facturadaProv} title={facturadaProv ? 'Ya está en la factura del proveedor: la moneda no se cambia aquí' : monedaFijaProveedor ? 'Es la moneda del proveedor en Empresas; no se cambia aquí' : campoBloqueadoAut('facturadoEnUnidad') ? 'La moneda viene de la tabla Empresas y está bloqueada por Autorizaciones para tu rol (usa ⟳ Actualizar moneda para re-sincronizarla)' : 'El proveedor no tiene moneda en Empresas: elígela aquí'} style={campoBloqueadoAut('facturadoEnUnidad') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} className="form-control fo-moneda-fija" value={formData.facturadoEnUnidad || ''}
                           onChange={(e) => setFormData(prev => ({ ...prev, facturadoEnUnidad: e.target.value }))}
                           >
                           <option value="">— Sin definir —</option>
@@ -3481,6 +3498,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
                   {!esFlotaPropiaRoelca && (
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconDollar /></div><h3 className="roelca-card-title">Pago al Proveedor</h3></div>
+                    {facturadaProv && <p className="fo-aviso-facturada">Ya está en la factura del proveedor {String(initialData?.facturaProveedorFolio || '').trim() || '(sin folio)'}: los importes no se recalculan solos. Si cambias uno a mano, al guardar también cambia esa factura.</p>}{/* ✅ V00494 */}
                     <div className="form-grid">
                       <div className="form-group"><label className="form-label">Monto a Pagar Proveedor <span className="campo-badge">totalAPagarProv</span>
                         {/* ✅ V00245: mismo botón que en el cliente */}
@@ -3566,6 +3584,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
                 <>
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconDollar /></div><h3 className="roelca-card-title">Facturación al Cliente</h3></div>
+                    {facturadaCli && <p className="fo-aviso-facturada">Ya está en la factura {String(initialData?.facturaClienteInvoice || '').trim() || '(sin folio)'}: los importes no se recalculan solos (ni la moneda ni el tipo de cambio). Si cambias uno a mano, al guardar también cambia la factura.</p>}{/* ✅ V00494 */}
                     <div className="form-grid">
                       <div className="form-group">
                         <label className="form-label">Facturado En <span className="campo-badge">facturadoEnCobrar</span></label>
@@ -3575,7 +3594,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
                             pero puedes corregir en qué moneda se factura. */}
                         {/* ✅ V00132: EDITABLE otra vez a petición — se precarga de la empresa (y "⟳ Actualizar moneda" la re-sincroniza), pero aquí puedes corregirla para esta operación */}
                         {/* ✅ V00490: fija a la moneda de la empresa; solo se elige si la empresa no tiene moneda */}
-                        <div onMouseDownCapture={() => campoBloqueadoAut('facturadoEnCobrar') && clicCampoBloqueado('facturadoEnCobrar')}><select disabled={campoBloqueadoAut('facturadoEnCobrar') || !!monedaFijaCliente} title={monedaFijaCliente ? 'Es la moneda del cliente en Empresas; no se cambia aquí' : campoBloqueadoAut('facturadoEnCobrar') ? 'La moneda viene de la tabla Empresas y está bloqueada por Autorizaciones para tu rol (usa ⟳ Actualizar moneda para re-sincronizarla)' : 'El cliente no tiene moneda en Empresas: elígela aquí'} style={campoBloqueadoAut('facturadoEnCobrar') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} className="form-control fo-moneda-fija" value={formData.facturadoEnCobrar || ''}
+                        <div onMouseDownCapture={() => campoBloqueadoAut('facturadoEnCobrar') && clicCampoBloqueado('facturadoEnCobrar')}><select disabled={campoBloqueadoAut('facturadoEnCobrar') || !!monedaFijaCliente || facturadaCli} title={facturadaCli ? 'Ya está facturada: la moneda no se cambia aquí (quítala de la factura si hay que cambiarla)' : monedaFijaCliente ? 'Es la moneda del cliente en Empresas; no se cambia aquí' : campoBloqueadoAut('facturadoEnCobrar') ? 'La moneda viene de la tabla Empresas y está bloqueada por Autorizaciones para tu rol (usa ⟳ Actualizar moneda para re-sincronizarla)' : 'El cliente no tiene moneda en Empresas: elígela aquí'} style={campoBloqueadoAut('facturadoEnCobrar') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} className="form-control fo-moneda-fija" value={formData.facturadoEnCobrar || ''}
                           onChange={(e) => setFormData(prev => ({ ...prev, facturadoEnCobrar: e.target.value }))}
                           >
                           <option value="">— Sin definir —</option>

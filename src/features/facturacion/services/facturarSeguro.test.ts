@@ -22,7 +22,7 @@ vi.mock('firebase/firestore', () => ({
   },
 }));
 
-import { facturaDeOperacion, facturaExistenteFresca, operacionesYaFacturadas, variantesFolio } from './facturarSeguro';
+import { decidirLiberacion, facturaDeOperacion, facturaExistenteFresca, operacionesYaFacturadas, planLiberarAlEliminar, variantesFolio } from './facturarSeguro';
 
 beforeEach(() => { operaciones.length = 0; facturas.length = 0; });
 
@@ -78,5 +78,37 @@ describe('variantesFolio', () => {
   it('nunca pasa de 30 (tope de `in`)', () => {
     expect(variantesFolio('Ab Cd').length).toBeLessThanOrEqual(30);
     expect(variantesFolio('   ')).toEqual([]);
+  });
+});
+
+// ✅ V00494: borrar una factura no "desfactura" operaciones que siguen en otra.
+describe('decidirLiberacion / planLiberarAlEliminar', () => {
+  const op = (id: string, datos: Record<string, unknown> | null) => ({ idLista: id, idReal: id, datos });
+  const borradas = new Set(['B']);
+  it('libera la que apunta a la borrada y no está en otra', () => {
+    expect(decidirLiberacion('cliente', [op('a', { facturaClienteId: 'B', facturado: true })], borradas, [])).toEqual([{ idLista: 'a', idReal: 'a', accion: 'liberar' }]);
+  });
+  it('si sigue en otra factura (la buena), se liga a esa en vez de liberarla', () => {
+    const otras = [{ id: 'A', invoice: 'INV-1', operacionesIds: ['a'] }];
+    expect(decidirLiberacion('cliente', [op('a', { facturaClienteId: 'B' })], borradas, otras)).toEqual([{ idLista: 'a', idReal: 'a', accion: 'ligar', facturaId: 'A', folio: 'INV-1' }]);
+    expect(decidirLiberacion('cliente', [op('a', { facturaClienteId: 'A' })], borradas, otras)).toEqual([{ idLista: 'a', idReal: 'a', accion: 'dejar' }]);
+  });
+  it('apunta a otra factura viva: no se toca; operación borrada: nada', () => {
+    expect(decidirLiberacion('cliente', [op('a', { facturaClienteId: 'Z' }), op('b', null)], borradas, [])).toEqual([{ idLista: 'a', idReal: 'a', accion: 'dejar' }]);
+  });
+  it('prefiere una no cancelada', () => {
+    const otras = [{ id: 'C', invoice: 'X', statusFactura: 'Cancelado', operacionesIds: ['a'] }, { id: 'D', invoice: 'Y', operacionesIds: ['a'] }];
+    expect(decidirLiberacion('proveedor', [op('a', {})], borradas, otras)[0]).toMatchObject({ accion: 'ligar', facturaId: 'D' });
+  });
+  it('busca en el servidor y en la lista cargada (importadas con operacionesIds en texto ya normalizadas)', async () => {
+    operaciones.push({ id: 'a', data: { facturaClienteId: 'B' } }, { id: 'b', data: { facturaClienteId: 'B' } }, { id: 'c', data: {} });
+    facturas.push({ id: 'B', data: { invoice: 'DUP', operacionesIds: ['a', 'b', 'c'] } }, { id: 'A', data: { invoice: 'INV-1', operacionesIds: ['a'] } });
+    const cargadas = [{ id: 'IMP', invoice: 'VIEJA', operacionesIds: ['b'] }];
+    const r = await planLiberarAlEliminar('cliente', [{ idLista: 'a', idReal: 'a' }, { idLista: 'b', idReal: 'b' }, { idLista: 'c', idReal: 'c' }], borradas, cargadas);
+    expect(r).toEqual([
+      { idLista: 'a', idReal: 'a', accion: 'ligar', facturaId: 'A', folio: 'INV-1' },
+      { idLista: 'b', idReal: 'b', accion: 'ligar', facturaId: 'IMP', folio: 'VIEJA' },
+      { idLista: 'c', idReal: 'c', accion: 'liberar' },
+    ]);
   });
 });

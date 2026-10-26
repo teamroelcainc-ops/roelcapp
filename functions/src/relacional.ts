@@ -43,6 +43,7 @@ import { CAMPOS_CANONICOS, derivarDesdeConvenio } from './dominio/operacionCanon
 import { ESQUEMA_OPERACION_VERSION, ID_MXN, ID_USD } from './dominio/constantes.js';
 import { conversionOperacion, derivadosFactura, monedaConvenioDeducida, monedaDeFactura, monedaFacturaOperacion, totalNativoDeOperaciones, totalNativoDeRenglonesLegado } from './dominio/dinero.js';
 import { aNumero, deCentavos, r2 } from './dominio/numeros.js';
+import { cambioParaFacturas } from './dominio/cascadaFacturas.js'; // ✅ V00494
 import { borrarRenglones, proyectarRenglones } from './proyecciones.js';
 import { cambiosCobroPuente } from './puentesYDiesel.js';
 import { conReintento, OPCIONES_TRIGGER } from './eventos.js';
@@ -52,7 +53,7 @@ import { OPCIONES_PROPAGACION, propagarSiCambioNombre } from './propagacion.js';
 if (getApps().length === 0) initializeApp();
 const dbRel = getFirestore();
 
-const REL_VERSION = 'relacional-v1.7'; // ✅ V00299: + sync INVERSA detalle→línea del tarifario · ✅ V00429: + guardián de integridad del convenio · ✅ V00440: + campos canónicos · ✅ V00441: + dinero y cobro del puente
+const REL_VERSION = 'relacional-v1.8'; // ✅ V00494: la cascada a facturas solo recalcula con cambios de dinero · ✅ V00299: + sync INVERSA detalle→línea del tarifario · ✅ V00429: + guardián de integridad del convenio · ✅ V00440: + campos canónicos · ✅ V00441: + dinero y cobro del puente
 
 /** Normaliza: sin acentos, espacios colapsados, minúsculas (misma regla del cliente V00257). */
 const normR = (t: unknown): string =>
@@ -428,8 +429,14 @@ const conversionOperacionLegado = (op: Dict, lado: 'cliente' | 'proveedor') => {
   return { subtotal: r2(subtotal), total, dol: r2(dol), pes: r2(pes), conv: r2(conv) };
 };
 
-/** Cascada Operación → Facturas de un lado (clientes o proveedores). */
-const propagarMontoOperacionAFacturas = async (opId: string, lado: 'cliente' | 'proveedor'): Promise<number> => {
+/**
+ * Cascada Operación → Facturas de un lado (clientes o proveedores).
+ * ✅ V00494: `soloTexto` = solo cambió el nombre del convenio o la Ref Cliente: se copian esos textos
+ *   al renglón y NO se recalculan importes ni el total (antes cualquier cambio de esos textos —también
+ *   el que propaga el servidor al renombrar un convenio— recalculaba el renglón con la regla y la
+ *   factura cambiaba de monto sin que nadie tocara dinero).
+ */
+const propagarMontoOperacionAFacturas = async (opId: string, lado: 'cliente' | 'proveedor', soloTexto = false): Promise<number> => {
   const coleccion = lado === 'cliente' ? 'facturas_clientes' : 'facturas_proveedores';
   const snap = await dbRel.collection(coleccion).where('operacionesIds', 'array-contains', opId).select().get();
   if (snap.empty) return 0;
@@ -448,8 +455,19 @@ const propagarMontoOperacionAFacturas = async (opId: string, lado: 'cliente' | '
       const ops = Array.isArray(fac.operacionesGuardadas) ? [...(fac.operacionesGuardadas as Dict[])] : [];
       const idx = ops.findIndex((o) => String(o?.id || '') === opId);
       if (idx === -1) return false; // factura sin snapshot detallado: no se inventa
-      const m = dineroOn ? conversionOperacion(op, lado) : conversionOperacionLegado(op, lado);
       const viejo = ops[idx] as Dict;
+      if (soloTexto) {
+        const texto: Dict = {
+          ...viejo,
+          convenioNombre: String((lado === 'cliente' ? (op.convenioNombre || op.convenioClienteNombre) : (op.convenioProveedorNombre || op.convenioNombre)) ?? viejo.convenioNombre ?? ''),
+        };
+        if (lado === 'cliente') texto.refCliente = String(op.refCliente ?? viejo.refCliente ?? '');
+        if (String(viejo.convenioNombre || '') === String(texto.convenioNombre || '') && (lado !== 'cliente' || String(viejo.refCliente || '') === String(texto.refCliente || ''))) return false;
+        ops[idx] = texto;
+        tx.update(d.ref, { operacionesGuardadas: ops });
+        return true;
+      }
+      const m = dineroOn ? conversionOperacion(op, lado) : conversionOperacionLegado(op, lado);
       // ✅ V00448: si la conversión sale en 0 (p. ej. convenio en otra moneda SIN tipo de cambio)
       //   y el renglón facturado tiene monto, NO se pone en 0: ese monto vino al facturar de un
       //   respaldo (conversión guardada, confirmación de tarifa) y la factura bajaría sin razón.
@@ -493,24 +511,17 @@ const propagarMontoOperacionAFacturas = async (opId: string, lado: 'cliente' | '
 // ✅ V00489: también los montos guardados (Subtotal, Dólares, Pesos, Conversión). Desde la V00486 la
 //   regla deduce la moneda del convenio de la conversión guardada (y sin TC siempre cayó a esos montos):
 //   corregirlos en el formulario sin tocar nada más no actualizaba el renglón de la factura (D-6166).
-const CAMPOS_DINERO_CLIENTE = [
-  'montoConvenioCliente', 'cargosAdicionales', 'facturadoEnCobrar', 'monedaConvenioCliente', 'monedaCobroNombre', 'tipoCambioAprobado', 'tipoCambioDia', 'convenioNombre', 'refCliente',
-  'conversionCliente', 'subtotalCliente', 'pesosCliente', 'dolaresCliente',
-];
-const CAMPOS_DINERO_PROV = [
-  'totalAPagarProv', 'cargosAdicionalesProv', 'facturadoEnUnidad', 'monedaConvenioProv', 'monedaUnidadNombre', 'tipoCambioAprobado', 'tipoCambioDia', 'convenioProveedorNombre',
-  'conversionProv', 'subtotalProv', 'pesosProv', 'dolaresProv',
-];
-
+// ✅ V00494: solo las ENTRADAS de dinero recalculan el renglón. Las copias de nombres (monedaCobroNombre,
+//   monedaUnidadNombre) y tipoCambioDia ya no disparan nada (las cambia el sistema, no quien factura), y el
+//   nombre del convenio / la Ref Cliente solo se copian como texto. Regla pura en dominio/cascadaFacturas.
 /** ✅ V00442 (Fase 6.1): la cascada de montos (antes el trigger operacionMontoCambiado) corre dentro de operacionEscrita. */
 const propagarMontosDeOperacion = async (opId: string, antes: Dict, despues: Dict): Promise<void> => {
-  const cambioCliente = CAMPOS_DINERO_CLIENTE.some((c) => String(antes[c] ?? '') !== String(despues[c] ?? ''));
-  const cambioProv = CAMPOS_DINERO_PROV.some((c) => String(antes[c] ?? '') !== String(despues[c] ?? ''));
-  if (!cambioCliente && !cambioProv) return;
+  const cambio = cambioParaFacturas(antes, despues);
+  if (!cambio.cliente && !cambio.proveedor) return;
   let n = 0;
-  if (cambioCliente) n += await propagarMontoOperacionAFacturas(opId, 'cliente');
-  if (cambioProv) n += await propagarMontoOperacionAFacturas(opId, 'proveedor');
-  if (n > 0) logger.info(`[${REL_VERSION}] operacionEscrita (montos): ${String(despues.ref || opId)} → ${n} factura(s) actualizada(s)`);
+  if (cambio.cliente) n += await propagarMontoOperacionAFacturas(opId, 'cliente', cambio.cliente === 'texto');
+  if (cambio.proveedor) n += await propagarMontoOperacionAFacturas(opId, 'proveedor', cambio.proveedor === 'texto');
+  if (n > 0) logger.info(`[${REL_VERSION}] operacionEscrita (montos): ${String(despues.ref || opId)} → ${n} factura(s) actualizada(s)`, cambio);
 };
 
 /** Cascada Factura → saldo de Pagos: si la factura ya tiene pagos aplicados,

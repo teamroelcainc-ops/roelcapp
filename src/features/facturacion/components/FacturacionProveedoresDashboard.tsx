@@ -21,21 +21,19 @@ import { useModuloEscuchando } from '../../../utils/moduloVivoContexto'; // ✅ 
 import { EditorOperacionEmbebido } from '../../operaciones/components/EditorOperacionEmbebido';
 import { HiloModal } from '../../hilo/HiloModal';
 import { datosAAplicar, notificarOperacionGuardada, suscribirOperacionGuardada } from '../../../utils/operacionesBus';
-import { avisoYaFacturadas, facturaExistenteFresca, operacionesYaFacturadas } from '../services/facturarSeguro'; // ✅ V00451
+import { avisoYaFacturadas, facturaExistenteFresca, operacionesYaFacturadas, planLiberarAlEliminar } from '../services/facturarSeguro'; // ✅ V00451 · V00494
+import type { DecisionLiberar } from '../services/facturarSeguro';
 import {
   collection,
   query,
   writeBatch,
   doc,
-  limit,
-  orderBy,
   where,
   getDocs,
   getDoc,
   setDoc,
   updateDoc,
   documentId,
-  startAfter,
   arrayUnion,
   onSnapshot,
 } from 'firebase/firestore';
@@ -84,11 +82,13 @@ import {
   totalDeFilaFactura, // ✅ V00451
 } from '../services/totalesFactura'; // ✅ Fase 1.8
 import { normalizarFacturaDe } from '../services/normalizarFactura'; // ✅ V00493
+import { avisoFacturasTruncadas, descargarTodasLasFacturas } from '../services/descargarFacturas'; // ✅ V00494
+import { avisar } from '../../../shared/data/avisos';
 import { aplicarFacturas, aplicarOperaciones, llamarDinero, mensajeDinero } from '../services/dineroServidor'; // ✅ V00441
 import { useFlags, useFlagsCargadas } from '../../../shared/data/flags';
 import {
-  aplicarConfigColumnasGuardada, colorStatusFactura, DOC_REMISION_EMISORES, fechaOrdenKey, LIMITE_FACTURAS_TODAS, LIMITE_OPS_TODAS,
-  fechaFacturaISO, moverIdAlInicio, PAG_FACTURAS, pareceReferencia, refNaturalKey, STATUS_FACTURA_OPCIONES, textoFacturadoEn, valorGenericoOp,
+  aplicarConfigColumnasGuardada, colorStatusFactura, DOC_REMISION_EMISORES, fechaOrdenKey, LIMITE_OPS_TODAS,
+  fechaFacturaISO, moverIdAlInicio, pareceReferencia, refNaturalKey, STATUS_FACTURA_OPCIONES, textoFacturadoEn, valorGenericoOp,
 } from '../selectores'; // ✅ V00444 (Fase 8.1): una sola copia (antes idéntica en Clientes y Proveedores)
 import { useOperacionesFacturables } from '../hooks/useOperacionesFacturables'; // ✅ V00444 (Fase 8.1)
 import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
@@ -647,17 +647,10 @@ export const FacturacionProveedoresDashboard = () => {
     facturasEnVueloRef.current = true;
     setCargandoFacturas(true);
     try {
-      const todas: any[] = [];
-      let cursor: any = null;
-      for (let i = 0; i < Math.ceil(LIMITE_FACTURAS_TODAS / PAG_FACTURAS); i++) {
-        const cons: any[] = [orderBy(documentId()), limit(PAG_FACTURAS)];
-        if (cursor) cons.splice(1, 0, startAfter(cursor));
-        const snap = await getDocs(query(collection(db, 'facturas_proveedores'), ...cons));
-        if (snap.empty) break;
-        snap.docs.forEach(d => todas.push(normalizarFactura({ id: d.id, ...(d.data() as any) })));
-        cursor = snap.docs[snap.docs.length - 1];
-        if (snap.docs.length < PAG_FACTURAS) break;
-      }
+      // ✅ V00494: TODAS (antes se cortaba en 12,000 por ID y cada día salía de la lista otra factura).
+      const descarga = await descargarTodasLasFacturas('facturas_proveedores');
+      if (descarga.truncada) avisar({ tipo: 'alerta', titulo: 'Facturas de proveedores incompletas', texto: avisoFacturasTruncadas(descarga.docs.length) });
+      const todas: any[] = descarga.docs.map(normalizarFactura);
       todas.sort((a: any, b: any) => {
         const fa = String(a.fecha || '');
         const fb = String(b.fecha || '');
@@ -692,14 +685,11 @@ export const FacturacionProveedoresDashboard = () => {
     const descargarClientes = async () => {
       try {
         const todas: any[] = [];
-        let cursor: any = null;
-        for (let i = 0; i < Math.ceil(LIMITE_FACTURAS_TODAS / PAG_FACTURAS); i++) {
-          const cons: any[] = [orderBy(documentId()), limit(PAG_FACTURAS)];
-          if (cursor) cons.splice(1, 0, startAfter(cursor));
-          const snap = await getDocs(query(collection(db, 'facturas_clientes'), ...cons));
-          if (snap.empty) break;
-          snap.docs.forEach(d => {
-            const f: any = d.data();
+        // ✅ V00494: TODAS las de clientes (antes con el mismo tope de 12,000).
+        const descarga = await descargarTodasLasFacturas('facturas_clientes');
+        if (descarga.truncada) avisar({ tipo: 'alerta', titulo: 'Facturas de clientes incompletas', texto: avisoFacturasTruncadas(descarga.docs.length) });
+        descarga.docs.forEach((d) => {
+            const f: any = d;
             todas.push({
               id: d.id,
               invoice: f.invoice || f.facturas || '',
@@ -712,9 +702,6 @@ export const FacturacionProveedoresDashboard = () => {
               operaciones: f.operaciones || [],
             });
           });
-          cursor = snap.docs[snap.docs.length - 1];
-          if (snap.docs.length < PAG_FACTURAS) break;
-        }
         setFacturasClientesGlobales(todas);
       } catch (e) {
         console.error('[Proveedores] Error cargando facturas de clientes (cruce):', e);
@@ -2677,25 +2664,29 @@ export const FacturacionProveedoresDashboard = () => {
           const quien = ids.length > 1 ? `La factura ${conPagos.invoice} (del grupo) no se puede eliminar.\n\n` : '';
           return alert(quien + avisoFacturaConPagos(formatoMoneda(montoPagadoDe(conPagos))));
         }
-        // Las operaciones a liberar salen de la versión fresca de cada factura.
-        const idsLiberadas: string[] = Array.from(new Set(frescas.flatMap(f => (f ? (f.operacionesIds || []).map(String) : []))));
-        const escrituras = ids.length + idsLiberadas.length;
+        // Las operaciones salen de la versión fresca de cada factura.
+        const idsDeFacturas: string[] = Array.from(new Set(frescas.flatMap(f => (f ? (f.operacionesIds || []).map(String) : []))));
+        // ✅ V00494: solo se libera la que apunta a esta factura (o a ninguna) y no está en OTRA; si está
+        //   en otra (p. ej. al borrar un duplicado), se liga a esa. Antes se liberaban todas y volvían a
+        //   "Pendientes" aunque siguieran facturadas.
+        const cargadas = facturasGlobales.map((f) => ({ id: String(f.id), invoice: String(f.invoice || ''), statusFactura: f.statusFactura, operacionesIds: (Array.isArray(f.operacionesIds) ? f.operacionesIds : []).map(String) }));
+        const decisiones = await planLiberarAlEliminar('proveedor', idsDeFacturas.map((id) => ({ idLista: id, idReal: idRealOp(id) })), new Set(ids.map(String)), cargadas);
+        const aEscribir = decisiones.filter((d) => d.accion !== 'dejar');
+        const escrituras = ids.length + aEscribir.length;
         if (escrituras > MAX_ESCRITURAS_LOTE) return alert(avisoLoteGrande(escrituras, 'Quita primero algunas operaciones de la factura y vuelve a intentar.'));
+        const camposDe = (d: DecisionLiberar): Record<string, unknown> => d.accion === 'ligar'
+          ? { facturaProveedorId: d.facturaId, facturaProveedorFolio: d.folio, facturadoProveedor: true }
+          : { facturaProveedorId: null, facturaProveedorFolio: null, facturadoProveedor: false };
         const batch = writeBatch(db);
         ids.forEach(fid => batch.delete(doc(db, 'facturas_proveedores', fid)));
-        idsLiberadas.forEach(opId => {
-          batch.update(doc(db, 'operaciones', idRealOp(opId)), { // ✅ V00451: id real
-            facturaProveedorId: null,
-            facturaProveedorFolio: null,
-            facturadoProveedor: false,
-          });
-        });
+        aEscribir.forEach((d) => batch.update(doc(db, 'operaciones', d.idReal), camposDe(d))); // ✅ V00451: id real
         await batch.commit();
+        const porLista = new Map(aEscribir.map((d) => [d.idLista, camposDe(d)] as const));
         setFacturasGlobales(prev => prev.filter(f => !ids.includes(f.id)));
-        setOperacionesGlobales(prev => prev.map(op =>
-          idsLiberadas.includes(op.id) ? { ...op, facturaProveedorId: null, facturaProveedorFolio: null, facturadoProveedor: false } : op
-        ));
-        avisarOpsFacturacion(idsLiberadas, { facturaProveedorId: null, facturaProveedorFolio: null, facturadoProveedor: false }); // ✅ V00451
+        setOperacionesGlobales(prev => prev.map(op => (porLista.has(String(op.id)) ? { ...op, ...porLista.get(String(op.id)) } : op)));
+        aEscribir.forEach((d) => avisarOpsFacturacion([d.idLista], camposDe(d))); // ✅ V00451
+        const ligadas = decisiones.filter((d) => d.accion !== 'liberar').length;
+        if (ligadas > 0) avisar({ tipo: 'info', titulo: 'Factura eliminada', texto: `${ligadas} operación(es) siguen facturadas en otra factura y no volvieron a Pendientes.` });
       } catch (error) {
         console.error('Error al eliminar factura:', error);
         alert(mensajeDinero(error, 'Hubo un error al eliminar.'));

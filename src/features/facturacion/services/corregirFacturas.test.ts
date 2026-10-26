@@ -1,7 +1,7 @@
 // ✅ V00482 — Corregir monedas y montos: moneda de la empresa y total de sus operaciones.
 import { describe, expect, it } from 'vitest';
 import { ID_MXN, ID_USD } from '../../../shared/dominio/constantes';
-import { MOTIVO_CANCELADA, MOTIVO_SIN_MONEDA, MOTIVO_SIN_OPERACIONES, resumirRevision, revisarFactura } from './corregirFacturas';
+import { MOTIVO_CANCELADA, MOTIVO_SIN_MONEDA, MOTIVO_SIN_OPERACIONES, MOTIVO_TOTAL_MANUAL, resumirRevision, revisarFactura } from './corregirFacturas';
 
 const AHORA = '2026-10-24T12:00:00.000Z';
 // Operación cobrada en dólares: convenio USD 95, TC 18.50 → Dólares (Cliente) 95, Conversión 1,757.50.
@@ -55,6 +55,8 @@ describe('revisar una factura', () => {
     expect(revisarFactura('cliente', factura({ statusFactura: 'Cancelado' }), ops, 'USD', '', AHORA, '').motivo).toBe(MOTIVO_CANCELADA);
     expect(revisarFactura('cliente', factura({}), ops, null, '', AHORA, '').motivo).toBe(MOTIVO_SIN_MONEDA);
     expect(revisarFactura('cliente', factura({ operacionesIds: [] }), ops, 'USD', '', AHORA, '').motivo).toBe(MOTIVO_SIN_OPERACIONES);
+    // ✅ V00494: el total capturado a mano no se pisa.
+    expect(revisarFactura('cliente', factura({ totalManualCentavos: 123456, subtotalMonedaFactura: 1234.56 }), ops, 'USD', '', AHORA, '')).toMatchObject({ estado: 'omitida', motivo: MOTIVO_TOTAL_MANUAL });
     const enCero = revisarFactura('cliente', factura({}), [opUsd('o1', 0), opUsd('o2', 0)], 'USD', '', AHORA, '');
     expect([enCero.estado, enCero.motivo]).toEqual(['omitida', 'El recálculo dio $0.00 — revisa las operaciones (montos de convenio y tipo de cambio).']);
     expect(revisarFactura('cliente', factura({}), [], 'USD', '', AHORA, '').motivo).toBe('No se encontraron las operaciones de la factura.');

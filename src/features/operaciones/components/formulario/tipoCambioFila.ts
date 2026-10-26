@@ -68,9 +68,11 @@ export const buscarTCAplicable = (fuente: unknown, objetivoISO: string): { valor
  * · Su fecha no tiene T.C. registrado → se queda el que trae (null = no cambiar).
  * · Trae 0 o trae otro → el oficial.
  * · Excepto: ya facturada (cambiaría una factura emitida: solo se avisa) o editado a mano en esta sesión.
+ * ✅ V00494: facturada NUNCA se cambia sola, aunque traiga 0 (antes con 0 tomaba el oficial y, al
+ *   guardar, la factura cambiaba de monto sin que nadie lo pidiera). "Usar oficial" sigue a mano.
  */
 export const tcParaOperacionGuardada = (p: { actual: number; oficial: number | null; facturada: boolean; editadoAMano: boolean }): number | null => {
-  if (p.oficial === null) return null;
+  if (p.oficial === null || p.facturada) return null;
   if (!(p.actual > 0)) return p.oficial;
   if (mismoTipoCambio(p.actual, p.oficial) || p.facturada || p.editadoAMano) return null;
   return p.oficial;

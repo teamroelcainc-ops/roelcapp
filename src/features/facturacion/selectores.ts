@@ -11,10 +11,9 @@ import { monedaFacturaOperacion } from '../../shared/dominio/dinero';
 import type { Lado } from '../../shared/dominio/dinero';
 import { nombreMoneda } from '../../shared/dominio/moneda';
 
-/** Tope y tamaño de página de las descargas de operaciones y facturas. */
+/** Tope de la descarga de operaciones (camino sin consultasCanonicas). ✅ V00494: las facturas ya
+ *  no tienen tope de 12,000: se bajan todas (services/descargarFacturas.ts). */
 export const LIMITE_OPS_TODAS = 20000;
-export const LIMITE_FACTURAS_TODAS = 12000;
-export const PAG_FACTURAS = 1000;
 
 /** Documento (en config_columnas) con el encabezado de remisiones; compartido por los dos módulos. */
 export const DOC_REMISION_EMISORES = 'facturacion_remision_emisores';

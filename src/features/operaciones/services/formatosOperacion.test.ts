@@ -72,7 +72,7 @@ describe('fechas y tipo de cambio', () => {
     expect(tcParaOperacionGuardada({ ...base, actual: 0 })).toBe(18.4888);
     expect(tcParaOperacionGuardada({ ...base, actual: 18.4888 })).toBeNull();
     expect(tcParaOperacionGuardada({ ...base, facturada: true })).toBeNull();
-    expect(tcParaOperacionGuardada({ ...base, facturada: true, actual: 0 })).toBe(18.4888);
+    expect(tcParaOperacionGuardada({ ...base, facturada: true, actual: 0 })).toBeNull(); // ✅ V00494: facturada nunca cambia sola
     expect(tcParaOperacionGuardada({ ...base, editadoAMano: true })).toBeNull();
     expect(tcParaOperacionGuardada({ ...base, oficial: null })).toBeNull();
   });
