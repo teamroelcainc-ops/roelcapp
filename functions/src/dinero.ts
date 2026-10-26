@@ -30,7 +30,7 @@ import {
   planEditarPago, planEliminarFacturas, planEliminarPago, planFacturar, planMoverOperacion, planQuitarOperacion,
   planRecalcularFactura, planRegistrarPago, variantesFolio,
 } from './dominio/facturacion.js';
-import type { DocLeido, Escritura, PlanDinero } from './dominio/facturacion.js';
+import type { DocLeido, Escritura, FacturaContenedora, PlanDinero } from './dominio/facturacion.js';
 
 if (getApps().length === 0) initializeApp();
 
@@ -294,11 +294,47 @@ export const eliminarFactura = callable(z.object({ lado, facturaIds: z.array(id)
     const opsIds = Array.from(new Set(grupo.flatMap((f) => lista(f.datos.operacionesIds)))).filter((x) => !x.includes('/'));
     if (opsIds.length + grupo.length > 450) throw new ErrorDinero('La factura tiene demasiadas operaciones para eliminarla de una vez. Quita primero algunas operaciones y vuelve a intentar.');
     const ops = await leer(tx, opsIds.map((x) => db.collection('operaciones').doc(x)));
-    const plan = planEliminarFacturas(d.lado, grupo, ops);
+    // ✅ V00496: las que la lista guarda con su id de AppSheet (el campo `id` del documento, no su id)
+    //   también se leen: si no, se quedaban marcadas con la factura borrada.
+    const leidas = new Set(ops.map((o) => o.id));
+    const faltan = opsIds.filter((x) => !leidas.has(x));
+    for (let i = 0; i < faltan.length; i += 30) {
+      const snap = await tx.get(db.collection('operaciones').where('id', 'in', faltan.slice(i, i + 30)));
+      snap.docs.forEach((s) => { if (!leidas.has(s.id)) { leidas.add(s.id); ops.push({ id: s.id, datos: s.data() as Datos }); } });
+    }
+    const ids = Array.from(new Set(ops.flatMap((o) => [o.id, String(o.datos.id ?? '').trim()]).filter(Boolean)));
+    const borradas = new Set(grupo.map((f) => f.id));
+    const otras = await otrasFacturasDe(db, tx, d.lado, ids, borradas);
+    // ✅ V00496: ¿existen las OTRAS facturas a las que apuntan? Una marca a una factura que ya no existe no retiene la operación.
+    const apuntadas = Array.from(new Set(ops.map((o) => String(o.datos[LADOS[d.lado].opFacturaId] ?? '').trim())))
+      .filter((x) => x && !x.includes('/') && !borradas.has(x));
+    const existe = new Set((await leer(tx, apuntadas.map((x) => db.collection(LADOS[d.lado].coleccion).doc(x)))).map((f) => f.id));
+    const plan = planEliminarFacturas(d.lado, grupo, ops, otras, existe);
     ejecutarPlan(db, tx, plan, { ops, canon });
     return respuesta(plan);
   });
 });
+
+/**
+ * ✅ V00496: las OTRAS facturas del lado que contienen alguna de estas operaciones (por su id y por su
+ * id de AppSheet; en lotes de 30 por `array-contains-any`, dentro de la transacción). Las importadas con
+ * `operacionesIds` en texto no salen aquí: para esas está el script `facturas:texto` (CAMBIOS-V00496.md).
+ */
+const otrasFacturasDe = async (
+  db: Firestore, tx: Transaction, lado: 'cliente' | 'proveedor', opsIds: readonly string[], borradas: ReadonlySet<string>,
+): Promise<FacturaContenedora[]> => {
+  const col = db.collection(LADOS[lado].coleccion);
+  const salida = new Map<string, FacturaContenedora>();
+  for (let i = 0; i < opsIds.length; i += 30) {
+    const snap = await tx.get(col.where('operacionesIds', 'array-contains-any', opsIds.slice(i, i + 30)));
+    snap.docs.forEach((s) => {
+      if (borradas.has(s.id)) return;
+      const f = s.data() as Datos;
+      salida.set(s.id, { id: s.id, invoice: String(f.invoice ?? ''), statusFactura: f.statusFactura, operacionesIds: lista(f.operacionesIds) });
+    });
+  }
+  return Array.from(salida.values());
+};
 
 export const recalcularFactura = callable(z.object({ lado, facturaId: id }), async (d, uid) => {
   const db = getFirestore();
