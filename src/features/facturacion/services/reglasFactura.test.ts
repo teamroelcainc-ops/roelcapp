@@ -4,7 +4,7 @@ import { ID_MXN, ID_USD } from '../../../shared/dominio/constantes';
 import { totalNativoDeOperaciones } from '../../../shared/dominio/dinero';
 import {
   avisoMonedaDistinta, camposCancelacion, cancelacionDe, estaCancelada, estaFacturada, importesDeRenglones,
-  monedaDeEmpresa, planCancelacion, puedeAgregarOperaciones, puedeGenerarRemision, STATUS_AL_CREAR, totalSugeridoEn, validarCancelacion,
+  monedaDeEmpresa, planCancelacion, puedeAgregarOperaciones, puedeGenerarRemision, STATUS_AL_CREAR, sumaEnTotales, totalSugeridoEn, validarCancelacion,
 } from './reglasFactura';
 
 describe('status de la factura', () => {
@@ -99,5 +99,13 @@ describe('importe de cada operación en la moneda de la factura', () => {
   it('renglones viejos sin dol ni monto caen a subtotalBase', () => {
     expect(importesDeRenglones('USD', [{ subtotalBase: 50 }, { subtotalBase: 70 }])).toEqual([50, 70]);
     expect(importesDeRenglones('MXN', [{ pes: 900, monto: 0 }, { pes: 100 }])).toEqual([900, 100]);
+  });
+});
+
+// ✅ V00493: tarjetas del Historial (y Estadísticas) sin las canceladas.
+describe('sumaEnTotales', () => {
+  it('una cancelada no suma con el filtro Todos; sí suma si se filtra por Cancelado', () => {
+    expect([sumaEnTotales('Facturado', 'Todos'), sumaEnTotales('', 'Todos'), sumaEnTotales('No Facturado', 'Todos')]).toEqual([true, true, true]);
+    expect([sumaEnTotales('Cancelado', 'Todos'), sumaEnTotales('Cancelada', ''), sumaEnTotales('Cancelado', 'Cancelado')]).toEqual([false, false, true]);
   });
 });

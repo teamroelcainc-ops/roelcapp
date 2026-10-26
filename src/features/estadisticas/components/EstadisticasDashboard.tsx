@@ -11,8 +11,9 @@
 //   4. Utilidad: venta vs costo de proveedor por mes y línea, con margen.
 //   5. Promedios: venta promedio por servicio y utilidad promedio, por mes.
 // Fuente: operaciones del año (fechaServicio), EXCLUYENDO canceladas.
-// Montos: mismos criterios que Facturación (cliente y proveedor, con
-// respaldo en la Confirmación de Tarifa guardada).
+// ✅ V00493 — Montos del área Facturación: salen de las FACTURAS del módulo de Facturación
+// (fecha de factura, sin canceladas, el mismo total del Historial). Lo que aún no tiene
+// factura se muestra aparte ("por facturar") y no se suma.
 // Exportación: Excel (XLSX) y PDF horizontal con el logo de la empresa.
 // ---------------------------------------------------------------------------
 import { useRef, useState, useMemo, useEffect, useDeferredValue } from 'react';
@@ -28,7 +29,13 @@ import { useEsAdmin } from '../../../shared/data/sesion';
 import { useUsuarioStore } from '../../../stores/useUsuarioStore';
 import { STATUS_CANCELADO } from '../../../shared/dominio/constantes';
 import { aduanaDeOperacionCtx, type CtxCobroPuente } from '../../../shared/dominio/cobroPuente'; // ✅ V00467
-import { flagsAhora } from '../../../shared/data/flags';
+import { flagsAhora, useFlags } from '../../../shared/data/flags';
+import { useColeccionViva } from '../../../shared/data/coleccionesVivas'; // ✅ V00493
+import type { DocVivo } from '../../../shared/data/coleccionesVivas';
+import { consultaFacturasPagables } from '../../pagos/hooks/useFacturasPagables';
+import { totalNativoFactura, totalNativoFacturaLegado } from '../../facturacion/services/totalesFactura';
+import { useMontosFacturados } from '../hooks/useMontosFacturados';
+import ResumenMontosFacturados from './ResumenMontosFacturados';
 import { esMXN, esUSD, monedaCanonica } from '../../../shared/dominio/moneda';
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
 import { Download, RefreshCw, X, Settings2, Truck, Wallet } from 'lucide-react';
@@ -150,7 +157,12 @@ const SOLO_CRUCES_ADUANA = {
 };
 
 // ── Montos del CLIENTE (mismo criterio que Facturación de Clientes) ──
+// ✅ V00493: en el área Facturación cada fila es una operación DE UNA FACTURA (hooks/useMontosFacturados):
+//   su monto es su parte del total de la factura (`__fact`), su fecha la de la factura y su costo el
+//   de las facturas del proveedor. Las operaciones sin `__fact` (área Operaciones, "por facturar")
+//   siguen con el Por Cobrar / Por Pagar guardado.
 const montoClienteDe = (op: Op) => {
+  if (op.__fact) return { dol: op.__fact.dol, pes: op.__fact.pes, conv: op.__fact.conv, tc: op.__fact.tc };
   const convGuardada = Number(op.conversionCliente);
   if (!isNaN(convGuardada) && convGuardada > 0) {
     return {
@@ -181,6 +193,7 @@ const montoClienteDe = (op: Op) => {
 // ✅ NUEVO — Moneda en la que se FACTURA al cliente esa operación, derivada
 //   de los mismos montos que usa Facturación (dólares/pesos del cliente).
 const monedaClienteDe = (op: Op): 'USD' | 'MXN' | 'Mixta' | 'Sin dato' => {
+  if (op.__fact) return op.__fact.moneda; // ✅ V00493: la moneda de la factura
   const m = montoClienteDe(op);
   if (m.dol > 0 && m.pes > 0) return 'Mixta';
   if (m.dol > 0) return 'USD';
@@ -216,6 +229,7 @@ const montoProveedorDe = (op: Op): { dol: number; pes: number; conv: number } =>
 };
 
 const costoProveedorDe = (op: Op): number => {
+  if (op.__fact) return Number(op.__costo) || 0; // ✅ V00493: facturas del proveedor de esa operación
   const convGuardada = Number(op.conversionProv);
   if (!isNaN(convGuardada) && convGuardada > 0) return convGuardada;
   const tc = Number(op.tipoCambioAprobado) || 0;
@@ -241,6 +255,7 @@ const costoProveedorDe = (op: Op): number => {
 };
 
 const fechaISODe = (op: Op): string => {
+  if (op.__fact) return String(op.__fechaFact || ''); // ✅ V00493: fecha de la factura
   // ✅ V00443: con `consultasCanonicas` el rango se pidió por fechaServicioISO: la misma fecha
   //   para los desgloses (las guardadas como Timestamp ya no quedan fuera de meses y días).
   if (flagsAhora().consultasCanonicas && /^\d{4}-\d{2}-\d{2}$/.test(String(op.fechaServicioISO || ''))) return String(op.fechaServicioISO);
@@ -343,6 +358,8 @@ export function EstadisticasDashboard() {
   const [fechaDesde, setFechaDesde] = useState(`${anioActual}-01-01`);
   const [fechaHasta, setFechaHasta] = useState(new Date().toISOString().slice(0, 10));
   const [busquedaHecha, setBusquedaHecha] = useState(false);
+  // ✅ V00493: el rango que se BUSCÓ (las facturas se toman por su fecha dentro de este rango).
+  const [rangoBuscado, setRangoBuscado] = useState({ desde: '', hasta: '' });
   // ✅ NUEVO: detalle de un MES en la pestaña Servicios (opcionalmente
   //   acotado a una línea: clic en el número de Transfer/Logística/Fletes).
   // ✅ GENERALIZADO: el modal de desglose ahora acepta CUALQUIER selección
@@ -481,6 +498,7 @@ export function EstadisticasDashboard() {
     if (!fechaDesde || !fechaHasta) { alert('Captura la fecha Desde y Hasta.'); return; }
     if (fechaHasta < fechaDesde) { alert('La fecha Hasta no puede ser menor que la fecha Desde.'); return; }
     setCargando(true);
+    setRangoBuscado({ desde: fechaDesde, hasta: fechaHasta });
     if (subOpsRef.current) { subOpsRef.current(); subOpsRef.current = null; }
     // ✅ V00443 (Fase 7.5): con `consultasCanonicas`, el rango va sobre fechaServicioISO
     //   (normalizada por la migración): ya no se pierden las fechas guardadas como
@@ -509,10 +527,42 @@ export function EstadisticasDashboard() {
     );
   };
 
-  // Filtro de línea para las pestañas que lo usan
+  // ✅ V00493 — ÁREA FACTURACIÓN: el dinero sale del módulo de Facturación (fecha de factura,
+  //   sin canceladas, el mismo total del Historial). Una fila por operación de cada factura.
+  //   Las facturas se escuchan con el MISMO listener compartido que Pagos y el join de formatos.
+  const flags = useFlags();
+  const totalDoc = useMemo(
+    () => (flags.dineroPorServidor ? totalNativoFactura : totalNativoFacturaLegado),
+    [flags.dineroPorServidor],
+  );
+  const montosActivos = busquedaHecha && area === 'monetaria';
+  const consultaFactCli = consultaFacturasPagables('cliente', false);
+  const consultaFactProv = consultaFacturasPagables('proveedor', false);
+  const vivoFactCli = useColeccionViva(montosActivos ? consultaFactCli.clave : null, consultaFactCli.crear);
+  const vivoFactProv = useColeccionViva(montosActivos ? consultaFactProv.clave : null, consultaFactProv.crear);
+  const { datos: catMonedas } = useCatalogo('catalogo_moneda');
+  const nombresMoneda = useMemo(() => new Map(catMonedas.map((m) => [idReal(m), String(m.nombre ?? m.moneda ?? '')] as const)), [catMonedas]);
+  const montosFact = useMontosFacturados({
+    activo: montosActivos,
+    facturasListas: (vivoFactCli.listo || !!vivoFactCli.error) && (vivoFactProv.listo || !!vivoFactProv.error),
+    facturasCliente: vivoFactCli.datos,
+    facturasProveedor: vivoFactProv.datos,
+    ops,
+    desde: rangoBuscado.desde,
+    hasta: rangoBuscado.hasta,
+    totalDoc,
+    empresas: catNombres.empresas,
+    nombresMoneda,
+    porCobrarDe: montoClienteDe,
+    porPagarDe: costoProveedorDe,
+  });
+  const opsFact: Op[] = montosFact.filas;
+  const errorFacturas = vivoFactCli.error || vivoFactProv.error || montosFact.error;
+
+  // Filtro de línea para las pestañas que lo usan (✅ V00493: Ventas es del área Facturación)
   const opsDeLinea = useMemo(() =>
-    lineaVista === 'Globales' ? ops : ops.filter((o) => lineaDeOp(o) === lineaVista),
-  [ops, lineaVista]);
+    lineaVista === 'Globales' ? opsFact : opsFact.filter((o) => lineaDeOp(o) === lineaVista),
+  [opsFact, lineaVista]);
 
   // ══════════ 1) TENDENCIA POR CLIENTE ══════════
   const tendencia = useMemo(() => {
@@ -523,7 +573,7 @@ export function EstadisticasDashboard() {
       meses: { servicios: number; monto: number }[];
     }
     const mapa = new Map<string, FilaCliente>();
-    ops.forEach((op) => {
+    opsFact.forEach((op) => {
       const cliente = String(op.clientePagaNombre || op.clienteNombre || 'SIN CLIENTE').trim() || 'SIN CLIENTE';
       const fila = mapa.get(cliente) || {
         cliente, total: 0, transfer: 0, logistica: 0, fletes: 0, monto: 0,
@@ -546,7 +596,7 @@ export function EstadisticasDashboard() {
       logistica: g.logistica + f.logistica, fletes: g.fletes + f.fletes, monto: g.monto + f.monto,
     }), { total: 0, transfer: 0, logistica: 0, fletes: 0, monto: 0 });
     return { filas, general };
-  }, [ops]);
+  }, [opsFact]);
 
   // ══════════ 2) SERVICIOS por día + resumen mensual ══════════
   const servicios = useMemo(() => {
@@ -606,7 +656,7 @@ export function EstadisticasDashboard() {
       Fletes: MESES.map(() => ({ venta: 0, costo: 0, servicios: 0 })),
       Otro: MESES.map(() => ({ venta: 0, costo: 0, servicios: 0 })),
     };
-    ops.forEach((op) => {
+    opsFact.forEach((op) => {
       const f = fechaISODe(op);
       const mes = parseInt(f.slice(5, 7), 10) - 1;
       if (mes < 0 || mes > 11) return;
@@ -617,7 +667,7 @@ export function EstadisticasDashboard() {
       acum.servicios += 1;
     });
     return porMesLinea;
-  }, [ops]);
+  }, [opsFact]);
 
   // ══════════ 5) PROMEDIOS por mes y línea ══════════
   const promedios = useMemo(() => {
@@ -695,7 +745,7 @@ export function EstadisticasDashboard() {
     const esTodos = cliente === '__ALL__';
     setDetalleSel({
       titulo: esTodos ? `General · ${etiquetaRango}` : cliente,
-      ops: esTodos ? ops : ops.filter((op) => ((String(op.clientePagaNombre || op.clienteNombre || 'SIN CLIENTE').trim()) || 'SIN CLIENTE') === cliente),
+      ops: esTodos ? opsFact : opsFact.filter((op) => ((String(op.clientePagaNombre || op.clienteNombre || 'SIN CLIENTE').trim()) || 'SIN CLIENTE') === cliente), // ✅ V00493
       ocultarClientes: !esTodos,
     });
     setRefsFiltro(null);
@@ -914,12 +964,8 @@ export function EstadisticasDashboard() {
 
   // Join perezoso con FACTURACIÓN y PAGOS (solo al abrir la pestaña Transfer):
   //   op.facturaClienteId -> doc de facturas_clientes; facturaId -> último pago.
-  const [joinFacturas, setJoinFacturas] = useState<Record<string, any>>({});
   const [joinPagos, setJoinPagos] = useState<Record<string, PagoJoin> | null>(null);
-  const [joinFacturasProv, setJoinFacturasProv] = useState<Record<string, any>>({});
   const [joinPagosProv, setJoinPagosProv] = useState<Record<string, PagoJoin> | null>(null);
-  const [cargandoJoin, setCargandoJoin] = useState(false);
-  const [cargandoJoinProv, setCargandoJoinProv] = useState(false); // ✅ V00449
 
   // ✅ V00339: el join de FACTURAS y PAGOS ahora es EN VIVO — se suscribe a
   //   las colecciones mientras el formato Transfer/Cruces/Fletes está activo:
@@ -931,47 +977,33 @@ export function EstadisticasDashboard() {
     || (detalleSel !== null ? formatoDeLinea(tabLineaDet) : undefined);
   const necesitaJoin = !!fmtJoin;
   const necesitaJoinProv = fmtJoin === 'cruces' || fmtJoin === 'fletes';
-  // ✅ V00449: "cargandoJoin" ya nadie lo encendía (solo lo apagaba el listener) y el join de
-  //   proveedores no tenía bandera: al elegir un formato (Transfer/Cruces/Fletes) las columnas de
-  //   facturación y cobranza se veían vacías mientras llegaban. Se encienden en el MISMO render en
-  //   que se pide el join y las apaga su listener (no cambia qué se lee ni cuándo).
-  const [joinPedido, setJoinPedido] = useState({ cli: false, prov: false });
-  if (joinPedido.cli !== necesitaJoin || joinPedido.prov !== necesitaJoinProv) {
-    if (joinPedido.cli !== necesitaJoin) setCargandoJoin(necesitaJoin);
-    if (joinPedido.prov !== necesitaJoinProv) setCargandoJoinProv(necesitaJoinProv);
-    setJoinPedido({ cli: necesitaJoin, prov: necesitaJoinProv });
-  }
+  // ✅ V00493: las FACTURAS del join vienen del listener compartido (el mismo de Pagos y del área
+  //   Facturación de este módulo): una sola suscripción por colección aunque las pidan varios.
+  //   "Cargando" (V00449) es simplemente "se pidió y aún no llega" (o no falló).
+  const joinCli = useColeccionViva(necesitaJoin ? consultaFactCli.clave : null, consultaFactCli.crear);
+  const joinProv = useColeccionViva(necesitaJoinProv ? consultaFactProv.clave : null, consultaFactProv.crear);
+  const mapaFacturas = (datos: readonly DocVivo[]): Record<string, Op> => {
+    const m: Record<string, Op> = {};
+    datos.forEach((d) => { m[idReal(d)] = d; });
+    return m;
+  };
+  const joinFacturas = useMemo(() => mapaFacturas(joinCli.datos), [joinCli.datos]);
+  const joinFacturasProv = useMemo(() => mapaFacturas(joinProv.datos), [joinProv.datos]);
+  const cargandoJoin = necesitaJoin && !joinCli.listo && !joinCli.error;
+  const cargandoJoinProv = necesitaJoinProv && !joinProv.listo && !joinProv.error;
 
   useEffect(() => {
     if (!necesitaJoin) return;
-    const subs: (() => void)[] = [
-      onSnapshot(collection(db, 'facturas_clientes'), (snap) => {
-        const m: Record<string, unknown> = {};
-        snap.docs.forEach((d) => { m[d.id] = { id: d.id, ...(d.data() as Record<string, unknown>) }; });
-        setJoinFacturas(m as Record<string, any>);
-        setCargandoJoin(false);
-      }, (e) => { console.warn('Join de facturas:', e); setCargandoJoin(false); }),
-      onSnapshot(query(collection(db, 'pagos'), where('tipo', '==', 'cliente')), (snap) => {
-        setJoinPagos(mapaPagosPorFactura(snap.docs));
-      }, (e) => console.warn('Join de pagos:', e)),
-    ];
-    return () => subs.forEach((u) => u());
+    return onSnapshot(query(collection(db, 'pagos'), where('tipo', '==', 'cliente')), (snap) => {
+      setJoinPagos(mapaPagosPorFactura(snap.docs));
+    }, (e) => console.warn('Join de pagos:', e));
   }, [necesitaJoin]);
 
   useEffect(() => {
     if (!necesitaJoinProv) return;
-    const subs: (() => void)[] = [
-      onSnapshot(collection(db, 'facturas_proveedores'), (snap) => {
-        const m: Record<string, unknown> = {};
-        snap.docs.forEach((d) => { m[d.id] = { id: d.id, ...(d.data() as Record<string, unknown>) }; });
-        setJoinFacturasProv(m as Record<string, any>);
-        setCargandoJoinProv(false);
-      }, (e) => { console.warn('Join de facturas proveedor:', e); setCargandoJoinProv(false); }),
-      onSnapshot(query(collection(db, 'pagos'), where('tipo', '==', 'proveedor')), (snap) => {
-        setJoinPagosProv(mapaPagosPorFactura(snap.docs));
-      }, (e) => console.warn('Join de pagos proveedor:', e)),
-    ];
-    return () => subs.forEach((u) => u());
+    return onSnapshot(query(collection(db, 'pagos'), where('tipo', '==', 'proveedor')), (snap) => {
+      setJoinPagosProv(mapaPagosPorFactura(snap.docs));
+    }, (e) => console.warn('Join de pagos proveedor:', e));
   }, [necesitaJoinProv]);
 
   const nummx = (n: number) => (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -1536,7 +1568,22 @@ export function EstadisticasDashboard() {
 
       {/* ✅ V00449: sin el conteo mientras se busca otro rango (era el del rango anterior) */}
       {busquedaHecha && !cargando && (
-        <p className="est-subtitulo">{ops.length} operaciones del {etiquetaRango} (excluye canceladas) · montos con el mismo criterio de Facturación{busquedaHecha && <span className="est-vivo" title="Las estadísticas están SUSCRITAS a la base: cualquier cambio en Operaciones, Facturación o Pagos se refleja aquí al momento, sin volver a presionar Buscar">🟢 EN VIVO</span>}</p>
+        <p className="est-subtitulo">
+          {/* ✅ V00493: en el área Facturación el conteo es de lo FACTURADO (fecha de factura) */}
+          {area === 'monetaria'
+            ? (montosFact.cargando ? 'Cargando las facturas del rango…' : `${num(opsFact.length)} operaciones en ${num(montosFact.resumen?.facturas ?? 0)} facturas con fecha de factura del ${rangoBuscado.desde} a ${rangoBuscado.hasta} · montos tomados de Facturación (Historial, sin canceladas)`)
+            : `${ops.length} operaciones del ${etiquetaRango} (excluye canceladas)`}
+          <span className="est-vivo" title="Las estadísticas están SUSCRITAS a la base: cualquier cambio en Operaciones, Facturación o Pagos se refleja aquí al momento, sin volver a presionar Buscar">🟢 EN VIVO</span>
+        </p>
+      )}
+      {busquedaHecha && !cargando && area === 'monetaria' && !montosFact.cargando && montosFact.resumen && (
+        <ResumenMontosFacturados
+          resumen={montosFact.resumen}
+          porFacturar={montosFact.porFacturar}
+          sinFacturaProveedor={montosFact.sinFacturaProveedor}
+          error={errorFacturas}
+          onVerOps={(titulo, lista) => { setDetalleSel({ titulo, ops: lista }); setRefsFiltro(null); }}
+        />
       )}
 
       {/* ✅ V00126: separación clara OPERATIVA vs MONETARIA */}
@@ -1576,11 +1623,13 @@ export function EstadisticasDashboard() {
         <div className="est-vacio-inicial">
           Define tu rango de fechas y presiona <b>Buscar</b> para generar las estadísticas.
         </div>
-      ) : cargando ? <CargandoDatos texto={`Buscando operaciones del ${etiquetaRango}…`} /> : (
+      ) : cargando ? <CargandoDatos texto={`Buscando operaciones del ${etiquetaRango}…`} />
+        : area === 'monetaria' && montosFact.cargando ? <CargandoDatos texto={`Cargando las facturas del ${rangoBuscado.desde} a ${rangoBuscado.hasta}…`} /> : (
         <div className="est-tabla-marco">
           {(pestana === 'desgloseOps' || pestana === 'desgloseFact') && (
             <DesgloseJerarquico
-              ops={ops}
+              ops={pestana === 'desgloseFact' ? opsFact : ops}
+              fechaDe={fechaISODe}
               modo={pestana === 'desgloseFact' ? 'facturacion' : 'operaciones'}
               montoDe={montoClienteDe}
               costoDe={costoProveedorDe}
@@ -1692,7 +1741,7 @@ export function EstadisticasDashboard() {
                   );
                 })}
                 <tr className="est-fila-general" style={{ cursor: 'pointer' }} title="Ver el desglose de todo lo listado"
-                  onClick={() => { const base = lineaVista === 'Globales' ? ops : ops.filter((o) => lineaDeOp(o) === lineaVista); setDetalleSel({ titulo: `Ventas · Total${lineaVista === 'Globales' ? '' : ` · ${lineaVista}`}`, ops: base, esLinea: lineaVista !== 'Globales' }); setRefsFiltro(null); }}>
+                  onClick={() => { const base = opsDeLinea; setDetalleSel({ titulo: `Ventas · Total${lineaVista === 'Globales' ? '' : ` · ${lineaVista}`}`, ops: base, esLinea: lineaVista !== 'Globales' }); setRefsFiltro(null); }}>
                   <td>TOTAL</td>
                   <td>{money(ventas.porMes.reduce((a, v) => a + v.pes, 0))}</td>
                   <td className="est-dolares">{money(ventas.porMes.reduce((a, v) => a + v.dol, 0))}</td>
@@ -1714,7 +1763,7 @@ export function EstadisticasDashboard() {
                   const tot = utilidad[linea].reduce((a, u) => ({ venta: a.venta + u.venta, costo: a.costo + u.costo, servicios: a.servicios + u.servicios }), { venta: 0, costo: 0, servicios: 0 });
                   const uti = tot.venta - tot.costo;
                   return (
-                    <tr key={linea} className={tot.servicios > 0 ? 'est-fila-clicable' : ''} title={tot.servicios > 0 ? `Ver las operaciones de ${linea}` : undefined} onClick={() => { if (tot.servicios > 0) setDetalleSel({ titulo: `Utilidad · ${linea} · ${etiquetaRango}`, ops: ops.filter((op) => lineaDeOp(op) === linea), esLinea: true }); }}>
+                    <tr key={linea} className={tot.servicios > 0 ? 'est-fila-clicable' : ''} title={tot.servicios > 0 ? `Ver las operaciones de ${linea}` : undefined} onClick={() => { if (tot.servicios > 0) setDetalleSel({ titulo: `Utilidad · ${linea} · ${etiquetaRango}`, ops: opsFact.filter((op) => lineaDeOp(op) === linea), esLinea: true }); }}>
                       <td>{linea}</td><td>{num(tot.servicios)}</td>
                       <td className="est-monto">{money(tot.venta)}</td>
                       <td>{money(tot.costo)}</td>
@@ -1736,7 +1785,7 @@ export function EstadisticasDashboard() {
                 {promedios.map((p) => {
                   const tot = p.meses.reduce((a, m) => ({ s: a.s + m.servicios, v: a.v + m.venta, u: a.u + m.promUtilidad * m.servicios }), { s: 0, v: 0, u: 0 });
                   return (
-                    <tr key={p.linea} className={tot.s > 0 ? 'est-fila-clicable' : ''} title={tot.s > 0 ? `Ver las operaciones de ${p.linea}` : undefined} onClick={() => { if (tot.s > 0) setDetalleSel({ titulo: `Promedios · ${p.linea} · ${etiquetaRango}`, ops: ops.filter((op) => lineaDeOp(op) === p.linea), esLinea: true }); }}>
+                    <tr key={p.linea} className={tot.s > 0 ? 'est-fila-clicable' : ''} title={tot.s > 0 ? `Ver las operaciones de ${p.linea}` : undefined} onClick={() => { if (tot.s > 0) setDetalleSel({ titulo: `Promedios · ${p.linea} · ${etiquetaRango}`, ops: opsFact.filter((op) => lineaDeOp(op) === p.linea), esLinea: true }); }}>
                       <td>{p.linea}</td><td>{num(tot.s)}</td>
                       <td className="est-monto">{money(tot.v)}</td>
                       <td>{money(tot.s > 0 ? tot.v / tot.s : 0)}</td>
@@ -1865,7 +1914,7 @@ export function EstadisticasDashboard() {
                           {detalle.ops.filter((op) => movimientoDeOp(op) === 'Sin clasificar').length === 0 ? (
                             <p style={{ color: '#3fb950' }}>¡Todo clasificado! ✅</p>
                           ) : detalle.ops.filter((op) => movimientoDeOp(op) === 'Sin clasificar').map((op) => (
-                            <div key={op.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: '1px solid #21262d', flexWrap: 'wrap' }}>
+                            <div key={String(op.__clave ?? op.id)} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: '1px solid #21262d', flexWrap: 'wrap' }}>
                               <span style={{ color: '#D84315', fontFamily: 'monospace', fontWeight: 700 }}>{op.ref || String(op.id).slice(0, 8)}</span>
                               <span style={{ color: '#8b949e', fontSize: '0.78rem', flex: 1, minWidth: '160px' }}>{fechaISODe(op)} · {String(op.clientePagaNombre || op.clienteNombre || '')} · {String(op.convenioNombre || '—')}</span>
                               {(['Importación', 'Exportación', 'Movimiento'] as const).map((mv) => (
@@ -2149,7 +2198,7 @@ export function EstadisticasDashboard() {
                                 const claseLinea = linea === 'Transfer' ? 'transfer' : linea === 'Logística' ? 'logistica' : linea === 'Fletes' ? 'fletes' : 'otro';
                                 const valor = esModoTransfer ? valorTransfer : valorColumna;
                                 return (
-                                  <tr key={op.id} className="est-fila-clicable" onClick={() => setOpFicha(op)} title={`Ver el detalle de ${op.ref || op.id}`}>
+                                  <tr key={String(op.__clave ?? op.id)} className="est-fila-clicable" onClick={() => setOpFicha(op)} title={`Ver el detalle de ${op.ref || op.id}`}>
                                     {/* ✅ V00340: auditar (👁 detalle · ✎ editar EN VIVO) */}
                                     <td className="est-refs-acciones-celda" onClick={(e) => e.stopPropagation()}>
                                       <button type="button" className="est-mini" title="Ver el detalle de la operación" onClick={() => setOpFicha(op)}>👁</button>

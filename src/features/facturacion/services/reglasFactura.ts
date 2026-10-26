@@ -19,6 +19,14 @@ const sinAcentos = (s: unknown): string => String(s ?? '').normalize('NFD').repl
 export const estaFacturada = (status: unknown): boolean => (sinAcentos(status) || 'facturado') === 'facturado';
 export const estaCancelada = (status: unknown): boolean => sinAcentos(status).startsWith('cancelad');
 
+/**
+ * ✅ V00493: ¿la fila del Historial cuenta en las tarjetas (totales y operaciones)? Una factura
+ * cancelada NO suma (su reemplazo ya suma), salvo que se esté filtrando justo por Canceladas.
+ * Es la misma regla con la que Estadísticas toma los montos de Facturación.
+ */
+export const sumaEnTotales = (statusFila: unknown, filtroStatus: unknown): boolean =>
+  !estaCancelada(statusFila || 'Facturado') || estaCancelada(filtroStatus);
+
 /** La Remisión es para lo que aún no se factura: con la factura emitida ya no se genera. */
 export const puedeGenerarRemision = (status: unknown): boolean => !estaFacturada(status);
 /** A una factura emitida ya no se le agregan operaciones (se quitan con la ✕ si hace falta). */

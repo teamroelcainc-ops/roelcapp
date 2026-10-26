@@ -83,11 +83,12 @@ import {
   totalesTrasCambioDeOps,
   totalDeFilaFactura, // ✅ V00451
 } from '../services/totalesFactura'; // ✅ Fase 1.8
+import { normalizarFacturaDe } from '../services/normalizarFactura'; // ✅ V00493
 import { aplicarFacturas, aplicarOperaciones, llamarDinero, mensajeDinero } from '../services/dineroServidor'; // ✅ V00441
 import { useFlags, useFlagsCargadas } from '../../../shared/data/flags';
 import {
   aplicarConfigColumnasGuardada, colorStatusFactura, DOC_REMISION_EMISORES, fechaOrdenKey, LIMITE_FACTURAS_TODAS, LIMITE_OPS_TODAS,
-  fechaFacturaISO, moverIdAlInicio, PAG_FACTURAS, pareceReferencia, parseFechaFactura, refNaturalKey, STATUS_FACTURA_OPCIONES, textoFacturadoEn, valorGenericoOp,
+  fechaFacturaISO, moverIdAlInicio, PAG_FACTURAS, pareceReferencia, refNaturalKey, STATUS_FACTURA_OPCIONES, textoFacturadoEn, valorGenericoOp,
 } from '../selectores'; // ✅ V00444 (Fase 8.1): una sola copia (antes idéntica en Clientes y Proveedores)
 import { useOperacionesFacturables } from '../hooks/useOperacionesFacturables'; // ✅ V00444 (Fase 8.1)
 import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
@@ -107,7 +108,7 @@ import { abrirPagoEnPagos } from '../../pagos/services/pagoPedido';
 import { puedeClave } from '../../../utils/permisos';
 import {
   AVISO_AGREGAR_FACTURADA, AVISO_REMISION_FACTURADA, CANCELACION_VACIA, STATUS_AL_CREAR, avisoMonedaDistinta, avisoSinMoneda,
-  cancelacionDe, estaCancelada, importesDeRenglones, monedaDeEmpresa, puedeAgregarOperaciones, puedeGenerarRemision,
+  cancelacionDe, estaCancelada, importesDeRenglones, monedaDeEmpresa, puedeAgregarOperaciones, puedeGenerarRemision, sumaEnTotales,
   totalSugeridoEn, validarCancelacion,
 } from '../services/reglasFactura';
 import type { DatosCancelacion } from '../services/reglasFactura';
@@ -174,49 +175,9 @@ const COLUMNAS_FACTURA_BASE = [
 //   localStorage (almacenSesion). Ya no se escriben; se borran una vez al montar.
 const CLAVES_CACHE_LEGADO = ['roelca_ops_prov_completadas_v2', 'roelca_facturas_proveedores_v1', 'roelca_facturas_clientes_xref_v1'];
 
-const normalizarFactura = (raw: any): any => {
-  const fechaNorm = parseFechaFactura(raw.fecha || raw.fechaFactura);
-
-  // Convierte a arreglo tanto si viene como arreglo, como si viene en texto
-  // separado por comas (así llegan las facturas importadas desde el CSV).
-  const aArray = (v: any): string[] => {
-    if (Array.isArray(v)) return v.map((x) => String(x || '').trim()).filter(Boolean);
-    if (typeof v === 'string') return v.split(',').map((x) => x.trim()).filter(Boolean);
-    return [];
-  };
-
-  const opsIds = aArray(raw.operacionesIds);
-  const opsRefs = aArray(raw.operaciones);
-
-  let opsGuardadas: any = raw.operacionesGuardadas;
-  if (!Array.isArray(opsGuardadas) || opsGuardadas.length === 0) {
-    // Sin detalle (factura importada): combinamos IDs + referencias por posición.
-    const n = Math.max(opsIds.length, opsRefs.length);
-    opsGuardadas = [];
-    for (let i = 0; i < n; i++) {
-      opsGuardadas.push({
-        id: String(opsIds[i] || opsRefs[i] || ''),
-        ref: String(opsRefs[i] || opsIds[i] || ''),
-        monto: 0,
-        subtotalBase: 0,
-      });
-    }
-  }
-  return {
-    ...raw,
-    fecha: fechaNorm || String(raw.fecha || raw.fechaFactura || ''),
-    operacionesIds: opsIds,
-    operaciones: opsRefs,
-    operacionesGuardadas: opsGuardadas,
-    subtotalFactura: Number(raw.subtotalFactura) || Number(raw.total) || 0,
-    monedaProveedor: raw.monedaProveedor || raw.moneda || 'N/A',
-    monedaId: raw.monedaId || '',
-    proveedorNombre: raw.proveedorNombre || raw.proveedor || '',
-    facturaCcp: raw.facturaCcp || raw.ccp || '',
-    invoice: raw.invoice || raw.numeroInvoice || raw.numInvoice || raw.folio || String(raw.id || ''),
-    statusFactura: raw.statusFactura || 'Facturado',
-  };
-};
+// ✅ V00493: la forma de la factura vive en services/normalizarFactura.ts (la misma que usa Estadísticas).
+//   Devuelve `any` como antes: el tablero aún trata sus facturas sin tipo (no se amplía aquí).
+const normalizarFactura = (raw: Record<string, unknown>): any => normalizarFacturaDe(raw, 'proveedor');
 
 const COLUMNAS_OPS_BASE: any[] = [
   { id: 'factura',       label: '# Factura',       visible: true,  orden: true,  grupo: 'General' },
@@ -2842,8 +2803,10 @@ export const FacturacionProveedoresDashboard = () => {
   }, [facturasGlobales, ordenFac, textoBuscarFacturaDiferido, filtroProveedor, fechaDesdeHist, fechaHastaHist, opInfoMap, filtroStatusFactura, activeTab, pagosPorFactura]);
 
   const resumenHistorial = useMemo(() => {
-    let totalUSD = 0, totalMXN = 0, totalSinMoneda = 0, totalOps = 0;
+    let totalUSD = 0, totalMXN = 0, totalSinMoneda = 0, totalOps = 0, canceladas = 0;
     historialOrdenado.forEach(f => {
+      // ✅ V00493: una factura cancelada sigue en la lista pero NO suma (su reemplazo ya suma).
+      if (!sumaEnTotales(f.statusFactura, filtroStatusFactura)) { canceladas++; return; }
       const monto = totalDeGrupo(f); // ✅ FIX MONEDA · V00448 · V00451: fila agrupada
       // ✅ FIX: la moneda puede venir como nombre de catálogo ("Dólares",
       //   "Pesos") y las tarjetas comparaban contra 'USD'/'MXN' exactos, por
@@ -2855,9 +2818,9 @@ export const FacturacionProveedoresDashboard = () => {
       else totalSinMoneda += monto;
       totalOps += Array.isArray(f.operacionesIds) ? f.operacionesIds.length : 0;
     });
-    return { cuenta: historialOrdenado.length, totalUSD, totalMXN, totalSinMoneda, totalOps };
+    return { cuenta: historialOrdenado.length, canceladas, totalUSD, totalMXN, totalSinMoneda, totalOps };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [historialOrdenado, totalDeGrupo]);
+  }, [historialOrdenado, totalDeGrupo, filtroStatusFactura]);
 
   const conteoStatus = useMemo(() => {
     const q = textoBuscarFacturaDiferido.trim().toLowerCase();
@@ -3666,6 +3629,7 @@ export const FacturacionProveedoresDashboard = () => {
             <div className="fpd-x101">
               <span className="fpd-x102">Facturas Listadas</span>
               {cargandoFacturas ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fpd-x103">{resumenHistorial.cuenta}</span>}{/* ✅ V00449 */}
+              {!cargandoFacturas && resumenHistorial.canceladas > 0 && <small className="fpd-nota-canceladas">{resumenHistorial.canceladas} canceladas: no suman</small>}{/* ✅ V00493 */}
             </div>
             <div className="fpd-x101">
               <span className="fpd-x102">Ops. Facturadas</span>

@@ -79,11 +79,12 @@ import {
   totalesTrasCambioDeOps,
   totalDeFilaFactura, // ✅ V00451
 } from '../services/totalesFactura'; // ✅ Fase 1.8
+import { normalizarFacturaDe } from '../services/normalizarFactura'; // ✅ V00493
 import { aplicarFacturas, aplicarOperaciones, llamarDinero, mensajeDinero } from '../services/dineroServidor'; // ✅ V00441
 import { useFlags, useFlagsCargadas } from '../../../shared/data/flags';
 import {
   aplicarConfigColumnasGuardada, colorStatusFactura, DOC_REMISION_EMISORES, fechaOrdenKey, LIMITE_FACTURAS_TODAS, LIMITE_OPS_TODAS,
-  fechaFacturaISO, moverIdAlInicio, PAG_FACTURAS, pareceReferencia, parseFechaFactura, refNaturalKey, STATUS_FACTURA_OPCIONES, textoFacturadoEn, valorGenericoOp,
+  fechaFacturaISO, moverIdAlInicio, PAG_FACTURAS, pareceReferencia, refNaturalKey, STATUS_FACTURA_OPCIONES, textoFacturadoEn, valorGenericoOp,
 } from '../selectores'; // ✅ V00444 (Fase 8.1): una sola copia (antes idéntica en Clientes y Proveedores)
 import { useOperacionesFacturables } from '../hooks/useOperacionesFacturables'; // ✅ V00444 (Fase 8.1)
 import { conversionOperacion, monedaDeFactura, monedaFacturaOperacion, montoOperacion } from '../../../shared/dominio/dinero';
@@ -102,7 +103,7 @@ import { abrirPagoEnPagos } from '../../pagos/services/pagoPedido';
 import { puedeClave } from '../../../utils/permisos';
 import {
   AVISO_AGREGAR_FACTURADA, AVISO_REMISION_FACTURADA, CANCELACION_VACIA, STATUS_AL_CREAR, avisoMonedaDistinta, avisoSinMoneda,
-  cancelacionDe, estaCancelada, importesDeRenglones, monedaDeEmpresa, puedeAgregarOperaciones, puedeGenerarRemision,
+  cancelacionDe, estaCancelada, importesDeRenglones, monedaDeEmpresa, puedeAgregarOperaciones, puedeGenerarRemision, sumaEnTotales,
   totalSugeridoEn, validarCancelacion,
 } from '../services/reglasFactura';
 import type { DatosCancelacion } from '../services/reglasFactura';
@@ -173,49 +174,9 @@ const COLUMNAS_FACTURA_BASE = [
 //   localStorage (almacenSesion). Ya no se escriben; se borran una vez al montar.
 const CLAVES_CACHE_LEGADO = ['roelca_ops_completadas_v2', 'roelca_facturas_clientes_v1'];
 
-const normalizarFactura = (raw: any): any => {
-  const fechaNorm = parseFechaFactura(raw.fecha || raw.fechaFactura);
-
-  // Convierte a arreglo tanto si viene como arreglo, como si viene en texto
-  // separado por comas (así llegan las facturas importadas desde el CSV).
-  const aArray = (v: any): string[] => {
-    if (Array.isArray(v)) return v.map((x) => String(x || '').trim()).filter(Boolean);
-    if (typeof v === 'string') return v.split(',').map((x) => x.trim()).filter(Boolean);
-    return [];
-  };
-
-  const opsIds = aArray(raw.operacionesIds);
-  const opsRefs = aArray(raw.operaciones);
-
-  let opsGuardadas: any = raw.operacionesGuardadas;
-  if (!Array.isArray(opsGuardadas) || opsGuardadas.length === 0) {
-    // Sin detalle (factura importada): combinamos IDs + referencias por posición.
-    const n = Math.max(opsIds.length, opsRefs.length);
-    opsGuardadas = [];
-    for (let i = 0; i < n; i++) {
-      opsGuardadas.push({
-        id: String(opsIds[i] || opsRefs[i] || ''),
-        ref: String(opsRefs[i] || opsIds[i] || ''),
-        monto: 0,
-        subtotalBase: 0,
-      });
-    }
-  }
-  return {
-    ...raw,
-    fecha: fechaNorm || String(raw.fecha || raw.fechaFactura || ''),
-    operacionesIds: opsIds,
-    operaciones: opsRefs,
-    operacionesGuardadas: opsGuardadas,
-    subtotalFactura: Number(raw.subtotalFactura) || Number(raw.total) || 0,
-    monedaFacturacion: raw.monedaFacturacion || raw.moneda || 'N/A',
-    monedaId: raw.monedaId || '',
-    clienteNombre: raw.clienteNombre || raw.cliente || '',
-    facturaCcp: raw.facturaCcp || raw.ccp || '',
-    invoice: raw.invoice || raw.numeroInvoice || raw.numInvoice || raw.folio || String(raw.id || ''),
-    statusFactura: raw.statusFactura || 'Facturado',
-  };
-};
+// ✅ V00493: la forma de la factura vive en services/normalizarFactura.ts (la misma que usa Estadísticas).
+//   Devuelve `any` como antes: el tablero aún trata sus facturas sin tipo (no se amplía aquí).
+const normalizarFactura = (raw: Record<string, unknown>): any => normalizarFacturaDe(raw, 'cliente');
 
 const COLUMNAS_OPS_BASE: any[] = [
   { id: 'factura',       label: '# Factura',       visible: true,  orden: true,  grupo: 'General' },
@@ -2248,8 +2209,10 @@ export const FacturacionClientesDashboard = () => {
   }, [facturasGlobales, ordenFac, textoBuscarFacturaDiferido, filtroCliente, fechaDesdeHist, fechaHastaHist, opInfoMap, filtroStatusFactura, filtroMonedaHist, activeTab, pagosPorFactura]);
 
   const resumenHistorial = useMemo(() => {
-    let totalUSD = 0, totalMXN = 0, totalSinMoneda = 0, totalOps = 0;
+    let totalUSD = 0, totalMXN = 0, totalSinMoneda = 0, totalOps = 0, canceladas = 0;
     historialOrdenado.forEach(f => {
+      // ✅ V00493: una factura cancelada sigue en la lista pero NO suma (su reemplazo ya suma).
+      if (!sumaEnTotales(f.statusFactura, filtroStatusFactura)) { canceladas++; return; }
       const monto = totalDeGrupo(f); // ✅ FIX MONEDA · V00448 · V00451: fila agrupada: suma en la moneda de la factura
       // ✅ FIX: la moneda puede venir como nombre de catálogo ("Dólares",
       //   "Pesos") y las tarjetas comparaban contra 'USD'/'MXN' exactos, por
@@ -2262,8 +2225,8 @@ export const FacturacionClientesDashboard = () => {
       totalOps += Array.isArray(f.operacionesIds) ? f.operacionesIds.length : 0;
     });
     const r2c = (x: number) => Math.round(x * 100) / 100; // ✅ V00265: tarjetas a 2 decimales
-    return { cuenta: historialOrdenado.length, totalUSD: r2c(totalUSD), totalMXN: r2c(totalMXN), totalSinMoneda: r2c(totalSinMoneda), totalOps };
-  }, [historialOrdenado, totalDeGrupo]);
+    return { cuenta: historialOrdenado.length, canceladas, totalUSD: r2c(totalUSD), totalMXN: r2c(totalMXN), totalSinMoneda: r2c(totalSinMoneda), totalOps };
+  }, [historialOrdenado, totalDeGrupo, filtroStatusFactura]);
 
   const conteoStatus = useMemo(() => {
     const q = textoBuscarFacturaDiferido.trim().toLowerCase();
@@ -2709,18 +2672,22 @@ export const FacturacionClientesDashboard = () => {
   };
   const facturasDeTarjeta = useMemo(() => {
     if (!tarjetaAbierta) return [] as FacturaLike[];
-    if (tarjetaAbierta === 'usd') return (historialOrdenado as FacturaLike[]).filter((f) => monedaTarjetaDe(f) === 'usd');
-    if (tarjetaAbierta === 'mxn') return (historialOrdenado as FacturaLike[]).filter((f) => monedaTarjetaDe(f) === 'mxn');
-    return historialOrdenado as FacturaLike[]; // 'listadas' y 'ops': todas las del filtro actual
+    if (tarjetaAbierta === 'listadas') return historialOrdenado as FacturaLike[]; // todas las del filtro actual
+    // ✅ V00493: 'ops', 'usd' y 'mxn' sin las canceladas (como la tarjeta).
+    const suman = (historialOrdenado as FacturaLike[]).filter((f) => sumaEnTotales(f.statusFactura, filtroStatusFactura));
+    if (tarjetaAbierta === 'usd') return suman.filter((f) => monedaTarjetaDe(f) === 'usd');
+    if (tarjetaAbierta === 'mxn') return suman.filter((f) => monedaTarjetaDe(f) === 'mxn');
+    return suman;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- monedaTarjetaDe se recrea por render; historialOrdenado cubre el cambio real
-  }, [tarjetaAbierta, historialOrdenado]);
+  }, [tarjetaAbierta, historialOrdenado, filtroStatusFactura]);
   const tituloTarjeta: Record<TarjetaResumen, string> = {
     listadas: 'Facturas Listadas',
     ops: 'Ops. Facturadas',
     usd: 'Total Facturado (USD)',
     mxn: 'Total Facturado (MXN)',
   };
-  const totalTarjetaAbierta = useMemo(() => facturasDeTarjeta.reduce((acc: number, f) => acc + totalFactura(f), 0), [facturasDeTarjeta, totalFactura]);
+  // ✅ V00493: el total de la FILA (un folio con varios documentos), el mismo de la tarjeta y la tabla.
+  const totalTarjetaAbierta = useMemo(() => facturasDeTarjeta.reduce((acc: number, f) => acc + totalDeGrupo(f), 0), [facturasDeTarjeta, totalDeGrupo]);
   const opsTarjetaAbierta = useMemo(() => facturasDeTarjeta.reduce((acc: number, f) => acc + (Array.isArray(f.operacionesIds) ? f.operacionesIds.length : 0), 0), [facturasDeTarjeta]);
   const exportarTarjetaExcel = async () => {
     if (exportandoTarjeta || !tarjetaAbierta || facturasDeTarjeta.length === 0) return;
@@ -2734,7 +2701,7 @@ export const FacturacionClientesDashboard = () => {
         moneda: monedaFacturaMostrar(f),
         cantOps: Number(f.operacionesIds?.length || 0),
         referencias: Array.isArray(f.operacionesGuardadas) ? f.operacionesGuardadas.map((op) => refDeOpCon(op, mapaExport)).filter(Boolean).join(', ') : '',
-        total: totalFactura(f),
+        total: totalDeGrupo(f), // ✅ V00493: total de la fila (como la tarjeta)
       }));
       await exportarExcelProfesional({
         nombreArchivo: `Tarjeta_${tarjetaAbierta.toUpperCase()}_${hoyLocalISO()}.xlsx`,
@@ -3583,6 +3550,7 @@ export const FacturacionClientesDashboard = () => {
             <div className="fcd-x104 fac-tarjeta-clicable" role="button" tabIndex={0} title="Ver de dónde sale este número" onClick={() => setTarjetaAbierta('listadas')}>
               <span className="fcd-x105">Facturas Listadas</span>
               {cargandoFacturas ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fcd-x106">{resumenHistorial.cuenta}</span>}{/* ✅ V00449 */}
+              {!cargandoFacturas && resumenHistorial.canceladas > 0 && <small className="fcd-nota-canceladas">{resumenHistorial.canceladas} canceladas: no suman</small>}{/* ✅ V00493 */}
             </div>
             <div className="fcd-x104 fac-tarjeta-clicable" role="button" tabIndex={0} title="Ver de dónde sale este número" onClick={() => setTarjetaAbierta('ops')}>
               <span className="fcd-x105">Ops. Facturadas</span>
@@ -3678,7 +3646,7 @@ export const FacturacionClientesDashboard = () => {
             </div>
             <div className="fac-tarjeta-modal__resumen">
               {facturasDeTarjeta.length.toLocaleString('es-MX')} factura(s) · {opsTarjetaAbierta.toLocaleString('es-MX')} operación(es) · Total <Importe monto={totalTarjetaAbierta} moneda={tarjetaAbierta === 'usd' ? 'USD' : tarjetaAbierta === 'mxn' ? 'MXN' : ''} />
-              <span className="fac-tarjeta-modal__nota"> — con los filtros actuales del historial{tarjetaAbierta === 'usd' ? ', solo facturas en Dólares' : tarjetaAbierta === 'mxn' ? ', solo facturas en Pesos' : ''}.</span>
+              <span className="fac-tarjeta-modal__nota"> — con los filtros actuales del historial{tarjetaAbierta === 'usd' ? ', solo facturas en Dólares' : tarjetaAbierta === 'mxn' ? ', solo facturas en Pesos' : ''}{tarjetaAbierta !== 'listadas' && resumenHistorial.canceladas > 0 ? ', sin las canceladas' : ''}.</span>
             </div>
             <div className="fac-tarjeta-modal__lista">
               <div className="fac-tarjeta-modal__fila fac-tarjeta-modal__fila--encabezado">
@@ -3696,7 +3664,7 @@ export const FacturacionClientesDashboard = () => {
                   <span className="fac-tarjeta-modal__c-cliente" title={nombreClienteFactura_(f)}>{nombreClienteFactura_(f)}</span>
                   <span className="fac-tarjeta-modal__c-ops">{Number(f.operacionesIds?.length || 0)}</span>
                   <span className="fac-tarjeta-modal__c-moneda"><NombreMoneda moneda={monedaFacturaMostrar(f)} respaldo={monedaFacturaMostrar(f)} /></span>
-                  <span className="fac-tarjeta-modal__c-total"><Importe monto={totalFactura(f)} moneda={monedaFacturaMostrar(f)} /></span>
+                  <span className="fac-tarjeta-modal__c-total"><Importe monto={totalDeGrupo(f)} moneda={monedaFacturaMostrar(f)} /></span>
                 </div>
               ))}
               {facturasDeTarjeta.length === 0 && <div className="fac-tarjeta-modal__vacio">Sin facturas con los filtros actuales.</div>}

@@ -40,7 +40,11 @@ interface Props {
   onVerFacturasCliente?: (cliente: string, ops: Op[]) => void;
   /** ✅ V00468: con esa dimensión como raíz solo entran las operaciones del filtro (y se explica con `nota`). */
   soloPara?: Partial<Record<Dimension, { filtro: (op: Op) => boolean; nota: string }>>;
+  /** ✅ V00493: fecha AAAA-MM-DD de cada fila para "Ver por mes" (Facturación: la de la factura). */
+  fechaDe?: (op: Op) => string;
 }
+
+const fechaServicioDe = (op: Op): string => String(op.fechaServicio || '');
 
 const DIMENSIONES: Dimension[] = ['tipo', 'cv', 'movimiento', 'aduana', 'cliente', 'operador', 'unidad', 'proveedor'];
 const ETQ: Record<Dimension, string> = {
@@ -56,7 +60,7 @@ export const capitalizar = (t: string) => String(t || '').trim().toLowerCase().r
 
 interface Agregado { clave: string; ops: Op[]; n: number; pes: number; dol: number; conv: number; costo: number; meses: number[]; }
 
-export function DesgloseJerarquico({ ops, modo, montoDe, costoDe, monedaDe, etiquetaDe, onVerOps, onVerFacturasCliente, soloPara }: Props) {
+export function DesgloseJerarquico({ ops, modo, montoDe, costoDe, monedaDe, etiquetaDe, onVerOps, onVerFacturasCliente, soloPara, fechaDe = fechaServicioDe }: Props) {
   const [raizDim, setRaizDim] = useState<Dimension>('tipo');
   const [sub1, setSub1] = useState<Dimension>('cv');
   const [sub2, setSub2] = useState<Dimension>('movimiento');
@@ -86,7 +90,7 @@ export function DesgloseJerarquico({ ops, modo, montoDe, costoDe, monedaDe, etiq
       const k = capitalizar(etiquetaDe(op, d) || 'Sin dato');
       const a: Agregado = m.get(k) || { clave: k, ops: [] as Op[], n: 0, pes: 0, dol: 0, conv: 0, costo: 0, meses: Array(12).fill(0) as number[] };
       const mo = montoDe(op);
-      const mes = parseInt(String(op.fechaServicio || '').slice(5, 7), 10) - 1;
+      const mes = parseInt(fechaDe(op).slice(5, 7), 10) - 1;
       a.ops.push(op); a.n++; a.pes += mo.pes; a.dol += mo.dol; a.conv += mo.conv; a.costo += costoDe(op);
       if (mes >= 0 && mes < 12) a.meses[mes] += esFact ? mo.conv : 1;
       m.set(k, a);
@@ -159,7 +163,7 @@ export function DesgloseJerarquico({ ops, modo, montoDe, costoDe, monedaDe, etiq
           {esFact && <td className={`dj-num dj-pct ${utilidad >= 0 ? 'dj-util' : 'dj-perdida'}`}>{fmtPct(utilidad, a.conv)}</td>}
           <td className="dj-num dj-pct"><span className="dj-barra"><span className="dj-barra-fill" style={{ '--pct': Math.round(pctBase > 0 ? (valor / pctBase) * 100 : 0) } as CSSProperties} /></span>{fmtPct(valor, pctBase)}</td>
           {verMeses && mesesActivos.map((i) => (
-            <td key={i} className={`dj-num dj-mes${a.meses[i] > 0 && onVerOps ? ' dj-click' : ''}`} onClick={() => ver(`${a.clave} · ${MESES[i]}`, a.ops.filter((o) => parseInt(String(o.fechaServicio || '').slice(5, 7), 10) - 1 === i))}>
+            <td key={i} className={`dj-num dj-mes${a.meses[i] > 0 && onVerOps ? ' dj-click' : ''}`} onClick={() => ver(`${a.clave} · ${MESES[i]}`, a.ops.filter((o) => parseInt(fechaDe(o).slice(5, 7), 10) - 1 === i))}>
               {a.meses[i] > 0 ? (esFact ? fmtMoney(a.meses[i]) : fmtNum(a.meses[i])) : ''}
             </td>
           ))}
@@ -201,7 +205,7 @@ export function DesgloseJerarquico({ ops, modo, montoDe, costoDe, monedaDe, etiq
       </div>
       {limite && <p className="dj-nota dj-nota--limite">{limite.nota}</p>}
       <p className="dj-nota">
-        {esFact ? 'Ordenado por venta (de mayor a menor). Venta MXN convierte los dólares con el TC de cada operación; Costo proveedor y Utilidad con el mismo criterio que Facturación de Proveedores.' : 'Ordenado por servicios (de mayor a menor).'} El % de las filas anidadas es respecto a su fila padre. Clic en un nombre abre el resumen de esas operaciones.
+        {esFact ? 'Ordenado por venta (de mayor a menor). Montos de las facturas de clientes (Facturación → Historial, por fecha de factura, sin canceladas); Venta MXN convierte los dólares con el TC de cada operación; Costo proveedor = facturas de proveedor de esas mismas operaciones.' : 'Ordenado por servicios (de mayor a menor).'} El % de las filas anidadas es respecto a su fila padre. Clic en un nombre abre el resumen de esas operaciones.
       </p>
       <div className="dj-tabla-wrap">
         <table className="dj-tabla">

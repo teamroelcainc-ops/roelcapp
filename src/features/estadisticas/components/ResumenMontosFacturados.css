@@ -1,0 +1,41 @@
+/* ✅ V00493 — De dónde salen los montos del área Facturación (prefijo rmf-) */
+.rmf-franja {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 10px;
+  margin: 8px 0 4px;
+}
+.rmf-total {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid #1f6feb;
+  border-radius: 8px;
+  background: #0d1a2b;
+  min-width: 240px;
+}
+.rmf-total dt { color: #8b949e; font-size: 0.74rem; }
+.rmf-total dd { margin: 2px 0 0; color: #e6edf3; font-weight: 700; font-size: 0.95rem; }
+.rmf-total dd.rmf-ayuda { font-weight: 400; color: #8b949e; font-size: 0.72rem; }
+.rmf-aparte {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 1px dashed #9e6a03;
+  border-radius: 8px;
+  background: #1c1608;
+  color: #e3b341;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+/* `button:hover` global pinta el borde de morado: aquí se fija el ámbar. */
+.rmf-aparte:hover { border-style: solid; border-color: #e3b341; background: #251c06; }
+.rmf-aparte:focus-visible { outline: 2px solid #e3b341; outline-offset: 2px; }
+.rmf-aparte-titulo { font-size: 0.78rem; font-weight: 700; }
+.rmf-aparte-monto { font-size: 0.92rem; font-weight: 700; color: #f0c75e; }
+.rmf-ayuda { color: #8b949e; font-size: 0.72rem; }
+.rmf-notas { margin: 0; padding: 6px 0 0 16px; color: #8b949e; font-size: 0.74rem; align-self: center; }
+.rmf-error { margin: 0; color: #f85149; font-size: 0.78rem; align-self: center; }
