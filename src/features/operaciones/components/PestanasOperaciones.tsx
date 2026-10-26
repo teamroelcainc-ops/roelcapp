@@ -37,8 +37,8 @@ export default function PestanasOperaciones({ activo, puede, onCambiar }: Props)
       <PestanasModulo etiqueta="Operaciones" pestanas={PESTANAS} activo={activo} puede={puede} onCambiar={onCambiar}
         acciones={(
           <button type="button" className="pop-btn-corregir" onClick={() => setCorrigiendo(true)}
-            title="Pone la moneda del convenio a las operaciones que no la tienen y recalcula sus montos (primero muestra qué cambia)">
-            <Wand2 size={15} aria-hidden="true" /> Corregir monedas de convenio
+            title="Pone Facturado en con la moneda de su empresa y la moneda del convenio a las que no la tienen, y recalcula sus montos (primero muestra qué cambia)">
+            <Wand2 size={15} aria-hidden="true" /> Corregir monedas
           </button>
         )} />
       {corrigiendo && (

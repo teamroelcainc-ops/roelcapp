@@ -6,6 +6,8 @@
 //   1) revisa TODAS las operaciones sin escribir nada y dice cuáles se corrigen, cuáles hay que
 //      revisar a mano y cuáles no tienen de dónde sacar la moneda;
 //   2) al confirmar, guarda la moneda del convenio y los montos recalculados, una por una.
+// ✅ V00490: se llama "Corregir monedas": también pone "Facturado en" (Cliente y Proveedor) con la
+// moneda de su empresa en Empresas.
 // ---------------------------------------------------------------------------
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -33,7 +35,7 @@ type Fase =
 
 const MAX_FILAS = 200;
 const HILOS = 4;
-const FUENTE: Record<Fuente, string> = { ambas: 'Convenio y conversión', convenio: 'Su convenio', conversion: 'Conversión guardada' };
+const FUENTE: Record<Fuente, string> = { ambas: 'Convenio y conversión', convenio: 'Su convenio', conversion: 'Conversión guardada', guardada: 'Ya la tenía' }; // ✅ V00489
 const n = (x: number): string => x.toLocaleString('es-MX');
 
 function ListaProblemas({ titulo, filas }: { titulo: string; filas: readonly RevisionOperacion[] }) {
@@ -67,7 +69,7 @@ export default function CorregirMonedasConvenioModal({ onCerrar }: Props) {
       if (sigue()) setFase({ tipo: 'listo', resumen: resumirOperaciones(revisiones, leidas), cat });
     } catch (e) {
       console.error('No se pudieron revisar las operaciones:', e);
-      if (sigue()) setFase({ tipo: 'error', mensaje: 'No se pudieron leer las operaciones o los convenios. Revisa la conexión e intenta de nuevo.' });
+      if (sigue()) setFase({ tipo: 'error', mensaje: 'No se pudieron leer las operaciones, los convenios o las empresas. Revisa la conexión e intenta de nuevo.' });
     }
   });
   useEffect(() => {
@@ -102,7 +104,7 @@ export default function CorregirMonedasConvenioModal({ onCerrar }: Props) {
     };
     await Promise.all(Array.from({ length: HILOS }, trabajar));
     void registrarLog('Operaciones', 'Edición',
-      `Corregir monedas de convenio: ${corregidas} operación(es) corregida(s), ${saltadas.length} saltada(s), ${fallidas.length} con error${detener.current ? ' (detenido)' : ''}.`);
+      `Corregir monedas: ${corregidas} operación(es) corregida(s), ${saltadas.length} saltada(s), ${fallidas.length} con error${detener.current ? ' (detenido)' : ''}.`);
     setFase({ tipo: 'terminado', corregidas, saltadas, fallidas, pendientes: lista.length - hechas });
   };
 
@@ -113,11 +115,12 @@ export default function CorregirMonedasConvenioModal({ onCerrar }: Props) {
       <div className="cmc-ventana">
         <header className="cmc-cabecera">
           <div>
-            <h2 id="cmc-titulo" className="cmc-titulo">Corregir monedas de convenio</h2>
+            <h2 id="cmc-titulo" className="cmc-titulo">Corregir monedas</h2>
             <p className="cmc-sub">
-              Operaciones sin Moneda Convenio (Cliente o Proveedor): se les pone la de su convenio o la que dice su
-              conversión guardada, y se recalculan Dólares, Pesos, Conversión y Utilidad como en el formulario.
-              Así Facturación da lo mismo que Por Cobrar.
+              Cada operación queda con Facturado en (Cliente y Proveedor) en la moneda de su empresa en Empresas.
+              A las que no tienen Moneda Convenio se les pone la de su convenio o la que dice su conversión guardada.
+              El precio del convenio se queda en su moneda y se convierte con el tipo de cambio: se recalculan
+              Subtotal, Dólares, Pesos, Conversión y Utilidad como en el formulario.
             </p>
           </div>
           <button type="button" className="cmc-cerrar" onClick={onCerrar} disabled={trabajando} aria-label="Cerrar">✕</button>
@@ -146,9 +149,10 @@ export default function CorregirMonedasConvenioModal({ onCerrar }: Props) {
               </ul>
               {fase.resumen.corregir.length > 0 && (
                 <p className="cmc-aviso">
+                  {fase.resumen.cambianFacturado > 0 && <><b>{n(fase.resumen.cambianFacturado)}</b> cambian Facturado en a la moneda de su empresa. </>}
                   {fase.resumen.cambianMonto > 0
                     ? <><b>{n(fase.resumen.cambianMonto)}</b> cambian lo que Facturación toma de ellas. </>
-                    : <>Lo que Facturación toma de ellas ya era así (V00486); cambian la moneda y el Subtotal que muestra Por Cobrar. </>}
+                    : <>La Conversión en pesos de cada una no cambia. </>}
                   Después corre <b>Corregir monedas y montos</b> en Facturación para que sus facturas queden con estos montos.
                 </p>
               )}
@@ -157,15 +161,19 @@ export default function CorregirMonedasConvenioModal({ onCerrar }: Props) {
                 <div className="cmc-tabla-caja">
                   <table className="cmc-tabla">
                     <thead>
-                      <tr><th>Referencia</th><th>Lado</th><th>Moneda del convenio</th><th>De dónde</th><th className="cmc-num">Subtotal antes</th><th className="cmc-num">Subtotal nuevo</th><th className="cmc-num">Conversión</th></tr>
+                      <tr><th>Referencia</th><th>Lado</th><th>Facturado en</th><th>Moneda del convenio</th><th>De dónde</th><th className="cmc-num">Subtotal antes</th><th className="cmc-num">Subtotal nuevo</th><th className="cmc-num">Conversión</th></tr>
                     </thead>
                     <tbody>
                       {fase.resumen.corregir.slice(0, MAX_FILAS).flatMap((r) => r.cambios.map((c, i) => (
                         <tr key={`${r.id}-${c.lado}`} className={c.cambiaFactura ? 'cmc-fila--cambia' : undefined}>
                           <td className="cmc-ref">{i === 0 ? r.ref : ''}</td>
                           <td>{etiquetaLado(c.lado)}</td>
-                          <td><NombreMoneda moneda={c.moneda} /></td>
-                          <td className="cmc-fuente">{FUENTE[c.fuente]}</td>
+                          <td>
+                            {c.facturadoAntes !== c.facturadoDespues && <><NombreMoneda moneda={c.facturadoAntes} respaldo="Sin definir" className="cmc-antes-moneda" /> → </>}
+                            <NombreMoneda moneda={c.facturadoDespues} respaldo="Sin definir" />
+                          </td>
+                          <td>{c.moneda ? <NombreMoneda moneda={c.moneda} /> : <span className="cmc-nada">—</span>}</td>
+                          <td className="cmc-fuente">{c.moneda ? FUENTE[c.fuente] : <span className="cmc-nada">—</span>}</td>
                           <td className="cmc-num cmc-antes">{c.subtotalAntes > 0 ? <Importe monto={c.subtotalAntes} moneda={c.monedaFactura} /> : <span className="cmc-nada">—</span>}</td>
                           <td className="cmc-num"><Importe monto={c.subtotalDespues} moneda={c.monedaFactura} /></td>
                           <td className="cmc-num"><Importe monto={c.convDespues} moneda="MXN" /></td>

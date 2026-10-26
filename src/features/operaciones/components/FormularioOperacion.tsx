@@ -2223,6 +2223,27 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
   const showExternalFleet = (isLogistica || isFletes) && !isRoelca;
   const esFlotaPropiaRoelca = showInternalFleet;
 
+  // ✅ V00490: "Facturado en" = la moneda de la empresa en Empresas (Cliente que paga / Proveedor de
+  //   transporte) y NO se cambia en la operación: pedido de Omaf ("no puede tener otra moneda"; la V00132
+  //   la había dejado editable). El precio del convenio sigue en su moneda y se convierte con el TC.
+  //   Si la empresa no tiene moneda, se elige a mano como antes. Una operación guardada con otra moneda
+  //   toma la de su empresa al abrirla (se queda al guardar).
+  const monedaDeEmpresaId = (empresaId: unknown): string => {
+    const id = String(empresaId ?? '').trim();
+    if (!id) return '';
+    const emp = (empresas || []).find((e) => String(e.id) === id);
+    return emp ? resolverMonedaIdDeEmpresa(emp) : '';
+  };
+  const monedaFijaCliente = monedaDeEmpresaId(formData.clientePaga);
+  const monedaFijaProveedor = esFlotaPropiaRoelca ? '' : monedaDeEmpresaId(formData.proveedorUnidad);
+  const monedaFijaDe = (campo: string): string => (campo === 'facturadoEnCobrar' ? monedaFijaCliente : campo === 'facturadoEnUnidad' ? monedaFijaProveedor : '');
+  useEffect(() => {
+    if (monedaFijaCliente && formData.facturadoEnCobrar !== monedaFijaCliente) setFormData(prev => ({ ...prev, facturadoEnCobrar: monedaFijaCliente }));
+  }, [monedaFijaCliente, formData.facturadoEnCobrar]);
+  useEffect(() => {
+    if (monedaFijaProveedor && formData.facturadoEnUnidad !== monedaFijaProveedor) setFormData(prev => ({ ...prev, facturadoEnUnidad: monedaFijaProveedor }));
+  }, [monedaFijaProveedor, formData.facturadoEnUnidad]);
+
   // ✅ Puente: se muestra SOLO en Transfer, o en Logística de CRUCES cuando el
   //    Proveedor de Transporte es Roelca. En Fletes (aunque sea Roelca) o en
   //    Logística con proveedor externo NO. (Regla V00369)
@@ -2485,7 +2506,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
       const camposCambiadosAut = initialData
         ? camposModificadosDe(operacionData, initialData as Record<string, unknown>).filter((k) =>
             !AUT_AUTOMATICOS.includes(k) &&
-            !(AUT_BLOQUEABLES_UI.includes(k) && campoBloqueadoAut(k)) &&
+            !(AUT_BLOQUEABLES_UI.includes(k) && (campoBloqueadoAut(k) || !!monedaFijaDe(k))) && // ✅ V00490: la moneda de la empresa no la cambió el usuario
             !autHook.accesoVigente(k))
         : [];
       const usuarioA = usuarioAut || await obtenerUsuarioAut();
@@ -3083,7 +3104,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
                       </div>
                       {/* ✅ V00470: ADUANA debajo de Cargada / Vacía (solo Transfer, como en Reglas de Estatus): la del
                           convenio (la que guarda el servidor, o la del nombre del convenio / su tarifa). Elige el flujo de estatus. */}
-                      {isTransfer && (
+                      {isTransfer && !normPuente(formData.trafico).includes('movimiento') && ( // ✅ V00474: los movimientos no cruzan aduana
                         <div className="form-group">
                           <label className="form-label">Aduana <span className="campo-badge">aduanaNombre</span></label>
                           <input type="text" className="form-control fo-x22" value={aduanaForm} readOnly placeholder="Se define por el convenio" title="Se asigna automáticamente según el convenio (no editable)" />
@@ -3306,7 +3327,8 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
                         {/* ✅ CAMBIO: ahora EDITABLE — se precarga del proveedor,
                             pero puedes corregir en qué moneda se factura. */}
                         {/* ✅ V00132: EDITABLE otra vez a petición — se precarga de la empresa (y "⟳ Actualizar moneda" la re-sincroniza), pero aquí puedes corregirla para esta operación */}
-                        <div onMouseDownCapture={() => campoBloqueadoAut('facturadoEnUnidad') && clicCampoBloqueado('facturadoEnUnidad')}><select disabled={campoBloqueadoAut('facturadoEnUnidad')} title={campoBloqueadoAut('facturadoEnUnidad') ? 'La moneda viene de la tabla Empresas y está bloqueada por Autorizaciones para tu rol (usa ⟳ Actualizar moneda para re-sincronizarla)' : 'Se precarga de la moneda de la empresa; puedes cambiarla para esta operación'} style={campoBloqueadoAut('facturadoEnUnidad') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} className="form-control" value={formData.facturadoEnUnidad || ''}
+                        {/* ✅ V00490: fija a la moneda de la empresa; solo se elige si la empresa no tiene moneda */}
+                        <div onMouseDownCapture={() => campoBloqueadoAut('facturadoEnUnidad') && clicCampoBloqueado('facturadoEnUnidad')}><select disabled={campoBloqueadoAut('facturadoEnUnidad') || !!monedaFijaProveedor} title={monedaFijaProveedor ? 'Es la moneda del proveedor en Empresas; no se cambia aquí' : campoBloqueadoAut('facturadoEnUnidad') ? 'La moneda viene de la tabla Empresas y está bloqueada por Autorizaciones para tu rol (usa ⟳ Actualizar moneda para re-sincronizarla)' : 'El proveedor no tiene moneda en Empresas: elígela aquí'} style={campoBloqueadoAut('facturadoEnUnidad') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} className="form-control fo-moneda-fija" value={formData.facturadoEnUnidad || ''}
                           onChange={(e) => setFormData(prev => ({ ...prev, facturadoEnUnidad: e.target.value }))}
                           >
                           <option value="">— Sin definir —</option>
@@ -3552,7 +3574,8 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
                         {/* ✅ CAMBIO: ahora EDITABLE — se precarga del cliente,
                             pero puedes corregir en qué moneda se factura. */}
                         {/* ✅ V00132: EDITABLE otra vez a petición — se precarga de la empresa (y "⟳ Actualizar moneda" la re-sincroniza), pero aquí puedes corregirla para esta operación */}
-                        <div onMouseDownCapture={() => campoBloqueadoAut('facturadoEnCobrar') && clicCampoBloqueado('facturadoEnCobrar')}><select disabled={campoBloqueadoAut('facturadoEnCobrar')} title={campoBloqueadoAut('facturadoEnCobrar') ? 'La moneda viene de la tabla Empresas y está bloqueada por Autorizaciones para tu rol (usa ⟳ Actualizar moneda para re-sincronizarla)' : 'Se precarga de la moneda de la empresa; puedes cambiarla para esta operación'} style={campoBloqueadoAut('facturadoEnCobrar') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} className="form-control" value={formData.facturadoEnCobrar || ''}
+                        {/* ✅ V00490: fija a la moneda de la empresa; solo se elige si la empresa no tiene moneda */}
+                        <div onMouseDownCapture={() => campoBloqueadoAut('facturadoEnCobrar') && clicCampoBloqueado('facturadoEnCobrar')}><select disabled={campoBloqueadoAut('facturadoEnCobrar') || !!monedaFijaCliente} title={monedaFijaCliente ? 'Es la moneda del cliente en Empresas; no se cambia aquí' : campoBloqueadoAut('facturadoEnCobrar') ? 'La moneda viene de la tabla Empresas y está bloqueada por Autorizaciones para tu rol (usa ⟳ Actualizar moneda para re-sincronizarla)' : 'El cliente no tiene moneda en Empresas: elígela aquí'} style={campoBloqueadoAut('facturadoEnCobrar') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} className="form-control fo-moneda-fija" value={formData.facturadoEnCobrar || ''}
                           onChange={(e) => setFormData(prev => ({ ...prev, facturadoEnCobrar: e.target.value }))}
                           >
                           <option value="">— Sin definir —</option>

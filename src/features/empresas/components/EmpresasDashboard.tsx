@@ -894,9 +894,10 @@ const EmpresasDashboard = () => {
     if (!window.confirm(
       `Se aplicará la moneda ACTUAL de "${emp.nombre}" (tabla Empresas) en cascada:\n\n` +
       '1) Convenios de clientes y proveedores de esta empresa\n' +
-      '2) Operaciones: Facturado En (cliente si es Cliente-Paga, proveedor si es Transporte)\n' +
-      '3) Facturación de Clientes y Proveedores (las mismas facturas que usa Pagos)\n\n' +
-      'Solo se escriben los registros donde la moneda sea distinta; montos y tarifas no se tocan.\n\n¿Continuar?'
+      '2) Operaciones: Facturado En (cliente si es Cliente-Paga, proveedor si es Transporte) y sus montos recalculados; el precio del convenio se queda en su moneda y la Conversión en pesos no cambia\n' +
+      '3) Facturación de Clientes y Proveedores (las mismas facturas que usa Pagos)\n' +
+      '4) Pagos de esta empresa (solo la moneda; el monto no se toca)\n\n' +
+      'Solo se escriben los registros donde la moneda sea distinta; las tarifas no se tocan.\n\n¿Continuar?'
     )) return;
     setPropagandoMoneda(String(emp.id));
     try {
@@ -908,9 +909,11 @@ const EmpresasDashboard = () => {
         `· Convenios de proveedores: ${r.conveniosProveedores}\n` +
         `· Operaciones (Facturado En · cliente): ${r.opsCliente}\n` +
         `· Operaciones (Facturado En · proveedor): ${r.opsProveedor}\n` +
+        (r.opsSinTocar > 0 ? `· Operaciones sin tocar (sin moneda del convenio; revísalas en Operaciones → Corregir monedas): ${r.opsSinTocar}\n` : '') + // ✅ V00490
         `· Facturas de clientes: ${r.facturasClientes}\n` +
-        `· Facturas de proveedores: ${r.facturasProveedores}\n\n` +
-        'Nota: los totales de facturas ya emitidas no se recalculan solos; si alguna debe rehacerse con la nueva moneda, usa "Recalcular montos" en su ficha (Pagos). Las monedas de los DETALLES de convenio (tarifas por concepto) son independientes y se editan en el convenio.'
+        `· Facturas de proveedores: ${r.facturasProveedores}\n` +
+        `· Pagos: ${r.pagos}\n\n` + // ✅ V00490
+        'Después corre Corregir monedas y montos en Facturación para que los totales de sus facturas queden con esta moneda. Las monedas de los DETALLES de convenio (tarifas por concepto) son independientes y se editan en el convenio.'
       );
       await registrarLog('Empresas', 'Edición', `Propagó la moneda "${r.monedaNombre}" de ${emp.nombre} a convenios (${r.conveniosClientes + r.conveniosProveedores}), operaciones (${r.opsCliente + r.opsProveedor}) y facturas (${r.facturasClientes + r.facturasProveedores}).`);
     } catch (e: any) {

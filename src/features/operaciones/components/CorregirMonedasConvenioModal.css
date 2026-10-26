@@ -1,6 +1,6 @@
 /* ✅ V00487: Corregir monedas de convenio (Operaciones) */
 .modal-overlay.cmc-fondo { z-index: 2000; padding: 16px; box-sizing: border-box; background-color: rgba(0, 0, 0, 0.75); }
-.cmc-ventana { display: flex; flex-direction: column; width: 920px; max-width: 100%; max-height: calc(100vh - 32px); box-sizing: border-box; border: 1px solid #30363d; border-radius: 12px; background: #0d1117; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55); overflow: hidden; }
+.cmc-ventana { display: flex; flex-direction: column; width: 1060px; max-width: 100%; max-height: calc(100vh - 32px); box-sizing: border-box; border: 1px solid #30363d; border-radius: 12px; background: #0d1117; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55); overflow: hidden; }
 .cmc-cabecera { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 22px 14px; border-bottom: 1px solid #21262d; }
 .cmc-titulo { margin: 0 0 6px; color: #f0f6fc; font-size: 1.15rem; }
 .cmc-sub { margin: 0; max-width: 66ch; color: #8b949e; font-size: 0.86rem; line-height: 1.45; }
@@ -28,6 +28,7 @@
 .cmc-fuente { color: #8b949e; }
 .cmc-tabla td.cmc-antes { opacity: 0.7; text-decoration: line-through; text-decoration-color: rgba(139, 148, 158, 0.6); }
 .cmc-nada { color: #484f58; }
+.cmc-antes-moneda { opacity: 0.7; text-decoration: line-through; } /* ✅ V00490: Facturado en de antes */
 .cmc-ref { color: #f0883e; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600; }
 .cmc-grupo { padding: 8px 12px; border: 1px solid #21262d; border-radius: 8px; color: #c9d1d9; font-size: 0.85rem; }
 .cmc-grupo summary { color: #e3b341; font-weight: 600; cursor: pointer; }

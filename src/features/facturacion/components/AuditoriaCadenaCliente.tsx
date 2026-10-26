@@ -17,7 +17,7 @@ import { DocumentosLista } from '../../documentos/DocumentosLista'; // ✅ V0034
 import { db } from '../../../config/firebase';
 import { useFlags } from '../../../shared/data/flags';
 import { llamarDinero, mensajeDinero } from '../services/dineroServidor';
-import { monedaDeFactura, totalNativoFactura } from '../../../shared/dominio/dinero';
+import { monedaDeFactura, monedaFacturaOperacion, totalNativoFactura } from '../../../shared/dominio/dinero';
 import * as XLSX from 'xlsx';
 import { EditorOperacionEmbebido } from '../../operaciones/components/EditorOperacionEmbebido';
 import './AuditoriaCadenaCliente.css';
@@ -35,6 +35,8 @@ interface Props {
 
 interface FilaOp {
   id: string; ref: string; fecha: string; status: string; moneda: string;
+  /** ✅ V00490: moneda del precio (convenio); puede ser otra que la del cliente (se convierte con el TC). */
+  monedaConvenio: string;
   montoHoy: number; facturaIds: string[]; invoices: string;
   montoEnFactura: number | null; dif: number | null;
   veredicto: 'ok' | 'cambio' | 'sinFacturar' | 'varias' | 'sinDesglose' | 'cancelada';
@@ -290,7 +292,10 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
           .filter((f, i, arr) => arr.findIndex((x) => x.id === f.id) === i);
         const base: Omit<FilaOp, 'veredicto' | 'detalle'> = {
           id: String(op.id), ref: String(op.ref || op.id), fecha: String(op.fechaServicio || ''), status,
-          moneda: nombreMoneda(op.monedaConvenioCliente || op.facturadoEnCobrar),
+          // ✅ V00490: la moneda de la operación es en la que se factura (Facturado en), la que debe ser la del
+          //   cliente. Antes se mostraba la del convenio y un precio en dólares cobrado en pesos salía con ⚠.
+          moneda: monedaFacturaOperacion(op, 'cliente') ?? nombreMoneda(op.facturadoEnCobrar),
+          monedaConvenio: monedaCanonica(op.monedaConvenioCliente) ?? '',
           montoHoy: hoy, facturaIds: facs.map((f) => String(f.id)),
           invoices: facs.map((f) => String(f.invoice || f.id)).join(', '),
           montoEnFactura: null, dif: null, raw: op, revisado: !!op.auditRevisado,
@@ -468,7 +473,7 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
     if (!resultado) return;
     const wb = XLSX.utils.book_new();
     const hojaOps = resultado.ops.map((x) => ({
-      'Referencia': x.ref, 'Fecha Servicio': x.fecha, 'Status': x.status, 'Moneda Operación': x.moneda,
+      'Referencia': x.ref, 'Fecha Servicio': x.fecha, 'Status': x.status, 'Facturado en': x.moneda, 'Moneda Convenio': x.monedaConvenio || '—',
       'Monto HOY (conversión)': x.montoHoy, 'Factura(s)': x.invoices,
       'Monto en Factura': x.montoEnFactura ?? '', 'Diferencia': x.dif ?? '', 'Veredicto': x.detalle,
     }));
@@ -599,7 +604,7 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo }
                           <BotonRevisado tipo="op" id={x.id} revisado={x.revisado} />
                         </span>
                       </div>
-                      <div className="acc-item-fila2">{x.fecha || '—'} · {x.status || '—'}</div>
+                      <div className="acc-item-fila2">{x.fecha || '—'} · {x.status || '—'}{x.monedaConvenio && x.monedaConvenio !== x.moneda ? ` · precio en ${x.monedaConvenio}` : ''}</div>
                       {x.montoEnFactura !== null && x.dif !== null && Math.abs(x.dif) > 0.01 && (
                         <div className="acc-item-fila2">En factura: <b>{money(x.montoEnFactura)}</b> · dif <b>{money(x.dif)}</b></div>
                       )}
