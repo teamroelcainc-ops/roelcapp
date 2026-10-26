@@ -83,10 +83,10 @@ import { aplicarFacturas, aplicarOperaciones, llamarDinero, mensajeDinero } from
 import { useFlags, useFlagsCargadas } from '../../../shared/data/flags';
 import {
   aplicarConfigColumnasGuardada, colorStatusFactura, DOC_REMISION_EMISORES, fechaOrdenKey, LIMITE_FACTURAS_TODAS, LIMITE_OPS_TODAS,
-  fechaFacturaISO, moverIdAlInicio, PAG_FACTURAS, pareceReferencia, parseFechaFactura, refNaturalKey, STATUS_FACTURA_OPCIONES, valorGenericoOp,
+  fechaFacturaISO, moverIdAlInicio, PAG_FACTURAS, pareceReferencia, parseFechaFactura, refNaturalKey, STATUS_FACTURA_OPCIONES, textoFacturadoEn, valorGenericoOp,
 } from '../selectores'; // ✅ V00444 (Fase 8.1): una sola copia (antes idéntica en Clientes y Proveedores)
 import { useOperacionesFacturables } from '../hooks/useOperacionesFacturables'; // ✅ V00444 (Fase 8.1)
-import { conversionOperacion, monedaDeFactura, montoOperacion } from '../../../shared/dominio/dinero';
+import { conversionOperacion, monedaDeFactura, monedaFacturaOperacion, montoOperacion } from '../../../shared/dominio/dinero';
 import type { Moneda } from '../../../shared/dominio/moneda';
 import Importe, { NombreMoneda } from './Importe'; // ✅ V00481: Pesos en verde, Dólares en azul
 import AvisoMonedaFactura from './AvisoMonedaFactura';
@@ -1172,13 +1172,8 @@ export const FacturacionClientesDashboard = () => {
 
   // ✅ V00126: moneda en la que se factura la operación (USD / MXN / '')
   //   ✅ V00439 (Fase 3.x): helper compartido (ID del catálogo, código o nombre).
-  const monedaFacturacionOp = (op: any): 'USD' | 'MXN' | '' => {
-    const fact = String(op.facturadoEnCobrar || '');
-    const nom = String(op.monedaCobroNombre || '');
-    if (monedaCanonicaComun(fact) === 'USD' || monedaCanonicaComun(nom) === 'USD') return 'USD';
-    if (monedaCanonicaComun(fact) === 'MXN' || monedaCanonicaComun(nom) === 'MXN') return 'MXN';
-    return '';
-  };
+  //   ✅ V00489: la misma fuente que la regla de dinero (el ID; el nombre copiado solo si el ID no se reconoce).
+  const monedaFacturacionOp = (op: any): 'USD' | 'MXN' | '' => monedaFacturaOperacion(op, 'cliente') ?? '';
   const resumenMonedaOps = useMemo(() => {
     const base = operacionesGlobales.filter(op => !enRevisionRef.has(idDeLista(op)) && dentroRangoFecha(op) && coincideClienteOp(op) && coincideTipoOp(op) && (vistaOps === 'todas' || (vistaOps === 'facturadas') === esFacturada(op))); // ✅ V00450: sin las de Revisión
     return { usd: base.filter(op => monedaFacturacionOp(op) === 'USD').length, mxn: base.filter(op => monedaFacturacionOp(op) === 'MXN').length, todas: base.length };
@@ -1251,7 +1246,7 @@ export const FacturacionClientesDashboard = () => {
       case 'cartaPorte': return <td key={key} style={tdBase}>{op.cartaPorte || op.numeroCartaPorte || op.numDoda || '-'}</td>;
       case 'destino': return <td key={key} style={tdBase}>{op.destinoNombre || op.destino || '-'}</td>;
       // ✅ V00481: Pesos en verde y Dólares en azul (antes al revés); subtotal y total en la moneda en que se factura.
-      case 'moneda': return <td key={key} style={tdBase}><NombreMoneda moneda={op.monedaCobroNombre || op.facturadoEnCobrar} respaldo={op.monedaCobroNombre || mostrarMoneda(op.facturadoEnCobrar)} /></td>;
+      case 'moneda': return <td key={key} style={tdBase}><NombreMoneda moneda={monedaFacturaOperacion(op, 'cliente')} respaldo={textoFacturadoEn(op, 'cliente')} /></td>;
       case 'subtotal': return <td key={key} style={tdBase}><Importe monto={m.subtotal} moneda={monedaFacturacionOp(op)} /></td>;
       case 'total': return <td key={key} style={tdBase}><Importe monto={m.total} moneda={monedaFacturacionOp(op)} className="fcd-total-op" /></td>;
       case 'dolares': return <td key={key} style={tdBase}><Importe monto={m.dol} moneda="USD" /></td>;
@@ -1310,7 +1305,7 @@ export const FacturacionClientesDashboard = () => {
         case 'cliente': return getNombreCliente(op.clientePaga || op.clientePagaId || op.clienteId);
         case 'cartaPorte': return op.cartaPorte || op.numeroCartaPorte || op.numDoda || '';
         case 'destino': return op.destinoNombre || op.destino || '';
-        case 'moneda': return op.monedaCobroNombre || mostrarMoneda(op.facturadoEnCobrar);
+        case 'moneda': return textoFacturadoEn(op, 'cliente'); // ✅ V00489
         case 'subtotal': return Number(m.subtotal) || 0;
         case 'total': return Number(m.total) || 0;
         case 'dolares': return Number(m.dol) || 0;
@@ -2394,7 +2389,7 @@ export const FacturacionClientesDashboard = () => {
           nuevos[d.id] = {
             ref: o.numReferencia || o.referencia || o.ref || d.id,
             remolque: txt(o.remolqueNombre, o.remolquePlaca, o.numeroRemolque),
-            moneda: o.monedaCobroNombre || mostrarMoneda(o.facturadoEnCobrar),
+            moneda: textoFacturadoEn(o, 'cliente'), // ✅ V00489
             clienteId: o.clientePaga || o.clienteId || '',
             refCliente: String(o.refCliente || ''), // ✅ NUEVO
           };
@@ -2511,7 +2506,7 @@ export const FacturacionClientesDashboard = () => {
           nuevos[d.id] = {
             ref: o.numReferencia || o.referencia || o.ref || d.id,
             remolque: txt(o.remolqueNombre, o.remolquePlaca, o.numeroRemolque),
-            moneda: o.monedaCobroNombre || mostrarMoneda(o.facturadoEnCobrar),
+            moneda: textoFacturadoEn(o, 'cliente'), // ✅ V00489
             clienteId: o.clientePaga || o.clienteId || '',
             refCliente: String(o.refCliente || ''),
           };
@@ -4341,7 +4336,7 @@ export const FacturacionClientesDashboard = () => {
                       </div>
                       <div className="fcd-x272">
                         <div className="fcd-x273">
-                          <div><span className="fcd-x265">Facturado En:</span><span className="fcd-x261"><NombreMoneda moneda={det.monedaUnidadNombre || det.facturadoEnUnidad} respaldo={det.monedaUnidadNombre || mostrarMoneda(det.facturadoEnUnidad)} /></span></div>
+                          <div><span className="fcd-x265">Facturado En:</span><span className="fcd-x261"><NombreMoneda moneda={monedaFacturaOperacion(det, 'proveedor')} respaldo={textoFacturadoEn(det, 'proveedor')} /></span></div>
                           <div><span className="fcd-x265">Convenio Proveedor</span><span className="fcd-x261">{txt(det.convenioProveedorNombre, det.convenioProveedor)}</span></div>
                           <div><span className="fcd-x265">Moneda del Convenio (Base)</span><span className="fcd-x261"><NombreMoneda moneda={det.monedaConvenioProv} respaldo={mostrarMoneda(det.monedaConvenioProv)} /></span></div>
                         </div>
@@ -4398,7 +4393,7 @@ export const FacturacionClientesDashboard = () => {
                   {pestañaDetalleActiva === 'cobrar' && (
                     <div>
                       <div className="fcd-x270">
-                        <div><span className="fcd-x265">Facturado En:</span><span className="fcd-x261"><NombreMoneda moneda={det.monedaCobroNombre || det.facturadoEnCobrar} respaldo={det.monedaCobroNombre || mostrarMoneda(det.facturadoEnCobrar)} /></span></div>
+                        <div><span className="fcd-x265">Facturado En:</span><span className="fcd-x261"><NombreMoneda moneda={monedaFacturaOperacion(det, 'cliente')} respaldo={textoFacturadoEn(det, 'cliente')} /></span></div>
                         <div><span className="fcd-x265">Moneda Convenio (Cliente)</span><span className="fcd-x261"><NombreMoneda moneda={det.monedaConvenioCliente} respaldo={mostrarMoneda(det.monedaConvenioCliente)} /></span></div>
                         <div><span className="fcd-x265">Convenio Seleccionado (Base)</span><span className="fcd-x261">{formatoMoneda(det.montoConvenioCliente)}</span></div>
                         <div><span className="fcd-x265">Cargos Adicionales</span><span className="fcd-x261">{formatoMoneda(det.cargosAdicionales)}</span></div>

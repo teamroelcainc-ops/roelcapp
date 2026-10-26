@@ -41,7 +41,7 @@ import { CATALOGO_ADUANAS, CATALOGO_CV, cambiosCanonicos, catalogoServidor, cont
 import { banderaServidor } from './flags';
 import { CAMPOS_CANONICOS, derivarDesdeConvenio } from './dominio/operacionCanonica.js';
 import { ESQUEMA_OPERACION_VERSION, ID_MXN, ID_USD } from './dominio/constantes.js';
-import { conversionOperacion, derivadosFactura, monedaConvenioDeducida, monedaDeFactura, totalNativoDeOperaciones, totalNativoDeRenglonesLegado } from './dominio/dinero.js';
+import { conversionOperacion, derivadosFactura, monedaConvenioDeducida, monedaDeFactura, monedaFacturaOperacion, totalNativoDeOperaciones, totalNativoDeRenglonesLegado } from './dominio/dinero.js';
 import { aNumero, deCentavos, r2 } from './dominio/numeros.js';
 import { borrarRenglones, proyectarRenglones } from './proyecciones.js';
 import { cambiosCobroPuente } from './puentesYDiesel.js';
@@ -400,8 +400,12 @@ const conversionOperacionLegado = (op: Dict, lado: 'cliente' | 'proveedor') => {
   const montoConvenio = Number(lado === 'cliente' ? op.montoConvenioCliente : op.totalAPagarProv) || 0;
   const cargos = Number(lado === 'cliente' ? op.cargosAdicionales : op.cargosAdicionalesProv) || 0;
   const nombreMoneda = String((lado === 'cliente' ? op.monedaCobroNombre : op.monedaUnidadNombre) || '');
-  const factUSD = fact === ID_USD || esUSDTextoLegado(nombreMoneda);
-  const factMXN = fact === ID_MXN || esMXNTextoLegado(nombreMoneda);
+  // ✅ V00489: UNA sola moneda de factura (el ID; el nombre solo si el ID no se reconoce). Antes, con el
+  //   ID en Dólares y el nombre copiado en "Pesos" (o al revés), eran las dos a la vez y el monto
+  //   quedaba multiplicado dos veces por el TC.
+  const monedaFactura = fact === ID_USD ? 'USD' : fact === ID_MXN ? 'MXN' : monedaFacturaOperacion(op, lado);
+  const factUSD = monedaFactura === 'USD' || (monedaFactura === null && esUSDTextoLegado(nombreMoneda) && !esMXNTextoLegado(nombreMoneda));
+  const factMXN = monedaFactura === 'MXN' || (monedaFactura === null && esMXNTextoLegado(nombreMoneda) && !esUSDTextoLegado(nombreMoneda));
   const monConv = String((lado === 'cliente' ? op.monedaConvenioCliente : op.monedaConvenioProv) || '');
   let convUSD = monConv === ID_USD || (!!monConv && esUSDTextoLegado(monConv));
   let convMXN = monConv === ID_MXN || (!!monConv && esMXNTextoLegado(monConv));
@@ -486,8 +490,17 @@ const propagarMontoOperacionAFacturas = async (opId: string, lado: 'cliente' | '
   return n;
 };
 
-const CAMPOS_DINERO_CLIENTE = ['montoConvenioCliente', 'cargosAdicionales', 'facturadoEnCobrar', 'monedaConvenioCliente', 'monedaCobroNombre', 'tipoCambioAprobado', 'tipoCambioDia', 'convenioNombre', 'refCliente'];
-const CAMPOS_DINERO_PROV = ['totalAPagarProv', 'cargosAdicionalesProv', 'facturadoEnUnidad', 'monedaConvenioProv', 'monedaUnidadNombre', 'tipoCambioAprobado', 'tipoCambioDia', 'convenioProveedorNombre'];
+// ✅ V00489: también los montos guardados (Subtotal, Dólares, Pesos, Conversión). Desde la V00486 la
+//   regla deduce la moneda del convenio de la conversión guardada (y sin TC siempre cayó a esos montos):
+//   corregirlos en el formulario sin tocar nada más no actualizaba el renglón de la factura (D-6166).
+const CAMPOS_DINERO_CLIENTE = [
+  'montoConvenioCliente', 'cargosAdicionales', 'facturadoEnCobrar', 'monedaConvenioCliente', 'monedaCobroNombre', 'tipoCambioAprobado', 'tipoCambioDia', 'convenioNombre', 'refCliente',
+  'conversionCliente', 'subtotalCliente', 'pesosCliente', 'dolaresCliente',
+];
+const CAMPOS_DINERO_PROV = [
+  'totalAPagarProv', 'cargosAdicionalesProv', 'facturadoEnUnidad', 'monedaConvenioProv', 'monedaUnidadNombre', 'tipoCambioAprobado', 'tipoCambioDia', 'convenioProveedorNombre',
+  'conversionProv', 'subtotalProv', 'pesosProv', 'dolaresProv',
+];
 
 /** ✅ V00442 (Fase 6.1): la cascada de montos (antes el trigger operacionMontoCambiado) corre dentro de operacionEscrita. */
 const propagarMontosDeOperacion = async (opId: string, antes: Dict, despues: Dict): Promise<void> => {

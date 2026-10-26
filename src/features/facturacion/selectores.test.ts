@@ -2,8 +2,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   aplicarConfigColumnasGuardada, colorStatusFactura, fechaFacturaISO, fechaOrdenKey, moverIdAlInicio, pareceReferencia,
-  parseFechaFactura, refNaturalKey, valorGenericoOp,
+  parseFechaFactura, refNaturalKey, textoFacturadoEn, valorGenericoOp,
 } from './selectores';
+import { ID_MXN, ID_USD } from '../../shared/dominio/constantes';
 
 afterEach(() => { vi.useRealTimers(); });
 
@@ -117,5 +118,17 @@ describe('otros', () => {
     expect(colorStatusFactura('No Facturado')).toBe('#f59e0b');
     expect(colorStatusFactura('Facturado')).toBe('#10b981');
     expect(colorStatusFactura(undefined)).toBe('#8b949e');
+  });
+});
+
+describe('✅ V00489 — textoFacturadoEn (la misma fuente que la regla de dinero)', () => {
+  it('el ID manda sobre la copia del nombre', () => {
+    expect(textoFacturadoEn({ facturadoEnCobrar: ID_MXN, monedaCobroNombre: 'Dólares' }, 'cliente')).toBe('Pesos');
+    expect(textoFacturadoEn({ facturadoEnUnidad: ID_USD, monedaUnidadNombre: 'Pesos' }, 'proveedor')).toBe('Dólares');
+  });
+  it('sin ID reconocido usa el nombre; sin nada, el texto guardado o "-"', () => {
+    expect(textoFacturadoEn({ facturadoEnCobrar: '', monedaCobroNombre: 'USD' }, 'cliente')).toBe('Dólares');
+    expect(textoFacturadoEn({ facturadoEnCobrar: 'abc123', monedaCobroNombre: 'Euros' }, 'cliente')).toBe('Euros');
+    expect(textoFacturadoEn({}, 'proveedor')).toBe('-');
   });
 });

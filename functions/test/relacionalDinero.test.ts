@@ -99,6 +99,31 @@ describe('cascada operación → factura (dentro de operacionEscrita desde la V0
   });
 });
 
+describe('✅ V00489 — cascada con la moneda de factura de una sola fuente', () => {
+  const correrCon = async (antes: Datos, despues: Datos) => {
+    estado.actualizaciones.length = 0;
+    estado.docs.set('facturas_clientes/F1', { monedaFacturacion: 'MXN', operacionesIds: ['o1'], operacionesGuardadas: [{ id: 'o1', monto: 801373.63, subtotalBase: 46082.97, dol: 46082.97, pes: 0 }] });
+    estado.docs.set('operaciones/o1', despues);
+    await (mod.operacionEscrita as unknown as Trigger)({
+      id: 'e3', time: new Date().toISOString(), params: { opId: 'o1' },
+      data: { before: { exists: true, data: () => antes }, after: { exists: true, data: () => despues, updateTime: {}, ref: { update: async () => {} } } },
+    });
+    return estado.actualizaciones[0]?.datos.operacionesGuardadas as Datos[] | undefined;
+  };
+  const ID_MXN_PRUEBA = 'f95d8894'; // ID_MXN del catálogo
+  const base = { montoConvenioCliente: 2650, cargosAdicionales: 0, tipoCambioAprobado: 17.3898, monedaConvenioCliente: '' };
+  it('ID Pesos con el nombre copiado en "Dólares": no multiplica dos veces por el TC', async () => {
+    const antes = { ...base, facturadoEnCobrar: '', monedaCobroNombre: 'Dólares', conversionCliente: 46082.97 };
+    const despues = { ...antes, facturadoEnCobrar: ID_MXN_PRUEBA }; // la regla de antes daba 801,373.63
+    expect((await correrCon(antes, despues))?.[0]).toMatchObject({ monto: 46082.97, pes: 46082.97, dol: 0 });
+  });
+  it('corregir solo la conversión guardada (convenio sin moneda) actualiza el renglón de la factura', async () => {
+    const antes = { ...base, facturadoEnCobrar: ID_MXN_PRUEBA, monedaCobroNombre: 'Dólares', conversionCliente: 46082.97 };
+    const despues = { ...antes, conversionCliente: 2650, pesosCliente: 2650, subtotalCliente: 2650 };
+    expect((await correrCon(antes, despues))?.[0]).toMatchObject({ monto: 2650, pes: 2650, dol: 0 });
+  });
+});
+
 describe('operacionEscrita: sale sin calcular si solo cambiaron sus propios campos', () => {
   it('soloCamposPropios', () => {
     expect(mod.soloCamposPropios({ a: 1, estadoGrupo: 'activa' }, { a: 1, estadoGrupo: 'completada', empresasIds: ['x'] })).toBe(true);

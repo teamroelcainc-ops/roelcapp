@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { ID_MXN, ID_USD } from './constantes';
 import {
-  agregadosFactura, calcularAbono, calcularReversion, conversionOperacion, ErrorDinero, estadoFactura, monedaConvenioDe, monedaConvenioDeducida, montoOperacion,
+  agregadosFactura, calcularAbono, calcularReversion, conversionOperacion, ErrorDinero, estadoFactura, monedaConvenioDe, monedaConvenioDeducida, monedaFacturaOperacion, montoOperacion,
   renglonEnCentavos, renglonFactura, totalesTrasCambioDeOps, totalNativoDeRenglonesLegado, totalNativoFactura,
   totalNativoFacturaLegado,
 } from './dinero';
@@ -37,6 +37,17 @@ const refConversion = (op: D, lado: Lado) => {
   const facturaUSD = factUSD || (!factMXN && convUSD);
   if (facturaUSD) { dol = total; pes = 0; conv = total * tc; } else { dol = 0; pes = total; conv = total; }
   return { subtotal: r2f(subtotal), cargos: r2f(cargosFact), total, dol: r2f(dol), pes: r2f(pes), conv: r2f(conv), tc };
+};
+
+/** ✅ V00489: ¿la regla de antes veía la MISMA moneda de factura que la de ahora? (antes podían ser las dos a la vez). */
+const facturaIgualQueAntes = (op: D, lado: Lado): boolean => {
+  const cli = lado === 'cliente';
+  const fact = cli ? op.facturadoEnCobrar : op.facturadoEnUnidad;
+  const nombre = String((cli ? op.monedaCobroNombre : op.monedaUnidadNombre) || '').toUpperCase();
+  const antesUSD = fact === ID_USD || nombre.includes('USD') || nombre.includes('DOLAR') || nombre.includes('DÓLAR');
+  const antesMXN = fact === ID_MXN || nombre.includes('MXN') || nombre.includes('PESO');
+  const ahora = monedaFacturaOperacion(op, lado);
+  return antesUSD === (ahora === 'USD') && antesMXN === (ahora === 'MXN');
 };
 
 const refMontoCliente = (op: D) => {
@@ -131,11 +142,12 @@ describe('paridad con las reglas anteriores (3,000 casos al azar)', () => {
     for (let i = 0; i < 3000; i++) {
       const op = opAlAzar();
       // ✅ V00486: la regla solo cambia cuando la moneda del convenio falta y se deduce de la conversión guardada.
-      if (!monedaConvenioDe(op, 'cliente').deducida) {
+      // ✅ V00489: … o cuando la moneda de factura de antes era otra (Dólares y Pesos a la vez, o un texto que no reconocía).
+      if (!monedaConvenioDe(op, 'cliente').deducida && facturaIgualQueAntes(op, 'cliente')) {
         expect(conversionOperacion(op, 'cliente')).toEqual(refConversion(op, 'cliente'));
         expect(montoOperacion(op, 'cliente')).toEqual(refMontoCliente(op));
       }
-      if (!monedaConvenioDe(op, 'proveedor').deducida) {
+      if (!monedaConvenioDe(op, 'proveedor').deducida && facturaIgualQueAntes(op, 'proveedor')) {
         expect(conversionOperacion(op, 'proveedor')).toEqual(refConversion(op, 'proveedor'));
         expect(montoOperacion(op, 'proveedor')).toEqual(refMontoProveedor(op));
       }
@@ -278,5 +290,48 @@ describe('✅ V00486 — convenio sin moneda: se deduce de la conversión guarda
   it('sin TC en la operación: cae a la conversión guardada (respaldo de siempre)', () => {
     const op = { ...quintanar, tipoCambioAprobado: 0 };
     expect(montoOperacion(op, 'cliente').conv).toBe(1988.21);
+  });
+});
+
+describe('✅ V00489 — la moneda de la factura sale de una sola fuente', () => {
+  // TR-110626-011 (D-6166, Javier Adrián Sánchez Martínez): convenio 2,650, TC 17.3898. El ID de
+  //   "Facturado en" y la copia del nombre (de AppSheet, nadie la actualiza) decían monedas distintas.
+  const base = { montoConvenioCliente: 2650, cargosAdicionales: 0, tipoCambioAprobado: 17.3898 };
+  it('el ID manda sobre el nombre copiado; el nombre solo cuenta si el ID no se reconoce', () => {
+    expect(monedaFacturaOperacion({ facturadoEnCobrar: ID_USD, monedaCobroNombre: 'Pesos' }, 'cliente')).toBe('USD');
+    expect(monedaFacturaOperacion({ facturadoEnCobrar: ID_MXN, monedaCobroNombre: 'Dólares' }, 'cliente')).toBe('MXN');
+    expect(monedaFacturaOperacion({ facturadoEnCobrar: '', monedaCobroNombre: 'Pesos' }, 'cliente')).toBe('MXN');
+    expect(monedaFacturaOperacion({ facturadoEnCobrar: 'Dólares' }, 'cliente')).toBe('USD');
+    expect(monedaFacturaOperacion({ facturadoEnUnidad: ID_USD, monedaUnidadNombre: 'Pesos' }, 'proveedor')).toBe('USD');
+    expect(monedaFacturaOperacion({ monedaCobroNombre: 'USD / MXN PESOS' }, 'cliente')).toBe('USD');
+    expect(monedaFacturaOperacion({}, 'cliente')).toBeNull();
+  });
+  it('convenio en dólares, ID Dólares y nombre "Pesos": se factura en dólares, sin multiplicar dos veces por el TC', () => {
+    const op = { ...base, monedaConvenioCliente: ID_USD, facturadoEnCobrar: ID_USD, monedaCobroNombre: 'Pesos' };
+    const m = montoOperacion(op, 'cliente');
+    expect([m.subtotal, m.dol, m.pes, m.conv]).toEqual([2650, 2650, 0, 46082.97]);
+    expect(refConversion(op, 'cliente').conv).toBe(801373.63); // la regla de antes
+  });
+  it('convenio deducido en dólares (conversión guardada ≈ × TC), ID Pesos y nombre "Dólares": se factura en pesos', () => {
+    const op = { ...base, facturadoEnCobrar: ID_MXN, monedaCobroNombre: 'Dólares', conversionCliente: 46082.97 };
+    const m = montoOperacion(op, 'cliente');
+    expect([m.subtotal, m.dol, m.pes, m.conv]).toEqual([46082.97, 0, 46082.97, 46082.97]);
+    expect(renglonFactura('o1', op, 'cliente').monto).toBe(46082.97);
+  });
+  it('lo que muestra Por Cobrar en D-6166 (Pesos 2,650, Conversión 2,650, convenio sin moneda): el renglón vale 2,650', () => {
+    const guardado = { ...base, monedaConvenioCliente: '', subtotalCliente: 2650, pesosCliente: 2650, dolaresCliente: 0, conversionCliente: 2650 };
+    const enPesos = montoOperacion({ ...guardado, facturadoEnCobrar: ID_MXN, monedaCobroNombre: 'Dólares' }, 'cliente');
+    expect([enPesos.dol, enPesos.pes, enPesos.conv]).toEqual([0, 2650, 2650]);
+    // Con el ID en Dólares se factura en dólares: 2,650 ÷ TC = 152.39 (≈ 2,650.03 pesos por el redondeo).
+    const enDolares = montoOperacion({ ...guardado, facturadoEnCobrar: ID_USD, monedaCobroNombre: 'Pesos' }, 'cliente');
+    expect([enDolares.dol, enDolares.pes, enDolares.conv]).toEqual([152.39, 0, 2650.03]);
+  });
+  it('nunca da × TC² con monedas que se contradicen (todas las combinaciones)', () => {
+    const monedas = [ID_USD, ID_MXN, 'Dólares', 'Pesos', ''];
+    monedas.forEach((fact) => monedas.forEach((nombre) => monedas.forEach((conv) => {
+      const m = conversionOperacion({ ...base, facturadoEnCobrar: fact, monedaCobroNombre: nombre, monedaConvenioCliente: conv }, 'cliente');
+      expect(m.conv).toBeLessThanOrEqual(46082.97);
+      expect(m.dol > 0 && m.pes > 0).toBe(false);
+    })));
   });
 });

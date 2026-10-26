@@ -87,11 +87,11 @@ import { aplicarFacturas, aplicarOperaciones, llamarDinero, mensajeDinero } from
 import { useFlags, useFlagsCargadas } from '../../../shared/data/flags';
 import {
   aplicarConfigColumnasGuardada, colorStatusFactura, DOC_REMISION_EMISORES, fechaOrdenKey, LIMITE_FACTURAS_TODAS, LIMITE_OPS_TODAS,
-  fechaFacturaISO, moverIdAlInicio, PAG_FACTURAS, pareceReferencia, parseFechaFactura, refNaturalKey, STATUS_FACTURA_OPCIONES, valorGenericoOp,
+  fechaFacturaISO, moverIdAlInicio, PAG_FACTURAS, pareceReferencia, parseFechaFactura, refNaturalKey, STATUS_FACTURA_OPCIONES, textoFacturadoEn, valorGenericoOp,
 } from '../selectores'; // ✅ V00444 (Fase 8.1): una sola copia (antes idéntica en Clientes y Proveedores)
 import { useOperacionesFacturables } from '../hooks/useOperacionesFacturables'; // ✅ V00444 (Fase 8.1)
 import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
-import { conversionOperacion, monedaDeFactura, montoOperacion } from '../../../shared/dominio/dinero';
+import { conversionOperacion, monedaDeFactura, monedaFacturaOperacion, montoOperacion } from '../../../shared/dominio/dinero';
 import type { Moneda } from '../../../shared/dominio/moneda';
 import Importe, { NombreMoneda } from './Importe'; // ✅ V00481: Pesos en verde, Dólares en azul
 import AvisoMonedaFactura from './AvisoMonedaFactura';
@@ -1076,13 +1076,8 @@ export const FacturacionProveedoresDashboard = () => {
 
   // ✅ V00126: moneda en la que se factura/paga la operación al proveedor (USD / MXN / '')
   //   ✅ V00439 (Fase 3.x): helper compartido (ID del catálogo, código o nombre).
-  const monedaFacturacionOp = (op: any): 'USD' | 'MXN' | '' => {
-    const fact = String(op.facturadoEnUnidad || '');
-    const nom = String(op.monedaUnidadNombre || '');
-    if (monedaCanonicaComun(fact) === 'USD' || monedaCanonicaComun(nom) === 'USD') return 'USD';
-    if (monedaCanonicaComun(fact) === 'MXN' || monedaCanonicaComun(nom) === 'MXN') return 'MXN';
-    return '';
-  };
+  //   ✅ V00489: la misma fuente que la regla de dinero (el ID; el nombre copiado solo si el ID no se reconoce).
+  const monedaFacturacionOp = (op: any): 'USD' | 'MXN' | '' => monedaFacturaOperacion(op, 'proveedor') ?? '';
   const resumenMonedaOps = useMemo(() => {
     const base = operacionesGlobales.filter(op => esFacturableProveedor(op) && dentroRangoFecha(op) && coincideProveedorOp(op) && coincideTipoOp(op) && (vistaOps === 'todas' || (vistaOps === 'facturadas') === esFacturada(op)));
     return { usd: base.filter(op => monedaFacturacionOp(op) === 'USD').length, mxn: base.filter(op => monedaFacturacionOp(op) === 'MXN').length, todas: base.length };
@@ -1147,7 +1142,7 @@ export const FacturacionProveedoresDashboard = () => {
       case 'proveedor': return getNombreEmpresa(provDeOp(op) || op.proveedorUnidadNombre);
       case 'cartaPorte': return op.cartaPorte || op.numeroCartaPorte || op.numDoda || '-';
       case 'destino': return op.destinoNombre || op.destino || '-';
-      case 'moneda': return op.monedaUnidadNombre || mostrarMoneda(op.facturadoEnUnidad);
+      case 'moneda': return textoFacturadoEn(op, 'proveedor'); // ✅ V00489
       case 'subtotal': return m.subtotal;
       case 'total': return m.total;
       case 'dolares': return m.dol;
@@ -1188,7 +1183,7 @@ export const FacturacionProveedoresDashboard = () => {
       case 'cartaPorte': return <td key={key} style={tdBase}>{op.cartaPorte || op.numeroCartaPorte || op.numDoda || '-'}</td>;
       case 'destino': return <td key={key} style={tdBase}>{op.destinoNombre || op.destino || '-'}</td>;
       // ✅ V00481: Pesos en verde y Dólares en azul (antes al revés); subtotal y total en la moneda en que se factura.
-      case 'moneda': return <td key={key} style={tdBase}><NombreMoneda moneda={op.monedaUnidadNombre || op.facturadoEnUnidad} respaldo={op.monedaUnidadNombre || mostrarMoneda(op.facturadoEnUnidad)} /></td>;
+      case 'moneda': return <td key={key} style={tdBase}><NombreMoneda moneda={monedaFacturaOperacion(op, 'proveedor')} respaldo={textoFacturadoEn(op, 'proveedor')} /></td>;
       case 'subtotal': return <td key={key} style={tdBase}><Importe monto={m.subtotal} moneda={monedaFacturacionOp(op)} /></td>;
       case 'total': return <td key={key} style={tdBase}><Importe monto={m.total} moneda={monedaFacturacionOp(op)} className="fpd-total-op" /></td>;
       case 'dolares': return <td key={key} style={tdBase}><Importe monto={m.dol} moneda="USD" /></td>;
@@ -1524,7 +1519,7 @@ export const FacturacionProveedoresDashboard = () => {
     const direcciones = await leerParaDocumento(() => obtenerCatalogo('direcciones')); // ✅ V00448
     if (!direcciones) return;
     const m = obtenerMontoOperacion(op);
-    const monedaFact = op.monedaUnidadNombre || mostrarMoneda(op.facturadoEnUnidad);
+    const monedaFact = textoFacturadoEn(op, 'proveedor'); // ✅ V00489
     const monedaConvRaw = mostrarMoneda(op.monedaConvenioProv);
     const monedaConv = monedaConvRaw !== '-' ? monedaConvRaw : monedaFact;
     const limpiar = (v: string) => (v === '-' ? '' : v);
@@ -1758,11 +1753,12 @@ export const FacturacionProveedoresDashboard = () => {
         //   Pesos, y la conversión guardada igual al subtotal sin convertir), la
         //   recalcula aquí con subtotal × TC, igual que el lado del cliente.
         const montoFactura = Number(g.monto) || 0;
-        const nombreMonProv = String(o.monedaUnidadNombre || '').toUpperCase();
         const convUProv = o.monedaConvenioProv === ID_USD;
         const convMProv = o.monedaConvenioProv === ID_MXN;
-        const factUProv = o.facturadoEnUnidad === ID_USD || nombreMonProv.includes('USD') || nombreMonProv.includes('DOLAR') || nombreMonProv.includes('DÓLAR');
-        const factMProv = o.facturadoEnUnidad === ID_MXN || nombreMonProv.includes('MXN') || nombreMonProv.includes('PESO');
+        // ✅ V00489: una sola moneda de pago (la de la regla de dinero), no Dólares y Pesos a la vez.
+        const monedaPagoProv = monedaFacturaOperacion(o, 'proveedor');
+        const factUProv = monedaPagoProv === 'USD';
+        const factMProv = monedaPagoProv === 'MXN';
         const convenioProvUsdEfectivo = convUProv || (!convMProv && (factUProv || !o.monedaConvenioProv));
         // ✅ FIX MONTOS EN CERO: si la operación no trae montos guardados, se
         //   usa m.subtotal (obtenerMontoOperacion ya cae a la Confirmación de
@@ -1781,12 +1777,12 @@ export const FacturacionProveedoresDashboard = () => {
         //   de la moneda del convenio vacía: convenio en dólares facturado en
         //   pesos, guardado igual al subtotal) o en 0, se recalcula aquí con la
         //   misma fórmula del formulario: subtotal × TC si el convenio es USD.
-        const nombreMonCli = String(o.monedaCobroNombre || '').toUpperCase();
         const convU = o.monedaConvenioCliente === ID_USD;
         const convM = o.monedaConvenioCliente === ID_MXN;
         const monConvVacia = !o.monedaConvenioCliente;
-        const factU = o.facturadoEnCobrar === ID_USD || nombreMonCli.includes('USD') || nombreMonCli.includes('DOLAR') || nombreMonCli.includes('DÓLAR');
-        const factM = o.facturadoEnCobrar === ID_MXN || nombreMonCli.includes('MXN') || nombreMonCli.includes('PESO');
+        const monedaCobroCli = monedaFacturaOperacion(o, 'cliente'); // ✅ V00489
+        const factU = monedaCobroCli === 'USD';
+        const factM = monedaCobroCli === 'MXN';
         // Con la moneda del convenio vacía se asume USD (el estándar de los convenios).
         const convenioUsdEfectivo = convU || (!convM && (factU || monConvVacia));
         const subtotalCli = Number(o.subtotalCliente) || ((Number(o.montoConvenioCliente) || 0) + (Number(o.cargosAdicionales) || 0));
@@ -2959,7 +2955,7 @@ export const FacturacionProveedoresDashboard = () => {
           nuevos[d.id] = {
             ref: o.numReferencia || o.referencia || o.ref || d.id,
             remolque: txt(o.remolqueNombre, o.remolquePlaca, o.numeroRemolque),
-            moneda: o.monedaUnidadNombre || mostrarMoneda(o.facturadoEnUnidad),
+            moneda: textoFacturadoEn(o, 'proveedor'), // ✅ V00489
             proveedorId: provDeOp(o) || '',
           };
         });
@@ -3036,7 +3032,7 @@ export const FacturacionProveedoresDashboard = () => {
           nuevos[d.id] = {
             ref: o.numReferencia || o.referencia || o.ref || d.id,
             remolque: txt(o.remolqueNombre, o.remolquePlaca, o.numeroRemolque),
-            moneda: o.monedaUnidadNombre || mostrarMoneda(o.facturadoEnUnidad),
+            moneda: textoFacturadoEn(o, 'proveedor'), // ✅ V00489
             proveedorId: provDeOp(o) || '',
           };
         });
@@ -4359,7 +4355,7 @@ export const FacturacionProveedoresDashboard = () => {
                       </div>
                       <div className="fpd-x278">
                         <div className="fpd-x279">
-                          <div><span className="fpd-x271">Facturado En:</span><span className="fpd-x267"><NombreMoneda moneda={det.monedaUnidadNombre || det.facturadoEnUnidad} respaldo={det.monedaUnidadNombre || mostrarMoneda(det.facturadoEnUnidad)} /></span></div>
+                          <div><span className="fpd-x271">Facturado En:</span><span className="fpd-x267"><NombreMoneda moneda={monedaFacturaOperacion(det, 'proveedor')} respaldo={textoFacturadoEn(det, 'proveedor')} /></span></div>
                           <div><span className="fpd-x271">Convenio Proveedor</span><span className="fpd-x267">{txt(det.convenioProveedorNombre, det.convenioProveedor)}</span></div>
                           <div><span className="fpd-x271">Moneda del Convenio (Base)</span><span className="fpd-x267"><NombreMoneda moneda={det.monedaConvenioProv} respaldo={mostrarMoneda(det.monedaConvenioProv)} /></span></div>
                         </div>
@@ -4417,7 +4413,7 @@ export const FacturacionProveedoresDashboard = () => {
                   {pestañaDetalleActiva === 'cobrar' && (
                     <div>
                       <div className="fpd-x276">
-                        <div><span className="fpd-x271">Facturado En:</span><span className="fpd-x267"><NombreMoneda moneda={det.monedaCobroNombre || det.facturadoEnCobrar} respaldo={det.monedaCobroNombre || mostrarMoneda(det.facturadoEnCobrar)} /></span></div>
+                        <div><span className="fpd-x271">Facturado En:</span><span className="fpd-x267"><NombreMoneda moneda={monedaFacturaOperacion(det, 'cliente')} respaldo={textoFacturadoEn(det, 'cliente')} /></span></div>
                         <div><span className="fpd-x271">Moneda Convenio (Cliente)</span><span className="fpd-x267"><NombreMoneda moneda={det.monedaConvenioCliente} respaldo={mostrarMoneda(det.monedaConvenioCliente)} /></span></div>
                         <div><span className="fpd-x271">Convenio Seleccionado (Base)</span><span className="fpd-x267">{formatoMoneda(det.montoConvenioCliente)}</span></div>
                         <div><span className="fpd-x271">Cargos Adicionales</span><span className="fpd-x267">{formatoMoneda(det.cargosAdicionales)}</span></div>

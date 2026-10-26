@@ -77,6 +77,29 @@ export const monedaConvenioDeducida = (operacion: unknown, lado: Lado): Moneda |
   return null;
 };
 
+/** Moneda de un campo (ID del catálogo, código o nombre; también los textos que aceptaba la regla de antes). */
+const monedaDeTexto = (v: unknown): Moneda | null => {
+  const canonica = monedaCanonica(v);
+  if (canonica) return canonica;
+  const t = String(v ?? '').toUpperCase();
+  const usd = textoUsd(t);
+  const mxn = textoMxn(t);
+  return usd === mxn ? null : usd ? 'USD' : 'MXN';
+};
+
+/**
+ * ✅ V00489 — moneda en que se factura (o se paga) la operación, de UNA sola fuente: el ID guardado
+ * (facturadoEnCobrar / facturadoEnUnidad, lo que escribe el formulario) y, solo si no trae uno que se
+ * reconozca, la copia del nombre (monedaCobroNombre / monedaUnidadNombre). Esa copia viene de AppSheet
+ * y nadie la actualiza cuando se cambia la moneda en el formulario: con el ID en Dólares y el nombre en
+ * "Pesos" (o al revés) la regla de antes tomaba las dos a la vez, convertía el convenio a pesos (× TC)
+ * y después trataba la factura como en dólares (otra vez × TC): D-6166, $2,650 → $801,373.63.
+ */
+export const monedaFacturaOperacion = (operacion: unknown, lado: Lado): Moneda | null => {
+  const c = camposLado(comoDatos(operacion), lado);
+  return monedaDeTexto(c.fact) ?? monedaDeTexto(c.nombreMoneda);
+};
+
 const monedaConvenioDeCampo = (crudo: unknown): { usd: boolean; mxn: boolean } => {
   const monConv = String(crudo ?? '');
   return {
@@ -101,6 +124,8 @@ export const monedaConvenioDe = (operacion: unknown, lado: Lado): { moneda: Mone
  * ✅ V00486: sin moneda del convenio, la deducida de la conversión guardada (antes se tomaba como
  * la misma moneda de la factura: un convenio de 115 USD facturado en pesos quedaba en $115 pesos,
  * mientras el formulario y Por Cobrar decían $1,988.21).
+ * ✅ V00489: la moneda de la factura sale de monedaFacturaOperacion (una sola fuente): antes podía
+ * ser Dólares y Pesos a la vez y el monto quedaba multiplicado dos veces por el TC.
  */
 export const conversionOperacion = (operacion: unknown, lado: Lado): MontosOperacion => {
   const op = comoDatos(operacion);
@@ -108,9 +133,9 @@ export const conversionOperacion = (operacion: unknown, lado: Lado): MontosOpera
   const tc = Number(op.tipoCambioAprobado) || Number(op.tipoCambioDia) || 0;
   const montoConvenio = num(c.monto);
   const cargos = num(c.cargos);
-  const nombreMoneda = String(c.nombreMoneda ?? '').toUpperCase();
-  const factUSD = c.fact === ID_USD || textoUsd(nombreMoneda);
-  const factMXN = c.fact === ID_MXN || textoMxn(nombreMoneda);
+  const monedaFactura = monedaFacturaOperacion(op, lado);
+  const factUSD = monedaFactura === 'USD';
+  const factMXN = monedaFactura === 'MXN';
   const campo = monedaConvenioDeCampo(c.monedaConvenio);
   let convUSD = campo.usd;
   let convMXN = campo.mxn;

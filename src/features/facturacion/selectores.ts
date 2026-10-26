@@ -7,6 +7,9 @@
 // (8.2, pendiente de decisión): cada tablero sigue siendo el suyo.
 // ---------------------------------------------------------------------------
 import { aFechaISO } from '../../shared/dominio/fechas';
+import { monedaFacturaOperacion } from '../../shared/dominio/dinero';
+import type { Lado } from '../../shared/dominio/dinero';
+import { nombreMoneda } from '../../shared/dominio/moneda';
 
 /** Tope y tamaño de página de las descargas de operaciones y facturas. */
 export const LIMITE_OPS_TODAS = 20000;
@@ -190,4 +193,18 @@ export const pareceReferencia = (s: unknown): boolean => {
   const t = String(s || '').trim();
   if (!t || /^[0-9a-f]{8,}$/i.test(t)) return false;
   return /^[A-Za-z]{1,6}[-\s]?\d{3,}/.test(t);
+};
+
+/**
+ * ✅ V00489 — "Facturado en" de una operación ('Dólares' / 'Pesos'), de la MISMA fuente que la regla de
+ * dinero: el ID guardado y, solo si no se reconoce, la copia del nombre. Antes Facturación mostraba
+ * primero la copia del nombre (de AppSheet, nadie la actualiza) y podía decir "Pesos" mientras el
+ * cálculo usaba Dólares. Sin moneda reconocida, el texto guardado tal cual (o '-').
+ */
+export const textoFacturadoEn = (op: Record<string, unknown>, lado: Lado): string => {
+  const moneda = monedaFacturaOperacion(op, lado);
+  if (moneda) return nombreMoneda(moneda);
+  const nombre = String((lado === 'cliente' ? op.monedaCobroNombre : op.monedaUnidadNombre) ?? '').trim();
+  const id = String((lado === 'cliente' ? op.facturadoEnCobrar : op.facturadoEnUnidad) ?? '').trim();
+  return nombre || id || '-';
 };
