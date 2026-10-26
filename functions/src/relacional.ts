@@ -41,8 +41,8 @@ import { CATALOGO_ADUANAS, CATALOGO_CV, cambiosCanonicos, catalogoServidor, cont
 import { banderaServidor } from './flags';
 import { CAMPOS_CANONICOS, derivarDesdeConvenio } from './dominio/operacionCanonica.js';
 import { ESQUEMA_OPERACION_VERSION, ID_MXN, ID_USD } from './dominio/constantes.js';
-import { conversionOperacion, derivadosFactura, monedaConvenioDeducida, monedaDeFactura, monedaFacturaOperacion, totalNativoDeOperaciones, totalNativoDeRenglonesLegado } from './dominio/dinero.js';
-import { aNumero, deCentavos, r2 } from './dominio/numeros.js';
+import { cambiosSaldoLegado, conversionOperacion, derivadosFactura, monedaConvenioDeducida, monedaDeFactura, monedaFacturaOperacion, totalNativoDeOperaciones, totalNativoDeRenglonesLegado } from './dominio/dinero.js';
+import { aNumero, r2 } from './dominio/numeros.js';
 import { cambioParaFacturas, valorCongelado } from './dominio/cascadaFacturas.js'; // ✅ V00494 · V00495
 import { borrarRenglones, proyectarRenglones } from './proyecciones.js';
 import { cambiosCobroPuente } from './puentesYDiesel.js';
@@ -554,16 +554,8 @@ const recalcularSaldoFactura = async (
   } else {
     // Sin la bandera: el total de SIEMPRE de este trigger (desde los renglones, V00275),
     // salvo un total manual que haya quedado de cuando la bandera estuvo encendida.
-    const montoPagado = Number(fac.montoPagado) || 0;
-    if (montoPagado > 0 || typeof fac.saldoPendiente === 'number') {
-      const manual = aNumero(fac.totalManualCentavos);
-      const ops = Array.isArray(fac.operacionesGuardadas) ? (fac.operacionesGuardadas as Dict[]) : [];
-      const total = manual > 0 ? deCentavos(manual) : totalNativoDeRenglonesLegado(fac, ops);
-      const saldo = Math.max(0, r2(total - montoPagado));
-      const status = saldo <= 0.009 ? 'PAGADA' : (montoPagado > 0 ? 'PARCIAL' : String(fac.statusPago || ''));
-      if (difiere(fac.saldoPendiente, saldo)) cambios.saldoPendiente = saldo;
-      if (status && String(fac.statusPago || '') !== status) cambios.statusPago = status;
-    }
+    // ✅ V00496: la misma cuenta, ahora en dominio/dinero (la usa también un script).
+    cambios = cambiosSaldoLegado(fac);
   }
   if (Object.keys(cambios).length === 0) return; // anti-bucle
   try {

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { ID_USD } from './constantes';
 import { ErrorDinero } from './dinero';
 import {
-  aplicarPlanEnMemoria, idFacturaDeterminista, lista, planAgregarOperacion, planEditarFactura, planEditarPago, planEliminarFacturas,
+  aplicarPlanEnMemoria, destinoAlEliminar, idFacturaDeterminista, lista, planAgregarOperacion, planEditarFactura, planEditarPago, planEliminarFacturas,
   planEliminarPago, planFacturar, planMoverOperacion, planQuitarOperacion, planRecalcularFactura, planRegistrarPago, renglonesDeFactura,
 } from './facturacion';
 import type { DocLeido, PlanDinero } from './facturacion';
@@ -120,6 +120,43 @@ describe('eliminar y recalcular', () => {
     expect(Object.keys(plan.operaciones)).toEqual(['o1']);
     expect(() => planEliminarFacturas('cliente', [{ id: 'F1', datos: { montoPagado: 10 } }], [])).toThrow(ErrorDinero);
   });
+  // ✅ V00496: con dineroPorServidor, borrar el duplicado ya no regresa a "Por facturar" lo que sigue en la buena.
+  it('eliminar el duplicado: la operación que sigue en otra factura se liga a esa, no se libera', () => {
+    const dup: DocLeido[] = [{ id: 'DUP', datos: { invoice: 'B', operacionesIds: ['o1', 'o2', 'o3'] } }];
+    const otras = [
+      { id: 'BUENA', invoice: 'A', operacionesIds: ['o1'], statusFactura: 'Facturado' },
+      { id: 'VIEJA', invoice: 'V', operacionesIds: ['o3'], statusFactura: 'Cancelado' },
+      { id: 'OTRA3', invoice: 'C', operacionesIds: ['o3'], statusFactura: 'Facturado' },
+    ];
+    const plan = planEliminarFacturas('cliente', dup, [op('o1', { facturaClienteId: 'DUP' }), op('o2', { facturaClienteId: 'DUP' }), op('o3', { facturaClienteId: 'DUP' })], otras);
+    expect(plan.operaciones).toEqual({
+      o1: { facturaClienteId: 'BUENA', facturaClienteInvoice: 'A', facturado: true },
+      o2: { facturaClienteId: null, facturaClienteInvoice: null, facturado: false },
+      o3: { facturaClienteId: 'OTRA3', facturaClienteInvoice: 'C', facturado: true },
+    });
+  });
+  it('destinoAlEliminar: dejar si ya apunta a la que la contiene o a otra viva', () => {
+    const borradas = new Set(['DUP']);
+    const otras = [{ id: 'BUENA', invoice: 'A', operacionesIds: ['o1'] }];
+    expect(destinoAlEliminar('BUENA', ['o1'], borradas, otras)).toEqual({ accion: 'dejar' });
+    expect(destinoAlEliminar('VIVA', ['o9'], borradas, otras)).toEqual({ accion: 'dejar' });
+    expect(destinoAlEliminar('', ['o9'], borradas, otras)).toEqual({ accion: 'liberar' });
+    expect(destinoAlEliminar('DUP', ['o9'], borradas, [{ id: 'DUP', invoice: 'B', operacionesIds: ['o9'] }])).toEqual({ accion: 'liberar' });
+  });
+  it('destinoAlEliminar: no se cambia la liga a una factura viva; una cancelada no retiene la operación', () => {
+    const borradas = new Set(['DUP']);
+    // Apunta a X (viva, quizá en texto y por eso no aparece aquí): se queda en X aunque esté en otra.
+    expect(destinoAlEliminar('X', ['o1'], borradas, [{ id: 'V', invoice: 'V-1', operacionesIds: ['o1'] }])).toEqual({ accion: 'dejar' });
+    // Solo en una cancelada: vuelve a "Por facturar".
+    expect(destinoAlEliminar('DUP', ['o1'], borradas, [{ id: 'C', invoice: 'C-1', operacionesIds: ['o1'], statusFactura: 'Cancelada' }])).toEqual({ accion: 'liberar' });
+    // Por su id de AppSheet (campo `id` del documento).
+    expect(destinoAlEliminar('DUP', ['doc1', 'APP-1'], borradas, [{ id: 'B', invoice: 'B-1', operacionesIds: ['APP-1'] }])).toEqual({ accion: 'ligar', facturaId: 'B', folio: 'B-1' });
+    // Apunta a una factura que ya NO existe: no la retiene; se liga a la que sí la tiene (o se libera).
+    const buena = [{ id: 'BUENA', invoice: 'A', operacionesIds: ['o1'] }];
+    expect(destinoAlEliminar('BORRADA-ANTES', ['o1'], borradas, buena, new Set(['BUENA']))).toEqual({ accion: 'ligar', facturaId: 'BUENA', folio: 'A' });
+    expect(destinoAlEliminar('BORRADA-ANTES', ['o9'], borradas, buena, new Set(['BUENA']))).toEqual({ accion: 'liberar' });
+    expect(destinoAlEliminar('VIVA', ['o1'], borradas, buena, new Set(['BUENA', 'VIVA']))).toEqual({ accion: 'dejar' });
+  });
   it('recalcular rehace renglones y quita la marca de total manual', () => {
     const f: DocLeido = { id: 'F1', datos: { monedaFacturacion: 'USD', operacionesIds: ['o1'], operacionesGuardadas: [{ id: 'o1', ref: 'TR-o1', dol: 1 }], totalManualCentavos: 999 } };
     const plan = planRecalcularFactura('cliente', f, [op('o1')], null, AHORA, 'u');
@@ -176,5 +213,13 @@ describe('pagos', () => {
     const e = escrituraDe(plan, 'pagos', 'P1');
     expect(e?.tipo === 'combinar' && e.datos).toMatchObject({ monto: 1400, montoAplicado: 1400, fecha: '2026-10-11' });
     expect(plan.facturas.F2).toMatchObject({ montoPagado: 500, statusPago: 'PAGADA' });
+  });
+  // ✅ V00496: una empresa puede tener facturas emitidas en las dos monedas: editar un pago no las mezcla.
+  it('editar: no agrega una factura de otra moneda', () => {
+    const pago: DocLeido = { id: 'P1', datos: { tipo: 'cliente', moneda: 'MXN', monto: 1000, facturas: [{ facturaId: 'F9', aplicado: 1000 }] } };
+    expect(() => planEditarPago(pago, {
+      fecha: '2026-10-11', numeroPago: 'PAGO-1', referencia: '', metodoPago: 'Transferencia', observaciones: '', pdfUrl: '', pdfNombre: '', editadoEn: AHORA, editadoPor: 'u',
+      agregadas: [{ facturaId: 'F2', invoice: 'A-2', fecha: '', total: 500, saldoAnterior: 400, aplicado: 400, saldoNuevo: 0 }],
+    }, facturas)).toThrow(/está en USD y el pago en MXN/);
   });
 });

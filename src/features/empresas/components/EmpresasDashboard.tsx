@@ -895,8 +895,8 @@ const EmpresasDashboard = () => {
       `Se aplicará la moneda ACTUAL de "${emp.nombre}" (tabla Empresas) en cascada:\n\n` +
       '1) Convenios de clientes y proveedores de esta empresa\n' +
       '2) Operaciones: Facturado En (cliente si es Cliente-Paga, proveedor si es Transporte) y sus montos recalculados; el precio del convenio se queda en su moneda y la Conversión en pesos no cambia\n' +
-      '3) Facturación de Clientes y Proveedores (las mismas facturas que usa Pagos)\n' +
-      '4) Pagos de esta empresa (solo la moneda; el monto no se toca)\n\n' +
+      '3) Facturación de Clientes y Proveedores: solo los borradores (No Facturado); las facturas emitidas no cambian\n' + // ✅ V00496
+      '4) Pagos de esta empresa (solo la moneda; el monto no se toca), salvo los aplicados a una factura emitida en otra moneda\n\n' +
       'Solo se escriben los registros donde la moneda sea distinta; las tarifas no se tocan.\n\n¿Continuar?'
     )) return;
     setPropagandoMoneda(String(emp.id));
@@ -913,8 +913,9 @@ const EmpresasDashboard = () => {
         `· Facturas de clientes: ${r.facturasClientes}\n` +
         `· Facturas de proveedores: ${r.facturasProveedores}\n` +
         (r.facturasSinTocar > 0 ? `· Facturas ya emitidas sin tocar (su valor solo cambia a mano, una por una, en Editar factura): ${r.facturasSinTocar}\n` : '') + // ✅ V00495
-        `· Pagos: ${r.pagos}\n\n` + // ✅ V00490
-        'Después corre Corregir monedas y montos en Facturación para que los totales de sus facturas queden con esta moneda. Las monedas de los DETALLES de convenio (tarifas por concepto) son independientes y se editan en el convenio.'
+        `· Pagos: ${r.pagos}\n` + // ✅ V00490
+        (r.pagosSinTocar > 0 ? `· Pagos sin tocar (aplicados a una factura emitida en otra moneda, o a una que no se encontró): ${r.pagosSinTocar}\n` : '') + // ✅ V00496
+        '\nLas facturas emitidas no cambian; si alguna debe cambiar, corrígela en Facturación → Editar factura. Los borradores (No Facturado) se ajustan con Corregir monedas y montos. Las monedas de los DETALLES de convenio (tarifas por concepto) son independientes y se editan en el convenio.' // ✅ V00496
       );
       await registrarLog('Empresas', 'Edición', `Propagó la moneda "${r.monedaNombre}" de ${emp.nombre} a convenios (${r.conveniosClientes + r.conveniosProveedores}), operaciones (${r.opsCliente + r.opsProveedor}) y facturas (${r.facturasClientes + r.facturasProveedores}).`);
     } catch (e: any) {

@@ -82,7 +82,7 @@ import {
   totalDeFilaFactura, // ✅ V00451
 } from '../services/totalesFactura'; // ✅ Fase 1.8
 import { normalizarFacturaDe } from '../services/normalizarFactura'; // ✅ V00493
-import { avisoFacturasTruncadas, descargarTodasLasFacturas } from '../services/descargarFacturas'; // ✅ V00494
+import { useFacturasEnVivo } from '../hooks/useFacturasEnVivo'; // ✅ V00497 (antes descargarTodasLasFacturas, V00494)
 import { avisar } from '../../../shared/data/avisos';
 import { aplicarFacturas, aplicarOperaciones, llamarDinero, mensajeDinero } from '../services/dineroServidor'; // ✅ V00441
 import { useFlags, useFlagsCargadas } from '../../../shared/data/flags';
@@ -178,6 +178,19 @@ const CLAVES_CACHE_LEGADO = ['roelca_ops_prov_completadas_v2', 'roelca_facturas_
 // ✅ V00493: la forma de la factura vive en services/normalizarFactura.ts (la misma que usa Estadísticas).
 //   Devuelve `any` como antes: el tablero aún trata sus facturas sin tipo (no se amplía aquí).
 const normalizarFactura = (raw: Record<string, unknown>): any => normalizarFacturaDe(raw, 'proveedor');
+
+// ✅ V00497: forma de una factura de CLIENTE para el cruce (la misma de siempre), desde el listener compartido.
+const facturaClienteParaCruce = (f: Record<string, unknown>): Record<string, unknown> => ({
+  id: f.id,
+  invoice: f.invoice || f.facturas || '',
+  fecha: f.fecha || f.fechaFactura || '',
+  clienteNombre: f.clienteNombre || f.cliente || '',
+  statusFactura: f.statusFactura || f.status || '',
+  moneda: f.monedaFacturacion || f.moneda || '',
+  total: (f.subtotalFactura !== undefined ? f.subtotalFactura : (f.total !== undefined ? f.total : 0)),
+  operacionesIds: f.operacionesIds || [],
+  operaciones: f.operaciones || [],
+});
 
 const COLUMNAS_OPS_BASE: any[] = [
   { id: 'factura',       label: '# Factura',       visible: true,  orden: true,  grupo: 'General' },
@@ -311,11 +324,15 @@ export const FacturacionProveedoresDashboard = () => {
     return docs.every((d: any) => String(d?.statusPago || '').toUpperCase() === 'PAGADA' || ((Number(d?.montoPagado) || 0) > 0.009 && (Number(d?.saldoPendiente) || 0) <= 0.009));
   };
 
-  const [facturasGlobales, setFacturasGlobales] = useState<any[]>([]);
-  // ✅ V00449: arranca en true porque la descarga de facturas empieza SIEMPRE al montar
-  //   (cargarFacturasAlEntrar). Con false, el primer pintado mostraba "Aún no hay facturas
-  //   registradas" y las tarjetas en $0 antes de que el efecto encendiera la bandera.
-  const [cargandoFacturas, setCargandoFacturas] = useState(true);
+  // ✅ V00497: las facturas llegan EN VIVO por el listener compartido con Pagos y Estadísticas
+  //   (hooks/useFacturasEnVivo.ts). Antes se descargaban todas al entrar y la lista se quedaba como
+  //   estaba ese momento. setFacturasGlobales sigue siendo el parche inmediato de lo que se acaba
+  //   de escribir; la siguiente versión del listener lo reemplaza.
+  const facturasVivas = useFacturasEnVivo('proveedor', normalizarFactura);
+  const facturasGlobales = facturasVivas.facturas;
+  const setFacturasGlobales = facturasVivas.setFacturas;
+  // ✅ V00449: mientras no llega ninguna lista se muestra "Cargando…" (no "Aún no hay facturas").
+  const cargandoFacturas = facturasVivas.cargando;
 
   // ✅ V00439 (Fase 3.x): empresas y catálogos de nombres desde los listeners
   //   compartidos (antes: getDocs + copias en localStorage).
@@ -407,7 +424,9 @@ export const FacturacionProveedoresDashboard = () => {
     }
   };
   // Cruce con Facturación de CLIENTES: para saber si la operación ya fue facturada a cliente.
-  const [facturasClientesGlobales, setFacturasClientesGlobales] = useState<any[]>([]);
+  // ✅ V00497: en vivo con el mismo listener de Facturación de Clientes y Pagos (antes otra descarga completa al entrar).
+  const facturasClientesVivas = useFacturasEnVivo('cliente', facturaClienteParaCruce);
+  const facturasClientesGlobales = facturasClientesVivas.facturas;
   const [facturaClienteViendo, setFacturaClienteViendo] = useState<any | null>(null);
 
   const [guardandoCols, setGuardandoCols] = useState(false);
@@ -636,81 +655,11 @@ export const FacturacionProveedoresDashboard = () => {
     try { CLAVES_CACHE_LEGADO.forEach((k) => localStorage.removeItem(k)); } catch { /* sin localStorage */ }
   }, []);
 
-  // Descarga TODAS las facturas desde Firestore (reutilizable por el botón Refrescar).
-  // ✅ V00447: una sola descarga a la vez (antes la carga al entrar tenía su propia copia de
-  //   este código y, si el efecto corría dos veces, bajaba todas las facturas dos veces).
-  //   Un Refrescar pedido mientras baja otra descarga se repite al terminar (no se pierde).
-  const facturasEnVueloRef = useRef(false);
-  const repetirFacturasRef = useRef(false);
-  const descargarFacturas = async (refrescar = true) => {
-    if (facturasEnVueloRef.current) { if (refrescar) repetirFacturasRef.current = true; return; }
-    facturasEnVueloRef.current = true;
-    setCargandoFacturas(true);
-    try {
-      // ✅ V00494: TODAS (antes se cortaba en 12,000 por ID y cada día salía de la lista otra factura).
-      const descarga = await descargarTodasLasFacturas('facturas_proveedores');
-      if (descarga.truncada) avisar({ tipo: 'alerta', titulo: 'Facturas de proveedores incompletas', texto: avisoFacturasTruncadas(descarga.docs.length) });
-      const todas: any[] = descarga.docs.map(normalizarFactura);
-      todas.sort((a: any, b: any) => {
-        const fa = String(a.fecha || '');
-        const fb = String(b.fecha || '');
-        if (!fa && !fb) return 0;
-        if (!fa) return 1;
-        if (!fb) return -1;
-        return fb.localeCompare(fa);
-      });
-      setFacturasGlobales(todas);
-    } catch (e: any) {
-      console.error('[Facturación Proveedores] Error al recargar facturas:', e);
-      alert(`No se pudieron cargar las facturas.\n\nDetalle: ${String(e?.message || e?.code || e || '')}`);
-    }
-    facturasEnVueloRef.current = false;
-    setCargandoFacturas(false);
-    if (repetirFacturasRef.current) { repetirFacturasRef.current = false; void descargarFacturas(); }
-  };
-
-  // Fuerza el refresco de la colección de facturas: vuelve a leer de Firestore.
-  const recargarFacturas = () => {
-    descargarFacturas();
-  };
+  // ✅ V00497: ya no hay descarga de facturas al entrar ni "recargar facturas": llegan en vivo (useFacturasEnVivo).
 
   // ── Cruce con Facturación de CLIENTES ────────────────────────────────────
-  // Carga (una vez) las facturas de clientes para saber si una
-  // operación ya fue facturada al cliente y con qué número de factura.
-  const cruceEnVueloRef = useRef(false); // ✅ V00447: una sola descarga del cruce
-  const cargarFacturasClientesAlEntrar = useEffectEvent(() => {
-    if (facturasClientesGlobales.length > 0 || cruceEnVueloRef.current) return;
-    cruceEnVueloRef.current = true;
-
-    const descargarClientes = async () => {
-      try {
-        const todas: any[] = [];
-        // ✅ V00494: TODAS las de clientes (antes con el mismo tope de 12,000).
-        const descarga = await descargarTodasLasFacturas('facturas_clientes');
-        if (descarga.truncada) avisar({ tipo: 'alerta', titulo: 'Facturas de clientes incompletas', texto: avisoFacturasTruncadas(descarga.docs.length) });
-        descarga.docs.forEach((d) => {
-            const f: any = d;
-            todas.push({
-              id: d.id,
-              invoice: f.invoice || f.facturas || '',
-              fecha: f.fecha || f.fechaFactura || '',
-              clienteNombre: f.clienteNombre || f.cliente || '',
-              statusFactura: f.statusFactura || f.status || '',
-              moneda: f.monedaFacturacion || f.moneda || '',
-              total: (f.subtotalFactura !== undefined ? f.subtotalFactura : (f.total !== undefined ? f.total : 0)),
-              operacionesIds: f.operacionesIds || [],
-              operaciones: f.operaciones || [],
-            });
-          });
-        setFacturasClientesGlobales(todas);
-      } catch (e) {
-        console.error('[Proveedores] Error cargando facturas de clientes (cruce):', e);
-      }
-      cruceEnVueloRef.current = false;
-    };
-    descargarClientes();
-  });
-  useEffect(() => cargarFacturasClientesAlEntrar(), []);
+  // Facturas de clientes (en vivo, ✅ V00497) para saber si una operación ya fue facturada al
+  // cliente y con qué número de factura.
 
   // Mapa: operacionId / ref  ->  info de la factura de cliente donde aparece.
   const mapaFacturaClientePorOp = useMemo(() => {
@@ -743,12 +692,6 @@ export const FacturacionProveedoresDashboard = () => {
       || mapaFacturaClientePorOp.get(String(op.referencia || ''))
       || null;
   };
-
-  const cargarFacturasAlEntrar = useEffectEvent(() => {
-    if (facturasGlobales.length > 0) { setCargandoFacturas(false); return; } // ✅ V00449: la bandera arranca en true
-    void descargarFacturas(false);
-  });
-  useEffect(() => cargarFacturasAlEntrar(), []);
 
   // ✅ V00444 (Fase 8.1): carga de las operaciones en useOperacionesFacturables (antes copiada aquí
   //   y en el otro lado). Con `consultasCanonicas` (Fase 7.3): pendientes primero, facturadas al
@@ -794,7 +737,8 @@ export const FacturacionProveedoresDashboard = () => {
   // Refresca AMBAS colecciones (operaciones + facturas) forzando lectura desde Firestore.
   const recargarTodo = () => {
     recargarOperaciones();
-    recargarFacturas();
+    facturasVivas.reintentar(); // ✅ V00497: las facturas ya están en vivo; solo reabre el listener si falló
+    facturasClientesVivas.reintentar();
   };
 
   // ✅ V00438 (Fase 2.4): índice de empresas por id / nombre / nombreCorto (gana
@@ -2654,6 +2598,9 @@ export const FacturacionProveedoresDashboard = () => {
           const r = await llamarDinero('eliminarFactura', { lado: 'proveedor', facturaIds: ids });
           setFacturasGlobales(prev => aplicarFacturas(prev, r.facturas, normalizarFactura));
           setOperacionesGlobales(prev => aplicarOperaciones(prev, r.operaciones));
+          // ✅ V00496: el servidor liga a la otra factura las que siguen en ella (ya no las libera).
+          const ligadasServidor = Object.values(r.operaciones ?? {}).filter((o) => !!o.facturaProveedorId).length;
+          if (ligadasServidor > 0) avisar({ tipo: 'info', titulo: 'Factura eliminada', texto: `${ligadasServidor} operación(es) siguen facturadas en otra factura y no volvieron a Pendientes.` });
           return;
         }
         // ✅ Fase 1.8 (c): se releen FRESCAS. Una factura con pagos aplicados no se
@@ -3464,7 +3411,7 @@ export const FacturacionProveedoresDashboard = () => {
             </div>
 
             <div className="fpd-x68">
-              <button onClick={recargarTodo} disabled={cargandoOperaciones || cargandoFacturas} style={{ ...btnDirStyle, borderColor: '#58a6ff', color: '#58a6ff', fontWeight: 700 }} title="Vuelve a leer operaciones y facturas desde Firestore (limpia la caché) y recalcula todos los montos">{cargandoOperaciones ? '⏳ Actualizando…' : '↻ Actualizar'}</button>
+              <button onClick={recargarTodo} disabled={cargandoOperaciones || cargandoFacturas} style={{ ...btnDirStyle, borderColor: '#58a6ff', color: '#58a6ff', fontWeight: 700 }} title="Vuelve a leer las operaciones desde Firestore y recalcula sus montos (las facturas ya se actualizan solas)">{cargandoOperaciones ? '⏳ Actualizando…' : '↻ Actualizar'}</button>
               <button onClick={() => setModalColumnasOps(true)} style={btnDirStyle} title="Elegir y reordenar columnas">⚙ Configurar Columnas</button>
               <button onClick={exportarExcelOps} disabled={operacionesMostradas.length === 0}
                 style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap',

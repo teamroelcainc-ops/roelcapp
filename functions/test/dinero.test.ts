@@ -23,6 +23,7 @@ const falso = vi.hoisted(() => {
     if (op === '==') return v === valor;
     if (op === 'in') return (valor as unknown[]).includes(v);
     if (op === 'array-contains') return Array.isArray(v) && v.includes(valor);
+    if (op === 'array-contains-any') return Array.isArray(v) && (valor as unknown[]).some((x) => v.includes(x));
     return false;
   };
   const consulta = (ruta: string, filtros: Filtro[]) => ({
@@ -122,6 +123,26 @@ describe('callables de dinero', () => {
     await llamar(mod.quitarOperacionFactura, { lado: 'cliente', operacionId: 'o1' });
     expect(falso.docs.has('facturas_clientes/EMP1_b-1')).toBe(false);
     expect(falso.docs.get('operaciones/o1')).toMatchObject({ facturaClienteId: null, facturado: false });
+  });
+
+  // ✅ V00496: con dineroPorServidor, borrar el duplicado no regresa a "Por facturar" lo que sigue en la buena.
+  it('eliminar el duplicado: la operación que sigue en la otra factura se liga a esa', async () => {
+    const renglon = (id: string) => ({ id, ref: `TR-${id}`, dol: 100, monto: 1800, subtotalBase: 100 });
+    falso.docs.set('facturas_clientes/BUENA', { invoice: 'A-1', clienteId: 'EMP1', monedaFacturacion: 'USD', operacionesIds: ['o1'], operacionesGuardadas: [renglon('o1')], subtotalMonedaFactura: 100 });
+    falso.docs.set('facturas_clientes/DUP', { invoice: 'A-1 DUP', clienteId: 'EMP1', monedaFacturacion: 'USD', operacionesIds: ['o1', 'o2'], operacionesGuardadas: [renglon('o1'), renglon('o2')], subtotalMonedaFactura: 200 });
+    falso.docs.set('operaciones/o1', op({ facturaClienteId: 'DUP', facturaClienteInvoice: 'A-1 DUP', facturado: true }));
+    falso.docs.set('operaciones/o2', op({ ref: 'TR-2', facturaClienteId: 'DUP', facturaClienteInvoice: 'A-1 DUP', facturado: true }));
+    await llamar(mod.eliminarFactura, { lado: 'cliente', facturaIds: ['DUP'] });
+    expect(falso.docs.has('facturas_clientes/DUP')).toBe(false);
+    expect(falso.docs.get('operaciones/o1')).toMatchObject({ facturaClienteId: 'BUENA', facturaClienteInvoice: 'A-1', facturado: true });
+    expect(falso.docs.get('operaciones/o2')).toMatchObject({ facturaClienteId: null, facturado: false });
+  });
+
+  it('eliminar: una operación listada con su id de AppSheet también se libera (no queda marcada con la borrada)', async () => {
+    falso.docs.set('facturas_clientes/F9', { invoice: 'IMP-9', clienteId: 'EMP1', monedaFacturacion: 'USD', operacionesIds: ['APP-1'], subtotalMonedaFactura: 100 });
+    falso.docs.set('operaciones/docA', op({ id: 'APP-1', facturaClienteId: 'F9', facturaClienteInvoice: 'IMP-9', facturado: true }));
+    await llamar(mod.eliminarFactura, { lado: 'cliente', facturaIds: ['F9'] });
+    expect(falso.docs.get('operaciones/docA')).toMatchObject({ facturaClienteId: null, facturado: false });
   });
 
   it('registrar un pago dos veces (reintento) lo aplica una sola vez; eliminarlo revierte', async () => {

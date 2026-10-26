@@ -15,11 +15,11 @@ import { suscribirOperacionGuardada } from '../../../utils/operacionesBus';
 import { lazyWithRetry } from '../../../utils/lazyWithRetry';
 import { useCatalogo } from '../../../shared/data/catalogos'; // ✅ V00439 (Fase 3.x)
 import { ID_MXN, ID_USD } from '../../../shared/dominio/constantes';
+import { monedaCanonica } from '../../../shared/dominio/moneda'; // ✅ V00496
 import {
   collection, query, where, getDocs, writeBatch, doc, arrayUnion, arrayRemove, limit,
-  orderBy, startAfter, documentId, runTransaction, updateDoc,
+  documentId, runTransaction, updateDoc,
 } from 'firebase/firestore';
-import type { QueryDocumentSnapshot, QuerySnapshot } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { aCentavos, r2, sumarMontos } from '../../../shared/dominio/numeros';
 import {
@@ -39,11 +39,11 @@ import AdjuntosArchivos from '../../../shared/components/AdjuntosArchivos'; // �
 import { archivosDeDocumento, cambioAdjuntos, desdeGuardados } from '../../../shared/archivos/adjuntos';
 import type { Adjunto, ArchivoGuardado } from '../../../shared/archivos/adjuntos';
 import { subirAdjuntos } from '../../../shared/archivos/subirAdjuntos';
-import { armarDoc, idReal, useColeccionViva } from '../../../shared/data/coleccionesVivas';
-import type { DocVivo } from '../../../shared/data/coleccionesVivas';
+import { idReal, useColeccionViva } from '../../../shared/data/coleccionesVivas';
+import { avisoFacturasTruncadas, descargarFacturasComoVivas } from '../../facturacion/services/descargarFacturas'; // ✅ V00496
 import {
   claveEntidad, claveFecha, crearMonedaEmpresa, facturasPagablesDe, mapearFacturaPagable as mapearFacturaBase,
-  monedaDeFactura as monedaDeFacturaBase, totalGastoMtto,
+  monedaDeFactura as monedaDeFacturaBase, saldosPorMoneda, totalGastoMtto,
 } from '../services/facturasPagables';
 import type { FacturaPagable as FacturaPagableBase, PagoAplicado } from '../services/facturasPagables';
 import { obtenerFacturasPagables, useFacturasPagables } from '../hooks/useFacturasPagables';
@@ -115,6 +115,9 @@ const comprobantesDe = (p: { comprobantes?: unknown; pdfUrl?: unknown; pdfNombre
 
 const money = (n: number, moneda = '') =>
   `$${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${moneda ? ` ${moneda}` : ''}`; // ✅ V00274: 2 decimales
+/** ✅ V00496: saldo abierto por moneda ("$100.00 MXN + $50.00 USD"). */
+const textoSaldos = (lista: readonly { saldo: number; moneda: string }[]): string =>
+  saldosPorMoneda(lista).map((x) => money(x.saldo, x.moneda)).join(' + ') || money(0);
 
 // claveEntidad / claveFecha: services/facturasPagables.ts (✅ V00452).
 
@@ -237,10 +240,9 @@ export function PagosDashboard() {
     const cancelada = cancelacionDe(fac.raw); // ✅ V00481
     setFEditCancelacion(cancelada ? { nota: cancelada.nota, reemplazo: cancelada.reemplazo } : CANCELACION_VACIA);
     setFEditTotal(String(fac.total || ''));
-    // ✅ V00126: moneda de la factura = moneda de la EMPRESA (tabla Empresas); solo respaldo la de la factura
-    const monEmpresa = monedaEmpresaDe({ entidadNombre: fac.entidadNombre, entidadId: (fac as any).entidadId });
-    const norm = monEmpresa.toLowerCase();
-    setFEditMoneda(norm.includes('dolar') || norm.includes('dólar') || norm.includes('usd') ? 'USD' : (norm.includes('peso') || norm.includes('mxn')) ? 'MXN' : (fac.moneda || ''));
+    // ✅ V00496: la moneda de la FACTURA (antes la de la empresa, V00126): una factura emitida no cambia de
+    //   moneda sola. El campo es de solo lectura; para pasarla a la moneda de la empresa: Recalcular montos.
+    setFEditMoneda(fac.moneda || '');
 
     // ✅ OPERACIONES relacionadas: se leen SIEMPRE en vivo para mostrar la
     //   MONEDA DEL CONVENIO y el importe con la regla de monedas (convenio
@@ -309,9 +311,9 @@ export function PagosDashboard() {
         subtotalFactura: totalNuevo,
         subtotalMonedaFactura: totalNuevo, // ✅ FIX MONEDA: la edición define el total en la moneda de la factura
         saldoPendiente: saldoNuevo,
-        // ✅ Moneda rectificada: se guarda en forma canónica ('USD'/'MXN') en
-        //   el campo que leen tanto Pagos como Facturación.
-        monedaFacturacion: fEditMoneda,
+        // ✅ Moneda en forma canónica ('USD'/'MXN'). ✅ V00496: en el campo de su lado (monedaProveedor en
+        //   las de proveedor, el que lee Facturación Proveedores; antes siempre monedaFacturacion).
+        [tab === 'cliente' ? 'monedaFacturacion' : 'monedaProveedor']: fEditMoneda,
         editadoEn: new Date().toISOString(),
         editadoPor: usuario?.nombre || usuario?.email || usuario?.id || '',
       };
@@ -787,8 +789,11 @@ export function PagosDashboard() {
     if (!pagoEditando) return [];
     const yaEnPago = new Set((pagoEditando.facturas || []).map((fa) => String(fa.facturaId)));
     const entidad = claveEntidad(pagoEditando.entidadNombre);
+    // ✅ V00496: solo facturas de la MISMA moneda del pago (una empresa puede tener facturas emitidas en las dos).
+    const monedaPago = monedaCanonica(pagoEditando.moneda);
     return facturasPendientes
       .filter((fx) => claveEntidad(fx.entidadNombre) === entidad && fx.saldo > 0.009 && !yaEnPago.has(String(fx.id)))
+      .filter((fx) => !monedaPago || !monedaCanonica(fx.moneda) || monedaCanonica(fx.moneda) === monedaPago)
       .sort((a, b) => claveFecha(a.fecha).localeCompare(claveFecha(b.fecha)));
   }, [pagoEditando, facturasPendientes]);
   const cargandoEditFacturas = pagoEditando !== null && cargandoFacturas;
@@ -830,7 +835,13 @@ export function PagosDashboard() {
       const kOri = claveEntidad(origen);
       // ✅ V00443: con las facturas abiertas por servidor, la lista en memoria ya no trae las
       //   pagadas; para renombrarlas TODAS se leen completas (acción rara, de administración).
-      const fuente = flags.consultasCanonicas && flags.dineroPorServidor && tab !== 'mtto' ? await leerFacturasCompletas(tab) : facturasPendientes;
+      let fuente = facturasPendientes;
+      if (flags.consultasCanonicas && flags.dineroPorServidor && tab !== 'mtto') {
+        const completas = await leerFacturasCompletas(tab);
+        // ✅ V00496: sin tope de 12,000; si se llega al de seguridad no se une nada (quedaría a medias).
+        if (completas.truncada) { alert(`${avisoFacturasTruncadas(completas.facturas.length)}\n\nNo se unió nada.`); return; }
+        fuente = completas.facturas;
+      }
       const factIds = fuente.filter((fx) => claveEntidad(fx.entidadNombre) === kOri).map((fx) => fx.id);
       const pagosIdsUnir = pagos.filter((p) => p.tipo === tab && claveEntidad(p.entidadNombre) === kOri).map((p) => p.id);
       let n = 0;
@@ -1083,24 +1094,11 @@ export function PagosDashboard() {
     mapearFacturaBase(id, raw, tipo, { reglaUnica: flags.dineroPorServidor, monedaEmpresa });
 
   // "Unir duplicados" con las facturas abiertas por servidor necesita TODAS (pagadas incluidas): se
-  //   leen en ese momento (acción rara, de administración), por cursor como Facturación (lotes de
-  //   1,000, tope 12,000).
-  const PAG_FACT_PAGOS = 1000;
-  const LIMITE_FACT_PAGOS = 12000;
-  const leerFacturasCompletas = async (tipo: 'cliente' | 'proveedor'): Promise<FacturaPagable[]> => {
-    const coleccion = tipo === 'cliente' ? 'facturas_clientes' : 'facturas_proveedores';
-    const docs: DocVivo[] = [];
-    let cursor: QueryDocumentSnapshot | null = null;
-    for (let i = 0; i < Math.ceil(LIMITE_FACT_PAGOS / PAG_FACT_PAGOS); i++) {
-      const snap: QuerySnapshot = await getDocs(cursor
-        ? query(collection(db, coleccion), orderBy(documentId()), startAfter(cursor), limit(PAG_FACT_PAGOS))
-        : query(collection(db, coleccion), orderBy(documentId()), limit(PAG_FACT_PAGOS)));
-      if (snap.empty) break;
-      snap.docs.forEach((d) => docs.push(armarDoc(d.id, d.data())));
-      cursor = snap.docs[snap.docs.length - 1];
-      if (snap.docs.length < PAG_FACT_PAGOS) break;
-    }
-    return facturasPagablesDe(docs, tipo, { reglaUnica: flags.dineroPorServidor, monedaEmpresa });
+  //   leen en ese momento (acción rara, de administración), por páginas de 1,000 como Facturación.
+  //   ✅ V00496: sin el tope de 12,000 (descargarFacturasComoVivas; el de seguridad se avisa).
+  const leerFacturasCompletas = async (tipo: 'cliente' | 'proveedor'): Promise<{ facturas: FacturaPagable[]; truncada: boolean }> => {
+    const { docs, truncada } = await descargarFacturasComoVivas(tipo === 'cliente' ? 'facturas_clientes' : 'facturas_proveedores');
+    return { facturas: facturasPagablesDe(docs, tipo, { reglaUnica: flags.dineroPorServidor, monedaEmpresa }), truncada };
   };
 
   // ── Abrir "Registrar Pago" ──
@@ -1126,20 +1124,22 @@ export function PagosDashboard() {
   // ✅ CAMBIO: se listan TODAS las facturas de la entidad (pagadas incluidas);
   //   `conSaldo` indica cuántas siguen abiertas.
   const entidades = useMemo(() => {
-    const mapa = new Map<string, { nombre: string; cuantas: number; conSaldo: number; saldo: number }>();
+    const mapa = new Map<string, { nombre: string; cuantas: number; conSaldo: number; saldo: number; abiertas: FacturaPagable[] }>();
     facturasPendientes.forEach((f) => {
       // ✅ CAMBIO: solo cuentan (y aparecen) las facturas con saldo abierto.
       if (f.saldo <= 0.009) return;
       // ✅ FIX: se agrupa por la clave NORMALIZADA del nombre (evita el
       //   proveedor "duplicado" por un espacio o mayúscula distinta).
       const clave = claveEntidad(f.entidadNombre);
-      const prev = mapa.get(clave) || { nombre: String(f.entidadNombre || '').trim().replace(/\s+/g, ' '), cuantas: 0, conSaldo: 0, saldo: 0 };
+      const prev = mapa.get(clave) || { nombre: String(f.entidadNombre || '').trim().replace(/\s+/g, ' '), cuantas: 0, conSaldo: 0, saldo: 0, abiertas: [] };
       prev.cuantas += 1;
       prev.conSaldo += 1;
       prev.saldo += f.saldo;
+      prev.abiertas.push(f);
       mapa.set(clave, prev);
     });
-    return Array.from(mapa.values()).sort((a, b) => a.nombre.localeCompare(b.nombre));
+    // ✅ V00496: el saldo se muestra por moneda (no se suman Pesos con Dólares).
+    return Array.from(mapa.values()).map((e) => ({ ...e, saldoTexto: textoSaldos(e.abiertas) })).sort((a, b) => a.nombre.localeCompare(b.nombre));
   }, [facturasPendientes]);
 
   const entidadesFiltradas = useMemo(() => {
@@ -1783,7 +1783,7 @@ export function PagosDashboard() {
                     <div><label style={etiquetaCampo}>Fecha</label><span style={valorF}>{fv.fecha || '-'}</span></div>
                     <div><label style={etiquetaCampo}>Status</label><span style={{ ...valorF, color: String(fv.raw?.statusFactura || 'Facturado').toLowerCase().includes('cancel') ? '#f85149' : '#3fb950' }}>{fv.raw?.statusFactura || 'Facturado'}</span></div>
                     <div><label style={etiquetaCampo}>Factura CCP</label><span style={valorF}>{fv.raw?.facturaCcp || fv.raw?.ccp || '-'}</span></div>
-                    <div><label style={etiquetaCampo}>Moneda</label><span style={valorF} title="Moneda actual de la empresa (tabla Empresas); si difiere de la guardada, usa Recalcular montos para actualizarla en la factura">{(() => { const m = monedaEmpresaDe({ entidadNombre: fv.entidadNombre, entidadId: (fv as any).entidadId }); const n = m.toLowerCase(); const canon = n.includes('dolar') || n.includes('dólar') || n.includes('usd') ? 'USD' : (n.includes('peso') || n.includes('mxn')) ? 'MXN' : ''; return canon ? <>{canon}{canon !== String(fv.moneda || '') && <small style={{ color: '#f59e0b' }}> (antes {fv.moneda || '—'})</small>}</> : (fv.moneda || '-'); })()}</span></div>
+                    <div><label style={etiquetaCampo}>Moneda</label><span style={valorF} title="Moneda de la factura (✅ V00496: una factura emitida no cambia de moneda sola). Si la empresa ya está en otra, Recalcular montos la cambia en esta factura">{(() => { const m = monedaEmpresaDe({ entidadNombre: fv.entidadNombre, entidadId: (fv as any).entidadId }); const n = m.toLowerCase(); const canon = n.includes('dolar') || n.includes('dólar') || n.includes('usd') ? 'USD' : (n.includes('peso') || n.includes('mxn')) ? 'MXN' : ''; return <>{fv.moneda || '-'}{canon && canon !== String(fv.moneda || '') && <small style={{ color: '#f59e0b' }}> (la empresa: {canon})</small>}</>; })()}</span></div>
                     <div><label style={etiquetaCampo}>Total</label><span style={valorF}>{money(fv.total)}</span></div>
                     <div><label style={etiquetaCampo}>Pagado</label><span style={{ ...valorF, color: '#3fb950' }}>{money(fv.montoPagado)}</span></div>
                     <div><label style={etiquetaCampo}>Saldo abierto</label><span style={{ ...valorF, color: fv.saldo > 0.009 ? '#d29922' : '#3fb950' }}>{fv.saldo > 0.009 ? money(fv.saldo) : 'PAGADA'}</span></div>
@@ -2082,7 +2082,7 @@ export function PagosDashboard() {
                           <button onClick={() => { if (unirModo) { clickEntidadUnir(e.nombre); return; } setEntidadSel(e.nombre); setFacturasSel([]); }}
                           style={unirModo && unirOrigen && claveEntidad(unirOrigen) === claveEntidad(e.nombre) ? { borderColor: '#f85149' } : undefined}>
                             <span className="pg-entidad">{e.nombre}</span>
-                            <span className="pg-entidad-info">{e.cuantas} factura(s) con saldo · {money(e.saldo)}</span>
+                            <span className="pg-entidad-info">{e.cuantas} factura(s) con saldo · {e.saldoTexto}</span>
                           </button>
                         </li>
                       ))}
@@ -2104,7 +2104,7 @@ export function PagosDashboard() {
                       <span className="pg-qb-recibido-etq">MONTO RECIBIDO</span>
                       <span className="pg-qb-recibido-monto">{money(monto, monedasSel[0])}</span>
                       <span className="pg-qb-saldo">
-                        Saldo del {tab === 'cliente' ? 'cliente' : 'proveedor'}: {money(facturasDeEntidad.reduce((s, f) => s + f.saldo, 0))}
+                        Saldo del {tab === 'cliente' ? 'cliente' : 'proveedor'}: {textoSaldos(facturasDeEntidad)}
                       </span>
                     </div>
                   </div>

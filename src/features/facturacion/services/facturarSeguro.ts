@@ -14,6 +14,8 @@
 // ---------------------------------------------------------------------------
 import { collection, documentId, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { destinoAlEliminar } from '../../../shared/dominio/facturacion';
+import type { FacturaContenedora } from '../../../shared/dominio/facturacion';
 
 export type LadoFactura = 'cliente' | 'proveedor';
 
@@ -150,13 +152,8 @@ export const avisoYaFacturadas = (ops: readonly OpYaFacturada[]): string =>
 //   borrada (o a ninguna) y no está en otra factura; si está en otra, se liga a esa.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Una factura con sus operaciones (ya como arreglo: la lista cargada viene normalizada). */
-export interface FacturaLigada {
-  id: string;
-  invoice: string;
-  operacionesIds: readonly string[];
-  statusFactura?: unknown;
-}
+/** Una factura con sus operaciones (ya como arreglo: la lista cargada viene normalizada). ✅ V00496: el tipo del dominio. */
+export type FacturaLigada = FacturaContenedora;
 
 export interface OpDeFacturaBorrada {
   idLista: string;
@@ -170,28 +167,15 @@ export type DecisionLiberar =
   | { idLista: string; idReal: string; accion: 'ligar'; facturaId: string; folio: string }
   | { idLista: string; idReal: string; accion: 'dejar' };
 
-const cancelada = (s: unknown): boolean => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().startsWith('cancelad');
-
-/** Puro: qué se hace con cada operación de las facturas que se borran. */
+/** Puro: qué se hace con cada operación de las facturas que se borran (✅ V00496: la regla del dominio, la misma del servidor). */
 export const decidirLiberacion = (
   lado: LadoFactura, ops: readonly OpDeFacturaBorrada[], borradas: ReadonlySet<string>, otras: readonly FacturaLigada[],
-): DecisionLiberar[] => {
-  const salida: DecisionLiberar[] = [];
-  for (const o of ops) {
-    if (!o.datos) continue;
-    const apunta = facturaDeOperacion(lado, o.datos).facturaId;
-    const contenedoras = otras.filter((f) => !borradas.has(f.id) && (f.operacionesIds.includes(o.idLista) || f.operacionesIds.includes(o.idReal)));
-    const elegida = contenedoras.find((f) => f.id === apunta) ?? contenedoras.find((f) => !cancelada(f.statusFactura)) ?? contenedoras[0];
-    if (elegida) {
-      salida.push(elegida.id === apunta ? { idLista: o.idLista, idReal: o.idReal, accion: 'dejar' } : { idLista: o.idLista, idReal: o.idReal, accion: 'ligar', facturaId: elegida.id, folio: elegida.invoice });
-    } else if (apunta && !borradas.has(apunta)) {
-      salida.push({ idLista: o.idLista, idReal: o.idReal, accion: 'dejar' }); // apunta a otra factura viva: no se toca (como el servidor)
-    } else {
-      salida.push({ idLista: o.idLista, idReal: o.idReal, accion: 'liberar' });
-    }
-  }
-  return salida;
-};
+  existe?: ReadonlySet<string>,
+): DecisionLiberar[] => ops.flatMap((o): DecisionLiberar[] => {
+  if (!o.datos) return [];
+  const destino = destinoAlEliminar(facturaDeOperacion(lado, o.datos).facturaId, [o.idLista, o.idReal], borradas, otras, existe);
+  return [{ idLista: o.idLista, idReal: o.idReal, ...destino }];
+});
 
 /**
  * Lee del servidor las operaciones de las facturas que se van a borrar y las OTRAS facturas que las
@@ -218,5 +202,12 @@ export async function planLiberarAlEliminar(
       otras.set(d.id, { id: d.id, invoice: texto(x.invoice), statusFactura: x.statusFactura, operacionesIds: Array.isArray(x.operacionesIds) ? x.operacionesIds.map(String) : [] });
     });
   }
-  return decidirLiberacion(lado, ops.map((o) => ({ ...o, datos: datosPorReal.get(o.idReal) ?? null })), borradas, [...otras.values()]);
+  // ✅ V00496: ¿existen las facturas a las que apuntan? (una marca a una que ya no existe no retiene la operación)
+  const apuntadas = [...new Set([...datosPorReal.values()].map((x) => facturaDeOperacion(lado, x).facturaId))].filter((x) => x && !x.includes('/') && !borradas.has(x));
+  const existe = new Set<string>();
+  for (const lote of lotes(apuntadas)) {
+    const snap = await getDocs(query(collection(db, c.coleccion), where(documentId(), 'in', lote)));
+    snap.docs.forEach((d) => existe.add(d.id));
+  }
+  return decidirLiberacion(lado, ops.map((o) => ({ ...o, datos: datosPorReal.get(o.idReal) ?? null })), borradas, [...otras.values()], existe);
 }

@@ -81,25 +81,37 @@ export const crearMonedaEmpresa = (empresas: readonly Datos[], monedas: readonly
 };
 
 /**
- * Moneda canónica ('USD'/'MXN') de un documento de factura: la de la EMPRESA manda (V00148);
- * después los campos de la factura; si ninguno se reconoce, el primer texto tal cual.
+ * Moneda canónica ('USD'/'MXN') de un documento de factura. ✅ V00496: manda la de la FACTURA (desde la
+ * V00495 una factura emitida no cambia de moneda sola; antes mandaba la de la empresa, V00148, y una
+ * factura en Pesos de una empresa que pasó a Dólares se mostraba y se cobraba en Dólares con su total en
+ * Pesos). Si la factura no trae una moneda reconocible, la de la empresa; si tampoco, el primer texto.
  */
 export const monedaDeFactura = (raw: Datos, monedaEmpresa: MonedaEmpresa): string => {
-  const canonEmp = monedaCanonica(monedaEmpresa({
-    entidadId: raw.clienteId || raw.proveedorId || raw.entidadId || '',
-    entidadNombre: raw.clienteNombre || raw.proveedorNombre || raw.entidadNombre || '',
-  }));
-  if (canonEmp) return canonEmp;
   const candidatos = [raw.monedaFacturacion, raw.monedaProveedor, raw.moneda, raw.monedaId];
   for (const c of candidatos) {
     const canon = monedaCanonica(c);
     if (canon) return canon;
   }
+  const canonEmp = monedaCanonica(monedaEmpresa({
+    entidadId: raw.clienteId || raw.proveedorId || raw.entidadId || '',
+    entidadNombre: raw.clienteNombre || raw.proveedorNombre || raw.entidadNombre || '',
+  }));
+  if (canonEmp) return canonEmp;
   for (const c of candidatos) {
     const s = texto(c).trim();
     if (s) return s;
   }
   return '';
+};
+
+/**
+ * ✅ V00496: saldo abierto por moneda. Desde la V00495 una empresa puede tener facturas emitidas en las dos
+ * monedas (las de antes de cambiar la moneda de la empresa no cambian): no se suman Pesos con Dólares.
+ */
+export const saldosPorMoneda = (facturas: readonly { saldo: number; moneda: string }[]): { moneda: string; saldo: number }[] => {
+  const centavos = new Map<string, number>();
+  facturas.forEach((f) => { if (f.saldo > 0.009) centavos.set(f.moneda || '', (centavos.get(f.moneda || '') ?? 0) + Math.round(f.saldo * 100)); });
+  return Array.from(centavos, ([moneda, c]) => ({ moneda, saldo: c / 100 })).sort((a, b) => a.moneda.localeCompare(b.moneda));
 };
 
 // Mismo criterio que Facturación: sin campo/vacío => 'Facturado'. Solo se excluyen las canceladas

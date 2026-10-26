@@ -576,6 +576,27 @@ export const derivadosFactura = (factura: unknown): Datos => {
   return cambios;
 };
 
+/**
+ * ✅ V00496: saldo y status que pone el trigger de la factura SIN `dineroPorServidor` (el total desde los
+ * renglones, V00275, salvo un total manual). Antes estaba dentro del trigger; aquí lo usa también el
+ * script de facturas con operaciones en texto para avisar qué cambiaría al reescribirlas.
+ */
+export const cambiosSaldoLegado = (factura: unknown): Datos => {
+  const fac = comoDatos(factura);
+  const cambios: Datos = {};
+  const montoPagado = Number(fac.montoPagado) || 0;
+  if (montoPagado > 0 || typeof fac.saldoPendiente === 'number') {
+    const manual = aNumero(fac.totalManualCentavos);
+    const ops = Array.isArray(fac.operacionesGuardadas) ? fac.operacionesGuardadas : [];
+    const total = manual > 0 ? deCentavos(manual) : totalNativoDeRenglonesLegado(fac, ops);
+    const saldo = Math.max(0, r2(total - montoPagado));
+    const status = saldo <= 0.009 ? 'PAGADA' : (montoPagado > 0 ? 'PARCIAL' : String(fac.statusPago || ''));
+    if (Math.abs((Number(fac.saldoPendiente) || 0) - saldo) > 0.005) cambios.saldoPendiente = saldo;
+    if (status && String(fac.statusPago || '') !== status) cambios.statusPago = status;
+  }
+  return cambios;
+};
+
 /** Renglón para la subcolección facturas_x/{id}/renglones/{opId} (Fase 5.2). */
 export interface RenglonCentavos {
   ref: string;

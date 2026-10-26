@@ -17,9 +17,11 @@
 //   tocan y se cuentan en opsSinTocar.
 // ---------------------------------------------------------------------------
 import { collection, doc, getDoc, getDocs, query, where, writeBatch } from 'firebase/firestore';
+import type { DocumentReference } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { idReal, obtenerCatalogo } from '../../../shared/data/catalogos';
 import { ID_MXN, ID_USD } from '../../../shared/dominio/constantes';
+import { monedaDeFactura } from '../../../shared/dominio/dinero';
 import type { Lado } from '../../../shared/dominio/dinero';
 import { monedaCanonica, nombreMoneda } from '../../../shared/dominio/moneda';
 import type { Moneda } from '../../../shared/dominio/moneda';
@@ -27,6 +29,8 @@ import { revisarOperacion } from '../../operaciones/services/corregirMonedaConve
 import type { CatalogoConvenios } from '../../operaciones/services/corregirMonedaConvenio';
 import { corregirOperacion, leerConvenios } from '../../operaciones/services/corregirMonedaConvenioDatos';
 import { valorCongelado } from '../../../shared/dominio/cascadaFacturas'; // ✅ V00495
+import { porIds } from '../../../shared/data/consultas';
+import { coleccionFacturasDePago, facturaEnOtraMoneda, facturasDelPago, facturaTomaMoneda, monedaFinalDeFactura, pagoTomaMoneda } from './monedaPagos'; // ✅ V00496
 
 export interface ReporteMoneda {
   monedaNombre: string;
@@ -43,6 +47,8 @@ export interface ReporteMoneda {
   facturasSinTocar: number;
   /** ✅ V00490: pagos de la empresa con otra moneda (solo la etiqueta; el monto no se toca). */
   pagos: number;
+  /** ✅ V00496: pagos con otra moneda que no se tocaron: alguna de sus facturas queda en otra moneda (emitida). */
+  pagosSinTocar: number;
 }
 
 export const propagarMonedaEmpresa = async (empresaId: string): Promise<ReporteMoneda> => {
@@ -75,7 +81,9 @@ export const propagarMonedaEmpresa = async (empresaId: string): Promise<ReporteM
   const canon: 'USD' | 'MXN' | '' = monedaCanonica(monNom) ?? monedaCanonica(monId) ?? '';
   if (!monNom && canon) monNom = nombreMoneda(canon);
 
-  const rep: ReporteMoneda = { monedaNombre: monNom, canon, conveniosClientes: 0, conveniosProveedores: 0, opsCliente: 0, opsProveedor: 0, opsSinTocar: 0, facturasClientes: 0, facturasProveedores: 0, facturasSinTocar: 0, pagos: 0 };
+  const rep: ReporteMoneda = { monedaNombre: monNom, canon, conveniosClientes: 0, conveniosProveedores: 0, opsCliente: 0, opsProveedor: 0, opsSinTocar: 0, facturasClientes: 0, facturasProveedores: 0, facturasSinTocar: 0, pagos: 0, pagosSinTocar: 0 };
+  /** ✅ V00496: moneda con la que queda cada factura de la empresa ('coleccion/id'), para sus pagos. */
+  const monedaFinal = new Map<string, Moneda | null>();
 
   let batch = writeBatch(db);
   let enBatch = 0;
@@ -88,27 +96,66 @@ export const propagarMonedaEmpresa = async (empresaId: string): Promise<ReporteM
     { col: 'convenios_proveedores', campo: 'proveedorId', cambios: { monedaId: monId, monedaNombre: monNom }, distinto: (x) => String(x.monedaId || '') !== monId || String(x.monedaNombre || '') !== monNom, cuenta: 'conveniosProveedores' },
     // 3) Operaciones: abajo, una por una en transacción (✅ V00490).
     // 4) Facturación (las mismas facturas que consume Pagos).
-    { col: 'facturas_clientes', campo: 'clienteId', cambios: { monedaFacturacion: monNom, monedaId: monId, ...(canon ? { moneda: canon } : {}) }, distinto: (x) => String(x.monedaId || '') !== monId || (canon ? String(x.moneda || '') !== canon : false), cuenta: 'facturasClientes' },
-    { col: 'facturas_proveedores', campo: 'proveedorId', cambios: { monedaProveedor: monNom, monedaId: monId, ...(canon ? { moneda: canon } : {}) }, distinto: (x) => String(x.monedaId || '') !== monId || (canon ? String(x.moneda || '') !== canon : false), cuenta: 'facturasProveedores' },
-    // 5) ✅ V00490: Pagos (cliente o proveedor): la moneda del pago es la de la empresa (sus facturas ya lo son).
-    ...(canon ? [{ col: 'pagos', campo: 'entidadId', cambios: { moneda: canon }, distinto: (x: Record<string, unknown>) => monedaCanonica(x.moneda) !== canon, cuenta: 'pagos' as const }] : []),
+    // ✅ V00496: "distinta" mira también monedaFacturacion / monedaProveedor (lo que escribe Editar factura).
+    { col: 'facturas_clientes', campo: 'clienteId', cambios: { monedaFacturacion: monNom, monedaId: monId, ...(canon ? { moneda: canon } : {}) }, distinto: (x) => (canon ? facturaEnOtraMoneda(x, canon, monId) : String(x.monedaId || '') !== monId), cuenta: 'facturasClientes' },
+    { col: 'facturas_proveedores', campo: 'proveedorId', cambios: { monedaProveedor: monNom, monedaId: monId, ...(canon ? { moneda: canon } : {}) }, distinto: (x) => (canon ? facturaEnOtraMoneda(x, canon, monId) : String(x.monedaId || '') !== monId), cuenta: 'facturasProveedores' },
+    // 5) Pagos: abajo (✅ V00496: solo si sus facturas quedan en la misma moneda).
   ];
 
   for (const p of pasos) {
     const snap = await getDocs(query(collection(db, p.col), where(p.campo, '==', empresaId)));
+    const esFactura = p.col === 'facturas_clientes' || p.col === 'facturas_proveedores';
     for (const d of snap.docs) {
-      if (!p.distinto(d.data())) continue;
+      const cambiaria = p.distinto(d.data());
+      if (esFactura && canon) monedaFinal.set(`${p.col}/${d.id}`, monedaFinalDeFactura(d.data(), canon, facturaTomaMoneda(d.data(), cambiaria)));
+      if (!cambiaria) continue;
       // ✅ V00495: una factura ya emitida no cambia de moneda (ni de valor) sola: "una vez facturado, la única
       //   forma de cambiar el valor de la factura es manual, 1 x 1". Solo los borradores (No Facturado).
-      if ((p.col === 'facturas_clientes' || p.col === 'facturas_proveedores') && valorCongelado(d.data().statusFactura)) { rep.facturasSinTocar++; continue; }
-      marcar(d.ref, p.cambios);
+      if (esFactura && valorCongelado(d.data().statusFactura)) { rep.facturasSinTocar++; continue; }
+      // ✅ V00496: si el borrador trae también el campo de moneda del otro lado (p. ej. monedaFacturacion en
+      //   una de proveedor, que se lee primero), se actualiza igual; si no, seguiría leyéndose la vieja.
+      const otro = p.col === 'facturas_proveedores' ? 'monedaFacturacion' : p.col === 'facturas_clientes' ? 'monedaProveedor' : '';
+      marcar(d.ref, otro && d.data()[otro] !== undefined ? { ...p.cambios, [otro]: monNom } : p.cambios);
       (rep[p.cuenta] as number)++;
       if (enBatch >= 400) await flush();
     }
   }
+  if (canon) await propagarAPagos(empresaId, canon, monedaFinal, async (ref, cambios) => { marcar(ref, cambios); if (enBatch >= 400) await flush(); }, rep);
   await flush();
   if (canon) await corregirOperacionesDeEmpresa(empresaId, canon, rep);
   return rep;
+};
+
+/**
+ * ✅ V00490: la moneda del pago (cliente o proveedor) es la de la empresa; solo la etiqueta, el monto no
+ * se toca. ✅ V00496: un pago aplicado a una factura que queda en otra moneda (emitida) no se toca y se
+ * cuenta en pagosSinTocar. Las facturas aplicadas que no son de esta empresa se leen por id.
+ */
+const propagarAPagos = async (
+  empresaId: string, canon: Moneda, monedaFinal: Map<string, Moneda | null>,
+  escribir: (ref: DocumentReference, cambios: Record<string, unknown>) => Promise<void>, rep: ReporteMoneda,
+): Promise<void> => {
+  const snap = await getDocs(query(collection(db, 'pagos'), where('entidadId', '==', empresaId)));
+  const conOtra = snap.docs.filter((d) => monedaCanonica(d.data().moneda) !== canon);
+  const faltan = new Map<string, Set<string>>();
+  conOtra.forEach((d) => {
+    const col = coleccionFacturasDePago(d.data().tipo);
+    if (!col) return;
+    facturasDelPago(d.data()).forEach((id) => {
+      if (!monedaFinal.has(`${col}/${id}`)) faltan.set(col, (faltan.get(col) ?? new Set<string>()).add(id));
+    });
+  });
+  for (const [col, ids] of faltan) {
+    (await porIds(col, Array.from(ids))).forEach((f) => {
+      const id = idReal(f);
+      monedaFinal.set(`${col}/${id}`, monedaDeFactura(f)); // de otra empresa: aquí no cambia
+    });
+  }
+  for (const d of conOtra) {
+    if (!pagoTomaMoneda(d.data(), canon, (col, id) => monedaFinal.get(`${col}/${id}`))) { rep.pagosSinTocar++; continue; }
+    await escribir(d.ref, { moneda: canon });
+    rep.pagos++;
+  }
 };
 
 const HILOS = 4;

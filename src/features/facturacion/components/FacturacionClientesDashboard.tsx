@@ -78,7 +78,7 @@ import {
   totalDeFilaFactura, // ✅ V00451
 } from '../services/totalesFactura'; // ✅ Fase 1.8
 import { normalizarFacturaDe } from '../services/normalizarFactura'; // ✅ V00493
-import { avisoFacturasTruncadas, descargarTodasLasFacturas } from '../services/descargarFacturas'; // ✅ V00494
+import { useFacturasEnVivo } from '../hooks/useFacturasEnVivo'; // ✅ V00497 (antes descargarTodasLasFacturas, V00494)
 import { avisar } from '../../../shared/data/avisos';
 import { aplicarFacturas, aplicarOperaciones, llamarDinero, mensajeDinero } from '../services/dineroServidor'; // ✅ V00441
 import { useFlags, useFlagsCargadas } from '../../../shared/data/flags';
@@ -310,11 +310,15 @@ export const FacturacionClientesDashboard = () => {
     return docs.every((d: any) => String(d?.statusPago || '').toUpperCase() === 'PAGADA' || ((Number(d?.montoPagado) || 0) > 0.009 && (Number(d?.saldoPendiente) || 0) <= 0.009));
   };
 
-  const [facturasGlobales, setFacturasGlobales] = useState<any[]>([]);
-  // ✅ V00449: arranca en true porque la descarga de facturas empieza SIEMPRE al montar
-  //   (cargarFacturasAlEntrar). Con false, el primer pintado mostraba "Aún no hay facturas
-  //   registradas" y las tarjetas en $0 antes de que el efecto encendiera la bandera.
-  const [cargandoFacturas, setCargandoFacturas] = useState(true);
+  // ✅ V00497: las facturas llegan EN VIVO por el listener compartido con Pagos y Estadísticas
+  //   (hooks/useFacturasEnVivo.ts). Antes se descargaban todas al entrar y la lista se quedaba como
+  //   estaba ese momento. setFacturasGlobales sigue siendo el parche inmediato de lo que se acaba
+  //   de escribir; la siguiente versión del listener lo reemplaza.
+  const facturasVivas = useFacturasEnVivo('cliente', normalizarFactura);
+  const facturasGlobales = facturasVivas.facturas;
+  const setFacturasGlobales = facturasVivas.setFacturas;
+  // ✅ V00449: mientras no llega ninguna lista se muestra "Cargando…" (no "Aún no hay facturas").
+  const cargandoFacturas = facturasVivas.cargando;
 
   // ✅ V00439 (Fase 3.x): empresas y catálogos de nombres desde los listeners
   //   compartidos (antes: getDocs + copias en localStorage).
@@ -678,49 +682,7 @@ export const FacturacionClientesDashboard = () => {
     try { CLAVES_CACHE_LEGADO.forEach((k) => localStorage.removeItem(k)); } catch { /* sin localStorage */ }
   }, []);
 
-  // Descarga TODAS las facturas desde Firestore (reutilizable por el botón Refrescar).
-  // ✅ V00447: una sola descarga a la vez (antes la carga al entrar tenía su propia copia de
-  //   este código y, si el efecto corría dos veces, bajaba todas las facturas dos veces).
-  //   Un Refrescar pedido mientras baja otra descarga se repite al terminar (no se pierde).
-  const facturasEnVueloRef = useRef(false);
-  const repetirFacturasRef = useRef(false);
-  const descargarFacturas = async (refrescar = true) => {
-    if (facturasEnVueloRef.current) { if (refrescar) repetirFacturasRef.current = true; return; }
-    facturasEnVueloRef.current = true;
-    setCargandoFacturas(true);
-    try {
-      // ✅ V00494: TODAS (antes se cortaba en 12,000 por ID y cada día salía de la lista otra factura).
-      const descarga = await descargarTodasLasFacturas('facturas_clientes');
-      if (descarga.truncada) avisar({ tipo: 'alerta', titulo: 'Facturas de clientes incompletas', texto: avisoFacturasTruncadas(descarga.docs.length) });
-      const todas: any[] = descarga.docs.map(normalizarFactura);
-      todas.sort((a: any, b: any) => {
-        const fa = String(a.fecha || '');
-        const fb = String(b.fecha || '');
-        if (!fa && !fb) return 0;
-        if (!fa) return 1;
-        if (!fb) return -1;
-        return fb.localeCompare(fa);
-      });
-      setFacturasGlobales(todas);
-    } catch (e: any) {
-      console.error('[Facturación Historial] Error al recargar facturas:', e);
-      alert(`No se pudieron cargar las facturas.\n\nDetalle: ${String(e?.message || e?.code || e || '')}`);
-    }
-    facturasEnVueloRef.current = false;
-    setCargandoFacturas(false);
-    if (repetirFacturasRef.current) { repetirFacturasRef.current = false; void descargarFacturas(); }
-  };
-
-  // Fuerza el refresco de la colección de facturas: vuelve a leer de Firestore.
-  const recargarFacturas = () => {
-    descargarFacturas();
-  };
-
-  const cargarFacturasAlEntrar = useEffectEvent(() => {
-    if (facturasGlobales.length > 0) { setCargandoFacturas(false); return; } // ✅ V00449: la bandera arranca en true
-    void descargarFacturas(false);
-  });
-  useEffect(() => cargarFacturasAlEntrar(), []);
+  // ✅ V00497: ya no hay descarga de facturas al entrar ni "recargar facturas": llegan en vivo (useFacturasEnVivo).
 
   // ✅ V00444 (Fase 8.1): carga de las operaciones en useOperacionesFacturables (antes copiada aquí
   //   y en el otro lado). Con `consultasCanonicas` (Fase 7.3): pendientes primero, facturadas al
@@ -773,7 +735,7 @@ export const FacturacionClientesDashboard = () => {
   const recargarTodo = () => {
     olvidarRefsConsultadas(); // ✅ V00450: también vuelve a buscar las Ref Cliente
     recargarOperaciones();
-    recargarFacturas();
+    facturasVivas.reintentar(); // ✅ V00497: las facturas ya están en vivo; solo reabre el listener si falló
   };
 
   // ✅ V00438 (Fase 2.4): índice de empresas por id / nombre / nombreCorto (gana
@@ -2063,6 +2025,9 @@ export const FacturacionClientesDashboard = () => {
           const r = await llamarDinero('eliminarFactura', { lado: 'cliente', facturaIds: ids });
           setFacturasGlobales(prev => aplicarFacturas(prev, r.facturas, normalizarFactura));
           setOperacionesGlobales(prev => aplicarOperaciones(prev, r.operaciones));
+          // ✅ V00496: el servidor liga a la otra factura las que siguen en ella (ya no las libera).
+          const ligadasServidor = Object.values(r.operaciones ?? {}).filter((o) => !!o.facturaClienteId).length;
+          if (ligadasServidor > 0) avisar({ tipo: 'info', titulo: 'Factura eliminada', texto: `${ligadasServidor} operación(es) siguen facturadas en otra factura y no volvieron a Pendientes.` });
           return;
         }
         // ✅ Fase 1.8 (c): se releen FRESCAS. Una factura con pagos aplicados no se
@@ -3144,7 +3109,7 @@ export const FacturacionClientesDashboard = () => {
         {/* ✅ V00318: verificación de la cadena Operación → Factura → Pago */}
         <button type="button" className="fcd-btn-auditoria" title="Verificar por cliente que cada operación esté facturada con el monto vigente y que cada factura cuadre con sus pagos" onClick={() => setMostrarAuditoria(true)}>🔍 Auditar cliente</button>
         <button onClick={recargarTodo} disabled={cargandoOperaciones || cargandoFacturas}
-          title="Vuelve a leer operaciones y facturas desde la base de datos (limpia la caché)"
+          title="Vuelve a leer las operaciones desde la base de datos (las facturas ya se actualizan solas)"
           style={{ marginLeft: 'auto', marginBottom: '6px', display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '8px', color: '#c9d1d9', cursor: (cargandoOperaciones || cargandoFacturas) ? 'wait' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem', opacity: (cargandoOperaciones || cargandoFacturas) ? 0.6 : 1 }}>
           <span className="fcd-x33">↻</span>
           {(cargandoOperaciones || cargandoFacturas) ? 'Refrescando…' : 'Refrescar'}
@@ -3395,7 +3360,7 @@ export const FacturacionClientesDashboard = () => {
             </div>
 
             <div className="fcd-x72">
-              <button onClick={recargarTodo} disabled={cargandoOperaciones || cargandoFacturas} style={{ ...btnDirStyle, borderColor: '#58a6ff', color: '#58a6ff', fontWeight: 700 }} title="Vuelve a leer operaciones y facturas desde Firestore (limpia la caché) y recalcula todos los montos">{cargandoOperaciones ? '⏳ Actualizando…' : '↻ Actualizar'}</button>
+              <button onClick={recargarTodo} disabled={cargandoOperaciones || cargandoFacturas} style={{ ...btnDirStyle, borderColor: '#58a6ff', color: '#58a6ff', fontWeight: 700 }} title="Vuelve a leer las operaciones desde Firestore y recalcula sus montos (las facturas ya se actualizan solas)">{cargandoOperaciones ? '⏳ Actualizando…' : '↻ Actualizar'}</button>
               <button onClick={() => setModalColumnasOps(true)} style={btnDirStyle} title="Elegir y reordenar columnas">⚙ Configurar Columnas</button>
               <button onClick={exportarExcelOps} disabled={operacionesMostradas.length === 0}
                 style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap',

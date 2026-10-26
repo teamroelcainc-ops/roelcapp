@@ -8,31 +8,40 @@
 import { collection, documentId, getDocs, limit, orderBy, query, startAfter } from 'firebase/firestore';
 import type { DocumentData, QueryConstraint, QueryDocumentSnapshot } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { armarDoc } from '../../../shared/data/coleccionesVivas';
+import type { DocVivo } from '../../../shared/data/coleccionesVivas';
 
 export const PAGINA_FACTURAS = 1000;
 /** Tope de seguridad (no de diseño): si se alcanza, el tablero lo avisa. */
 export const TOPE_FACTURAS = 100000;
 
-export interface DescargaFacturas {
+export interface DescargaFacturas<T = Record<string, unknown>> {
   /** `{ id, ...datos }` como siempre (un campo `id` guardado gana, igual que antes). */
-  docs: Record<string, unknown>[];
+  docs: T[];
   truncada: boolean;
 }
 
-export async function descargarTodasLasFacturas(
-  coleccion: 'facturas_clientes' | 'facturas_proveedores', tope = TOPE_FACTURAS,
-): Promise<DescargaFacturas> {
-  const docs: Record<string, unknown>[] = [];
+type ColeccionFacturas = 'facturas_clientes' | 'facturas_proveedores';
+
+async function paginar<T>(coleccion: ColeccionFacturas, armar: (id: string, datos: DocumentData) => T, tope: number): Promise<DescargaFacturas<T>> {
+  const docs: T[] = [];
   let cursor: QueryDocumentSnapshot<DocumentData> | null = null;
   while (docs.length < tope) {
     const filtros: QueryConstraint[] = [orderBy(documentId()), ...(cursor ? [startAfter(cursor)] : []), limit(PAGINA_FACTURAS)];
     const snap = await getDocs(query(collection(db, coleccion), ...filtros));
-    snap.docs.forEach((d) => docs.push({ id: d.id, ...d.data() }));
+    snap.docs.forEach((d) => docs.push(armar(d.id, d.data())));
     if (snap.docs.length < PAGINA_FACTURAS) return { docs, truncada: false };
     cursor = snap.docs[snap.docs.length - 1];
   }
   return { docs, truncada: true };
 }
+
+export const descargarTodasLasFacturas = (coleccion: ColeccionFacturas, tope = TOPE_FACTURAS): Promise<DescargaFacturas> =>
+  paginar(coleccion, (id, datos) => ({ id, ...datos }), tope);
+
+/** ✅ V00496: lo mismo con la forma de los listeners (`armarDoc`: el id real en `_docId`), para Pagos. */
+export const descargarFacturasComoVivas = (coleccion: ColeccionFacturas, tope = TOPE_FACTURAS): Promise<DescargaFacturas<DocVivo>> =>
+  paginar(coleccion, armarDoc, tope);
 
 export const avisoFacturasTruncadas = (n: number): string =>
   `Se cargaron ${n.toLocaleString('es-MX')} facturas (el máximo). Puede haber facturas que no aparecen y operaciones que se ven pendientes sin estarlo: avisa a soporte.`;

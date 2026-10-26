@@ -275,7 +275,8 @@ export const planEditarFactura = (d: DatosEditarFactura, grupo: readonly DocLeid
     const datos: Datos = d.origen === 'pagos'
       ? {
         invoice: d.invoice.trim(), fecha: d.fecha, facturaCcp: d.facturaCcp.trim(), statusFactura: d.statusFactura,
-        subtotalFactura: total, subtotalMonedaFactura: total, saldoPendiente: saldo, monedaFacturacion: d.moneda,
+        subtotalFactura: total, subtotalMonedaFactura: total, saldoPendiente: saldo,
+        [c.campoMoneda]: d.moneda, // ✅ V00496: el campo de su lado (antes siempre monedaFacturacion)
         editadoEn: d.ahoraISO, editadoPor: d.usuario,
       }
       : {
@@ -446,12 +447,50 @@ export const planAgregarOperacion = (lado: Lado, factura: DocLeido, op: DocLeido
 };
 
 // ── Eliminar factura(s) ──────────────────────────────────────────────────
+/** ✅ V00496: otra factura (que no se borra) con sus operaciones, para no "desfacturar" las que siguen en ella. */
+export interface FacturaContenedora {
+  id: string;
+  invoice: string;
+  operacionesIds: readonly string[];
+  statusFactura?: unknown;
+}
+
+export type DestinoAlEliminar =
+  | { accion: 'liberar' }
+  | { accion: 'ligar'; facturaId: string; folio: string }
+  | { accion: 'dejar' };
+
+const esCancelada = (status: unknown): boolean => normalizarTexto(status).startsWith('cancelad');
+
+/**
+ * ✅ V00496 (antes solo en la web, V00494): qué pasa con una operación de las facturas que se borran.
+ *  · Apunta a OTRA factura que no se borra (y existe, si se sabe) → 'dejar' (no se toca, como siempre en el servidor).
+ *  · Si no (apunta a una de las borradas o a ninguna) y sigue en otra factura NO cancelada → 'ligar'
+ *    a esa (p. ej. al borrar el duplicado, queda en la buena).
+ *  · Si no → 'liberar' (vuelve a "Por facturar"). Una factura cancelada no la retiene (igual que el
+ *    script de facturas en texto: no se marca con canceladas).
+ * `idsOp` = los ids con que puede aparecer en `operacionesIds` (el del documento y el de la lista o
+ * su campo `id` de AppSheet).
+ */
+export const destinoAlEliminar = (
+  apunta: string, idsOp: readonly string[], borradas: ReadonlySet<string>, otras: readonly FacturaContenedora[],
+  existe?: ReadonlySet<string>,
+): DestinoAlEliminar => {
+  // `existe` (si se sabe): una marca a una factura que ya no existe cuenta como sin marca.
+  if (apunta && !borradas.has(apunta) && (!existe || existe.has(apunta))) return { accion: 'dejar' };
+  const viva = otras.find((f) => !borradas.has(f.id) && !esCancelada(f.statusFactura) && idsOp.some((x) => x && f.operacionesIds.includes(x)));
+  return viva ? { accion: 'ligar', facturaId: viva.id, folio: viva.invoice } : { accion: 'liberar' };
+};
+
 /**
  * Eliminar una factura o su grupo (handleEliminarFactura): nunca con pagos
- * aplicados; las operaciones que siguen existiendo y apuntan a ella vuelven a
- * "Por facturar".
+ * aplicados. ✅ V00496: cada operación sigue `destinoAlEliminar` con las OTRAS facturas que la
+ * contienen (`otras`): antes toda operación que apuntaba a la factura borrada volvía a "Por
+ * facturar", aunque siguiera en otra (p. ej. al borrar el duplicado, que suele ser la última).
  */
-export const planEliminarFacturas = (lado: Lado, grupo: readonly DocLeido[], opsExistentes: readonly DocLeido[]): PlanDinero => {
+export const planEliminarFacturas = (
+  lado: Lado, grupo: readonly DocLeido[], opsExistentes: readonly DocLeido[], otras: readonly FacturaContenedora[] = [], existe?: ReadonlySet<string>,
+): PlanDinero => {
   const c = LADOS[lado];
   const conPagos = grupo.find((f) => tienePagosAplicados(f.datos));
   if (conPagos) {
@@ -464,9 +503,9 @@ export const planEliminarFacturas = (lado: Lado, grupo: readonly DocLeido[], ops
   const ids = new Set(grupo.map((f) => f.id));
   grupo.forEach((f) => { plan.escrituras.push({ tipo: 'borrar', coleccion: c.coleccion, id: f.id }); plan.facturas[f.id] = null; });
   opsExistentes.forEach((o) => {
-    // Solo se libera si la operación apunta a una de estas facturas (o a ninguna).
-    const apunta = txt(o.datos[c.opFacturaId]);
-    if (!apunta || ids.has(apunta)) vincular(plan, lado, o.id, null, null);
+    const destino = destinoAlEliminar(txt(o.datos[c.opFacturaId]), [o.id, txt(o.datos.id)], ids, otras, existe);
+    if (destino.accion === 'liberar') vincular(plan, lado, o.id, null, null);
+    else if (destino.accion === 'ligar') vincular(plan, lado, o.id, destino.facturaId, destino.folio);
   });
   return plan;
 };
@@ -652,6 +691,12 @@ export const planEditarPago = (pago: DocLeido, d: DatosEditarPago, facturas: Rea
     }
     const fac = facturas.get(a.facturaId);
     if (!fac) throw new ErrorDinero(`La factura ${a.invoice} ya no existe (pudo haber sido eliminada). No se guardó nada.`);
+    // ✅ V00496: igual que al registrar, un pago no mezcla monedas (una empresa puede tener facturas en las dos).
+    const monedaPago = monedaCanonica(pago.datos.moneda);
+    const monedaFac = monedaDeFactura(fac);
+    if (monedaPago && monedaFac && monedaFac !== monedaPago) {
+      throw new ErrorDinero(`La factura ${a.invoice} está en ${monedaFac} y el pago en ${monedaPago}: un pago solo puede cubrir facturas de su misma moneda. No se guardó nada.`);
+    }
     const ab = calcularAbono(fac, a.aplicado, a.invoice, 'unica');
     nuevas.push({ ...a, total: ab.total, saldoAnterior: ab.saldoAnterior, aplicado: ab.aplicado, saldoNuevo: ab.saldoNuevo });
     const datos: Datos = { ...ab.cambios, pagosIds: conPagoId(fac, pago.id) };

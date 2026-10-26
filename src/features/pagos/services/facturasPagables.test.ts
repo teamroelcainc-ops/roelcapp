@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { ID_MXN, ID_USD } from '../../../shared/dominio/constantes';
 import {
-  claveEntidad, claveFecha, crearMonedaEmpresa, esFacturaCobrable, facturasMtto, facturasPagablesDe, monedaDeFactura,
+  claveEntidad, claveFecha, crearMonedaEmpresa, esFacturaCobrable, facturasMtto, facturasPagablesDe, monedaDeFactura, saldosPorMoneda,
 } from './facturasPagables';
 import type { DocFactura } from './facturasPagables';
 
@@ -36,12 +36,21 @@ describe('crearMonedaEmpresa', () => {
 });
 
 describe('monedaDeFactura', () => {
-  it('la moneda de la EMPRESA manda sobre la guardada en la factura', () => {
-    expect(monedaDeFactura({ clienteId: 'E1', monedaFacturacion: 'MXN' }, monedaEmpresa)).toBe('USD');
+  // ✅ V00496: una factura emitida no cambia de moneda sola (V00495): manda la guardada en la factura.
+  it('la moneda guardada en la FACTURA manda sobre la de la empresa', () => {
+    expect(monedaDeFactura({ clienteId: 'E1', monedaFacturacion: 'MXN' }, monedaEmpresa)).toBe('MXN');
   });
-  it('sin moneda de empresa: los campos de la factura; si no se reconoce, el texto tal cual', () => {
+  it('sin moneda reconocible en la factura: la de la empresa; si tampoco, el texto tal cual', () => {
+    expect(monedaDeFactura({ clienteId: 'E1' }, monedaEmpresa)).toBe('USD');
     expect(monedaDeFactura({ clienteId: 'E3', moneda: 'Dolares' }, monedaEmpresa)).toBe('USD');
     expect(monedaDeFactura({ monedaFacturacion: 'EUR-X' }, monedaEmpresa)).toBe('EUR-X');
+  });
+});
+
+describe('saldosPorMoneda', () => {
+  it('no suma Pesos con Dólares; sin saldo no cuenta', () => {
+    expect(saldosPorMoneda([{ saldo: 100.1, moneda: 'USD' }, { saldo: 50, moneda: 'MXN' }, { saldo: 0.2, moneda: 'USD' }, { saldo: 0, moneda: 'MXN' }]))
+      .toEqual([{ moneda: 'MXN', saldo: 50 }, { moneda: 'USD', saldo: 100.3 }]);
   });
 });
 
