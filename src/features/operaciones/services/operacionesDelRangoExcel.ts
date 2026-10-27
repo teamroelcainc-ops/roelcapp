@@ -3,17 +3,16 @@
 // ✅ V00498 — TODAS las operaciones de un rango de fechas de servicio, de CUALQUIER status, para el
 // "Excel de operaciones". Misma consulta que la ruta rápida de Servicios Completados (V00310/V00421):
 // `fechaServicio` (texto ISO de las nuevas) + `fechaServicioISO` (la normalizada), unidas, pero sin
-// filtrar por status. Solo lee el rango; tope de seguridad que se avisa.
+// filtrar por status. Solo lee el rango.
+// ✅ V00499: en páginas y SIN tope (antes una sola consulta con limit 25,000, que Firestore rechaza:
+//   "Limit value in the structured query is over the maximum value of 10000").
 // ---------------------------------------------------------------------------
-import { collection, getDocs, limit, query, where } from 'firebase/firestore';
-import { db } from '../../../config/firebase';
+import { todasLasOperacionesDelRango } from '../../../shared/data/consultas';
+import { idReal } from '../../../shared/data/coleccionesVivas';
 import { sinPruebas } from '../../../utils/operacionPrueba';
 import { normalizarFechaServicioISO } from '../components/completados/formatos';
 
 export type OperacionExcel = Record<string, unknown> & { id: string; _fechaISO: string };
-
-/** Tope por consulta: un rango con más se avisa (acortarlo). */
-export const TOPE_OPERACIONES_EXCEL = 25000;
 
 const consecutivo = (op: Record<string, unknown>): number => {
   const m = String(op.ref ?? '').match(/(\d+)\s*$/);
@@ -37,15 +36,17 @@ export const unirOperacionesDelRango = (
   });
 };
 
-export async function leerOperacionesDelRango(desde: string, hasta: string): Promise<{ operaciones: OperacionExcel[]; truncado: boolean }> {
-  const col = collection(db, 'operaciones');
+/**
+ * Lee TODAS las operaciones del rango (las dos fechas, en páginas). `alAvanzar`: cuántas van, aprox.
+ * (la mayor de las dos consultas: casi todas las operaciones salen en las dos, sumarlas contaría doble).
+ */
+export async function leerOperacionesDelRango(desde: string, hasta: string, alAvanzar?: (leidas: number) => void): Promise<OperacionExcel[]> {
+  const leidos = { texto: 0, iso: 0 };
+  const avisar = () => alAvanzar?.(Math.max(leidos.texto, leidos.iso));
   const [a, b] = await Promise.all([
-    getDocs(query(col, where('fechaServicio', '>=', desde), where('fechaServicio', '<=', hasta), limit(TOPE_OPERACIONES_EXCEL))),
-    getDocs(query(col, where('fechaServicioISO', '>=', desde), where('fechaServicioISO', '<=', hasta), limit(TOPE_OPERACIONES_EXCEL))),
+    todasLasOperacionesDelRango('fechaServicio', desde, hasta, (n) => { leidos.texto = n; avisar(); }),
+    todasLasOperacionesDelRango('fechaServicioISO', desde, hasta, (n) => { leidos.iso = n; avisar(); }),
   ]);
-  const lote = (s: typeof a) => s.docs.map((d) => ({ id: d.id, datos: d.data() as Record<string, unknown> }));
-  return {
-    operaciones: unirOperacionesDelRango([lote(a), lote(b)], desde, hasta),
-    truncado: a.size >= TOPE_OPERACIONES_EXCEL || b.size >= TOPE_OPERACIONES_EXCEL,
-  };
+  const lote = (docs: (Record<string, unknown> & { id: string; _docId?: string })[]) => docs.map((d) => ({ id: idReal(d), datos: d }));
+  return unirOperacionesDelRango([lote(a), lote(b)], desde, hasta);
 }

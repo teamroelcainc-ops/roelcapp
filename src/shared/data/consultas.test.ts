@@ -148,6 +148,27 @@ describe('usosPorTipo', () => {
   });
 });
 
+describe('todasLasOperacionesDelRango (✅ V00499, Excel de operaciones)', () => {
+  it('trae TODO el rango en páginas, sin pasar el límite de 10,000 de Firestore ni tope propio', async () => {
+    const total = 12500;
+    respuesta = (_c, filtros) => {
+      const cursor = cursorDe(filtros);
+      const inicio = cursor ? Number(cursor.id.slice(2)) + 1 : 0;
+      return docs(Math.max(0, Math.min(limiteDe(filtros), total - inicio)), inicio);
+    };
+    const avance: number[] = [];
+    const r = await mod.todasLasOperacionesDelRango('fechaServicioISO', '2026-01-01', '2026-10-27', (n) => avance.push(n));
+    expect(r).toHaveLength(total);
+    expect(new Set(r.map((d) => d.id)).size).toBe(total);
+    expect(llamadas.every((l) => limiteDe(l.filtros) <= mod.LIMITE_FIRESTORE)).toBe(true);
+    expect(llamadas).toHaveLength(7);
+    expect(avance).toEqual([2000, 4000, 6000, 8000, 10000, 12000, 12500]);
+    const f = llamadas[0].filtros;
+    expect(f.filter((x) => x.tipo === 'where').map((x) => x.args)).toEqual([['fechaServicioISO', '>=', '2026-01-01'], ['fechaServicioISO', '<=', '2026-10-27']]);
+    expect(f.find((x) => x.tipo === 'orderBy')?.args).toEqual(['fechaServicioISO']);
+  });
+});
+
 describe('operacionesDelDia / operacionesDelRango', () => {
   it('un día por igualdad; un rango en páginas de 1,000', async () => {
     await mod.operacionesDelDia('2026-10-01');

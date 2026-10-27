@@ -31,11 +31,13 @@ interface Props {
   subtitulo?: string;
   /** Arma y descarga el Excel con estas columnas (en este orden). false = no se pudo (la ventana sigue abierta). */
   onExportar: (columnas: { id: string; label: string }[]) => Promise<boolean>;
+  /** ✅ V00499 — aviso mientras exporta (p. ej. cuántas operaciones lleva leídas); por omisión "Armando el Excel…". */
+  textoExportando?: string;
   onCerrar: () => void;
 }
 
 export default function ModalExportarExcel({
-  moduloConfigs, claveUltima, columnasPorDefecto, rango, onCambiarRango, subtitulo, onExportar, onCerrar,
+  moduloConfigs, claveUltima, columnasPorDefecto, rango, onCambiarRango, subtitulo, onExportar, textoExportando, onCerrar,
 }: Props) {
   const [paso, setPaso] = useState<'configs' | 'columnas'>('configs');
   const [configs, setConfigs] = useState<ConfigExcel[] | null>(null);
@@ -195,7 +197,7 @@ export default function ModalExportarExcel({
             <button type="button" className="mxe-btn mxe-btn--tenue" onClick={() => setColumnas(columnasPorDefecto())}
               title="Restablecer con las columnas visibles de la tabla, en su orden actual">Columnas de la tabla</button>
             <span className="mxe-espacio" />
-            {exportando && <CargandoDatos compacto texto="Armando el Excel…" />}
+            {exportando && <CargandoDatos compacto texto={textoExportando || 'Armando el Excel…'} />}
             <button type="button" className="mxe-btn" onClick={onCerrar} disabled={exportando}>Cancelar</button>
             <button type="button" className="mxe-btn mxe-btn--principal" onClick={() => { void exportar(); }} disabled={exportando}>Exportar</button>
           </div>

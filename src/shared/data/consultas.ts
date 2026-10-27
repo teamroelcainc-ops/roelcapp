@@ -39,13 +39,19 @@ const pagina = async (coleccion: string, filtros: QueryConstraint[], tamano: num
   return { docs: docs.map(aDoc), cursor: hayMas ? docs[docs.length - 1] : null, hayMas };
 };
 
-/** Todas las páginas hasta `maximo` documentos (el que llama decide el tope y avisa si se alcanzó). */
-export const todasLasPaginas = async (siguiente: (c: Cursor) => Promise<Pagina>, maximo: number): Promise<{ docs: (Datos & { id: string })[]; truncado: boolean }> => {
+/**
+ * Todas las páginas hasta `maximo` documentos (el que llama decide el tope y avisa si se alcanzó).
+ * ✅ V00499: `alAvanzar` recibe cuántos documentos van leídos después de cada página.
+ */
+export const todasLasPaginas = async (
+  siguiente: (c: Cursor) => Promise<Pagina>, maximo: number, alAvanzar?: (leidos: number) => void,
+): Promise<{ docs: (Datos & { id: string })[]; truncado: boolean }> => {
   const docs: (Datos & { id: string })[] = [];
   let cursor: Cursor = null;
   for (;;) {
     const p = await siguiente(cursor);
     docs.push(...p.docs);
+    alAvanzar?.(docs.length);
     if (!p.hayMas) return { docs, truncado: false };
     if (docs.length >= maximo) return { docs, truncado: true };
     cursor = p.cursor;
@@ -79,6 +85,22 @@ export const operacionesDelRango = async (desde: string, hasta: string, maximo =
   todasLasPaginas((c) => pagina('operaciones', [
     where('fechaServicioISO', '>=', desde), where('fechaServicioISO', '<=', hasta), orderBy('fechaServicioISO', 'desc'),
   ], 1000, c), maximo);
+
+/** ✅ V00499 — Firestore no acepta un `limit` mayor a 10,000 en una consulta: lo grande va en páginas. */
+export const LIMITE_FIRESTORE = 10000;
+const PAGINA_RANGO_COMPLETO = 2000;
+
+/**
+ * ✅ V00499 — TODAS las operaciones con `campo` dentro del rango (AAAA-MM-DD inclusive), de cualquier
+ * status, en páginas de 2,000 y SIN tope (Excel de operaciones: se pide el rango completo).
+ * `campo`: `fechaServicioISO` (canónica) o `fechaServicio` (las que aún no la tienen); el que llama une ambas.
+ */
+export const todasLasOperacionesDelRango = async (
+  campo: 'fechaServicio' | 'fechaServicioISO', desde: string, hasta: string, alAvanzar?: (leidos: number) => void,
+): Promise<(Datos & { id: string })[]> =>
+  (await todasLasPaginas((c) => pagina('operaciones', [
+    where(campo, '>=', desde), where(campo, '<=', hasta), orderBy(campo),
+  ], PAGINA_RANGO_COMPLETO, c), Number.POSITIVE_INFINITY, alAvanzar)).docs;
 
 /** 7.3 — operaciones pendientes de facturar de un lado (opcionalmente de una empresa). */
 export const paginaPorFacturar = (lado: 'cliente' | 'proveedor', empresaId: string | null, tamano: number, cursor: Cursor = null): Promise<Pagina> =>
