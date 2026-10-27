@@ -194,6 +194,20 @@ describe('recorrerOperaciones (✅ V00500, Excel de operaciones sin fechaServici
   });
 });
 
+describe('porPrefijo (✅ V00502, buscador global)', () => {
+  it('rango del prefijo sobre el mismo campo, ordenado y con tope; vacío no consulta', async () => {
+    respuesta = () => docs(2);
+    const r = await mod.porPrefijo('operaciones', 'ref', 'TR-2610', 8);
+    expect(r).toHaveLength(2);
+    const f = llamadas[0].filtros;
+    expect(f.filter((x) => x.tipo === 'where').map((x) => x.args)).toEqual([['ref', '>=', 'TR-2610'], ['ref', '<=', 'TR-2610\uf8ff']]);
+    expect(f.find((x) => x.tipo === 'orderBy')?.args).toEqual(['ref']);
+    expect(limiteDe(f)).toBe(8);
+    expect(await mod.porPrefijo('operaciones', 'ref', '', 8)).toEqual([]);
+    expect(llamadas).toHaveLength(1);
+  });
+});
+
 describe('operacionesDelDia / operacionesDelRango', () => {
   it('un día por igualdad; un rango en páginas de 1,000', async () => {
     await mod.operacionesDelDia('2026-10-01');

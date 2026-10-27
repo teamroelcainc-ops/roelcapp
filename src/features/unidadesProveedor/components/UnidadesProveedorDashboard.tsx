@@ -7,6 +7,7 @@ import type { UnidadProveedorRecord } from '../../../types/unidadProveedor';
 import * as XLSX from 'xlsx';
 import './UnidadesProveedorDashboard.css';
 import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
+import { avisarNoEncontrado, useAtenderApertura } from '../../../shared/data/aperturas'; // ✅ V00502
 
 // ✅ COLUMNAS BASE DE LA TABLA UNIDADES DE PROVEEDOR
 const COLUMNAS_BASE = [
@@ -24,7 +25,7 @@ export const UnidadesProveedorDashboard: React.FC = () => {
   
   // Lista de TODOS los registros bajados de la BD
   // ✅ V00439 (Fase 3.x): listener compartido del catálogo (antes onSnapshot propio).
-  const { datos: unidadesProvCat } = useCatalogo('unidades_proveedor');
+  const { datos: unidadesProvCat, listo: unidadesProvListas } = useCatalogo('unidades_proveedor');
   // Ordenar alfabéticamente por Proveedor
   const registrosGlobales = useMemo(
     () => [...(unidadesProvCat as unknown as UnidadProveedorRecord[])]
@@ -61,6 +62,12 @@ export const UnidadesProveedorDashboard: React.FC = () => {
     setRegistroEditando(registro); 
     setEstadoFormulario('abierto'); 
   };
+  // ✅ V00502: el buscador global pidió abrir una unidad de proveedor (este módulo no tiene ficha: abre su registro).
+  useAtenderApertura('unidadesProveedor', (p) => {
+    const reg = registrosGlobales.find((r) => String(r.id) === p.id);
+    if (reg) editarRegistro(reg); else avisarNoEncontrado('Unidad de proveedor');
+    return true;
+  }, unidadesProvListas);
 
   const handleEliminar = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation(); 

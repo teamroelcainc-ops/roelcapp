@@ -1,0 +1,40 @@
+/* ✅ V00502 — lista del buscador global (la caja sigue con las clases topbar-buscador* de App.css). */
+.bgl-panel {
+  position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+  width: min(720px, calc(100vw - 32px)); max-height: min(70vh, 640px); overflow-y: auto;
+  background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(1, 4, 9, 0.6); z-index: 1250; padding: 6px 0;
+}
+.bgl-seccion + .bgl-seccion { border-top: 1px solid #21262d; }
+.bgl-grupo { display: flex; align-items: center; gap: 6px; margin: 0; padding: 10px 16px 4px; color: #8b949e; font-size: 0.75rem; font-weight: 600; }
+.bgl-grupo-cargando { color: #6e7681; font-weight: normal; }
+.bgl-lista { list-style: none; margin: 0; padding: 0 6px 6px; }
+
+.bgl-fila {
+  width: 100%; display: flex; align-items: center; gap: 12px; padding: 8px 10px;
+  background: transparent; border: none; border-radius: 6px; color: #c9d1d9; cursor: pointer; text-align: left; font: inherit;
+}
+.bgl-fila:hover { background: #1c2128; }
+.bgl-fila--activa, .bgl-fila--activa:hover { background: rgba(56, 139, 253, 0.15); }
+.bgl-icono { flex-shrink: 0; color: #8b949e; }
+.bgl-fila--activa .bgl-icono { color: #58a6ff; }
+.bgl-textos { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.bgl-titulo { color: #f0f6fc; font-size: 0.86rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bgl-detalle { color: #8b949e; font-size: 0.76rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bgl-datos { flex-shrink: 0; display: flex; align-items: center; gap: 10px; font-size: 0.76rem; }
+.bgl-fecha { color: #8b949e; font-variant-numeric: tabular-nums; }
+.bgl-monto { color: #e6edf3; font-variant-numeric: tabular-nums; }
+.bgl-estado { padding: 2px 8px; border-radius: 999px; border: 1px solid #30363d; color: #8b949e; white-space: nowrap; }
+.bgl-estado--abierto { color: #79c0ff; border-color: rgba(121, 192, 255, 0.35); }
+.bgl-estado--cerrado { color: #3fb950; border-color: rgba(63, 185, 80, 0.35); }
+.bgl-estado--alerta { color: #f0883e; border-color: rgba(240, 136, 62, 0.4); }
+
+.bgl-nota { margin: 0; padding: 8px 16px 2px; color: #8b949e; font-size: 0.76rem; }
+.bgl-vacio { margin: 0; padding: 14px 16px; color: #c9d1d9; font-size: 0.85rem; }
+.bgl-error { margin: 0; padding: 4px 16px 8px; color: #f85149; font-size: 0.76rem; }
+.bgl-pie { margin: 0; padding: 8px 16px 4px; border-top: 1px solid #21262d; color: #6e7681; font-size: 0.72rem; }
+
+@media (max-width: 900px) {
+  .bgl-panel { position: fixed; top: 56px; left: 12px; right: 12px; transform: none; width: auto; max-height: calc(100vh - 80px); }
+  .bgl-datos .bgl-fecha { display: none; }
+}

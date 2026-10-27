@@ -5,6 +5,8 @@
 //   las publica aquí; cualquier componente puede consultarlas sin tener que
 //   recibirlas por props a través de media docena de niveles.
 // ---------------------------------------------------------------------------
+import { useSyncExternalStore } from 'react';
+
 let CLAVES: Set<string> = new Set();
 const suscriptores = new Set<() => void>();
 
@@ -22,3 +24,6 @@ export const alCambiarPermisos = (fn: () => void): (() => void) => {
   suscriptores.add(fn);
   return () => { suscriptores.delete(fn); };
 };
+
+/** ✅ V00502 — Hook: las claves permitidas, en vivo (re-renderiza cuando cambian los permisos). */
+export const useClavesPermitidas = (): ReadonlySet<string> => useSyncExternalStore(alCambiarPermisos, () => CLAVES, () => CLAVES);

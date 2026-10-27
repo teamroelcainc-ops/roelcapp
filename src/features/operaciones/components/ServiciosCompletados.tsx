@@ -46,6 +46,8 @@ import TagPuenteUnidad from '../../puentes/components/TagPuenteUnidad'; // ✅ V
 import RegresarStatus from './RegresarStatus'; // ✅ V00476
 import { avisar } from '../../../shared/data/avisos';
 import { grupoTagDeOperacion } from '../../puentes/services/tagPuente';
+import { useAtenderApertura } from '../../../shared/data/aperturas'; // ✅ V00502
+import { abrirOperacionPorId } from '../services/operacionPorId'; // ✅ V00502
 
 // ✅ V00439 (Fase 3.x): catálogos del módulo (alias → colección) desde el
 //   listener compartido (antes 16 onSnapshot propios + caché de useCatalogoCache).
@@ -345,6 +347,16 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   // ✅ NUEVO: estado del FormularioOperacion COMPLETO (mismo que Operaciones Activas).
   //   Al editar se abre este formulario en lugar del editor rápido reducido.
   const [estadoFormulario, setEstadoFormulario] = useState<'cerrado' | 'abierto' | 'minimizado'>('cerrado');
+  // ✅ V00502: el buscador global (u otro módulo) pidió abrir la FICHA de una operación completada o en falso.
+  useAtenderApertura('serviciosCompletados', (p) => {
+    abrirOperacionPorId(p.id, (op) => {
+      setOperacionEditando(null);
+      setEstadoFormulario('cerrado');
+      setOperacionViendo(op);
+      setPestañaDetalleActiva('general');
+    });
+    return true;
+  });
 
   // ✅ V00439 (Fase 3.x): catálogos del listener compartido (ver CATALOGOS_SIEMPRE).
   const { datos: catSiempre } = useCatalogos(CATALOGOS_SIEMPRE);

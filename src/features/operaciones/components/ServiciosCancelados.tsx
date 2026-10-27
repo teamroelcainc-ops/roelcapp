@@ -42,6 +42,8 @@ import { paginaOperaciones, todasLasPaginas } from '../../../shared/data/consult
 import TagPuenteUnidad from '../../puentes/components/TagPuenteUnidad'; // ✅ V00465
 import { grupoTagDeOperacion } from '../../puentes/services/tagPuente';
 import { desgloseFechaExcel } from '../services/excelOperaciones'; // ✅ V00501
+import { useAtenderApertura } from '../../../shared/data/aperturas'; // ✅ V00502
+import { abrirOperacionPorId } from '../services/operacionPorId'; // ✅ V00502
 
 // ✅ V00444 (Fase 8.3): fmtFechaAuditoria y colorTipoOperacion en services/formatosOperacion (eran copias).
 
@@ -262,6 +264,16 @@ const ServiciosCancelados = () => {
   const [paginaActual, setPaginaActual] = useState(1);
   const [pestañaDetalleActiva, setPestañaDetalleActiva] = useState<string>('general');
   const registrosPorPagina = 30; // ✅ V00312: menos filas de inicio
+  // ✅ V00502: el buscador global (u otro módulo) pidió abrir la FICHA de una operación cancelada.
+  useAtenderApertura('serviciosCancelados', (p) => {
+    abrirOperacionPorId(p.id, (op) => {
+      setOperacionEditando(null);
+      setEstadoFormulario('cerrado');
+      setOperacionViendo(op);
+      setPestañaDetalleActiva('general');
+    });
+    return true;
+  });
 
   // ✅ NUEVO: ordenamiento por columna al hacer clic en el encabezado.
   //   1er clic = ascendente (▲), 2do clic = descendente (▼), 3er clic = orden original.

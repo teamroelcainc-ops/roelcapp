@@ -58,6 +58,7 @@ import { useFlags, useFlagsCargadas } from '../../../shared/data/flags';
 import { sinPruebas } from '../../../utils/operacionPrueba';
 import { paginaOperacionesDeConvenio, usosPorTipo } from '../../../shared/data/consultas';
 import CargandoDatos from '../../../shared/components/CargandoDatos';
+import { avisarNoEncontrado, useAtenderApertura } from '../../../shared/data/aperturas'; // ✅ V00502
 
 /** Una operación en la lista de uso de un detalle de convenio. */
 interface UsoOp { ref: string; fecha: string; status: string; tipo: string; entidad: string; monto: string; docId: string }
@@ -265,6 +266,12 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         setUsoFicha((prev) => (prev?.id === f.id ? { ...prev, cargando: false } : prev));
       });
   };
+  // ✅ V00502: el buscador global pidió abrir la ficha de un convenio (su fila).
+  useAtenderApertura(CLAVE_MODULO, (p) => {
+    const f = filas?.find((x) => x.id === p.id);
+    if (f) abrirUso(f); else avisarNoEncontrado('Convenio');
+    return true;
+  }, filas !== null);
   // ✅ V00236: la operación se edita aquí mismo, sin salir de Convenios.
   const [opEditando, setOpEditando] = useState<Record<string, unknown> | null>(null);
   // ✅ V00238: el formulario de operación necesita SUS catálogos; sin ellos se

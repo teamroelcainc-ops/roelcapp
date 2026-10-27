@@ -1,0 +1,3 @@
+/* ✅ V00502 — caja del buscador global: mientras se busca, la caja y su lista van encima de cualquier
+   ficha abierta (Ctrl+K con una ventana abierta). La lista tiene su CSS (PanelBuscador.css). */
+.bgt-buscando { z-index: 100002; }

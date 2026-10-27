@@ -13,6 +13,7 @@ import './EmpleadosDashboard.css';
 import CargandoDatos from '../../../shared/components/CargandoDatos';
 import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 import { useCatalogo } from '../../../shared/data/catalogos';
+import { avisarNoEncontrado, useAtenderApertura } from '../../../shared/data/aperturas'; // ✅ V00502
 
 const COLUMNAS_BASE = [
   { id: 'employeeId', label: '# Empleado', visible: true },
@@ -128,6 +129,12 @@ export const EmpleadosDashboard = () => {
     setEmpleadoViendo(emp);
     setActiveTabDetalle('general');
   };
+  // ✅ V00502: el buscador global pidió abrir el detalle de un empleado.
+  useAtenderApertura('colaboradores', (p) => {
+    const emp = empleados.find((e) => String(e.id) === p.id);
+    if (emp) verDetalle(emp); else avisarNoEncontrado('Empleado');
+    return true;
+  }, empleadosListos);
 
   const formatearFecha = (isoString: string | undefined | null) => {
     if (!isoString) return '-';

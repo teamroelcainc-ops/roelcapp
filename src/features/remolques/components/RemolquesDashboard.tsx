@@ -6,6 +6,7 @@ import { useRemolques } from '../hooks/useRemolques';
 import type { RemolqueRecord } from '../../../types/remolque'; 
 import * as XLSX from 'xlsx';
 import './RemolquesDashboard.css';
+import { avisarNoEncontrado, useAtenderApertura } from '../../../shared/data/aperturas'; // ✅ V00502
 
 // ✅ TODAS LAS COLUMNAS BASE DE LA TABLA REMOLQUES
 const COLUMNAS_BASE = [
@@ -24,7 +25,7 @@ export function RemolquesDashboard() {
   const [registroEditando, setRegistroEditando] = useState<RemolqueRecord | null>(null);
   
   // ✅ Datos de servidor vía TanStack Query (caché compartido + tiempo real).
-  const { remolques: registrosGlobales, eliminarRemolque } = useRemolques();
+  const { remolques: registrosGlobales, eliminarRemolque, cargando: cargandoRemolques } = useRemolques();
   const [busqueda, setBusqueda] = useState('');
   // ✅ NUEVO: panel lateral derecho de filtros + tabla VACÍA hasta presionar Buscar.
   const [drawerFiltrosAbierto, setDrawerFiltrosAbierto] = useState(false);
@@ -53,6 +54,12 @@ export function RemolquesDashboard() {
     setRegistroEditando(registro); 
     setEstadoFormulario('abierto'); 
   };
+  // ✅ V00502: el buscador global pidió abrir un remolque (este módulo no tiene ficha: abre su registro).
+  useAtenderApertura('remolques', (p) => {
+    const reg = registrosGlobales.find((r) => String(r.id) === p.id);
+    if (reg) editarRegistro(reg); else avisarNoEncontrado('Remolque');
+    return true;
+  }, !cargandoRemolques);
 
   const handleEliminar = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();

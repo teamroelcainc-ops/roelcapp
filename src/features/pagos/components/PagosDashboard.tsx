@@ -46,13 +46,15 @@ import {
   monedaDeFactura as monedaDeFacturaBase, saldosPorMoneda, totalGastoMtto,
 } from '../services/facturasPagables';
 import type { FacturaPagable as FacturaPagableBase, PagoAplicado } from '../services/facturasPagables';
+import { consultaPagos } from '../services/consultaPagos';
 import { obtenerFacturasPagables, useFacturasPagables } from '../hooks/useFacturasPagables';
 import './PagosDashboard.css';
 import CamposCancelacion from '../../facturacion/components/CamposCancelacion'; // ✅ V00481
 import { CANCELACION_VACIA, cancelacionDe, estaCancelada, validarCancelacion } from '../../facturacion/services/reglasFactura';
 import type { DatosCancelacion } from '../../facturacion/services/reglasFactura';
 import { escribirEnGrupo, escrituraCancelacion } from '../../facturacion/services/statusFacturaDatos';
-import { olvidarPagoPedido, pagoPedido } from '../services/pagoPedido'; // ✅ V00483
+import { tipoPagoDe } from '../services/pagoPedido'; // ✅ V00483 · V00502
+import { pedidoAperturaDe, useAtenderApertura } from '../../../shared/data/aperturas'; // ✅ V00502
 import PlantillaFacturas from './PlantillaFacturas'; // ✅ V00484
 import TablaExpandible from './TablaExpandible'; // ✅ V00484
 import type { FacturaConocida, FacturaParaCruce } from '../services/plantillaFacturas';
@@ -129,9 +131,16 @@ export function PagosDashboard() {
   const usuario = useUsuarioStore((s) => s.usuario);
 
   // ✅ V00483: si se llegó desde la ficha de una factura, se abre en la pestaña de ese pago.
-  const [tab, setTab] = useState<TipoPago>(() => pagoPedido()?.tipo ?? 'cliente');
-  const [pagoPedidoId, setPagoPedidoId] = useState<string | null>(() => pagoPedido()?.id ?? null);
-  useEffect(() => { olvidarPagoPedido(); }, []);
+  // ✅ V00502: el pedido (buscador global o "Ver pago" de Facturación) se atiende también con Pagos ya
+  //   abierto; la pestaña inicial sale del pedido para no abrir antes el listener de otra pestaña.
+  const [tab, setTab] = useState<TipoPago>(() => tipoPagoDe(pedidoAperturaDe('pagos')?.tipo) ?? 'cliente');
+  const [pagoPedidoId, setPagoPedidoId] = useState<string | null>(null);
+  useAtenderApertura('pagos', (p) => {
+    const t = tipoPagoDe(p.tipo);
+    if (t) setTab(t);
+    setPagoPedidoId(p.id);
+    return true;
+  });
 
   // ✅ V00170: paginación (50 pagos por página) en todas las pestañas
 
@@ -143,7 +152,8 @@ export function PagosDashboard() {
   // ✅ V00452: listener compartido (useColeccionViva): sigue abierto 15 min al salir de Pagos o al
   //   cambiar de pestaña, así que volver no vuelve a descargar ni a esperar los pagos.
   // ✅ V00449: mientras no llegue la primera lista de ESTA pestaña, animación (no "Aún no hay pagos").
-  const pagosVivos = useColeccionViva(`pagos:${tab}`, () => query(collection(db, 'pagos'), where('tipo', '==', tab)), { avisarConfirmacion: true });
+  const consultaTab = consultaPagos(tab); // ✅ V00502: la misma consulta (y listener) que usa el buscador global
+  const pagosVivos = useColeccionViva(consultaTab.clave, consultaTab.crear, { avisarConfirmacion: true });
   const cargandoPagos = !pagosVivos.listo;
   const pagos = useMemo<PagoDoc[]>(() => pagosVivos.datos
     .map((d) => ({ ...(d as unknown as Omit<PagoDoc, 'id'>), id: idReal(d) }))

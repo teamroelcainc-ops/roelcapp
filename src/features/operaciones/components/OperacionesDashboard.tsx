@@ -56,6 +56,8 @@ import { fmtFechaAuditoria, limpiarUndefined } from '../services/formatosOperaci
 import { leerParaDocumento } from '../../../utils/direccionPdf'; // ✅ V00448
 import TagPuenteUnidad from '../../puentes/components/TagPuenteUnidad'; // ✅ V00465
 import { grupoTagDeOperacion } from '../../puentes/services/tagPuente';
+import { useAtenderApertura } from '../../../shared/data/aperturas'; // ✅ V00502
+import { abrirOperacionPorId } from '../services/operacionPorId'; // ✅ V00502
 
 // ✅ V00439 (Fase 3.x): catálogos del módulo (alias → colección) desde el
 //   listener compartido (useCatalogos): sin getDocs propios ni copia en
@@ -298,6 +300,16 @@ const OperacionesDashboard = () => {
   const [paginaActual, setPaginaActual] = useState(1);
   const [pestañaDetalleActiva, setPestañaDetalleActiva] = useState<string>('general');
   const registrosPorPagina = 50;
+  // ✅ V00502: el buscador global (u otro módulo) pidió abrir la FICHA de una operación activa.
+  useAtenderApertura('operaciones', (p) => {
+    abrirOperacionPorId(p.id, (op) => {
+      setOperacionEditando(null);
+      setEstadoFormulario('cerrado');
+      setOperacionViendo(op);
+      setPestañaDetalleActiva('general');
+    });
+    return true;
+  });
 
   const [modalColumnas, setModalColumnas] = useState(false);
   // ✅ NUEVO: controla el modal de Resúmenes Diarios (Transfer/Logística/Fletes).

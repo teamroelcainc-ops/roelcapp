@@ -29,6 +29,7 @@ import { leerReferenciasEmpresa, releerOperacionReferencia } from '../services/r
 import type { OperacionReferencia } from '../services/referenciasEmpresa';
 import { lazyWithRetry } from '../../../utils/lazyWithRetry';
 import { avisar } from '../../../shared/data/avisos';
+import { avisarNoEncontrado, useAtenderApertura } from '../../../shared/data/aperturas'; // ✅ V00502
 import { buscarDuplicados, nombreComparable } from '../services/duplicadosEmpresas'; // ✅ V00478
 import type { CriterioDuplicado, GrupoDuplicados } from '../services/duplicadosEmpresas';
 
@@ -1083,6 +1084,12 @@ const EmpresasDashboard = () => {
 
   // ✅ V00478: registro enriquecido por id (tipos, operaciones) para la ventana de Duplicadas.
   const registroListoPorId = useMemo(() => new Map(registrosListos.map((r) => [String(r.id), r])), [registrosListos]);
+  // ✅ V00502: el buscador global pidió abrir el Detalle de Empresa (con el registro enriquecido, como la tabla).
+  useAtenderApertura('empresas', (p) => {
+    const emp = registroListoPorId.get(p.id);
+    if (emp) verDetailDirecto(emp); else avisarNoEncontrado('Empresa');
+    return true;
+  }, empresasListas);
 
   // ✅ NUEVO (V00117): apartado de empresas obligadas a tener moneda/factura
   //   que aún no la tienen (Cliente Paga y Proveedor Transporte).

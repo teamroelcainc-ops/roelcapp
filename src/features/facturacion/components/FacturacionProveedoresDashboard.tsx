@@ -54,8 +54,10 @@ import AdjuntosArchivos from '../../../shared/components/AdjuntosArchivos'; // �
 import { desdeGuardados } from '../../../shared/archivos/adjuntos';
 import type { Adjunto } from '../../../shared/archivos/adjuntos';
 import {
-  MAX_DOCS_FACTURA, aplicarEscriturasDocs, camposDocsDeGrupo, camposDocsFactura, detalleError, docsDeFactura, idsDeFila,
+  MAX_DOCS_FACTURA, aplicarEscriturasDocs, camposDocsFactura, detalleError, docsDeFactura, idsDeFila,
 } from '../services/documentosFactura'; // ✅ V00451: varios documentos por factura
+import { agruparFacturas, grupoDeFactura } from '../services/gruposFactura'; // ✅ V00502
+import { useAtenderApertura } from '../../../shared/data/aperturas'; // ✅ V00502
 import type { EscrituraDocs } from '../services/documentosFactura';
 import { agregarDocsFactura, guardarDocsFactura, rescatarDocsDeBorradas } from '../services/guardarDocsFactura';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
@@ -383,6 +385,17 @@ export const FacturacionProveedoresDashboard = () => {
   const [modalAbierto, setModalAbierto] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [facturaViendo, setFacturaViendo] = useState<any | null>(null);
+  // ✅ V00502: el buscador global pidió abrir la ficha de una factura: la misma fila (grupo) del Historial.
+  useAtenderApertura('facturacionProveedores', (p) => {
+    const grupo = grupoDeFactura(facturasGlobales, p.id, 'proveedorId');
+    if (!grupo) {
+      avisar({ titulo: 'Factura no encontrada', texto: 'La factura ya no existe (pudo eliminarse).', tipo: 'alerta' });
+      return true;
+    }
+    setActiveTab('historial');
+    setFacturaViendo(grupo);
+    return true;
+  }, !facturasVivas.cargando);
   // ✅ V00276: DOCUMENTO DE LA FACTURA (el PDF/imagen de la factura emitida), archivo en
   //   Storage `facturas_documentos/facturas_proveedores/{id}/`. Se pide al facturar y se puede
   //   subir desde la fila, la ficha o el editor.
@@ -2693,40 +2706,8 @@ export const FacturacionProveedoresDashboard = () => {
       return true;
     };
     const filtradas = facturasGlobales.filter(f => coincideTexto(f) && coincideProveedor(f) && coincideFechas(f));
-    const grupos = new Map<string, any>();
-    for (const f of filtradas) {
-      const key = `${String(f.invoice || f.id).trim().toLowerCase()}__${String(f.proveedorId || '')}`;
-      if (!grupos.has(key)) {
-        grupos.set(key, {
-          ...f,
-          operacionesIds: Array.isArray(f.operacionesIds) ? [...f.operacionesIds] : [],
-          operacionesGuardadas: Array.isArray(f.operacionesGuardadas) ? [...f.operacionesGuardadas] : [],
-          remolques: Array.isArray(f.remolques) ? [...f.remolques] : [],
-          subtotalFactura: Number(f.subtotalFactura) || 0,
-          __groupIds: [f.id],
-          __groupDocs: [f],
-        });
-      } else {
-        const g = grupos.get(key);
-        g.__groupIds.push(f.id);
-        g.__groupDocs.push(f);
-        const setIds = new Set<string>([...(g.operacionesIds || []).map(String), ...((f.operacionesIds || []).map(String))]);
-        g.operacionesIds = Array.from(setIds);
-        const mapG = new Map<string, any>();
-        [...(g.operacionesGuardadas || []), ...(f.operacionesGuardadas || [])].forEach((o: any) => { if (o?.id) mapG.set(String(o.id), o); });
-        g.operacionesGuardadas = Array.from(mapG.values());
-        g.remolques = Array.from(new Set([...(g.remolques || []), ...((f.remolques) || [])].map((r: any) => String(r || '')).filter(Boolean)));
-        g.subtotalFactura = Number(g.subtotalFactura || 0) + (Number(f.subtotalFactura) || 0);
-        if (String(f.fecha || '') > String(g.fecha || '')) g.fecha = f.fecha;
-        if (!g.createdAt || (f.createdAt && String(f.createdAt) < String(g.createdAt))) g.createdAt = f.createdAt || g.createdAt;
-        const rank = (s: any) => { const t = String(s || '').toLowerCase(); if (t.includes('cancel')) return 3; if (t.includes('no')) return 2; return 1; };
-        if (rank(f.statusFactura) > rank(g.statusFactura)) g.statusFactura = f.statusFactura;
-        // ✅ V00451: los archivos de TODOS los documentos del grupo cuentan (antes solo los del
-        //   primero: el PDF subido al segundo seguía mostrando "Sin doc"): lista unida, sin repetir.
-        Object.assign(g, camposDocsDeGrupo(g, f));
-      }
-    }
-    let agrupadas = Array.from(grupos.values());
+    // ✅ V00502: el armado de los grupos es compartido (services/gruposFactura.ts; mismo de siempre).
+    let agrupadas = agruparFacturas(filtradas, 'proveedorId');
     if (activeTab === 'pagadas') agrupadas = agrupadas.filter(g => facturaPagada(g)); // ✅ V00126
     if (filtroStatusFactura && filtroStatusFactura !== 'Todos') {
       agrupadas = agrupadas.filter(g => String(g.statusFactura || 'Facturado') === filtroStatusFactura);

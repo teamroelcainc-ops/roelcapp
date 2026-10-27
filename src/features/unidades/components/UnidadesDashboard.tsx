@@ -10,6 +10,7 @@ import type { UnidadRecord } from '../../../types/unidad';
 import * as XLSX from 'xlsx';
 import './UnidadesDashboard.css';
 import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
+import { avisarNoEncontrado, useAtenderApertura } from '../../../shared/data/aperturas'; // ✅ V00502
 
 // ✅ COLUMNAS BASE DE LA TABLA UNIDADES
 const COLUMNAS_BASE = [
@@ -35,7 +36,7 @@ export const UnidadesDashboard: React.FC = () => {
   
   // Lista de TODOS los registros bajados de la BD
   // ✅ V00439 (Fase 3.x): listener compartido del catálogo `unidades` (antes onSnapshot propio).
-  const { datos: unidadesCat } = useCatalogo('unidades');
+  const { datos: unidadesCat, listo: unidadesListas } = useCatalogo('unidades');
   // Ordenar alfabéticamente por Unidad
   const registrosGlobales = useMemo(
     () => [...(unidadesCat as unknown as UnidadRecord[])]
@@ -67,6 +68,12 @@ export const UnidadesDashboard: React.FC = () => {
   const [unidadSubirDocs, setUnidadSubirDocs] = useState<UnidadRecord | null>(null);
   // ✅ V00134: DETALLE de la unidad (clic en la fila) con sus documentos integrados
   const [unidadDetalle, setUnidadDetalle] = useState<UnidadRecord | null>(null);
+  // ✅ V00502: el buscador global pidió abrir el detalle de una unidad.
+  useAtenderApertura('unidades', (p) => {
+    const reg = registrosGlobales.find((r) => String(r.id) === p.id);
+    if (reg) setUnidadDetalle(reg); else avisarNoEncontrado('Unidad');
+    return true;
+  }, unidadesListas);
 
   // Si el usuario busca o filtra algo, reseteamos a la página 1
   useEffect(() => {

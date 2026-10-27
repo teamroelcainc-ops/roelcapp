@@ -1,23 +1,18 @@
 // src/features/pagos/services/pagoPedido.ts
 // ✅ V00483 — abrir un pago de Pagos desde otro módulo (la ficha de una factura en Facturación).
-// Pagos no se queda montado (no usa MantenerVivo): al entrar lee el pedido y abre ese pago en
-// cuanto llega su lista. El pedido vive en memoria; si nadie lo atiende, se olvida al recargar.
+// ✅ V00502: va por el pedido de apertura compartido (shared/data/aperturas.ts), el mismo del buscador
+//   global (que sí puede pedir un pago con Pagos ya abierto). Antes Pagos lo leía solo al montarse.
+import { abrirRegistro } from '../../../shared/data/aperturas';
+import type { TipoPago } from './facturasPagables';
+
 export interface PagoPedido {
   /** Id del documento en `pagos`. */
   id: string;
-  tipo: 'cliente' | 'proveedor';
+  tipo: TipoPago;
 }
 
-let pedido: PagoPedido | null = null;
-
 /** Pide abrir el pago y lleva al módulo Pagos. */
-export const abrirPagoEnPagos = (p: PagoPedido): void => {
-  pedido = p;
-  window.dispatchEvent(new CustomEvent('roelca:navegar', { detail: { modulo: 'pagos' } }));
-};
+export const abrirPagoEnPagos = (p: PagoPedido): void => abrirRegistro('pagos', p.id, p.tipo);
 
-/** El pago pedido (sin borrarlo: React puede llamar dos veces al inicializar). */
-export const pagoPedido = (): PagoPedido | null => pedido;
-
-/** Pagos ya atendió el pedido. */
-export const olvidarPagoPedido = (): void => { pedido = null; };
+/** El tipo de pago de un pedido (o null si no es uno de Pagos). */
+export const tipoPagoDe = (tipo: unknown): TipoPago | null => (tipo === 'cliente' || tipo === 'proveedor' || tipo === 'mtto' ? tipo : null);

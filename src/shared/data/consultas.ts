@@ -189,6 +189,17 @@ export const usosEnCache = (tipo: 'empresa' | 'convenioCliente' | 'convenioProve
   queryClient.fetchQuery({ queryKey: ['usos', tipo], queryFn: () => usosPorTipo(tipo) });
 
 /** 7.8 — documentos por ID en lotes de 30 EN PARALELO (en lugar de uno por uno o de a 10). */
+/**
+ * ✅ V00502 — Buscador global: documentos cuyo `campo` (texto) EMPIEZA con `prefijo`, como mucho
+ * `maximo` (rango sobre el mismo campo: basta el índice automático). Distingue mayúsculas: el que
+ * llama manda las variantes. Un prefijo vacío no consulta.
+ */
+export const porPrefijo = async (coleccion: string, campo: string, prefijo: string, maximo: number): Promise<(Datos & { id: string })[]> => {
+  if (!prefijo) return [];
+  const snap = await getDocs(query(collection(db, coleccion), where(campo, '>=', prefijo), where(campo, '<=', `${prefijo}\uf8ff`), orderBy(campo), limitar(maximo)));
+  return snap.docs.map(aDoc);
+};
+
 export const porIds = async (coleccion: string, ids: readonly string[]): Promise<(Datos & { id: string })[]> => {
   const unicos = Array.from(new Set(ids.map(String).filter((x) => x && !x.includes('/'))));
   const lotes: string[][] = [];
