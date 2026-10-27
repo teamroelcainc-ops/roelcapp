@@ -4,6 +4,8 @@
 // ServiciosCompletados.tsx, ahora compartido con "Excel de operaciones" de las pestañas de
 // Operaciones). Las columnas son las de Servicios Completados (completados/columnas.ts).
 // Solo usa lo que ya trae la operación (nombres desnormalizados): no lee catálogos.
+// ✅ V00500: `conNombreDeStatus` completa el status de las que no lo traen guardado (el que llama
+//   le pasa el catálogo): en el Excel de Operaciones las activas salían con Status "-".
 // ---------------------------------------------------------------------------
 import { ID_MXN, ID_USD } from '../../../shared/dominio/constantes';
 import { fmtSaldoPuente, normalizarFechaServicioISO, normalizarMoneda } from '../components/completados/formatos';
@@ -106,6 +108,29 @@ export const valorExcelOperacion = (op: Datos, col: string): CeldaExcel => {
     case 'observacionesCobrar': return o(op.observacionesCobrar);
     default: return '-';
   }
+};
+
+/**
+ * ✅ V00500 — Puro: a las operaciones sin `statusNombre` (o con el ID guardado como nombre) les pone el
+ * nombre del catálogo de status. `status` puede ser el ID del catálogo o, en las de AppSheet, el nombre.
+ */
+export const conNombreDeStatus = <T extends Datos>(ops: readonly T[], catalogo: readonly { id: string; _docId?: string; nombre?: unknown }[]): T[] => {
+  const porId = new Map<string, string>();
+  const porNombre = new Map<string, string>();
+  catalogo.forEach((s) => {
+    const nombre = String(s.nombre ?? '').trim();
+    if (!nombre) return;
+    porId.set(String(s._docId ?? s.id), nombre);
+    porId.set(String(s.id), nombre);
+    porNombre.set(nombre.toLowerCase(), nombre);
+  });
+  return ops.map((op) => {
+    const id = String(op.status ?? '').trim();
+    const guardado = String(op.statusNombre ?? '').trim();
+    if (!id || (guardado && guardado !== '-' && guardado !== id)) return op;
+    const nombre = porId.get(id) ?? porNombre.get(id.toLowerCase());
+    return nombre ? { ...op, statusNombre: nombre } : op;
+  });
 };
 
 /** Filas del Excel: una por operación, con las columnas en el orden elegido (encabezado = su nombre). */

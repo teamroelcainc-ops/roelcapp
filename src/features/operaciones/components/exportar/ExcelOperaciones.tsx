@@ -4,13 +4,17 @@
 // un rango de fechas de servicio, de cualquier status (activas, completadas, canceladas, en falso),
 // con las mismas ventanas y configuraciones guardadas que el Excel de Servicios Completados.
 // ✅ V00499: sin tope de cantidad (lee en páginas) y la ventana dice cuántas lleva leídas.
+// ✅ V00500: completo aunque la fecha esté guardada en otro formato (ver operacionesDelRangoExcel.ts)
+//   y el Status de las que no lo traen guardado sale del catálogo.
 // ---------------------------------------------------------------------------
 import { useState } from 'react';
 import { hoyLocalISO } from '../../../../utils/fechaHoraLocal';
 import { cargarColumnasGuardadas } from '../completados/columnas';
 import { claveUltimaSeleccion } from '../../services/configsExportExcel';
-import { descargarExcel, filasExcel } from '../../services/excelOperaciones';
+import { obtenerCatalogo } from '../../../../shared/data/catalogos';
+import { conNombreDeStatus, descargarExcel, filasExcel } from '../../services/excelOperaciones';
 import { leerOperacionesDelRango } from '../../services/operacionesDelRangoExcel';
+import type { AvanceExcel } from '../../services/operacionesDelRangoExcel';
 import ModalExportarExcel from './ModalExportarExcel';
 import type { RangoExcel } from './ModalExportarExcel';
 
@@ -28,6 +32,9 @@ const primeroDelMes = (hoy: string): string => `${hoy.slice(0, 8)}01`;
 const miles = (n: number): string => n.toLocaleString('es-MX');
 /** Deja que la ventana pinte el aviso antes de armar el archivo (armarlo ocupa la página unos segundos). */
 const dejarPintar = (): Promise<void> => new Promise((listo) => { setTimeout(listo, 50); });
+const textoAvance = ({ leidas, total, enRango }: AvanceExcel): string => (total !== null
+  ? `Revisando operaciones… ${miles(leidas)} de ${miles(total)}${enRango !== null ? ` · ${miles(enRango)} del rango` : ''}`
+  : `Leyendo operaciones del rango… ${miles(leidas)} leídas`);
 
 export default function ExcelOperaciones({ onCerrar }: { onCerrar: () => void }) {
   const [rango, setRango] = useState<RangoExcel>(() => { const hoy = hoyLocalISO(); return { desde: primeroDelMes(hoy), hasta: hoy }; });
@@ -35,17 +42,20 @@ export default function ExcelOperaciones({ onCerrar }: { onCerrar: () => void })
   const [avance, setAvance] = useState('');
 
   const exportar = async (columnas: { id: string; label: string }[]): Promise<boolean> => {
-    setAvance('Leyendo operaciones del rango…');
+    setAvance('Revisando operaciones…');
     try {
-      const operaciones = await leerOperacionesDelRango(rango.desde, rango.hasta,
-        (leidas) => setAvance(`Leyendo operaciones del rango… ${miles(leidas)} leídas`));
+      // El catálogo solo es para MOSTRAR el status: si no llega, el Excel sale con lo guardado.
+      const [operaciones, status] = await Promise.all([
+        leerOperacionesDelRango(rango.desde, rango.hasta, (a) => setAvance(textoAvance(a))),
+        obtenerCatalogo('catalogo_status_servicio').catch(() => []),
+      ]);
       if (operaciones.length === 0) {
         alert(`No hay operaciones con fecha de servicio del ${rango.desde} al ${rango.hasta}.`);
         return false;
       }
       setAvance(`Armando el Excel con ${miles(operaciones.length)} operaciones…`);
       await dejarPintar();
-      await descargarExcel(filasExcel(operaciones, columnas), 'Operaciones', `Operaciones_${rango.desde}_a_${rango.hasta}.xlsx`);
+      await descargarExcel(filasExcel(conNombreDeStatus(operaciones, status), columnas), 'Operaciones', `Operaciones_${rango.desde}_a_${rango.hasta}.xlsx`);
       return true;
     } finally {
       setAvance('');

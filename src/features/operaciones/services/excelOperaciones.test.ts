@@ -6,7 +6,7 @@ import { ID_MXN, ID_USD } from '../../../shared/dominio/constantes';
 vi.mock('../../../config/firebase', () => ({ db: {}, auth: { currentUser: { uid: 'u1' } } }));
 vi.mock('firebase/firestore', () => ({}));
 
-const { filasExcel, nombreGuardado, valorExcelOperacion } = await import('./excelOperaciones');
+const { conNombreDeStatus, filasExcel, nombreGuardado, valorExcelOperacion } = await import('./excelOperaciones');
 const { unirOperacionesDelRango } = await import('./operacionesDelRangoExcel');
 const { columnasDesdeGuardadas } = await import('./configsExportExcel');
 
@@ -43,6 +43,21 @@ describe('valorExcelOperacion', () => {
   });
   it('filas con el encabezado de cada columna, en el orden elegido', () => {
     expect(filasExcel([op], [{ id: 'status', label: 'Status' }, { id: 'ref', label: '# Referencia' }])).toEqual([{ Status: '3. Documentado (Asignado)', '# Referencia': 'TR-261026-004' }]);
+  });
+});
+
+describe('conNombreDeStatus (✅ V00500)', () => {
+  it('completa el status que falta o que es el ID, por ID o por nombre (AppSheet); lo guardado se respeta', () => {
+    const cat = [{ id: 's3', nombre: '3. Documentado (Asignado)' }, { id: 's14', nombre: '14. Servicio Completado' }];
+    const ops = [
+      { id: '1', status: 's3' },
+      { id: '2', status: 's3', statusNombre: 's3' },
+      { id: '3', status: 's14', statusNombre: '9.1 Verde Mx' },
+      { id: '4', status: '14. servicio completado' },
+      { id: '5', status: 'otro' },
+    ];
+    expect(conNombreDeStatus(ops, cat).map((o) => valorExcelOperacion(o, 'status')))
+      .toEqual(['3. Documentado (Asignado)', '3. Documentado (Asignado)', '9.1 Verde Mx', '14. Servicio Completado', '-']);
   });
 });
 

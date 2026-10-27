@@ -102,6 +102,41 @@ export const todasLasOperacionesDelRango = async (
     where(campo, '>=', desde), where(campo, '<=', hasta), orderBy(campo),
   ], PAGINA_RANGO_COMPLETO, c), Number.POSITIVE_INFINITY, alAvanzar)).docs;
 
+/** ✅ V00500 — cortes del id del documento: 4 tramos que cubren cualquier texto, sin huecos ni cruces. */
+const CORTES_ID = ['5', 'M', 'f'] as const;
+
+/**
+ * ✅ V00500 — RECORRE TODAS las operaciones (por id del documento, 4 tramos en paralelo, páginas de
+ * 2,000) y entrega cada página a `alRecibir` para que el que llama se quede solo con lo que necesita
+ * (no se acumula la colección en memoria). Solo para acciones que el usuario lanza a mano y que NO
+ * pueden depender del formato de la fecha (Excel de operaciones mientras falte `fechaServicioISO`
+ * en las operaciones viejas: d/m/aaaa o Timestamp no se pueden pedir por rango). Devuelve cuántas leyó.
+ */
+export const recorrerOperaciones = async (
+  alRecibir: (docs: (Datos & { id: string })[]) => void, alAvanzar?: (leidas: number) => void,
+): Promise<number> => {
+  let leidas = 0;
+  const bordes: (string | null)[] = [null, ...CORTES_ID, null];
+  await Promise.all(bordes.slice(0, -1).map(async (desde, i) => {
+    const hasta = bordes[i + 1];
+    const filtros: QueryConstraint[] = [
+      ...(desde ? [where(documentId(), '>=', desde)] : []),
+      ...(hasta ? [where(documentId(), '<', hasta)] : []),
+      orderBy(documentId()),
+    ];
+    let cursor: Cursor = null;
+    for (;;) {
+      const p = await pagina('operaciones', filtros, PAGINA_RANGO_COMPLETO, cursor);
+      leidas += p.docs.length;
+      alRecibir(p.docs);
+      alAvanzar?.(leidas);
+      if (!p.hayMas) return;
+      cursor = p.cursor;
+    }
+  }));
+  return leidas;
+};
+
 /** 7.3 — operaciones pendientes de facturar de un lado (opcionalmente de una empresa). */
 export const paginaPorFacturar = (lado: 'cliente' | 'proveedor', empresaId: string | null, tamano: number, cursor: Cursor = null): Promise<Pagina> =>
   pagina('operaciones', [

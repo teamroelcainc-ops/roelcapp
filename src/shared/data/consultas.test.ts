@@ -169,6 +169,31 @@ describe('todasLasOperacionesDelRango (✅ V00499, Excel de operaciones)', () =>
   });
 });
 
+describe('recorrerOperaciones (✅ V00500, Excel de operaciones sin fechaServicioISO)', () => {
+  it('4 tramos del id en paralelo que cubren todo, en páginas de 2,000; entrega cada página y avisa el avance', async () => {
+    // 3,000 ids en cada tramo: el tramo se deduce de los filtros por id.
+    const tramoDe = (filtros: Filtro[]) => String(filtros.find((x) => x.tipo === 'where' && x.args[1] === '>=')?.args[2] ?? 'inicio');
+    respuesta = (_c, filtros) => {
+      const t = tramoDe(filtros);
+      const cursor = cursorDe(filtros);
+      const inicio = cursor ? Number(cursor.id.split('-')[1]) + 1 : 0;
+      const n = Math.max(0, Math.min(limiteDe(filtros), 3000 - inicio));
+      return Array.from({ length: n }, (_, i) => ({ id: `${t}-${inicio + i}`, data: () => ({ ref: 'R' }) }));
+    };
+    const recibidos: string[] = [];
+    const avance: number[] = [];
+    const total = await mod.recorrerOperaciones((docs) => { recibidos.push(...docs.map((d) => d.id)); }, (n) => avance.push(n));
+    expect(total).toBe(12000);
+    expect(new Set(recibidos).size).toBe(12000);
+    expect(llamadas).toHaveLength(8);
+    expect(llamadas.every((l) => limiteDe(l.filtros) === 2001)).toBe(true);
+    expect(avance[avance.length - 1]).toBe(12000);
+    const ids = llamadas.filter((l) => !cursorDe(l.filtros)).map((l) => l.filtros.filter((x) => x.tipo === 'where').map((x) => x.args.slice(1)));
+    expect(ids).toEqual([[['<', '5']], [['>=', '5'], ['<', 'M']], [['>=', 'M'], ['<', 'f']], [['>=', 'f']]]);
+    expect(llamadas[0].filtros.find((x) => x.tipo === 'orderBy')?.args).toEqual(['__name__']);
+  });
+});
+
 describe('operacionesDelDia / operacionesDelRango', () => {
   it('un día por igualdad; un rango en páginas de 1,000', async () => {
     await mod.operacionesDelDia('2026-10-01');
