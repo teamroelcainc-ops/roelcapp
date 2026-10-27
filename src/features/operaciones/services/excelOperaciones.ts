@@ -6,10 +6,17 @@
 // Solo usa lo que ya trae la operación (nombres desnormalizados): no lee catálogos.
 // ✅ V00500: `conNombreDeStatus` completa el status de las que no lo traen guardado (el que llama
 //   le pasa el catálogo): en el Excel de Operaciones las activas salían con Status "-".
+// ✅ V00503: primera columna "Validación" (ok / error, para filtrar) y "Motivo" (validacionExcel.ts);
+//   "Moneda Empresa" (la del cliente que paga en Empresas) siempre al lado de "Moneda Cobro"; y el
+//   archivo sale con ExcelJS: Dólares en azul y Pesos en verde, "error" en rojo, encabezado fijo y
+//   filtros puestos (la librería de antes no pinta colores).
 // ---------------------------------------------------------------------------
 import { ID_MXN, ID_USD } from '../../../shared/dominio/constantes';
 import { partesDeFecha } from '../../../shared/dominio/fechas';
+import { monedaCanonica } from '../../../shared/dominio/moneda';
+import type { Moneda } from '../../../shared/dominio/moneda';
 import { fmtSaldoPuente, normalizarFechaServicioISO, normalizarMoneda } from '../components/completados/formatos';
+import { textoMonedaEmpresa, validarOperacionExcel } from './validacionExcel';
 
 type Datos = Record<string, unknown>;
 export type CeldaExcel = string | number | boolean;
@@ -147,21 +154,109 @@ export const desgloseFechaExcel = (iso: string): Record<string, CeldaExcel> => {
 const fechaISODe = (op: Datos): string =>
   String((op._fechaISO !== null && op._fechaISO !== undefined ? op._fechaISO : normalizarFechaServicioISO(op.fechaServicio)) || '');
 
-/** Filas del Excel: una por operación, con las columnas en el orden elegido (encabezado = su nombre). */
-export const filasExcel = (ops: readonly Datos[], columnas: readonly ColumnaExcel[]): Record<string, CeldaExcel>[] =>
-  ops.map((op) => {
-    const fila: Record<string, CeldaExcel> = {};
+/** ✅ V00503: columnas que agrega el Excel (no se eligen). */
+export const COL_VALIDACION = 'Validación';
+export const COL_MOTIVO = 'Motivo';
+export const COL_MONEDA_EMPRESA = 'Moneda Empresa';
+/** Columnas elegibles que muestran una moneda (se pintan: Dólares azul, Pesos verde). */
+const IDS_MONEDA: readonly string[] = ['facturadoEnCobrar', 'facturadoEnUnidad', 'monedaConvenioProv'];
+
+/**
+ * Filas del Excel: una por operación. Primero Validación y Motivo; luego las columnas en el orden
+ * elegido (encabezado = su nombre), con Año/Mes/Semana/Día junto a la fecha (V00501) y Moneda Empresa
+ * junto a Moneda Cobro (si no se eligió Moneda Cobro, va después de Motivo). `monedaEmpresa` = la
+ * moneda de cada empresa en Empresas (monedasEmpresas.ts).
+ */
+export const filasExcel = (ops: readonly Datos[], columnas: readonly ColumnaExcel[], monedaEmpresa: ReadonlyMap<string, Moneda>): Record<string, CeldaExcel>[] => {
+  const conCobro = columnas.some((c) => c.id === 'facturadoEnCobrar');
+  return ops.map((op) => {
+    const v = validarOperacionExcel(op, monedaEmpresa);
+    const fila: Record<string, CeldaExcel> = { [COL_VALIDACION]: v.estado, [COL_MOTIVO]: v.motivos.join(' | ') };
+    if (!conCobro) fila[COL_MONEDA_EMPRESA] = textoMonedaEmpresa(op, monedaEmpresa);
     columnas.forEach((c) => {
       fila[c.label] = valorExcelOperacion(op, c.id);
       if (c.id === 'fechaServicio') Object.assign(fila, desgloseFechaExcel(fechaISODe(op)));
+      if (c.id === 'facturadoEnCobrar') fila[COL_MONEDA_EMPRESA] = textoMonedaEmpresa(op, monedaEmpresa);
     });
     return fila;
   });
+};
 
-/** Arma y descarga el .xlsx (la librería se carga al exportar, no al abrir el módulo). */
-export async function descargarExcel(filas: Record<string, CeldaExcel>[], hoja: string, archivo: string): Promise<void> {
-  const XLSX = await import('xlsx');
-  const libro = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(libro, XLSX.utils.json_to_sheet(filas), hoja);
-  XLSX.writeFile(libro, archivo);
+/** Filas y qué encabezados son de moneda (para pintarlos). */
+export interface TablaExcel { filas: Record<string, CeldaExcel>[]; columnasMoneda: string[] }
+
+export const tablaExcel = (ops: readonly Datos[], columnas: readonly ColumnaExcel[], monedaEmpresa: ReadonlyMap<string, Moneda>): TablaExcel => ({
+  filas: filasExcel(ops, columnas, monedaEmpresa),
+  columnasMoneda: [...columnas.filter((c) => IDS_MONEDA.includes(c.id)).map((c) => c.label), COL_MONEDA_EMPRESA],
+});
+
+// ── Colores del archivo (ARGB) ──
+const COLOR = {
+  encabezado: 'FF374151', encabezadoTexto: 'FFFFFFFF',
+  usdFondo: 'FFDBEAFE', usdTexto: 'FF1D4ED8',
+  mxnFondo: 'FFDCFCE7', mxnTexto: 'FF15803D',
+  errorFondo: 'FFFEE2E2', errorTexto: 'FFB91C1C',
+  okTexto: 'FF15803D',
+} as const;
+const relleno = (argb: string) => ({ type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb } });
+
+/** Ancho de cada columna: el del encabezado o el valor más largo (de una muestra), entre 8 y 60. */
+const anchoColumna = (titulo: string, filas: readonly Record<string, CeldaExcel>[]): number => {
+  let max = titulo.length;
+  for (let i = 0; i < filas.length && i < 300; i++) max = Math.max(max, String(filas[i][titulo] ?? '').length);
+  return Math.min(60, Math.max(8, max + 2));
+};
+
+const descargarBuffer = (buffer: ArrayBuffer, archivo: string): void => {
+  const url = URL.createObjectURL(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = archivo;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+};
+
+/**
+ * ✅ V00503 — Arma el libro con ExcelJS (se carga al exportar, no al abrir el módulo): encabezado
+ * fijo y con filtros, Validación "error" en rojo, y las monedas en azul (Dólares) o verde (Pesos).
+ */
+export const armarLibroExcel = async (tabla: TablaExcel, hoja: string): Promise<ArrayBuffer> => {
+  const { default: ExcelJS } = await import('exceljs');
+  const { filas, columnasMoneda } = tabla;
+  const titulos = filas.length > 0 ? Object.keys(filas[0]) : [COL_VALIDACION, COL_MOTIVO];
+  const libro = new ExcelJS.Workbook();
+  libro.creator = 'Roelca';
+  const ws = libro.addWorksheet(hoja.slice(0, 31), { views: [{ state: 'frozen', ySplit: 1 }] });
+  ws.columns = titulos.map((t) => ({ header: t, key: t, width: anchoColumna(t, filas) }));
+  const encabezado = ws.getRow(1);
+  encabezado.font = { bold: true, color: { argb: COLOR.encabezadoTexto } };
+  encabezado.fill = relleno(COLOR.encabezado);
+  encabezado.alignment = { vertical: 'middle' };
+
+  const colValidacion = titulos.indexOf(COL_VALIDACION) + 1;
+  const colsMoneda = titulos.map((t, i) => (columnasMoneda.includes(t) ? i + 1 : 0)).filter((i) => i > 0);
+  filas.forEach((f) => {
+    const r = ws.addRow(titulos.map((t) => f[t]));
+    if (colValidacion > 0) {
+      const c = r.getCell(colValidacion);
+      if (f[COL_VALIDACION] === 'error') { c.fill = relleno(COLOR.errorFondo); c.font = { bold: true, color: { argb: COLOR.errorTexto } }; }
+      else c.font = { bold: true, color: { argb: COLOR.okTexto } };
+    }
+    colsMoneda.forEach((i) => {
+      const m = monedaCanonica(f[titulos[i - 1]]);
+      if (!m) return;
+      const c = r.getCell(i);
+      c.fill = relleno(m === 'USD' ? COLOR.usdFondo : COLOR.mxnFondo);
+      c.font = { bold: true, color: { argb: m === 'USD' ? COLOR.usdTexto : COLOR.mxnTexto } };
+    });
+  });
+  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: titulos.length } };
+  return libro.xlsx.writeBuffer() as Promise<ArrayBuffer>;
+};
+
+/** Arma y descarga el .xlsx. */
+export async function descargarExcel(tabla: TablaExcel, hoja: string, archivo: string): Promise<void> {
+  descargarBuffer(await armarLibroExcel(tabla, hoja), archivo);
 }

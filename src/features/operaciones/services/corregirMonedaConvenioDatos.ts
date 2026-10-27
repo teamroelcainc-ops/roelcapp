@@ -14,27 +14,12 @@ import { contarOperaciones, paginaOperacionesPorId } from '../../../shared/data/
 import type { Cursor } from '../../../shared/data/consultas';
 import { idReal } from '../../../shared/data/coleccionesVivas';
 import { esOperacionPrueba } from '../../../utils/operacionPrueba';
-import type { Moneda } from '../../../shared/dominio/moneda';
 import type { Lado } from '../../../shared/dominio/dinero';
-import { monedaDeEmpresa } from '../../facturacion/services/reglasFactura';
+import { CAMPO_MONEDA_EMPRESA, indexarMonedasEmpresas, nombreDeMonedaId } from './monedasEmpresas'; // ✅ V00503
 import { indexarConvenios, revisarOperacion } from './corregirMonedaConvenio';
 import type { CatalogoConvenios, RevisionOperacion } from './corregirMonedaConvenio';
 
 const PAGINA = 500;
-
-/**
- * ✅ V00490: moneda de cada empresa en Empresas, por id, con la misma lectura que Facturación
- * (monedaDeEmpresa: `moneda`, `monedaId`, `monedaNombre`, `monedaRef` y el campo de su lado).
- */
-const indexarMonedasEmpresas = (empresas: readonly Record<string, unknown>[], nombreDeId: (id: string) => unknown, campoLado: string): Map<string, Moneda> => {
-  const mapa = new Map<string, Moneda>();
-  empresas.forEach((e) => {
-    const m = monedaDeEmpresa(e, campoLado, nombreDeId);
-    if (!m) return;
-    [e._docId, e.id].map((v) => String(v ?? '').trim()).filter(Boolean).forEach((id) => { if (!mapa.has(id)) mapa.set(id, m); });
-  });
-  return mapa;
-};
 
 /** Convenios de clientes y proveedores (detalles y maestros) y monedas de las empresas, confirmados por el servidor. */
 export const leerConvenios = async (): Promise<CatalogoConvenios> => {
@@ -46,11 +31,10 @@ export const leerConvenios = async (): Promise<CatalogoConvenios> => {
     obtenerCatalogo('empresas', { fresco: true }),
     obtenerCatalogo('catalogo_moneda', { fresco: true }),
   ]);
-  const nombres = new Map(monedas.map((m) => [idReal(m), String(m.moneda ?? '')]));
-  const nombreDeId = (id: string): unknown => nombres.get(id) ?? '';
+  const nombreDeId = nombreDeMonedaId(monedas);
   return {
-    cliente: indexarConvenios(detCli, maeCli, indexarMonedasEmpresas(empresas, nombreDeId, 'monedaFacturacion')),
-    proveedor: indexarConvenios(detProv, maeProv, indexarMonedasEmpresas(empresas, nombreDeId, 'monedaProveedor')),
+    cliente: indexarConvenios(detCli, maeCli, indexarMonedasEmpresas(empresas, nombreDeId, CAMPO_MONEDA_EMPRESA.cliente)),
+    proveedor: indexarConvenios(detProv, maeProv, indexarMonedasEmpresas(empresas, nombreDeId, CAMPO_MONEDA_EMPRESA.proveedor)),
   };
 };
 

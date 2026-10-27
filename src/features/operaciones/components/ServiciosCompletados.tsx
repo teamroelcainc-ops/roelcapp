@@ -23,7 +23,8 @@ import { FormularioOperacion, TIPOS_DOCUMENTO_OPERACION } from './FormularioOper
 import './ServiciosCompletados.css';
 import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
 import ModalExportarExcel from './exportar/ModalExportarExcel'; // ✅ V00498
-import { descargarExcel, filasExcel } from '../services/excelOperaciones'; // ✅ V00498
+import { descargarExcel, tablaExcel } from '../services/excelOperaciones'; // ✅ V00498
+import { leerMonedasEmpresas } from '../services/monedasEmpresas'; // ✅ V00503
 import { almacenSesion } from '../../../utils/cacheMemoria';
 import { obtenerFlags, useFlags } from '../../../shared/data/flags';
 import { paginaOperaciones, todasLasPaginas } from '../../../shared/data/consultas';
@@ -1833,7 +1834,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const exportarExcel = async (columnasVisibles: { id: string; label: string }[]): Promise<boolean> => {
     if (operacionesOrdenadas.length === 0) { alert('No hay datos para exportar.'); return false; }
     // ✅ V00380: las operaciones de PRUEBA no salen en el Excel
-    await descargarExcel(filasExcel(sinPruebas(operacionesOrdenadas), columnasVisibles), 'Completados', `Servicios_Completados_${new Date().toISOString().split('T')[0]}.xlsx`);
+    // ✅ V00503: con Validación (ok / error) y Moneda Empresa: lee la moneda de cada empresa.
+    const monedaEmpresa = await leerMonedasEmpresas('cliente');
+    await descargarExcel(tablaExcel(sinPruebas(operacionesOrdenadas), columnasVisibles, monedaEmpresa), 'Completados', `Servicios_Completados_${new Date().toISOString().split('T')[0]}.xlsx`);
     return true;
   };
 

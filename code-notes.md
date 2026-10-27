@@ -207,6 +207,17 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - Modales con `createPortal` a `document.body` (la tarjeta usa `transform` al pasar el mouse) y perezosos desde la tarjeta (`lazyWithRetry`): la carga inicial crece 0.3 KB (sin eso, ~20 KB por FormularioConfigurable).
 - Se quitaron las reglas `.rd-dos*` de App.css (solo las usaba la tarjeta TC · Diesel).
 
+## V00503 (Validación ok / error y Moneda Empresa en el Excel)
+- Roelca (27-oct) pidió en el Excel la moneda de la empresa (Empresas), monedas de color (Dólares azul, Pesos verde) y una primera columna "error" / "ok" para filtrar. Errores elegidos: moneda distinta a la empresa, montos que no cuadran y datos que faltan. Moneda Empresa: siempre al lado de Moneda Cobro (si la configuración no la trae, después de Motivo).
+- **Regla que dictó Roelca**, comparada con la de la app:
+  - Caso 1 (dólares/dólares) y caso 3 (pesos/pesos): coinciden.
+  - Caso 2 lo escribió "factura en dólares, convenio en pesos", pero el cálculo que describe ("se multiplica el dólar por la tasa y se coloca en Pesos y en la conversión") es el de convenio en dólares + cobro en pesos. Así lo hace la app (decisión V00490: precio en dólares, cobro en pesos), y así se validó.
+  - Falta confirmar con Roelca el caso 4 (convenio en pesos + cobro en dólares → ÷ TC).
+- La regla se aplica con la moneda de la EMPRESA (lo que debe ser), no con la Moneda Cobro guardada: una operación con la moneda equivocada sale con los dos motivos (moneda distinta y montos que no cuadran) y el monto correcto.
+- Sin Subtotal (ServiciosCompletados `actualizarCampoEdicion` lo guarda como convenio + cargos sin convertir; el formulario, convertido). Tolerancia: un centavo. Canceladas: "ok" sin revisar. Moneda del convenio deducida de la conversión (V00486) cuenta como dato presente.
+- **ExcelJS en vez de SheetJS** para este Excel (SheetJS community no escribe estilos). Sigue SheetJS en Servicios Cancelados y otros Excel. Con 16,000 filas ExcelJS fue más rápido y con menos memoria que SheetJS (`XLSX.write` sin comprimir).
+- `monedasEmpresas.ts`: la indexación de la moneda de las empresas que tenía Corregir monedas (V00490), ahora compartida. Empresas es obligatoria para el Excel (sin ella, la validación mentiría): `obtenerCatalogo('empresas')` sin `.catch`.
+
 ## V00502 (buscador global)
 - Decisiones de Roelca (27-oct): busca los 4 grupos (operaciones; facturas y pagos; empresas y convenios; empleados, unidades y remolques); operaciones del historial por INICIO del texto (Firestore no tiene búsqueda de texto: "cualquier palabra" necesitaría un índice en el servidor, pendiente si lo pide); en la barra de arriba.
 - **Pedido de apertura** (`shared/data/aperturas.ts`): nada en la app abría un registro por id con el módulo ya montado (los pedidos se leían al montar: `roelca_abrir_registro`, `roelca_buscar`, pagoPedido). Uso nuevo: `abrirRegistro(modulo, id)` + `useAtenderApertura(modulo, abrir, listo)`. Los mecanismos viejos (`roelca_abrir_registro` de notificaciones y Catálogos, `roelca_buscar`) se dejaron: siguen iguales; se pueden pasar a `abrirRegistro` cuando se toquen.

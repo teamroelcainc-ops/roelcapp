@@ -6,7 +6,11 @@ import { ID_MXN, ID_USD } from '../../../shared/dominio/constantes';
 vi.mock('../../../config/firebase', () => ({ db: {}, auth: { currentUser: { uid: 'u1' } } }));
 vi.mock('firebase/firestore', () => ({}));
 
-const { conNombreDeStatus, filasExcel, nombreGuardado, valorExcelOperacion } = await import('./excelOperaciones');
+const { armarLibroExcel, conNombreDeStatus, filasExcel, nombreGuardado, tablaExcel, valorExcelOperacion } = await import('./excelOperaciones');
+/** ✅ V00503: moneda de cada empresa en Empresas (e1 = Acme, en Dólares). */
+const MONEDAS = new Map([['e1', 'USD' as const]]);
+const SIN_VALIDAR = ['Validación', 'Motivo', 'Moneda Empresa'];
+const sinValidacion = (f: Record<string, unknown>) => Object.fromEntries(Object.entries(f).filter(([k]) => !SIN_VALIDAR.includes(k)));
 const { unirOperacionesDelRango } = await import('./operacionesDelRangoExcel');
 const { columnasDesdeGuardadas } = await import('./configsExportExcel');
 
@@ -42,15 +46,50 @@ describe('valorExcelOperacion', () => {
     expect(nombreGuardado('Dólares', '', true)).toBe('Dólares');
   });
   it('filas con el encabezado de cada columna, en el orden elegido', () => {
-    expect(filasExcel([op], [{ id: 'status', label: 'Status' }, { id: 'ref', label: '# Referencia' }])).toEqual([{ Status: '3. Documentado (Asignado)', '# Referencia': 'TR-261026-004' }]);
+    expect(filasExcel([op], [{ id: 'status', label: 'Status' }, { id: 'ref', label: '# Referencia' }], MONEDAS).map(sinValidacion)).toEqual([{ Status: '3. Documentado (Asignado)', '# Referencia': 'TR-261026-004' }]);
   });
   it('✅ V00501: al lado de Fecha Servicio, siempre Año, Mes, Semana y Día (en ese orden)', () => {
-    const [fila] = filasExcel([op], [{ id: 'ref', label: '# Referencia' }, { id: 'fechaServicio', label: 'Fecha Servicio' }, { id: 'status', label: 'Status' }]);
+    const [fila] = filasExcel([op], [{ id: 'ref', label: '# Referencia' }, { id: 'fechaServicio', label: 'Fecha Servicio' }, { id: 'status', label: 'Status' }], MONEDAS).map(sinValidacion);
     expect(Object.keys(fila)).toEqual(['# Referencia', 'Fecha Servicio', 'Año', 'Mes', 'Semana', 'Día', 'Status']);
     expect(fila).toMatchObject({ 'Fecha Servicio': '2026-10-26', Año: 2026, Mes: 'octubre', Semana: 44, Día: 'lunes' });
-    const [sinFecha] = filasExcel([{ id: 'x', fechaServicio: 'pendiente' }], [{ id: 'fechaServicio', label: 'Fecha Servicio' }]);
+    const [sinFecha] = filasExcel([{ id: 'x', fechaServicio: 'pendiente' }], [{ id: 'fechaServicio', label: 'Fecha Servicio' }], MONEDAS).map(sinValidacion);
     expect(sinFecha).toEqual({ 'Fecha Servicio': 'pendiente', Año: '', Mes: '', Semana: '', Día: '' });
-    expect(Object.keys(filasExcel([op], [{ id: 'ref', label: '# Referencia' }])[0])).toEqual(['# Referencia']);
+    expect(Object.keys(filasExcel([op], [{ id: 'ref', label: '# Referencia' }], MONEDAS).map(sinValidacion)[0])).toEqual(['# Referencia']);
+  });
+  it('✅ V00503: Validación y Motivo primero; Moneda Empresa al lado de Moneda Cobro', () => {
+    const cols = [{ id: 'ref', label: '# Referencia' }, { id: 'facturadoEnCobrar', label: 'Moneda Cobro' }, { id: 'status', label: 'Status' }];
+    const [fila] = filasExcel([op], cols, MONEDAS);
+    expect(Object.keys(fila)).toEqual(['Validación', 'Motivo', '# Referencia', 'Moneda Cobro', 'Moneda Empresa', 'Status']);
+    expect(fila['Moneda Empresa']).toBe('Dólares');
+    expect(fila['Validación']).toBe('error'); // sin convenio y sin conversión guardada
+    // Sin Moneda Cobro elegida, Moneda Empresa va después de Motivo.
+    expect(Object.keys(filasExcel([op], [{ id: 'ref', label: '# Referencia' }], MONEDAS)[0])).toEqual(['Validación', 'Motivo', 'Moneda Empresa', '# Referencia']);
+    // Empresa sin moneda en Empresas / sin cliente.
+    expect(filasExcel([op], cols, new Map())[0]['Moneda Empresa']).toBe('Sin moneda');
+    expect(filasExcel([{ id: 'z' }], cols, MONEDAS)[0]['Moneda Empresa']).toBe('-');
+  });
+  it('✅ V00503: las columnas de moneda que se pintan (las elegidas + Moneda Empresa)', () => {
+    const t = tablaExcel([op], [{ id: 'facturadoEnCobrar', label: 'Moneda Cobro' }, { id: 'ref', label: '# Referencia' }, { id: 'facturadoEnUnidad', label: 'Moneda Prov.' }], MONEDAS);
+    expect(t.columnasMoneda).toEqual(['Moneda Cobro', 'Moneda Prov.', 'Moneda Empresa']);
+  });
+  it('✅ V00503: el archivo — Dólares azul, Pesos verde, "error" en rojo, encabezado fijo con filtros, números como números', async () => {
+    const { default: ExcelJS } = await import('exceljs');
+    const ops = [op, { ...op, id: 'x2', ref: 'TR-2', clientePaga: 'e2', facturadoEnCobrar: ID_MXN }];
+    const t = tablaExcel(ops, [{ id: 'ref', label: '# Referencia' }, { id: 'facturadoEnCobrar', label: 'Moneda Cobro' }, { id: 'montoConvenioCliente', label: 'Monto' }], new Map([['e1', 'USD' as const], ['e2', 'MXN' as const]]));
+    const libro = new ExcelJS.Workbook();
+    await libro.xlsx.load(await armarLibroExcel(t, 'Operaciones'));
+    const ws = libro.getWorksheet('Operaciones');
+    if (!ws) throw new Error('sin hoja');
+    const fondo = (fila: number, col: number) => (ws.getCell(fila, col).fill as { fgColor?: { argb?: string } } | undefined)?.fgColor?.argb;
+    expect((ws.getRow(1).values as unknown[]).slice(1)).toEqual(['Validación', 'Motivo', '# Referencia', 'Moneda Cobro', 'Moneda Empresa', 'Monto']);
+    expect(ws.getCell(2, 1).value).toBe('error');
+    expect(fondo(2, 1)).toBe('FFFEE2E2');
+    expect([fondo(2, 4), fondo(2, 5)]).toEqual(['FFDBEAFE', 'FFDBEAFE']); // USD · Dólares
+    expect([fondo(3, 4), fondo(3, 5)]).toEqual(['FFDCFCE7', 'FFDCFCE7']); // MXN · Pesos
+    expect(fondo(2, 3)).toBeUndefined();
+    expect(ws.getCell(2, 6).value).toBe(155);
+    expect(ws.autoFilter).toBeTruthy();
+    expect(ws.views[0]).toMatchObject({ state: 'frozen', ySplit: 1 });
   });
 });
 

@@ -6,13 +6,15 @@
 // ✅ V00499: sin tope de cantidad (lee en páginas) y la ventana dice cuántas lleva leídas.
 // ✅ V00500: completo aunque la fecha esté guardada en otro formato (ver operacionesDelRangoExcel.ts)
 //   y el Status de las que no lo traen guardado sale del catálogo.
+// ✅ V00503: lee la moneda de cada empresa (Empresas) para "Moneda Empresa" y la Validación.
 // ---------------------------------------------------------------------------
 import { useState } from 'react';
 import { hoyLocalISO } from '../../../../utils/fechaHoraLocal';
 import { cargarColumnasGuardadas } from '../completados/columnas';
 import { claveUltimaSeleccion } from '../../services/configsExportExcel';
 import { obtenerCatalogo } from '../../../../shared/data/catalogos';
-import { conNombreDeStatus, descargarExcel, filasExcel } from '../../services/excelOperaciones';
+import { conNombreDeStatus, descargarExcel, tablaExcel } from '../../services/excelOperaciones';
+import { leerMonedasEmpresas } from '../../services/monedasEmpresas';
 import { leerOperacionesDelRango } from '../../services/operacionesDelRangoExcel';
 import type { AvanceExcel } from '../../services/operacionesDelRangoExcel';
 import ModalExportarExcel from './ModalExportarExcel';
@@ -44,10 +46,12 @@ export default function ExcelOperaciones({ onCerrar }: { onCerrar: () => void })
   const exportar = async (columnas: { id: string; label: string }[]): Promise<boolean> => {
     setAvance('Revisando operaciones…');
     try {
-      // El catálogo solo es para MOSTRAR el status: si no llega, el Excel sale con lo guardado.
-      const [operaciones, status] = await Promise.all([
+      // El catálogo de status solo es para MOSTRAR el status: si no llega, el Excel sale con lo guardado.
+      // Empresas sí hace falta: sin ella la Validación diría "sin moneda" en todas (rechaza y se avisa).
+      const [operaciones, status, monedaEmpresa] = await Promise.all([
         leerOperacionesDelRango(rango.desde, rango.hasta, (a) => setAvance(textoAvance(a))),
         obtenerCatalogo('catalogo_status_servicio').catch(() => []),
+        leerMonedasEmpresas('cliente'),
       ]);
       if (operaciones.length === 0) {
         alert(`No hay operaciones con fecha de servicio del ${rango.desde} al ${rango.hasta}.`);
@@ -55,7 +59,7 @@ export default function ExcelOperaciones({ onCerrar }: { onCerrar: () => void })
       }
       setAvance(`Armando el Excel con ${miles(operaciones.length)} operaciones…`);
       await dejarPintar();
-      await descargarExcel(filasExcel(conNombreDeStatus(operaciones, status), columnas), 'Operaciones', `Operaciones_${rango.desde}_a_${rango.hasta}.xlsx`);
+      await descargarExcel(tablaExcel(conNombreDeStatus(operaciones, status), columnas, monedaEmpresa), 'Operaciones', `Operaciones_${rango.desde}_a_${rango.hasta}.xlsx`);
       return true;
     } finally {
       setAvance('');
