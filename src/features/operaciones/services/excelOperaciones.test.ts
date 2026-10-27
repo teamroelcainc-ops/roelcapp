@@ -44,6 +44,14 @@ describe('valorExcelOperacion', () => {
   it('filas con el encabezado de cada columna, en el orden elegido', () => {
     expect(filasExcel([op], [{ id: 'status', label: 'Status' }, { id: 'ref', label: '# Referencia' }])).toEqual([{ Status: '3. Documentado (Asignado)', '# Referencia': 'TR-261026-004' }]);
   });
+  it('✅ V00501: al lado de Fecha Servicio, siempre Año, Mes, Semana y Día (en ese orden)', () => {
+    const [fila] = filasExcel([op], [{ id: 'ref', label: '# Referencia' }, { id: 'fechaServicio', label: 'Fecha Servicio' }, { id: 'status', label: 'Status' }]);
+    expect(Object.keys(fila)).toEqual(['# Referencia', 'Fecha Servicio', 'Año', 'Mes', 'Semana', 'Día', 'Status']);
+    expect(fila).toMatchObject({ 'Fecha Servicio': '2026-10-26', Año: 2026, Mes: 'octubre', Semana: 44, Día: 'lunes' });
+    const [sinFecha] = filasExcel([{ id: 'x', fechaServicio: 'pendiente' }], [{ id: 'fechaServicio', label: 'Fecha Servicio' }]);
+    expect(sinFecha).toEqual({ 'Fecha Servicio': 'pendiente', Año: '', Mes: '', Semana: '', Día: '' });
+    expect(Object.keys(filasExcel([op], [{ id: 'ref', label: '# Referencia' }])[0])).toEqual(['# Referencia']);
+  });
 });
 
 describe('conNombreDeStatus (✅ V00500)', () => {

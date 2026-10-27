@@ -100,3 +100,42 @@ export const aFechaServicioISO = (v: unknown): string | null => {
  */
 export const fechaServicioDeOperacion = (op: Record<string, unknown>): string =>
   String(op.fechaServicioISO || '').slice(0, 10) || aFechaServicioISO(op.fechaServicio) || '';
+
+// ── ✅ V00501 — DESGLOSE DE UNA FECHA como lo cuenta Roelca ─────────────────
+// (Estadísticas Operativas → Diario "mes · semana · día · fecha", y el Excel de operaciones).
+export const NOMBRES_MES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'] as const;
+/** Índice = día de la semana de `Date` (0 = domingo). */
+export const NOMBRES_DIA = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'] as const;
+
+const partesISO = (iso: string): [number, number, number] | null => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+  if (!m) return null;
+  const [y, mes, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const f = new Date(Date.UTC(y, mes - 1, d));
+  return f.getUTCFullYear() === y && f.getUTCMonth() === mes - 1 && f.getUTCDate() === d ? [y, mes, d] : null;
+};
+
+/**
+ * Semana del año: de lunes a domingo; la semana 1 es la del 1 de enero (aunque no empiece en lunes).
+ * Se cuenta en UTC: con la hora local, el cambio de horario de verano pasaba cada lunes a la
+ * semana anterior (de marzo a noviembre en Texas). 0 si la fecha no es válida.
+ */
+export const semanaDelAnio = (iso: string): number => {
+  const p = partesISO(iso);
+  if (!p) return 0;
+  const [y, mes, d] = p;
+  const enero1 = Date.UTC(y, 0, 1);
+  const dia = Math.round((Date.UTC(y, mes - 1, d) - enero1) / 86400000);
+  const corrimiento = (new Date(enero1).getUTCDay() + 6) % 7; // lunes = 0
+  return Math.floor((dia + corrimiento) / 7) + 1;
+};
+
+export interface PartesFecha { anio: number; mes: string; semana: number; dia: string }
+
+/** Año, mes (nombre), semana del año y día de la semana (nombre) de una fecha AAAA-MM-DD; null si no es válida. */
+export const partesDeFecha = (iso: string): PartesFecha | null => {
+  const p = partesISO(iso);
+  if (!p) return null;
+  const [y, mes, d] = p;
+  return { anio: y, mes: NOMBRES_MES[mes - 1], semana: semanaDelAnio(iso), dia: NOMBRES_DIA[new Date(Date.UTC(y, mes - 1, d)).getUTCDay()] };
+};

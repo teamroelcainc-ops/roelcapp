@@ -17,6 +17,7 @@ import { Fragment, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { Download } from 'lucide-react';
 import { useCatalogos } from '../../../shared/data/catalogos';
+import { NOMBRES_DIA, NOMBRES_MES, semanaDelAnio } from '../../../shared/dominio/fechas';
 import { capitalizar } from './DesgloseJerarquico';
 import './EstadisticasOperativas.css';
 
@@ -36,22 +37,17 @@ interface Props {
   onVerOps?: (titulo: string, ops: Op[]) => void;
 }
 
-const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+// ✅ V00501: meses, días y semana del año vienen de shared/dominio/fechas.ts (los usa también el Excel de operaciones).
+const MESES = NOMBRES_MES;
+const DIAS = NOMBRES_DIA;
 const ORDEN_DIAS = [1, 2, 3, 4, 5, 6, 0];
 const norm = (t: unknown) => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
 const fmtNum = (n: number) => (Number(n) || 0).toLocaleString('en-US');
 const fmtPct = (n: number, d: number) => d > 0 ? `${Math.round((n / d) * 100)}%` : '';
 const fmtFecha = (iso: string) => { const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; };
 const fechaLocal = (iso: string) => { const [y, m, d] = iso.slice(0, 10).split('-').map(Number); return new Date(y, (m || 1) - 1, d || 1); };
-/** Semana del año (lunes a domingo, numeración simple desde el 1 de enero). */
-const semanaDe = (iso: string) => {
-  const f = fechaLocal(iso);
-  const inicio = new Date(f.getFullYear(), 0, 1);
-  const offset = (inicio.getDay() + 6) % 7; // lunes = 0
-  const dia = Math.floor((f.getTime() - inicio.getTime()) / 86400000);
-  return Math.floor((dia + offset) / 7) + 1;
-};
+/** Semana del año (lunes a domingo, numeración simple desde el 1 de enero). ✅ V00501: la compartida, en UTC (con la hora local cada lunes de verano caía en la semana anterior). */
+const semanaDe = semanaDelAnio;
 
 /** Grupo de tipo de operación (importación / exportación / movimiento / otros) según el NOMBRE del catálogo. */
 const grupoTipoDe = (nombre: string): 'Exportación' | 'Importación' | 'Movimiento' | 'Otros' => {

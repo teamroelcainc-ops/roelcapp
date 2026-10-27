@@ -166,7 +166,7 @@ export default function ModalExportarExcel({
           </div>
           {campoRango}
           <div className="mxe-ayuda">
-            Arrastra <span className="mxe-asa">⋮⋮</span> cualquier tarjeta para cambiar el orden. Marca las columnas que quieres incluir.
+            Arrastra <span className="mxe-asa">⋮⋮</span> cualquier tarjeta para cambiar el orden. Marca las columnas que quieres incluir. La fecha de servicio siempre sale con Año, Mes, Semana y Día al lado.
           </div>
           <ul className="mxe-cuadricula">
             {columnas.map((c, idx) => (

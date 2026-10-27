@@ -41,6 +41,7 @@ import { colorTipoOperacion, fmtFechaAuditoria } from '../services/formatosOpera
 import { paginaOperaciones, todasLasPaginas } from '../../../shared/data/consultas';
 import TagPuenteUnidad from '../../puentes/components/TagPuenteUnidad'; // ✅ V00465
 import { grupoTagDeOperacion } from '../../puentes/services/tagPuente';
+import { desgloseFechaExcel } from '../services/excelOperaciones'; // ✅ V00501
 
 // ✅ V00444 (Fase 8.3): fmtFechaAuditoria y colorTipoOperacion en services/formatosOperacion (eran copias).
 
@@ -1164,6 +1165,8 @@ const ServiciosCancelados = () => {
       columnasVisibles.forEach(col => {
         const v = valorExcelColumna(op, col.id);
         fila[col.label] = v === '-' ? '' : v;
+        // ✅ V00501: al lado de la fecha, siempre Año, Mes, Semana y Día.
+        if (col.id === 'fecha') Object.assign(fila, desgloseFechaExcel(normalizarFechaISO(op.fechaServicio)));
       });
       return fila;
     });
@@ -1480,7 +1483,7 @@ const ServiciosCancelados = () => {
               </div>
 
               <div className="scc-x33">
-                Arrastra <span className="scc-x34">⋮⋮</span> cualquier tarjeta para cambiar el orden. Marca las columnas que quieres incluir.
+                Arrastra <span className="scc-x34">⋮⋮</span> cualquier tarjeta para cambiar el orden. Marca las columnas que quieres incluir. La fecha de servicio siempre sale con Año, Mes, Semana y Día al lado.
               </div>
 
               {/* ✅ V00254: cuadrícula de 3 columnas y reordenado SOLO por Drag & Drop

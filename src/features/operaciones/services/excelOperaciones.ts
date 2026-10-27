@@ -8,6 +8,7 @@
 //   le pasa el catálogo): en el Excel de Operaciones las activas salían con Status "-".
 // ---------------------------------------------------------------------------
 import { ID_MXN, ID_USD } from '../../../shared/dominio/constantes';
+import { partesDeFecha } from '../../../shared/dominio/fechas';
 import { fmtSaldoPuente, normalizarFechaServicioISO, normalizarMoneda } from '../components/completados/formatos';
 
 type Datos = Record<string, unknown>;
@@ -133,9 +134,29 @@ export const conNombreDeStatus = <T extends Datos>(ops: readonly T[], catalogo: 
   });
 };
 
+/**
+ * ✅ V00501 — Al lado de la fecha de servicio van SIEMPRE Año, Mes, Semana y Día (no se eligen: salen
+ * con la fecha, en cualquier configuración). Mes y Día con nombre y la semana del año de lunes a
+ * domingo, como Estadísticas Operativas. Fecha no reconocida → celdas vacías.
+ */
+export const desgloseFechaExcel = (iso: string): Record<string, CeldaExcel> => {
+  const p = partesDeFecha(iso);
+  return { Año: p ? p.anio : '', Mes: p ? p.mes : '', Semana: p ? p.semana : '', Día: p ? p.dia : '' };
+};
+
+const fechaISODe = (op: Datos): string =>
+  String((op._fechaISO !== null && op._fechaISO !== undefined ? op._fechaISO : normalizarFechaServicioISO(op.fechaServicio)) || '');
+
 /** Filas del Excel: una por operación, con las columnas en el orden elegido (encabezado = su nombre). */
 export const filasExcel = (ops: readonly Datos[], columnas: readonly ColumnaExcel[]): Record<string, CeldaExcel>[] =>
-  ops.map((op) => Object.fromEntries(columnas.map((c) => [c.label, valorExcelOperacion(op, c.id)])));
+  ops.map((op) => {
+    const fila: Record<string, CeldaExcel> = {};
+    columnas.forEach((c) => {
+      fila[c.label] = valorExcelOperacion(op, c.id);
+      if (c.id === 'fechaServicio') Object.assign(fila, desgloseFechaExcel(fechaISODe(op)));
+    });
+    return fila;
+  });
 
 /** Arma y descarga el .xlsx (la librería se carga al exportar, no al abrir el módulo). */
 export async function descargarExcel(filas: Record<string, CeldaExcel>[], hoja: string, archivo: string): Promise<void> {
