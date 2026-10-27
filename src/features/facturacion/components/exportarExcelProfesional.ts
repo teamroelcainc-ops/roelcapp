@@ -58,6 +58,8 @@ export interface OpcionesExcel {
   nombreHoja?: string;
   columnas: ColExcel[];
   filas: Record<string, any>[];
+  /** ✅ V00504: false = sin la fila TOTAL (p. ej. si las filas mezclan dólares y pesos). Por defecto sí. */
+  filaTotal?: boolean;
 }
 
 // ── Caja sin placas ─────────────────────────────────────────────────────
@@ -254,7 +256,7 @@ export const exportarExcelProfesional = async (opts: OpcionesExcel): Promise<voi
 
   // ── Fila de TOTALES (suma de columnas de dinero) ────────────────────────
   const hayMonto = columnas.some(c => c.tipo === 'monto');
-  if (hayMonto && filas.length > 0) {
+  if (hayMonto && filas.length > 0 && opts.filaTotal !== false) {
     const tr = ws.getRow(DATA_START + filas.length);
     tr.height = 24;
     columnas.forEach((c, i) => {

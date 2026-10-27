@@ -207,6 +207,13 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - Modales con `createPortal` a `document.body` (la tarjeta usa `transform` al pasar el mouse) y perezosos desde la tarjeta (`lazyWithRetry`): la carga inicial crece 0.3 KB (sin eso, ~20 KB por FormularioConfigurable).
 - Se quitaron las reglas `.rd-dos*` de App.css (solo las usaba la tarjeta TC · Diesel).
 
+## V00504 (Excel de todas las facturas de clientes)
+- Roelca pidió descargar todas las facturas (pagadas y no, con y sin fecha). El Historial sin filtros ya las tenía, pero el filtro de fechas (y la pestaña Pagadas, el status, el cliente, la moneda) las recortaba sin que fuera obvio. Por eso la ventana de exportar elige: "Las de la pantalla" (por defecto, como antes) o "Todas las facturas" (`agruparFacturas` sobre `facturasGlobales`, sin ningún filtro, con el orden de la tabla).
+- "Todas" espera a `facturasVivas.alDia`: la caché del navegador puede traer solo parte de la lista (V00497).
+- "Estado de pago" es columna SOLO del Excel (`columnasParaExportar`); la tabla no cambia. La regla de "Pagada" (V00126) salió a `gruposFactura.ts` (`filaPagada`). Proveedores tiene su propia copia de `facturaPagada` (sin tocar).
+- La fila TOTAL de `exportarExcelProfesional` sumaba la columna de monto sin ver la moneda: ahora el Historial la pide solo con una moneda (`filaTotal`) y pone los totales por moneda en el subtítulo. Otros Excel que usan esa función siguen igual.
+- PENDIENTE (si Roelca lo pide): lo mismo en Facturación de Proveedores. Su Excel es otro (SheetJS directo, sin ventana).
+
 ## V00503 (Validación ok / error y Moneda Empresa en el Excel)
 - Roelca (27-oct) pidió en el Excel la moneda de la empresa (Empresas), monedas de color (Dólares azul, Pesos verde) y una primera columna "error" / "ok" para filtrar. Errores elegidos: moneda distinta a la empresa, montos que no cuadran y datos que faltan. Moneda Empresa: siempre al lado de Moneda Cobro (si la configuración no la trae, después de Motivo).
 - **Regla que dictó Roelca**, comparada con la de la app:

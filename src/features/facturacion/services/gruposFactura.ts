@@ -61,6 +61,25 @@ export const agruparFacturas = <T extends Fila>(facturas: readonly T[], campoEnt
   return Array.from(grupos.values()) as unknown as T[];
 };
 
+// ── ✅ V00504: estado de pago de una fila (todos sus documentos) ─────────────
+const docsDeFila = (f: Fila): Fila[] => {
+  const docs = lista(f.__groupDocs).filter((d): d is Fila => !!d && typeof d === 'object');
+  return docs.length > 0 ? docs : [f];
+};
+const pagado = (d: Fila): number => Number(d.montoPagado) || 0;
+
+/** Pagada si TODOS sus documentos lo están (la regla de la pestaña Pagadas, V00126). */
+export const filaPagada = (f: Fila): boolean =>
+  docsDeFila(f).every((d) => txt(d.statusPago).toUpperCase() === 'PAGADA' || (pagado(d) > 0.009 && (Number(d.saldoPendiente) || 0) <= 0.009));
+
+export type EstadoPagoFila = 'Pagada' | 'Parcial' | 'Sin pagar';
+
+/** Pagada · Parcial (algún pago, con saldo) · Sin pagar. */
+export const estadoPagoFila = (f: Fila): EstadoPagoFila => {
+  if (filaPagada(f)) return 'Pagada';
+  return docsDeFila(f).some((d) => pagado(d) > 0.009) ? 'Parcial' : 'Sin pagar';
+};
+
 /** El grupo completo (como la fila del Historial) de la factura con id `id`; null si no está. */
 export const grupoDeFactura = <T extends Fila>(facturas: readonly T[], id: string, campoEntidad: CampoEntidadFactura): T | null => {
   const f = facturas.find((x) => txt(x.id) === id);

@@ -1,6 +1,6 @@
 // ✅ V00502 — grupos de factura (antes copiados en los dos Historiales): misma unión de siempre.
 import { describe, expect, it } from 'vitest';
-import { agruparFacturas, claveGrupoFactura, grupoDeFactura } from './gruposFactura';
+import { agruparFacturas, claveGrupoFactura, estadoPagoFila, filaPagada, grupoDeFactura } from './gruposFactura';
 
 const a = { id: 'F1', invoice: 'INV-7', clienteId: 'e1', fecha: '2026-10-01', createdAt: '2026-10-02', subtotalFactura: 100, statusFactura: 'Facturado', operacionesIds: ['o1'], operacionesGuardadas: [{ id: 'o1', ref: 'TR-1' }], remolques: ['R1'] };
 const b = { id: 'F2', invoice: 'inv-7 ', clienteId: 'e1', fecha: '2026-10-05', createdAt: '2026-10-01', subtotalFactura: 50, statusFactura: 'Cancelado', operacionesIds: ['o2', 'o1'], operacionesGuardadas: [{ id: 'o2', ref: 'TR-2' }], remolques: ['R2', 'R1'] };
@@ -23,5 +23,23 @@ describe('agruparFacturas', () => {
     expect(grupoDeFactura([a, b, c], 'F3', 'clienteId')).toMatchObject({ __groupIds: ['F3'] });
     expect(grupoDeFactura([a], 'X', 'clienteId')).toBeNull();
     expect(grupoDeFactura([{ id: 'P1', invoice: 'A', proveedorId: 'p' }, { id: 'P2', invoice: 'A', proveedorId: 'p' }], 'P1', 'proveedorId')).toMatchObject({ __groupIds: ['P1', 'P2'] });
+  });
+});
+
+describe('estado de pago de la fila (✅ V00504)', () => {
+  it('Pagada si todos sus documentos lo están; Parcial con algún pago; si no, Sin pagar', () => {
+    const pagada = { id: 'P1', statusPago: 'PAGADA' };
+    const porMonto = { id: 'P2', montoPagado: 100, saldoPendiente: 0 };
+    const parcial = { id: 'P3', montoPagado: 40, saldoPendiente: 60, statusPago: 'PARCIAL' };
+    const sinPago = { id: 'P4' };
+    expect([pagada, porMonto, parcial, sinPago].map(estadoPagoFila)).toEqual(['Pagada', 'Pagada', 'Parcial', 'Sin pagar']);
+    // Una fila de dos documentos: pagada solo si los dos lo están.
+    const [g] = agruparFacturas([{ ...pagada, invoice: 'X', clienteId: 'e1' }, { ...sinPago, invoice: 'X', clienteId: 'e1' }], 'clienteId');
+    expect(filaPagada(g)).toBe(false);
+    expect(estadoPagoFila(g)).toBe('Sin pagar');
+    const [g2] = agruparFacturas([{ ...pagada, invoice: 'Y', clienteId: 'e1' }, { ...porMonto, invoice: 'Y', clienteId: 'e1' }], 'clienteId');
+    expect(estadoPagoFila(g2)).toBe('Pagada');
+    const [g3] = agruparFacturas([{ ...parcial, invoice: 'Z', clienteId: 'e1' }, { ...sinPago, invoice: 'Z', clienteId: 'e1' }], 'clienteId');
+    expect(estadoPagoFila(g3)).toBe('Parcial');
   });
 });

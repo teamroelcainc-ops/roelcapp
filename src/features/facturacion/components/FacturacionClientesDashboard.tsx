@@ -45,7 +45,7 @@ import type { Adjunto } from '../../../shared/archivos/adjuntos';
 import {
   MAX_DOCS_FACTURA, aplicarEscriturasDocs, camposDocsFactura, detalleError, docsDeFactura, idsDeFila,
 } from '../services/documentosFactura'; // ✅ V00451: varios documentos por factura
-import { agruparFacturas, grupoDeFactura } from '../services/gruposFactura'; // ✅ V00502
+import { agruparFacturas, estadoPagoFila, filaPagada, grupoDeFactura } from '../services/gruposFactura'; // ✅ V00502 · V00504
 import { useAtenderApertura } from '../../../shared/data/aperturas'; // ✅ V00502
 import type { EscrituraDocs } from '../services/documentosFactura';
 import { agregarDocsFactura, guardarDocsFactura, rescatarDocsDeBorradas } from '../services/guardarDocsFactura';
@@ -171,6 +171,16 @@ const COLUMNAS_FACTURA_BASE = [
   { id: 'total',       label: 'Total',        visible: true },
   { id: 'createdAt',   label: 'Registrada',   visible: false },
 ];
+
+// ✅ V00504: el Excel del Historial lleva además "Estado de pago" (Pagada / Parcial / Sin pagar),
+//   después de "# Pago" (no es columna de la tabla).
+const COL_ESTADO_PAGO = { id: 'estadoPago', label: 'Estado de pago', visible: true };
+const columnasParaExportar = (cols: readonly { id: string; label: string; visible: boolean }[]) => {
+  const out = cols.map((c) => ({ id: c.id, label: c.label, visible: c.visible }));
+  const i = out.findIndex((c) => c.id === 'numeroPago');
+  out.splice(i >= 0 ? i + 1 : out.length, 0, { ...COL_ESTADO_PAGO });
+  return out;
+};
 
 // ✅ V00438 (Fase 2.8): claves de la copia vieja de operaciones/facturas en
 //   localStorage (almacenSesion). Ya no se escriben; se borran una vez al montar.
@@ -307,10 +317,8 @@ export const FacturacionClientesDashboard = () => {
     ids.forEach(id => (pagosPorFactura[id] || []).forEach(n => { if (!out.includes(n)) out.push(n); }));
     return out;
   };
-  const facturaPagada = (f: any): boolean => {
-    const docs: any[] = Array.isArray(f?.__groupDocs) && f.__groupDocs.length ? f.__groupDocs : [f];
-    return docs.every((d: any) => String(d?.statusPago || '').toUpperCase() === 'PAGADA' || ((Number(d?.montoPagado) || 0) > 0.009 && (Number(d?.saldoPendiente) || 0) <= 0.009));
-  };
+  // ✅ V00504: la regla vive en services/gruposFactura.ts (también da "Estado de pago" al Excel).
+  const facturaPagada = (f: Record<string, unknown>): boolean => filaPagada(f);
 
   // ✅ V00497: las facturas llegan EN VIVO por el listener compartido con Pagos y Estadísticas
   //   (hooks/useFacturasEnVivo.ts). Antes se descargaban todas al entrar y la lista se quedaba como
@@ -2098,13 +2106,21 @@ export const FacturacionClientesDashboard = () => {
     }
   };
 
+  // ✅ V00504: el orden de la tabla del Historial, también para el Excel de todas las facturas.
+  const compararFacturas = (a: any, b: any): number => {
+    const dir = ordenFac.dir === 'asc' ? 1 : -1;
+    const va = valorOrdenFac(a, ordenFac.campo);
+    const vb = valorOrdenFac(b, ordenFac.campo);
+    if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
+    return String(va).localeCompare(String(vb)) * dir;
+  };
+
   // ✅ V00488: facturas sin fecha (o con una que no se reconoce): no entran en un filtro de fechas y se avisa cuántas.
   const sinFechaHist = useMemo(
     () => facturasGlobales.filter((f) => (!filtroCliente || String(f.clienteId || '') === filtroCliente) && !fechaFacturaISO(f.fecha)).length,
     [facturasGlobales, filtroCliente],
   );
   const historialOrdenado = useMemo(() => {
-    const dir = ordenFac.dir === 'asc' ? 1 : -1;
     const q = textoBuscarFacturaDiferido.trim().toLowerCase();
     const coincideTexto = (f: any) => {
       if (!q) return true;
@@ -2143,12 +2159,7 @@ export const FacturacionClientesDashboard = () => {
     if (filtroStatusFactura && filtroStatusFactura !== 'Todos') {
       agrupadas = agrupadas.filter(g => String(g.statusFactura || 'Facturado') === filtroStatusFactura);
     }
-    return agrupadas.sort((a, b) => {
-      const va = valorOrdenFac(a, ordenFac.campo);
-      const vb = valorOrdenFac(b, ordenFac.campo);
-      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
-      return String(va).localeCompare(String(vb)) * dir;
-    });
+    return agrupadas.sort(compararFacturas);
   }, [facturasGlobales, ordenFac, textoBuscarFacturaDiferido, filtroCliente, fechaDesdeHist, fechaHastaHist, opInfoMap, filtroStatusFactura, filtroMonedaHist, activeTab, pagosPorFactura]);
 
   const resumenHistorial = useMemo(() => {
@@ -2601,6 +2612,15 @@ export const FacturacionClientesDashboard = () => {
   // ✅ V00262: modal "Exportar a Excel" con selección y ORDEN de columnas
   //   (mismo patrón de Servicios Completados: cuadrícula + Drag & Drop).
   const [modalExportarFac, setModalExportarFac] = useState(false);
+  // ✅ V00504: qué facturas lleva el Excel: las de la pantalla (filtros y pestaña) o TODAS
+  //   (pagadas y sin pagar, con y sin fecha, de todos los clientes y status).
+  const [alcanceExportFac, setAlcanceExportFac] = useState<'pantalla' | 'todas'>('pantalla');
+  const todasLasFilasFac = useMemo(
+    () => (modalExportarFac ? agruparFacturas(facturasGlobales, 'clienteId') : []),
+    [modalExportarFac, facturasGlobales],
+  );
+  /** Hasta que el servidor confirma la lista, "todas" podría salir incompleta. */
+  const todasListasFac = facturasVivas.alDia;
   // ✅ V00264: TARJETAS CLICABLES del historial — al presionar una tarjeta se
   //   abre el detalle de DÓNDE SALE el número (las facturas que lo componen),
   //   con opción de descargar en Excel exactamente esa información.
@@ -2673,7 +2693,8 @@ export const FacturacionClientesDashboard = () => {
   const dragExportFacIdx = useRef<number | null>(null);
   const [dragOverExportFacIdx, setDragOverExportFacIdx] = useState<number | null>(null);
   const abrirModalExportarFac = () => {
-    setColumnasExportFac(columnasFactura.map(c => ({ id: c.id, label: c.label, visible: c.visible })));
+    setColumnasExportFac(columnasParaExportar(columnasFactura));
+    setAlcanceExportFac('pantalla');
     setModalExportarFac(true);
   };
   const soltarColumnaExportFac = (destino: number) => {
@@ -2690,9 +2711,12 @@ export const FacturacionClientesDashboard = () => {
   };
   const exportarCSV = async () => {
     if (exportandoExcelHist) return;
-    if (historialOrdenado.length === 0) return alert('No hay datos para exportar.');
+    const todas = alcanceExportFac === 'todas'; // ✅ V00504
+    if (todas && !todasListasFac) return alert('Todavía se está cargando la lista completa de facturas. Espera unos segundos.');
+    const lista = todas ? [...todasLasFilasFac].sort(compararFacturas) : historialOrdenado;
+    if (lista.length === 0) return alert('No hay datos para exportar.');
     // ✅ V00262: exporta con la selección y el ORDEN elegidos en el modal.
-    const columnasVisibles = (columnasExportFac.length ? columnasExportFac : columnasFactura).filter(c => c.visible);
+    const columnasVisibles = (columnasExportFac.length ? columnasExportFac : columnasParaExportar(columnasFactura)).filter(c => c.visible);
     if (columnasVisibles.length === 0) return alert('Selecciona al menos una columna para exportar.');
     setModalExportarFac(false);
     setExportandoExcelHist(true);
@@ -2700,7 +2724,7 @@ export const FacturacionClientesDashboard = () => {
 
     // ✅ V00260: resolver las referencias de TODO el historial (no solo la
     //   página visible) para que el Excel salga con TR-…, no con IDs.
-    const mapaExport = await resolverOpsParaExport(historialOrdenado);
+    const mapaExport = await resolverOpsParaExport(lista);
 
     const tipoExcel = (id: string): 'texto' | 'fecha' | 'fechaHora' | 'monto' | 'numero' => {
       if (id === 'total') return 'monto';
@@ -2720,6 +2744,7 @@ export const FacturacionClientesDashboard = () => {
         case 'cliente': return nombreClienteFactura_(f);
         case 'refCliente': return refClienteDeFactura(f, mapaExport); // ✅ V00260
         case 'numeroPago': return numerosPagoDe(f).join(', ');
+        case 'estadoPago': return estadoPagoFila(f); // ✅ V00504
         case 'moneda': return monedaFacturaMostrar(f);
         case 'facturaCcp': return f.facturaCcp || '';
         case 'cantOps': return Number(f.operacionesIds?.length || 0);
@@ -2730,24 +2755,39 @@ export const FacturacionClientesDashboard = () => {
       }
     };
 
-    const filas = historialOrdenado.map(f => {
+    const filas = lista.map(f => {
       const fila: any = {};
       columnasVisibles.forEach(col => { fila[col.id] = valorRaw(f, col.id); });
       return fila;
     });
 
+    // ✅ V00504: los totales van por moneda (sin canceladas, como las tarjetas); la fila TOTAL del
+    //   Excel solo sale si todas las facturas son de la misma moneda (antes sumaba dólares con pesos).
+    const statusParaTotales = todas ? 'Todos' : filtroStatusFactura;
+    const porMoneda = { USD: 0, MXN: 0 };
+    lista.forEach((f) => {
+      if (!sumaEnTotales(f.statusFactura, statusParaTotales)) return;
+      const m = codigoMonedaFactura(f);
+      if (m) porMoneda[m] += totalDeGrupo(f);
+    });
+    const monedasEnLista = new Set(lista.map((f) => codigoMonedaFactura(f) ?? '?'));
+    const totalesTxt = `Total USD ${formatoMoneda(porMoneda.USD)}  ·  Total MXN ${formatoMoneda(porMoneda.MXN)} (sin canceladas)`;
     const cliTxt = filtroCliente ? (nombreClienteSeleccionado || 'Cliente') : 'Todos los clientes';
     const rangoTxt = (fechaDesdeHist || fechaHastaHist) ? `${fechaDesdeHist || 'inicio'} a ${fechaHastaHist || 'hoy'}` : 'Todas las fechas';
     const statusTxt = filtroStatusFactura && filtroStatusFactura !== 'Todos' ? filtroStatusFactura : 'Todos los status';
+    const subtitulo = todas
+      ? `Todas las facturas: pagadas y sin pagar, con y sin fecha, todos los clientes y status  ·  ${filas.length} facturas  ·  ${totalesTxt}`
+      : `${statusTxt}  ·  Cliente: ${cliTxt}  ·  ${rangoTxt}  ·  ${filas.length} facturas  ·  ${totalesTxt}`;
 
     try {
       await exportarExcelProfesional({
-        nombreArchivo: `Facturas_Clientes_${hoyLocalISO()}.xlsx`,
-        tituloReporte: 'Reporte de Facturación · Facturas',
-        subtitulo: `${statusTxt}  ·  Cliente: ${cliTxt}  ·  ${rangoTxt}  ·  ${filas.length} facturas`,
+        nombreArchivo: todas ? `Facturas_Clientes_Todas_${hoyLocalISO()}.xlsx` : `Facturas_Clientes_${hoyLocalISO()}.xlsx`,
+        tituloReporte: todas ? 'Reporte de Facturación · Todas las facturas' : 'Reporte de Facturación · Facturas',
+        subtitulo,
         nombreHoja: 'Facturas',
         columnas,
         filas,
+        filaTotal: monedasEnLista.size === 1,
       });
     } catch (e) {
       console.error('Error exportando Excel de facturas:', e);
@@ -3630,7 +3670,23 @@ export const FacturacionClientesDashboard = () => {
               <h3 className="fac-export-modal__titulo">⬇ Exportar a Excel <span className="fac-export-modal__sub">({columnasExportFac.filter(c => c.visible).length} columnas)</span></h3>
               <button type="button" className="fac-export-modal__cerrar" onClick={() => setModalExportarFac(false)}>✕</button>
             </div>
-            <div className="fac-export-modal__nota">Arrastra ⋮⋮ cualquier tarjeta para cambiar el orden. Marca las columnas que quieres incluir.</div>
+            {/* ✅ V00504: qué facturas */}
+            <fieldset className="fac-export-alcance">
+              <legend className="fac-export-alcance__titulo">Qué facturas</legend>
+              <label className={`fac-export-alcance__opcion${alcanceExportFac === 'pantalla' ? ' fac-export-alcance__opcion--activa' : ''}`}>
+                <input type="radio" name="fac-export-alcance" checked={alcanceExportFac === 'pantalla'} onChange={() => setAlcanceExportFac('pantalla')} />
+                <span><strong>Las de la pantalla</strong> ({historialOrdenado.length.toLocaleString('es-MX')}): con los filtros y la pestaña de ahora.</span>
+              </label>
+              <label className={`fac-export-alcance__opcion${alcanceExportFac === 'todas' ? ' fac-export-alcance__opcion--activa' : ''}`}>
+                <input type="radio" name="fac-export-alcance" checked={alcanceExportFac === 'todas'} onChange={() => setAlcanceExportFac('todas')} />
+                <span>
+                  <strong>Todas las facturas</strong>{' '}
+                  {todasListasFac ? `(${todasLasFilasFac.length.toLocaleString('es-MX')})` : <CargandoDatos enLinea texto="contando…" />}
+                  : pagadas y sin pagar, con y sin fecha, de todos los clientes y status. Sin filtros.
+                </span>
+              </label>
+            </fieldset>
+            <div className="fac-export-modal__nota">Arrastra ⋮⋮ cualquier tarjeta para cambiar el orden. Marca las columnas que quieres incluir. "Estado de pago" dice Pagada, Parcial o Sin pagar.</div>
             <div className="fac-export-cuadricula">
               {columnasExportFac.map((c, idx) => (
                 <div
@@ -3654,10 +3710,10 @@ export const FacturacionClientesDashboard = () => {
               ))}
             </div>
             <div className="fac-export-modal__pie">
-              <button type="button" className="btn btn-outline" onClick={() => setColumnasExportFac(columnasFactura.map(c => ({ id: c.id, label: c.label, visible: c.visible })))}>Columnas de la tabla</button>
+              <button type="button" className="btn btn-outline" onClick={() => setColumnasExportFac(columnasParaExportar(columnasFactura))}>Columnas de la tabla</button>
               <span className="fac-export-modal__separador" />
               <button type="button" className="btn btn-outline" onClick={() => setModalExportarFac(false)}>Cancelar</button>
-              <button type="button" className="fac-export-modal__exportar" onClick={exportarCSV} disabled={exportandoExcelHist}>{exportandoExcelHist ? '⏳ Exportando…' : 'Exportar'}</button>
+              <button type="button" className="fac-export-modal__exportar" onClick={exportarCSV} disabled={exportandoExcelHist || (alcanceExportFac === 'todas' && !todasListasFac)}>{exportandoExcelHist ? '⏳ Exportando…' : 'Exportar'}</button>
             </div>
           </div>
         </div>
