@@ -31,7 +31,26 @@ type Datos = Record<string, unknown>;
 /** Operación con su id REAL de documento (`idDoc`); `id` es el guardado (AppSheet) si lo trae. */
 export type OpRevision = Datos & { idDoc: string };
 /** Factura ya normalizada (normalizarFacturaDe) con su id de la lista (`id`, el que abre Facturación). */
-export type FacturaRevision = Datos & { id: string };
+export type FacturaRevision = Datos & { id: string; /** ✅ V00510: id REAL del documento (si no, `id`). */ idDoc?: string };
+
+/**
+ * ✅ V00510 — Una operación de F1 con la factura que la lista (para "Marcar facturadas").
+ * `facturas` > 1 = la listan varias facturas activas: no se marca sola.
+ */
+export interface MarcaF1 {
+  opId: string;
+  /** id de AppSheet guardado en la operación ('' si no trae). */
+  opAppId: string;
+  ref: string;
+  cliente: string;
+  status: string;
+  grupo: ReturnType<typeof estadoGrupoDe>;
+  facturaId: string;
+  invoice: string;
+  statusFactura: string;
+  fechaFactura: string;
+  facturas: number;
+}
 
 export type CodigoRevision = 'F4' | 'F1' | 'D2' | 'F3' | 'D1' | 'D4' | 'D5' | 'F2' | 'F2c' | 'D6' | 'F5' | 'D3';
 export type Prioridad = 'Alta' | 'Media' | 'Baja';
@@ -47,7 +66,7 @@ export interface GrupoRevision {
 /** En el orden en que se atienden. */
 export const GRUPOS_REVISION: readonly GrupoRevision[] = [
   { codigo: 'F4', titulo: 'Operaciones en dos o más facturas', prioridad: 'Alta', correccion: 'Cancelar el duplicado y avisar al cliente (paso 2: eliges cuál).' },
-  { codigo: 'F1', titulo: 'En una factura, sin Invoice ni marca de facturada', prioridad: 'Alta', correccion: 'Marcarlas desde la lista de su factura (paso 2, con respaldo).' },
+  { codigo: 'F1', titulo: 'En una factura, sin Invoice ni marca de facturada', prioridad: 'Alta', correccion: 'Marcarlas como facturadas con la factura que las lista (abajo: prueba, respaldo y autorización).' },
   { codigo: 'D2', titulo: 'Referencia repetida', prioridad: 'Alta', correccion: 'Renumerar una de cada par (paso 2: eliges cuál).' },
   { codigo: 'F3', titulo: 'Invoice que no existe en Facturas', prioridad: 'Media', correccion: 'Corregir el Invoice (paso 2).' },
   { codigo: 'D1', titulo: 'Moneda de cobro distinta a la de la empresa', prioridad: 'Media', correccion: 'No facturadas: Corregir monedas. Facturadas: a mano, una por una.' },
@@ -98,6 +117,8 @@ export interface ResultadoRevision {
   facturas: number;
   /** Elementos de las listas de facturas que no se pudieron ligar a una operación (no existe o referencia repetida). */
   sinLigar: number;
+  /** ✅ V00510: las operaciones de F1 con su factura. */
+  marcasF1: MarcaF1[];
 }
 
 // ── Utilidades ────────────────────────────────────────────────────────────
@@ -217,10 +238,17 @@ export const revisarDatos = (e: EntradaRevision): ResultadoRevision => {
   });
 
   // F1 · en una factura, sin Invoice ni marca
+  const marcasF1: MarcaF1[] = [];
   operaciones.forEach((op) => {
     const fs = facturasDeOp.get(op.idDoc);
     if (!fs || facturadaCliente(op)) return;
     filas.push(filaOp('F1', op, `Está en ${fs.map(textoFactura).join('; ')}, pero la operación no tiene Invoice ni la marca de facturada`, enlacesFacturas(fs)));
+    const f = fs[0];
+    marcasF1.push({
+      opId: op.idDoc, opAppId: txt(op.id) !== op.idDoc ? txt(op.id) : '', ref: refOp(op),
+      cliente: String(valorExcelOperacion(op, 'cliente')), status: String(valorExcelOperacion(op, 'status')), grupo: grupoDe(op),
+      facturaId: txt(f.idDoc) || f.id, invoice: txt(f.invoice), statusFactura: statusFactura(f), fechaFactura: txt(f.fecha), facturas: fs.length,
+    });
   });
 
   // D2 · referencias repetidas
@@ -316,7 +344,7 @@ export const revisarDatos = (e: EntradaRevision): ResultadoRevision => {
   filas.sort((a, b) => (orden.get(a.codigo) ?? 0) - (orden.get(b.codigo) ?? 0) || b.fecha.localeCompare(a.fecha) || a.ref.localeCompare(b.ref));
   const conteo = Object.fromEntries(GRUPOS_REVISION.map((g) => [g.codigo, 0])) as Record<CodigoRevision, number>;
   filas.forEach((f) => { conteo[f.codigo]++; });
-  return { filas, conteo, referenciasRepetidas, operaciones: operaciones.length, facturas: facturas.length, sinLigar };
+  return { filas, conteo, referenciasRepetidas, operaciones: operaciones.length, facturas: facturas.length, sinLigar, marcasF1 };
 };
 
 /** Filas del Excel (todas, con el grupo y dónde se corrige). */

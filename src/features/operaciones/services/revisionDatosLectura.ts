@@ -46,7 +46,8 @@ export const leerYRevisarDatos = async (alAvanzar: (a: AvanceRevisionDatos) => v
     obtenerCatalogo('catalogo_status_servicio'),
     obtenerFlags(),
   ]);
-  const facturas: FacturaRevision[] = crudas.map((f) => ({ ...normalizarFacturaDe(f, 'cliente'), id: String(f.id) }));
+  // ✅ V00510: también el id REAL del documento (para marcar las operaciones de F1 con su factura).
+  const facturas: FacturaRevision[] = crudas.map((f) => ({ ...normalizarFacturaDe(f, 'cliente'), id: String(f.id), idDoc: idReal(f) }));
   const resultado = revisarDatos({
     operaciones: conNombreDeStatus(operaciones, status),
     facturas,

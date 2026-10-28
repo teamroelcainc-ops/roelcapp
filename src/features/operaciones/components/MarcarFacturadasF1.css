@@ -1,0 +1,26 @@
+/* ✅ V00510: Marcar facturadas (F1) dentro de la Revisión de datos (rvd-). */
+.mf1-panel { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid #9e6a03; border-radius: 8px; background: rgba(187, 128, 9, 0.07); }
+.mf1-titulo { margin: 0; color: #f0f6fc; font-size: 0.92rem; }
+.mf1-texto { margin: 0; color: #c9d1d9; font-size: 0.84rem; line-height: 1.45; }
+.mf1-texto b { color: #f0f6fc; }
+.mf1-pasos { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.mf1-paso { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 10px; border: 1px solid #21262d; border-radius: 6px; background: #0d1117; }
+.mf1-paso--hecho { border-color: #238636; }
+.mf1-ayuda { color: #8b949e; font-size: 0.8rem; }
+.mf1-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid #30363d; border-radius: 6px; background: #161b22; color: #c9d1d9; font: inherit; font-size: 0.83rem; font-weight: 600; cursor: pointer; }
+.mf1-btn:hover { border-color: #8b949e; }
+.mf1-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.mf1-btn--aplicar { border-color: #238636; background: #238636; color: #fff; }
+.mf1-btn--aplicar:hover { border-color: #2ea043; background: #2ea043; }
+.mf1-btn:focus-visible, .mf1-input:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
+.mf1-autorizar { display: inline-flex; align-items: center; gap: 8px; color: #c9d1d9; font-size: 0.83rem; }
+.mf1-input { width: 110px; padding: 5px 8px; border: 1px solid #30363d; border-radius: 6px; background: #161b22; color: #f0f6fc; font: inherit; font-size: 0.85rem; letter-spacing: 0.04em; }
+.mf1-input:disabled { opacity: 0.5; }
+.mf1-avance { display: grid; gap: 8px; }
+.mf1-progreso { width: 100%; height: 10px; accent-color: #3fb950; }
+.mf1-error { margin: 0; color: #ff7b72; font-size: 0.84rem; font-weight: 600; }
+.mf1-resultado { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid #238636; border-radius: 6px; background: rgba(35, 134, 54, 0.08); }
+.mf1-resultado--error { border-color: #f85149; background: rgba(248, 81, 73, 0.08); }
+.mf1-resultado-titulo { margin: 0; color: #f0f6fc; font-size: 0.88rem; font-weight: 600; }
+.mf1-omitidas { display: grid; gap: 4px; margin: 0; padding-left: 18px; color: #8b949e; font-size: 0.8rem; line-height: 1.4; overflow-wrap: anywhere; }
+.mf1-omitidas b { color: #c9d1d9; font-weight: 600; }

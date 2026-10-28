@@ -15,6 +15,7 @@ import { descargarExcel } from '../services/excelOperaciones';
 import { GRUPOS_REVISION, filasExcelRevision } from '../services/revisionDatos';
 import type { CodigoRevision, DestinoRevision, FilaRevision } from '../services/revisionDatos';
 import { leerYRevisarDatos, ultimaRevisionDatos } from '../services/revisionDatosLectura';
+import MarcarFacturadasF1 from './MarcarFacturadasF1'; // ✅ V00510
 import type { AvanceRevisionDatos, RevisionGuardada } from '../services/revisionDatosLectura';
 import './RevisionDatosModal.css';
 
@@ -152,6 +153,8 @@ export default function RevisionDatosModal({ onCerrar }: { onCerrar: () => void 
                   {miles(filas.length)} {elegido.codigo === 'F2' || elegido.codigo === 'F2c' ? (filas.length === 1 ? 'factura' : 'facturas') : (filas.length === 1 ? 'operación' : 'operaciones')}
                   {elegido.codigo === 'D2' && r.referenciasRepetidas > 0 ? ` (${miles(r.referenciasRepetidas)} referencias)` : ''}. {elegido.correccion}
                 </p>
+                {/* ✅ V00510: corrección de F1 (prueba → respaldo → autorización → aplicar) */}
+                {elegido.codigo === 'F1' && r.marcasF1.length > 0 && <MarcarFacturadasF1 key={revision?.en.getTime()} marcas={r.marcasF1} />}
                 {(elegido.codigo === 'F2' || elegido.codigo === 'F4' || elegido.codigo === 'F1') && r.sinLigar > 0 && (
                   <p className="rvd-nota">
                     {miles(r.sinLigar)} renglones de facturas no se pudieron ligar a una operación (no existe, es de prueba o su referencia está repetida).
