@@ -207,6 +207,16 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - Modales con `createPortal` a `document.body` (la tarjeta usa `transform` al pasar el mouse) y perezosos desde la tarjeta (`lazyWithRetry`): la carga inicial crece 0.3 KB (sin eso, ~20 KB por FormularioConfigurable).
 - Se quitaron las reglas `.rd-dos*` de App.css (solo las usaba la tarjeta TC · Diesel).
 
+## V00505 (Revisión de datos, pasos 0 y 1 del reporte del 27-oct)
+- El reporte de errores (27-oct) se hizo sobre la V00495. C1–C5 ya estaban en la V00496/V00497. Se confirmó cada uno en el código y se agregó la prueba que faltaba (C5: `descargarFacturas.test.ts`). C3 sigue sin funcionar en producción hasta desplegar `eliminarFactura` (V00496).
+- **Revisión de datos**: herramienta de SOLO LECTURA. Regla pura en `revisionDatos.ts`; la lectura completa de operaciones (`recorrerOperaciones`) es la misma excepción documentada de la V00500 (la lanza el usuario a mano, con avance). Las facturas salen del listener compartido `pagos:facturas_clientes`, para no duplicar lecturas.
+- **Ligar factura ↔ operación**: por id del documento, por id de AppSheet (`id` guardado) o por referencia, SOLO si la referencia es de una sola operación (D2 hace ambiguas las repetidas). F4 cuenta folios (invoice + cliente, `claveGrupoFactura`), no documentos: un folio partido en dos documentos no es cobro doble.
+- D1/D4/D5 reutilizan `validarOperacionExcel` (V00503) tal cual: una misma operación puede salir en D1 y en D4 (con la moneda de la empresa los montos tampoco cuadran).
+- F2 compara `totalNativoFactura`/`totalNativoFacturaLegado` (según `dineroPorServidor`, como el Historial) contra la suma de `conversionOperacion` con la moneda de la FACTURA. Desde la V00495 una factura emitida puede diferir a propósito (se congeló): la lista es para decidir caso por caso.
+- D3 no marca los ids fijos (STATUS_FINALES) sin nombre: en el simulador 1,008 canceladas no traen `statusNombre` y el catálogo no tiene ese id.
+- "No Aplica" (5 facturas en producción) cuenta como activa hasta que Roelca decida.
+- El resultado vive en memoria del módulo (`ultimaRevisionDatos`), no en localStorage: nombres y montos de clientes.
+
 ## V00504 (Excel de todas las facturas de clientes)
 - Roelca pidió descargar todas las facturas (pagadas y no, con y sin fecha). El Historial sin filtros ya las tenía, pero el filtro de fechas (y la pestaña Pagadas, el status, el cliente, la moneda) las recortaba sin que fuera obvio. Por eso la ventana de exportar elige: "Las de la pantalla" (por defecto, como antes) o "Todas las facturas" (`agruparFacturas` sobre `facturasGlobales`, sin ningún filtro, con el orden de la tabla).
 - "Todas" espera a `facturasVivas.alDia`: la caché del navegador puede traer solo parte de la lista (V00497).

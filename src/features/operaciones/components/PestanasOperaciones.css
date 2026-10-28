@@ -15,3 +15,12 @@
 }
 .pop-btn-excel:hover { border-color: #10b981; background: rgba(16, 185, 129, 0.16); }
 .pop-btn-excel:focus-visible { outline: 2px solid #10b981; outline-offset: 2px; }
+
+/* ✅ V00505: botón "Revisión de datos" (solo lectura) */
+.pop-btn-revision {
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px;
+  border: 1px solid rgba(227, 179, 65, 0.45); border-radius: 6px; background: rgba(227, 179, 65, 0.08);
+  color: #e3b341; font: inherit; font-size: 0.82rem; font-weight: 600; white-space: nowrap; cursor: pointer;
+}
+.pop-btn-revision:hover { border-color: #e3b341; background: rgba(227, 179, 65, 0.16); }
+.pop-btn-revision:focus-visible { outline: 2px solid #e3b341; outline-offset: 2px; }
