@@ -1,6 +1,7 @@
 // src/features/empresas/components/FormularioEmpresa.tsx
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useEffectEvent, useRef, useMemo } from 'react';
 import { idReal, useCatalogos } from '../../../shared/data/catalogos';
+import { buscarEntrada, entradasCatalogo, idsDeRegistro, nombreDeRegistro, traductorCatalogo } from '../../../shared/data/indiceCatalogo'; // ✅ V00506
 import { TIPO_EMPRESA } from '../../../shared/dominio/constantes';
 import { propagarMonedaEmpresa } from '../services/propagarMoneda';
 import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
@@ -404,10 +405,11 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
   // ✅ Catálogos completos {id, nombre}: en la interfaz se trabaja con NOMBRES,
   //   pero en Firestore se guardan los IDs del catálogo (que es lo que filtran
   //   los buscadores del formulario de Operaciones).
-  const catTiposEmpresaFull = useMemo(
-    () => cat.tiposEmpresa.map((d) => ({ id: idReal(d), nombre: String(d.tipo || '') })).filter((x) => x.nombre), [cat.tiposEmpresa]);
-  const catTiposServicioFull = useMemo(
-    () => cat.tiposServicio.map((d) => ({ id: idReal(d), nombre: String(d.nombre || '') })).filter((x) => x.nombre), [cat.tiposServicio]);
+  // ✅ V00506: cada tipo con sus DOS ids (el del documento y el `id` de AppSheet, p. ej. "ca21ab07")
+  //   y su nombre en `tipo` o en `nombre`: antes solo el id del documento y `tipo`, y la empresa que
+  //   guardaba el otro id salía con el id pelón en Tipo(s) de Empresa (shared/data/indiceCatalogo.ts).
+  const catTiposEmpresaFull = useMemo(() => entradasCatalogo(cat.tiposEmpresa, ['tipo']), [cat.tiposEmpresa]);
+  const catTiposServicioFull = useMemo(() => entradasCatalogo(cat.tiposServicio, ['nombre']), [cat.tiposServicio]);
   const catalogoTiposEmpresa = useMemo(() => catTiposEmpresaFull.map((x) => x.nombre), [catTiposEmpresaFull]);
   const catalogoTiposServicio = useMemo(() => catTiposServicioFull.map((x) => x.nombre), [catTiposServicioFull]);
 
@@ -474,8 +476,18 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
   });
 
   // ✅ Conversión entre NOMBRES (interfaz) e IDs (Firestore) de los catálogos.
-  const idTipoEmpresaDeNombre = (nombre: string) => catTiposEmpresaFull.find(x => x.nombre === nombre)?.id || nombre;
-  const nombreTipoEmpresaDeId = (v: string) => catTiposEmpresaFull.find(x => x.id === String(v))?.nombre || v;
+  // ✅ V00506: al guardar se conserva el id que la empresa ya traía para cada tipo (no se cambia por el
+  //   otro id del mismo registro: las listas de otros módulos buscan por TIPO_EMPRESA); un tipo nuevo
+  //   toma el id fijo de la app si el registro lo tiene.
+  const guardadosTipos = (v: unknown): unknown[] => (Array.isArray(v) ? v : v ? [v] : []);
+  const trTiposEmpresa = useMemo(
+    () => traductorCatalogo(catTiposEmpresaFull, guardadosTipos(initialData?.tiposEmpresa), Object.values(TIPO_EMPRESA)),
+    [catTiposEmpresaFull, initialData]);
+  const trTiposServicio = useMemo(
+    () => traductorCatalogo(catTiposServicioFull, guardadosTipos(initialData?.tiposServicio)),
+    [catTiposServicioFull, initialData]);
+  const idTipoEmpresaDeNombre = (nombre: string) => trTiposEmpresa.idDe(nombre);
+  const nombreTipoEmpresaDeId = (v: string) => trTiposEmpresa.nombreDe(v);
   nombreTipoEmpresaDeIdRef.current = nombreTipoEmpresaDeId; // ✅ V00383
   // ✅ V00383: empresas con la DIRECCIÓN GENERAL vieja (direccionId) y sin
   //   direcciones por tipo → la dirección aparece en el bloque del tipo
@@ -492,8 +504,8 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [catTiposEmpresaFull, formData.direccionId, formData.tiposEmpresa]);
-  const idTipoServicioDeNombre = (nombre: string) => catTiposServicioFull.find(x => x.nombre === nombre)?.id || nombre;
-  const nombreTipoServicioDeId = (v: string) => catTiposServicioFull.find(x => x.id === String(v))?.nombre || v;
+  const idTipoServicioDeNombre = (nombre: string) => trTiposServicio.idDe(nombre);
+  const nombreTipoServicioDeId = (v: string) => trTiposServicio.nombreDe(v);
 
   // ✅ Cuando cargan los catálogos, los tipos guardados como ID (formato de la
   //   base) se convierten a nombre para que los checkboxes se marquen bien.
@@ -525,7 +537,7 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
         if (porNombre) mon = String(porNombre.id);
       }
       let tf = String(prev.tipoFactura || '');
-      if (tf && tiposL.length > 0 && !tiposL.some((t) => String(t.id) === tf)) {
+      if (tf && tiposL.length > 0 && !tiposL.some((t) => idsDeRegistro(t as Record<string, unknown>).includes(tf))) { // ✅ V00506: cualquiera de sus dos ids
         const porNombreTf = tiposL.find((t) => String(t.tipo || t.nombre || '').trim().toLowerCase() === tf.trim().toLowerCase());
         if (porNombreTf) tf = String(porNombreTf.id);
       }
@@ -564,6 +576,15 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
     return `EMP-${String(maxNum + 1).padStart(3, '0')}`;
   };
 
+  // ✅ V00506: nombres de los tipos guardados (con los catálogos de ESE momento, sin volver a cargar la empresa por ellos).
+  const nombresDeTipos = useEffectEvent((empresa: unknown[], servicio: unknown[]) => ({
+    tiposEmpresa: empresa.map((v) => nombreTipoEmpresaDeId(String(v))),
+    tiposServicio: servicio.map((v) => nombreTipoServicioDeId(String(v))),
+  }));
+  // ✅ V00506: la empresa abierta se carga SOLO cuando cambia el registro abierto. Antes también corría
+  //   con cada cambio de la lista de empresas (`registros`, en vivo): volvía a poner los tipos como ids
+  //   después de traducirlos ("ca21ab07" en Tipo(s) de Empresa) y borraba lo que se estaba capturando
+  //   si alguien guardaba cualquier otra empresa. El # de empresa de una nueva sigue a la lista (abajo).
   useEffect(() => {
     if (initialData) {
       const data = { ...initialData };
@@ -600,11 +621,16 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
       if (!Array.isArray(data.clienteRelacionadoNombres)) {
         data.clienteRelacionadoNombres = [];
       }
+      // ✅ V00506: los tipos se muestran por nombre desde que se abre (si los catálogos ya llegaron;
+      //   si no, los traduce el efecto de arriba cuando lleguen).
+      Object.assign(data, nombresDeTipos(data.tiposEmpresa as unknown[], data.tiposServicio as unknown[]));
 
       setFormData(data as any);
-    } else {
-      setFormData(prev => ({ ...prev, numCliente: generarSiguienteNumCliente() }));
     }
+  }, [initialData]);
+  useEffect(() => {
+    if (initialData) return;
+    setFormData(prev => ({ ...prev, numCliente: generarSiguienteNumCliente() }));
   }, [initialData, registros]);
 
   // ✅ V00140: este formulario respeta Autorizaciones (campos bloqueados + acciones)
@@ -839,6 +865,19 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
     return normMoneda(monCat) === monedaObjetivo;
   });
   
+  // ✅ V00506: la opción del tipo de factura que ya trae la empresa lleva SU valor guardado (el id del
+  //   documento o el de AppSheet) para que el select la muestre, aunque sea de otra moneda; su nombre
+  //   sale de `nombre` o de otro campo de nombre (antes, con el otro id, el select quedaba vacío).
+  const entradaTipoFactura = buscarEntrada(entradasCatalogo(tiposFacturas as Record<string, unknown>[]), formData.tipoFactura);
+  const opcionesTipoFactura = [
+    ...(entradaTipoFactura && !tiposFacturasFiltrados.some(tf => idsDeRegistro(tf as Record<string, unknown>).includes(String(formData.tipoFactura)))
+      ? [{ valor: String(formData.tipoFactura), nombre: entradaTipoFactura.nombre }] : []),
+    ...tiposFacturasFiltrados.map(tf => {
+      const ids = idsDeRegistro(tf as Record<string, unknown>);
+      return { valor: ids.includes(String(formData.tipoFactura)) ? String(formData.tipoFactura) : String(tf.id), nombre: nombreDeRegistro(tf as Record<string, unknown>) || String(tf.id) };
+    }),
+  ];
+
   // ✅ CORRECCIÓN: el campo tiposEmpresa puede venir guardado como el ID del
   //    catálogo ('7eec9cbb') o como el texto ('Cliente (Paga)'). Antes solo se
   //    comparaba contra el texto, por eso el selector de "Cliente(s) que Paga
@@ -1022,8 +1061,8 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                         }}
                       >
                         <option value="">{formData.moneda ? 'Seleccione Tipo de Factura...' : 'Primero seleccione Moneda'}</option>
-                        {tiposFacturasFiltrados.map(tf => (
-                          <option key={tf.id} value={tf.id}>{tf.nombre}</option>
+                        {opcionesTipoFactura.map(o => (
+                          <option key={o.valor} value={o.valor}>{o.nombre}</option>
                         ))}
                       </select></BloqueoAut>
                     </div>

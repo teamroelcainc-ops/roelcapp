@@ -207,6 +207,13 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - Modales con `createPortal` a `document.body` (la tarjeta usa `transform` al pasar el mouse) y perezosos desde la tarjeta (`lazyWithRetry`): la carga inicial crece 0.3 KB (sin eso, ~20 KB por FormularioConfigurable).
 - Se quitaron las reglas `.rd-dos*` de App.css (solo las usaba la tarjeta TC · Diesel).
 
+## V00506 (Empresas: tipos y tipo de factura con su nombre)
+- Síntoma (28-oct, EMP-1439): Tipo(s) de Empresa mostraba `ca21ab07` en el detalle y en Editar; a veces también Tipo de Factura.
+- **Dos ids por registro de catálogo**: los importados de AppSheet guardan su campo `id` y no siempre coincide con el id del documento. Las empresas guardan uno u otro, y las constantes `TIPO_EMPRESA` son los de AppSheet. Regla nueva para mostrar: buscar por cualquiera de los dos (`shared/data/indiceCatalogo.ts`). Regla para guardar: conservar el que ya traía; para uno nuevo, el id fijo de la app si el registro lo tiene. Nunca reescribir ids en masa: los filtros de otros módulos comparan contra `TIPO_EMPRESA`.
+- **Bug aparte, encontrado al probar**: el efecto que carga la empresa en `FormularioEmpresa` dependía de `registros` (lista en vivo). Cada cambio de cualquier empresa recargaba el formulario: los tipos volvían a ids y se perdía lo capturado. Ahora depende solo de `initialData`; el # automático de una nueva va en su propio efecto.
+- Facturación (`construirMapaCatalogos`) traduce con `item.id` (el guardado gana); no se tocó.
+- PENDIENTE (si vuelve a salir un id): revisar en Firebase si el registro existe en `catalogo_tipo_empresa` (por id del documento o por su campo `id`).
+
 ## V00505 (Revisión de datos, pasos 0 y 1 del reporte del 27-oct)
 - El reporte de errores (27-oct) se hizo sobre la V00495. C1–C5 ya estaban en la V00496/V00497. Se confirmó cada uno en el código y se agregó la prueba que faltaba (C5: `descargarFacturas.test.ts`). C3 sigue sin funcionar en producción hasta desplegar `eliminarFactura` (V00496).
 - **Revisión de datos**: herramienta de SOLO LECTURA. Regla pura en `revisionDatos.ts`; la lectura completa de operaciones (`recorrerOperaciones`) es la misma excepción documentada de la V00500 (la lanza el usuario a mano, con avance). Las facturas salen del listener compartido `pagos:facturas_clientes`, para no duplicar lecturas.

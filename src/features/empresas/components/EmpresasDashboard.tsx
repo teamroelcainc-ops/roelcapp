@@ -22,6 +22,7 @@ import { hoyLocalISO, fechaLocalISO } from '../../../utils/fechaHoraLocal';
 import { useModuloEscuchando } from '../../../utils/moduloVivoContexto';
 import { idReal, useCatalogo, useCatalogos } from '../../../shared/data/catalogos';
 import type { DocCatalogo } from '../../../shared/data/catalogos';
+import { diccionarioCatalogo, nombreDeRegistro } from '../../../shared/data/indiceCatalogo'; // ✅ V00506
 import { monedaCanonica } from '../../../shared/dominio/moneda';
 import { useFlags, useFlagsCargadas } from '../../../shared/data/flags';
 import { paginaOperacionesDeEmpresa, usosEnCache } from '../../../shared/data/consultas';
@@ -454,12 +455,11 @@ const EmpresasDashboard = () => {
     direcciones: 'direcciones', tiposEmpresa: 'catalogo_tipo_empresa', tiposServicio: 'catalogo_tipo_servicio',
   });
   const diccionarios = useMemo(() => {
-    const getDict = (docs: DocCatalogo[], labelField: string, formatFn?: (d: DocCatalogo) => string) => {
-      const dict: Record<string, unknown> = {};
-      // A prueba de fallos: busca el campo deseado, o nombre, o tipo, o descripción.
-      docs.forEach((d) => { dict[idReal(d)] = formatFn ? formatFn(d) : (d[labelField] || d.nombre || d.tipo || d.descripcion || idReal(d)); });
-      return dict;
-    };
+    // ✅ V00506: cada registro con sus DOS ids (el del documento y el `id` de AppSheet que guardan
+    //   muchas empresas, p. ej. el tipo "ca21ab07"): antes solo el del documento y el detalle mostraba
+    //   el id pelón en Tipo(s) de Empresa y, a veces, en Tipo de Factura (shared/data/indiceCatalogo.ts).
+    const getDict = (docs: DocCatalogo[], labelField: string, formatFn?: (d: DocCatalogo) => string) =>
+      diccionarioCatalogo(docs, (d) => (formatFn ? formatFn(d as DocCatalogo) : (nombreDeRegistro(d, labelField ? [labelField] : []) || idReal(d as DocCatalogo))));
     return {
       regimenes: getDict(catDic.regimenes, '', (d) => `${d.clave} - ${d.descripcion}`),
       monedas: getDict(catDic.monedas, 'moneda'),
