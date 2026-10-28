@@ -16,6 +16,8 @@ import { puenteYaCobrado } from '../../../shared/dominio/cobroPuente';
 import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
 import { registrarLog } from '../../../utils/logger';
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
+import { ajusteConCatalogos, avisarAjusteConvenio, catalogosSiCambiaFalso } from './convenioFalsoDatos'; // ✅ V00509
+import type { AjusteConvenio } from './convenioFalso';
 import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
 import { avisarCrucePuente, cobroPuenteDelPaso } from '../../puentes/services/crucePuente';
 import { limpiarUndefined } from './formatosOperacion';
@@ -54,8 +56,10 @@ export const regresarStatusOperacion = async (op: Datos, destino: StatusResuelto
   catch (e) { console.warn('[regresoStatus] cobro del puente:', e); }
   const cobroEnServidor = (await obtenerFlags()).cobroPuenteEnServidor;
   const opRef = doc(db, 'operaciones', idDoc);
+  // ✅ V00509: si entra o sale de Falso, los convenios del cliente (antes de la transacción).
+  const catConvenio = await catalogosSiCambiaFalso(op.statusNombre, destino.nombre);
 
-  const { cambios, cobro, anterior } = await runTransaction(db, async (tx) => {
+  const { cambios, cobro, anterior, convFalso } = await runTransaction(db, async (tx) => {
     const snap = await tx.get(opRef);
     if (!snap.exists()) throw new ErrorRegreso('La operación ya no existe (pudo eliminarse).');
     const actual = snap.data() as Datos;
@@ -63,11 +67,15 @@ export const regresarStatusOperacion = async (op: Datos, destino: StatusResuelto
       throw new ErrorRegreso(`La operación cambió a "${String(actual.statusNombre || actual.status || 'otro estatus')}" mientras la veías. Ciérrala y vuelve a abrirla.`);
     }
     const cobroVigente = puenteYaCobrado(actual) ? {} : cobroCalculado;
+    // ✅ V00509: con el dato actual (no la copia de la lista): al entrar a Falso, el convenio Falso del
+    //   cliente; al salir, el que tenía.
+    const ajusteConv: AjusteConvenio = ajusteConCatalogos(actual, destino.nombre, catConvenio, String(actual.statusNombre ?? ''));
     const campos = limpiarUndefined({
       status: destino.id,
       statusNombre: destino.nombre,
       ...(cobroEnServidor ? {} : cobroVigente),
       ...ajusteSueldoPorStatus(actual, destino.nombre),
+      ...ajusteConv.cambios,
     }) as Datos;
     tx.set(doc(collection(db, 'horarios')), limpiarUndefined({
       operacionId: idBitacora(op),
@@ -80,8 +88,9 @@ export const regresarStatusOperacion = async (op: Datos, destino: StatusResuelto
       statusAnteriorNombre: String(actual.statusNombre ?? ''),
     }));
     tx.update(opRef, campos);
-    return { cambios: campos, cobro: cobroVigente, anterior: String(actual.statusNombre || actual.status || '(sin estatus)') };
+    return { cambios: campos, cobro: cobroVigente, anterior: String(actual.statusNombre || actual.status || '(sin estatus)'), convFalso: ajusteConv };
   });
+  avisarAjusteConvenio(convFalso);
 
   const ref = String(op.ref || idDoc);
   registrarLog(modulo, 'Edición', `Regresó la operación ${ref} de "${anterior}" a "${destino.nombre}" (fecha del movimiento: ${fechaHora})`).catch(() => {});

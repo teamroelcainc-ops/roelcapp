@@ -29,7 +29,7 @@ import { collection } from 'firebase/firestore';
 import { auth, db } from '../../config/firebase';
 import { useModuloVivoActivo } from '../../utils/moduloVivoContexto';
 import {
-  entradaViva, estadoVivo, idReal, obtenerVivo, pedirVivo, reiniciarVivas, soltarVivo, MINUTOS_PERMANENCIA,
+  entradaViva, estadoVivo, idReal, obtenerVivo, pedirVivo, reintentarVivo, reiniciarVivas, soltarVivo, MINUTOS_PERMANENCIA,
 } from './coleccionesVivas';
 import type { DocVivo, EstadoVivo } from './coleccionesVivas';
 
@@ -101,6 +101,9 @@ export const precalentarCatalogos = (cols: readonly ColeccionCatalogo[]): void =
 
 /** Cierra todos los listeners (catálogos y consultas en vivo) y borra los datos (al cerrar sesión). */
 export const reiniciarCatalogos = (): void => reiniciarVivas();
+
+/** ✅ V00509: vuelve a abrir el listener de un catálogo SI falló (si está abierto no hace nada). */
+export const reintentarCatalogo = (col: ColeccionCatalogo): void => reintentarVivo(claveDe(col));
 
 /**
  * Hook: un catálogo en vivo. Por defecto solo escucha mientras el módulo está a

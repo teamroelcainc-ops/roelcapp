@@ -46,6 +46,7 @@ import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 import { validarFormularioConfigurable } from '../../formularios/configFormularios';
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
+import { ajusteConvenioAlCambiarStatus, avisarAjusteConvenio } from '../services/convenioFalsoDatos'; // ✅ V00509
 import { cargarCtxCobroPuente, nombresAduana, normPuente } from '../../../utils/puenteColombia';
 import { avisarCrucePuente } from '../../puentes/services/crucePuente'; // ✅ V00470
 import { aduanaDeOperacionCtx, casetaDeElegido, casetaPrevista, casetasDeFlujo, cobroAlCambiarStatus, disparoCobroPuente, esAduanaColombia, puenteYaCobrado } from '../../../shared/dominio/cobroPuente'; // ✅ V00465 · V00469 · V00470 · V00473
@@ -2577,8 +2578,13 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
 
       let idGuardado = '';
       let refGuardado = '';
+      let convFalsoForm: Awaited<ReturnType<typeof ajusteConvenioAlCambiarStatus>> | null = null;
       if (initialData) {
         if (datosCancelacion) Object.assign(operacionData, datosCancelacion);
+        // ✅ V00509: si con este guardado la operación ENTRA a Falso, su convenio pasa al Falso del cliente
+        //   (impo / expo); si SALE, regresa el que tenía. Va después de las autorizaciones: es automático.
+        convFalsoForm = await ajusteConvenioAlCambiarStatus(String((initialData as { _docId?: unknown })._docId || initialData.id), String(operacionData.statusNombre || ''), operacionData);
+        Object.assign(operacionData, convFalsoForm.cambios);
 
         // ✅ V00163 — CAMBIO DE LÍNEA = NUEVA REFERENCIA, pero ahora ATÓMICA:
         //   el número lo asigna la Cloud Function renumerarOperacion (máximo real
@@ -2613,6 +2619,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
           delete payloadFirestore.historialEdiciones;
         }
         await updateDoc(doc(db, 'operaciones', idDocReal), payloadFirestore);
+        if (convFalsoForm) avisarAjusteConvenio(convFalsoForm); // ✅ V00509
         idGuardado = String(initialData.id); // documentos y avisos: el id con el que la conoce la lista (como siempre)
         if (renumerarPendiente) {
           try {

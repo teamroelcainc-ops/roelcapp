@@ -36,6 +36,7 @@ import { usePedidosCompletadasHoy } from '../services/pestanaCompletadas'; // �
 import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 import { ModalFechaStatus } from './ModalFechaStatus';
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
+import { ajusteConvenioAlCambiarStatus, avisarAjusteConvenio } from '../services/convenioFalsoDatos'; // ✅ V00509
 import { avisarCrucePuente, cobroPuenteDelPaso } from '../../puentes/services/crucePuente'; // ✅ V00470
 import { aplicaPeaje, puenteYaCobrado } from '../../../shared/dominio/cobroPuente'; // ✅ V00469
 import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
@@ -947,16 +948,20 @@ const OperacionesDashboard = () => {
       // ✅ V00367: marcar Verde también desde "Registrar Status" manual cobra el peaje
       const cobroSPManual = await cobroDelPasoSP(statusId, operacionViendo, statusNombreResuelto, nuevaFechaHora); // ✅ V00470
       const extraSPManual = await cobroParaEscribirSP(cobroSPManual);
-      batch.update(opRef, limpiarUndefined({ status: statusId, statusNombre: statusNombreResuelto, ...extraSPManual, ...ajusteSueldoPorStatus(operacionViendo, statusNombreResuelto) })); // ✅ V00387: Falso = sueldo a la mitad
+      // ✅ V00509: al entrar a Falso, el convenio Falso del cliente (impo / expo); al salir, el de antes.
+      const convFalso = await ajusteConvenioAlCambiarStatus(String(operacionViendo._docId || operacionViendo.id), statusNombreResuelto);
+      batch.update(opRef, limpiarUndefined({ status: statusId, statusNombre: statusNombreResuelto, ...extraSPManual, ...ajusteSueldoPorStatus(operacionViendo, statusNombreResuelto), ...convFalso.cambios })); // ✅ V00387: Falso = sueldo a la mitad
 
       await batch.commit();
-      notificarOperacionGuardada(String(operacionViendo._docId || operacionViendo.id), { ...operacionViendo, ...extraSPManual, status: statusId, statusNombre: statusNombreResuelto }, 'operaciones-status'); // ✅ V00126 · V00469: con el cobro del puente
+      avisarAjusteConvenio(convFalso);
+      notificarOperacionGuardada(String(operacionViendo._docId || operacionViendo.id), { ...operacionViendo, ...extraSPManual, ...convFalso.cambios, status: statusId, statusNombre: statusNombreResuelto }, 'operaciones-status'); // ✅ V00126 · V00469: con el cobro del puente
       avisarCrucePuente(operacionViendo, cobroSPManual); // ✅ V00470: "Esta unidad cruzó el puente…"
       // ✅ V00402: Verde → Historial calculado (referencia automática del puente de hoy)
       if (esStatusVerde(statusNombreResuelto)) registrarVerdeAutomatico({ ...operacionViendo, ...extraSPManual, status: statusId, statusNombre: statusNombreResuelto }, statusNombreResuelto, nuevaFechaHora);
 
       const operacionActualizada = {
         ...operacionViendo,
+        ...convFalso.cambios, // ✅ V00509
         status: statusId,
         statusNombre: statusNombreResuelto
       };
@@ -1115,14 +1120,19 @@ const OperacionesDashboard = () => {
             if (Object.keys(cobroPaso).length > 0) break;
           }
           const extraSaldoPuente = await cobroParaEscribirSP(cobroPaso); // ✅ V00470
+          // ✅ V00509: al entrar a Falso, el convenio Falso del cliente (impo / expo); al salir, el de antes.
+          const convFalso = await ajusteConvenioAlCambiarStatus(String(operacionViendo._docId || operacionViendo.id), statusFinal.nombre);
           batch.update(opRef, limpiarUndefined({
             status: statusFinal.id,
             statusNombre: statusFinal.nombre,
             ...extraSaldoPuente,
             ...ajusteSueldoPorStatus(operacionViendo, statusFinal.nombre), // ✅ V00387: Falso = sueldo a la mitad
+            ...convFalso.cambios,
           }));
 
           await batch.commit();
+          avisarAjusteConvenio(convFalso);
+          if (Object.keys(convFalso.cambios).length > 0) setOperacionViendo((prev: Record<string, unknown> | null) => (prev ? { ...prev, ...convFalso.cambios } : prev));
           notificarOperacionGuardada(String(operacionViendo._docId || operacionViendo.id), { ...operacionViendo, ...extraSaldoPuente, status: statusFinal.id, statusNombre: statusFinal.nombre }, 'operaciones-status'); // ✅ V00126 · V00469: con el cobro del puente
           avisarCrucePuente(operacionViendo, cobroPaso); // ✅ V00470: "Esta unidad cruzó el puente…"
           // ✅ V00402: si algún paso de la cascada es Verde → Historial calculado

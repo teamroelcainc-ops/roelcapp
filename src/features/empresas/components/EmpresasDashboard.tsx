@@ -17,10 +17,11 @@ import * as XLSX from 'xlsx';
 import './EmpresasDashboard.css';
 import CargandoDatos from '../../../shared/components/CargandoDatos';
 import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
-import { almacenSesion, obtenerCacheMemoria, guardarCacheMemoria } from '../../../utils/cacheMemoria';
+import { almacenSesion, obtenerCacheMemoria, guardarCacheMemoria, limpiarCacheMemoria } from '../../../utils/cacheMemoria';
+import { queryClient } from '../../../lib/queryClient'; // ✅ V00509
 import { hoyLocalISO, fechaLocalISO } from '../../../utils/fechaHoraLocal';
 import { useModuloEscuchando } from '../../../utils/moduloVivoContexto';
-import { idReal, useCatalogo, useCatalogos } from '../../../shared/data/catalogos';
+import { idReal, reintentarCatalogo, useCatalogo, useCatalogos } from '../../../shared/data/catalogos';
 import type { DocCatalogo } from '../../../shared/data/catalogos';
 import { diccionarioCatalogo, nombreDeRegistro } from '../../../shared/data/indiceCatalogo'; // ✅ V00506
 import { monedaCanonica } from '../../../shared/dominio/moneda';
@@ -101,6 +102,11 @@ const ReporteEmpresasModal = lazyWithRetry(() => import('./ReporteEmpresasModal'
 // ✅ V00508: pasar operaciones elegidas en Referencias a otra empresa, al abrirlo.
 const PasarOperacionesModal = lazyWithRetry(() => import('./PasarOperacionesModal'), 'PasarOperacionesModal');
 
+// ✅ V00269 · V00509: caché del conteo de operaciones por empresa (sin consultasCanonicas). Actualizar la borra.
+const CLAVE_CONTEO_OPS = 'empresas_conteo_ops_v2';
+// Catálogos que usa la tabla de Empresas (Actualizar reabre los que hayan fallado).
+const CATALOGOS_EMPRESAS = ['empresas', 'direcciones', 'catalogo_moneda', 'catalogo_tipo_factura', 'catalogo_regimen_fiscal', 'catalogo_tipo_empresa', 'catalogo_tipo_servicio'] as const;
+
 const EmpresasDashboard = () => {
   const flags = useFlags();
   const flagsCargadas = useFlagsCargadas(); // ✅ V00443 // ✅ V00442 (Fase 6.2)
@@ -143,6 +149,8 @@ const EmpresasDashboard = () => {
   //   cada operación cuenta UNA vez por empresa, sin importar en cuántos papeles
   //   aparezca (cliente que paga, mercancía, proveedor, unidad, origen o destino).
   const [conteoOps, setConteoOps] = useState<Record<string, number> | null>(null);
+  // ✅ V00509: cada Actualizar sube este número y el conteo se vuelve a hacer (sin caché).
+  const [recuentoOps, setRecuentoOps] = useState(0);
   // ✅ V00269: el effect que llena conteoOps vive tras declararse `empresas` (más abajo).
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -323,7 +331,7 @@ const EmpresasDashboard = () => {
         .catch((e: unknown) => { console.error('No se pudieron leer los contadores de uso:', e); if (vigente) setConteoOps({}); });
       return () => { vigente = false; };
     }
-    const CLAVE = 'empresas_conteo_ops_v2'; // ✅ V00269: v2 = resuelve nombres→id
+    const CLAVE = CLAVE_CONTEO_OPS; // ✅ V00269: v2 = resuelve nombres→id
     const enMemoria = obtenerCacheMemoria<Record<string, number>>(CLAVE, 5 * 60 * 1000);
     if (enMemoria) { setConteoOps(enMemoria); return; }
     const crudo = almacenSesion.getItem(CLAVE);
@@ -369,7 +377,19 @@ const EmpresasDashboard = () => {
       }
     })();
     return () => { activo = false; };
-  }, [empresas, flags.consultasCanonicas, flagsCargadas]); // ✅ V00269: recalcula al llegar/cambiar las empresas (resuelve nombres→id)
+  }, [empresas, flags.consultasCanonicas, flagsCargadas, recuentoOps]); // ✅ V00269: recalcula al llegar/cambiar las empresas (resuelve nombres→id) · V00509: y con Actualizar
+  // ✅ V00509: ACTUALIZAR — el conteo de operaciones (la columna Cantidad de Operaciones) se guardaba
+  //   en caché sin vencimiento y no veía los cambios (operaciones nuevas, pasadas a otra empresa…).
+  //   Lo borra y vuelve a contar; reabre los catálogos que hubieran fallado. Las empresas, monedas
+  //   y tipos ya llegan en vivo.
+  const actualizarEmpresas = () => {
+    limpiarCacheMemoria(CLAVE_CONTEO_OPS);
+    almacenSesion.removeItem(CLAVE_CONTEO_OPS);
+    queryClient.removeQueries({ queryKey: ['usos', 'empresa'] });
+    CATALOGOS_EMPRESAS.forEach(reintentarCatalogo);
+    setConteoOps(null);
+    setRecuentoOps((n) => n + 1);
+  };
   const [lastUsedMap, setLastUsedMap] = useState<Record<string, string>>({}); 
   const [filtroActivo, setFiltroActivo] = useState('Todo');
   // ✅ V00186: filtro por MONEDA + autocompletado del buscador
@@ -412,6 +432,9 @@ const EmpresasDashboard = () => {
   //   el módulo VISIBLE; oculto conserva lo ya pintado. (Las empresas, V00439:
   //   useCatalogo, que ya se pausa solo con el módulo oculto.)
   const visible = useModuloEscuchando(); // ✅ V00446: sigue escuchando unos minutos oculto
+  // ✅ V00509: con los contadores usos/ (consultasCanonicas), Actualizar también relee el último uso; sin
+  //   ellos el último uso ya llega en vivo (no se vuelve a abrir su listener).
+  const recuentoUsos = flags.consultasCanonicas ? recuentoOps : 0;
   useEffect(() => {
     if (!visible || !flagsCargadas) return;
     // ✅ V00443 (Fase 7.6): con `consultasCanonicas`, "último uso" sale de usos/empresa_* (ultimoUsoISO).
@@ -455,7 +478,7 @@ const EmpresasDashboard = () => {
     return () => {
       unsubscribeOperaciones();
     };
-  }, [visible, flags.consultasCanonicas, flagsCargadas]);
+  }, [visible, flags.consultasCanonicas, flagsCargadas, recuentoUsos]); // ✅ V00509: recuentoUsos = Actualizar (solo con contadores)
 
   // ✅ V00439 (Fase 3.x): diccionarios id → etiqueta desde los catálogos en vivo
   //   (antes getDocs + copia en localStorage 'roelca_empresas_dict_v2' sin vencimiento).
@@ -1406,11 +1429,12 @@ const EmpresasDashboard = () => {
                 title="Cliente (Paga) y Proveedor (Transporte) deben tener moneda y tipo de factura. Este apartado muestra las que aún no los tienen.">
                 {verSinMoneda ? '✕ Ver todas' : `Sin moneda (${empresasSinMoneda.length})`}
               </button>
-              {/* ✅ NUEVO (V00117): recarga los catálogos (moneda, tipo de factura, etc.)
-                  ✅ V00439 (Fase 3.x): los catálogos ya llegan en vivo; ya no hay caché que borrar. */}
-              <button className="btn btn-outline" title="Recargar catálogos: vuelve a leer moneda, tipo de factura, régimen y tipos desde Firebase"
-                onClick={() => window.location.reload()}>
-                ↻ Recargar catálogos
+              {/* ✅ V00509: ACTUALIZAR en lugar de "Recargar catálogos" (recargaba la página y el conteo
+                  de operaciones seguía viejo). Vuelve a contar sin recargar. */}
+              <button type="button" className="btn btn-outline ed-actualizar-btn" disabled={conteoOps === null} onClick={actualizarEmpresas}
+                title="Vuelve a contar las operaciones de cada empresa (Cantidad de Operaciones) y vuelve a leer los catálogos que hayan fallado. Las empresas, monedas y tipos ya llegan en vivo.">
+                <RefreshCw size={14} aria-hidden="true" className={conteoOps === null ? 'ed-refs-girando' : undefined} />
+                {conteoOps === null ? 'Actualizando…' : 'Actualizar'}
               </button>
             {filtroActivo !== 'Todo' && (
               <span className="ed-x12">

@@ -26,6 +26,7 @@ import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00
 import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
 import { ModalFechaStatus } from './ModalFechaStatus';
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
+import { ajusteConvenioAlCambiarStatus, avisarAjusteConvenio } from '../services/convenioFalsoDatos'; // ✅ V00509
 import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
 import { docPorId, nombreEmpresaPdf } from '../../../utils/docPorId';
 import type { DocLibre } from '../../../utils/docPorId';
@@ -675,8 +676,11 @@ const ServiciosCancelados = () => {
         registradoEn: new Date().toISOString()
       });
       const opRef = doc(db, 'operaciones', String(operacionViendo.id));
-      batch.update(opRef, { status: statusId, statusNombre: statusNombreResuelto, ...ajusteSueldoPorStatus(operacionViendo, statusNombreResuelto) }); // ✅ V00387
+      // ✅ V00509: al entrar a Falso, el convenio Falso del cliente (impo / expo); al salir, el de antes.
+      const convFalso = await ajusteConvenioAlCambiarStatus(String(operacionViendo.id), statusNombreResuelto);
+      batch.update(opRef, { status: statusId, statusNombre: statusNombreResuelto, ...ajusteSueldoPorStatus(operacionViendo, statusNombreResuelto), ...convFalso.cambios }); // ✅ V00387
       await batch.commit();
+      avisarAjusteConvenio(convFalso);
       if (esStatusVerde(statusNombreResuelto)) registrarVerdeAutomatico({ ...operacionViendo }, statusNombreResuelto, nuevaFechaHora); // ✅ V00402
       notificarOperacionGuardada(String(operacionViendo.id), { ...operacionViendo, status: statusId, statusNombre: statusNombreResuelto }, 'cancelados-status'); // ✅ V00126
 
@@ -760,8 +764,11 @@ const ServiciosCancelados = () => {
         });
       });
       const opRef = doc(db, 'operaciones', String(operacionViendo.id));
-      batch.update(opRef, { status: statusFinal.id, statusNombre: statusFinal.nombre, ...ajusteSueldoPorStatus(operacionViendo, statusFinal.nombre) }); // ✅ V00387
+      // ✅ V00509: al entrar a Falso, el convenio Falso del cliente (impo / expo); al salir, el de antes.
+      const convFalso = await ajusteConvenioAlCambiarStatus(String(operacionViendo.id), statusFinal.nombre);
+      batch.update(opRef, { status: statusFinal.id, statusNombre: statusFinal.nombre, ...ajusteSueldoPorStatus(operacionViendo, statusFinal.nombre), ...convFalso.cambios }); // ✅ V00387
       await batch.commit();
+      avisarAjusteConvenio(convFalso);
       { const pasoVerde = cadenaResuelta.find((p) => esStatusVerde(p.nombre)); if (pasoVerde) registrarVerdeAutomatico({ ...operacionViendo }, pasoVerde.nombre, fechaHoraLocal); } // ✅ V00402
       notificarOperacionGuardada(String(operacionViendo.id), { ...operacionViendo, status: statusFinal.id, statusNombre: statusFinal.nombre }, 'cancelados-status'); // ✅ V00126
 

@@ -29,6 +29,7 @@ import { ChevronLeft, MapPin, Truck, CheckCircle2, Clock } from 'lucide-react';
 import './MisOperacionesDashboard.css';
 import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
 import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
+import { ajusteConvenioAlCambiarStatus } from '../../operaciones/services/convenioFalsoDatos'; // ✅ V00509
 import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
 
 // Status que ya no son "activos" (mismos IDs que usa Operaciones Activas).
@@ -233,12 +234,17 @@ export function MisOperacionesDashboard() {
       registradoPor: usuario.nombre || usuario.email || usuario.id,
       origen: 'operador-movil',
     };
+    // ✅ V00509: al entrar a Falso, el convenio Falso del cliente (impo / expo). Sin conexión no se
+    //   espera a leer convenios (la marca se guarda en el dispositivo); tráfico lo ajusta en Editar.
+    //   Al operador no se le muestran avisos del convenio.
+    const convFalso = enLinea ? await ajusteConvenioAlCambiarStatus(String(opAbierta._docId || opAbierta.id), siguiente.nombre) : { cambios: {} };
     const batch = writeBatch(db);
     batch.set(horarioRef, datosHorario);
     batch.update(doc(db, 'operaciones', String(opAbierta._docId || opAbierta.id)), {
       status: siguiente.id,
       statusNombre: siguiente.nombre,
       ...ajusteSueldoPorStatus(opAbierta as Record<string, unknown>, siguiente.nombre), // ✅ V00387: Falso = sueldo a la mitad
+      ...convFalso.cambios,
     });
 
     const marca: UltimaMarca = {
@@ -289,10 +295,12 @@ export function MisOperacionesDashboard() {
     setMarcando(true);
     try {
       await deleteDoc(doc(db, 'horarios', ultimaMarca.horarioId));
+      const convFalso = await ajusteConvenioAlCambiarStatus(String(opAbierta._docId || opAbierta.id), ultimaMarca.statusAnteriorNombre); // ✅ V00509
       await updateDoc(doc(db, 'operaciones', String(opAbierta._docId || opAbierta.id)), {
         status: ultimaMarca.statusAnteriorId,
         statusNombre: ultimaMarca.statusAnteriorNombre,
         ...ajusteSueldoPorStatus(opAbierta as Record<string, unknown>, ultimaMarca.statusAnteriorNombre), // ✅ V00387
+        ...convFalso.cambios,
       });
       setHorariosOp((prev) => prev.filter((h) => h.id !== ultimaMarca.horarioId));
       registrarLog('Mis Operaciones', 'Horario', `${usuario?.nombre} DESHIZO "${ultimaMarca.statusMarcadoNombre}" en ${opAbierta.ref || opAbierta.id}`).catch(() => {});
