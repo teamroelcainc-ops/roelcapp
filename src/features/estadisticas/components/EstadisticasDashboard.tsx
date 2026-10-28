@@ -28,6 +28,8 @@ import type { DocCatalogo } from '../../../shared/data/catalogos';
 import { useEsAdmin } from '../../../shared/data/sesion';
 import { useUsuarioStore } from '../../../stores/useUsuarioStore';
 import { STATUS_CANCELADO } from '../../../shared/dominio/constantes';
+import { movimientoDeOperacion, textoDeOperacion } from '../../operaciones/services/clasificacionOperacion'; // ✅ V00507
+import type { Movimiento } from '../../operaciones/services/clasificacionOperacion';
 import { aduanaDeOperacionCtx, type CtxCobroPuente } from '../../../shared/dominio/cobroPuente'; // ✅ V00467
 import { flagsAhora, useFlags } from '../../../shared/data/flags';
 import { useColeccionViva } from '../../../shared/data/coleccionesVivas'; // ✅ V00493
@@ -117,19 +119,11 @@ const mapaPagosPorFactura = (docs: { data: () => unknown }[]): Record<string, Pa
 
 // ── Clasificación de línea de negocio (nombre del tipo; respaldo: prefijo de la ref) ──
 const norm = (s: string) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-// Texto clasificable de la operación (convenio + tipo + servicio).
-const textoDeOp = (op: Op) => norm(`${op.convenioNombre || ''} ${op.tipoOperacionNombre || op.tipoOperacion || ''} ${op.tipoServicioNombre || op.tipoServicio || ''}`);
-
-const movimientoDeOp = (op: Op): 'Importación' | 'Exportación' | 'Movimiento' | 'Sin clasificar' => {
-  // ✅ NUEVO: la clasificación MANUAL (modal "Sin clasificar") manda.
-  const manual = String((op as any).movimientoManual || '');
-  if (manual === 'Importación' || manual === 'Exportación' || manual === 'Movimiento') return manual as any;
-  const t = textoDeOp(op);
-  if (t.includes('impo')) return 'Importación';
-  if (t.includes('expo')) return 'Exportación';
-  if (t.includes('mov')) return 'Movimiento';
-  return 'Sin clasificar';
-};
+// ✅ V00507: el texto clasificable (convenio + tipo + servicio) y el movimiento (la clasificación
+//   MANUAL del modal "Sin clasificar" manda) viven en operaciones/services/clasificacionOperacion.ts,
+//   la misma regla de antes; también la usa el Reporte de empresas.
+const textoDeOp = (op: Op): string => textoDeOperacion(op);
+const movimientoDeOp = (op: Op): Movimiento => movimientoDeOperacion(op);
 
 const lineaDeOp = (op: Op): Linea => {
   const t = String(op.tipoOperacionNombre || op.tipoOperacion || '').toLowerCase();

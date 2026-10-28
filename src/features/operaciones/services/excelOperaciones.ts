@@ -207,7 +207,8 @@ const anchoColumna = (titulo: string, filas: readonly Record<string, CeldaExcel>
   return Math.min(60, Math.max(8, max + 2));
 };
 
-const descargarBuffer = (buffer: ArrayBuffer, archivo: string): void => {
+/** Descarga un .xlsx ya armado. ✅ V00507: exportado (también lo usa el Reporte de empresas). */
+export const descargarBuffer = (buffer: ArrayBuffer, archivo: string): void => {
   const url = URL.createObjectURL(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
   const a = document.createElement('a');
   a.href = url;

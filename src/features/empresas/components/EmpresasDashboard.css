@@ -20,6 +20,8 @@
 .ed-x16 { color: #8b949e; font-size: 0.82rem; }
 .ed-x17 { flex: 1 1 auto; display: flex; gap: 12px; justify-content: flex-end; min-width: 280px; }
 .ed-x18 { display: flex; align-items: center; justify-content: center; background-color: transparent; border: 1px solid #8b949e; color: #c9d1d9; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
+/* ✅ V00507: botón Reporte (con texto, junto a Columnas y Excel) */
+.ed-x18.ed-reporte-btn { gap: 6px; font-size: 0.85rem; font-weight: 600; }
 .ed-x19 { display: flex; align-items: center; justify-content: center; background-color: #D84315; color: #fff; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; }
 .ed-x20 { display: block; width: 100%; }
 .ed-x21 { border: 1px solid #30363d; border-radius: 8px; overflow-x: auto; overflow-y: auto; max-height: calc(100vh - 280px); width: 100%; }

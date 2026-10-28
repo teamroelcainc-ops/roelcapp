@@ -1,6 +1,6 @@
 // src/features/empresas/components/EmpresasDashboard.tsx
 import React, { Suspense, useState, useEffect, useMemo, useRef } from 'react';
-import { Pencil, RefreshCw } from 'lucide-react'; // ✅ V00484
+import { BarChart3, Pencil, RefreshCw } from 'lucide-react'; // ✅ V00484 · V00507 (BarChart3)
 import { AuditoriaCadenaEmpresa } from './AuditoriaCadenaEmpresa'; // ✅ V00333
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { propagarMonedaEmpresa } from '../services/propagarMoneda';
@@ -96,6 +96,8 @@ const EditorOperacionEmbebido = lazyWithRetry(
   () => import('../../operaciones/components/EditorOperacionEmbebido').then((m) => ({ default: m.EditorOperacionEmbebido })),
   'EditorOperacionEmbebido',
 );
+// ✅ V00507: Reporte de empresas (Excel de clientes y proveedores con dirección y operaciones), al abrirlo.
+const ReporteEmpresasModal = lazyWithRetry(() => import('./ReporteEmpresasModal'), 'ReporteEmpresasModal');
 
 const EmpresasDashboard = () => {
   const flags = useFlags();
@@ -385,6 +387,7 @@ const EmpresasDashboard = () => {
   const [guardandoBaja, setGuardandoBaja] = useState(false);
 
   const [modalExcelAbierto, setModalExcelAbierto] = useState(false);
+  const [reporteAbierto, setReporteAbierto] = useState(false); // ✅ V00507
   const [excelFiltroTipo, setExcelFiltroTipo] = useState('Todo');
   const [excelColumnasSeleccionadas, setExcelColumnasSeleccionadas] = useState<string[]>(
     opcionesColumnasExcel.map(col => col.key)
@@ -1421,6 +1424,15 @@ const EmpresasDashboard = () => {
           </div>
 
           <div className="ed-x17">
+            {/* ✅ V00507: Reporte de empresas (clientes y proveedores con dirección y operaciones) */}
+            <button
+              type="button"
+              className="btn btn-outline ed-x18 ed-reporte-btn"
+              title="Reporte de empresas: clientes y proveedores con su dirección y sus operaciones (importación, exportación y otros)"
+              onClick={() => setReporteAbierto(true)}
+            >
+              <BarChart3 size={16} aria-hidden="true" /> Reporte
+            </button>
             <button 
               className="btn btn-outline ed-x18" 
               title="Configurar Columnas"
@@ -1625,6 +1637,12 @@ const EmpresasDashboard = () => {
       )}
 
       {/* MODAL CONFIGURACIÓN REPORTE EXCEL */}
+      {reporteAbierto && (
+        <Suspense fallback={null}>
+          <ReporteEmpresasModal onCerrar={() => setReporteAbierto(false)} />
+        </Suspense>
+      )}
+
       {modalExcelAbierto && (
         <div className="modal-overlay ed-x52">
           <div className="ed-x53">
