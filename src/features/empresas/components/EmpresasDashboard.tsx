@@ -98,6 +98,8 @@ const EditorOperacionEmbebido = lazyWithRetry(
 );
 // ✅ V00507: Reporte de empresas (Excel de clientes y proveedores con dirección y operaciones), al abrirlo.
 const ReporteEmpresasModal = lazyWithRetry(() => import('./ReporteEmpresasModal'), 'ReporteEmpresasModal');
+// ✅ V00508: pasar operaciones elegidas en Referencias a otra empresa, al abrirlo.
+const PasarOperacionesModal = lazyWithRetry(() => import('./PasarOperacionesModal'), 'PasarOperacionesModal');
 
 const EmpresasDashboard = () => {
   const flags = useFlags();
@@ -129,6 +131,9 @@ const EmpresasDashboard = () => {
   // ✅ V00484: editar una operación desde Referencias y Actualizar sin quitar la vista.
   const [opEditandoRef, setOpEditandoRef] = useState<OperacionReferencia | null>(null);
   const [actualizandoRefs, setActualizandoRefs] = useState(false);
+  // ✅ V00508: operaciones marcadas en Referencias (id real) para pasarlas a otra empresa.
+  const [refsMarcadas, setRefsMarcadas] = useState<string[]>([]);
+  const [pasandoRefs, setPasandoRefs] = useState(false);
   /** Cada lectura de Referencias lleva un número: solo se aplica la última (al cambiar de empresa se descarta). */
   const lecturaRefs = useRef(0);
 
@@ -270,6 +275,7 @@ const EmpresasDashboard = () => {
     setRefsCliente(null); setBusquedaRefs(''); setRefsOpsAviso('');
     setRefsConvenios(null); setRefsFacturas(null); setRefsPagos(null);
     setSeccionRefs('operaciones'); setOpDetalle(null);
+    setRefsMarcadas([]); setPasandoRefs(false); // ✅ V00508
   }, [empresaViendo?.id]);
   const [operacionesUso, setOperacionesUso] = useState<any[]>([]);
   // ✅ V00269: USO POR ROL — conteo EXACTO y AL MOMENTO por cada rol de la
@@ -1643,6 +1649,19 @@ const EmpresasDashboard = () => {
         </Suspense>
       )}
 
+      {/* ✅ V00508: pasar operaciones de Referencias a otra empresa */}
+      {pasandoRefs && empresaViendo && (
+        <Suspense fallback={null}>
+          <PasarOperacionesModal
+            origen={datosEmpresas.find((e) => e.id === empresaViendo.id) ?? empresaViendo}
+            operaciones={(refsCliente || []).filter((op) => refsMarcadas.includes(idReal(op)))}
+            empresas={datosEmpresas}
+            onCerrar={() => setPasandoRefs(false)}
+            onListo={() => { setPasandoRefs(false); setRefsMarcadas([]); void actualizarReferencias(); }}
+          />
+        </Suspense>
+      )}
+
       {modalExcelAbierto && (
         <div className="modal-overlay ed-x52">
           <div className="ed-x53">
@@ -1966,6 +1985,11 @@ const EmpresasDashboard = () => {
                               <div className="ed-refs-encabezado">
                                 <span className="ed-refs-conteo"><b>{visibles.length}</b>{b ? ` de ${refsCliente.length}` : ''} referencia(s) — clic en la referencia para ver su detalle</span>
                                 {refsOpsAviso && <span className="ed-refs-aviso">{refsOpsAviso}</span>}
+                                {/* ✅ V00508: pasar las marcadas a otra empresa (p. ej. el alias de cliente → el nombre de proveedor) */}
+                                <button type="button" className="ed-refs-pasar" disabled={refsMarcadas.length === 0} onClick={() => setPasandoRefs(true)}
+                                  title="Pasar las operaciones marcadas a otra empresa, en el papel que elijas">
+                                  Pasar a otra empresa{refsMarcadas.length > 0 ? ` (${refsMarcadas.length})` : ''}
+                                </button>
                                 <input
                                   type="text"
                                   className="ed-refs-buscador"
@@ -1977,11 +2001,26 @@ const EmpresasDashboard = () => {
                               <div className="ed-refs-marco">
                                 <table className="ed-refs-tabla">
                                   <thead>
-                                    <tr><th>REFERENCIA</th><th>PAPEL</th><th>FECHA SERVICIO</th><th>TIPO</th><th>STATUS</th><th>ORIGEN</th><th>DESTINO</th><th>CONVENIO</th></tr>
+                                    <tr>
+                                      <th className="ed-refs-marca">
+                                        {/* ✅ V00508: marca o desmarca las que se ven (respeta la búsqueda) */}
+                                        <input type="checkbox" aria-label="Marcar todas las que se ven"
+                                          checked={visibles.length > 0 && visibles.every((op) => refsMarcadas.includes(idReal(op)))}
+                                          onChange={(e) => {
+                                            const ids = visibles.map((op) => idReal(op));
+                                            setRefsMarcadas((prev) => (e.target.checked ? Array.from(new Set([...prev, ...ids])) : prev.filter((id) => !ids.includes(id))));
+                                          }} />
+                                      </th>
+                                      <th>REFERENCIA</th><th>PAPEL</th><th>FECHA SERVICIO</th><th>TIPO</th><th>STATUS</th><th>ORIGEN</th><th>DESTINO</th><th>CONVENIO</th>
+                                    </tr>
                                   </thead>
                                   <tbody>
                                     {visibles.map(op => (
                                       <tr key={idReal(op)}>
+                                        <td className="ed-refs-marca">
+                                          <input type="checkbox" aria-label={`Marcar ${op.ref || op.id}`} checked={refsMarcadas.includes(idReal(op))}
+                                            onChange={(e) => { const id = idReal(op); setRefsMarcadas((prev) => (e.target.checked ? [...prev, id] : prev.filter((x) => x !== id))); }} />
+                                        </td>
                                         <td className="ed-refs-ref">
                                           <span className="ed-refs-ref-celda">
                                             <button type="button" className="ed-refs-ref-btn"

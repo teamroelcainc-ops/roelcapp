@@ -217,6 +217,12 @@
 .ed-refs-tabla thead { background-color: #161b22; position: sticky; top: 0; z-index: 5; }
 .ed-refs-tabla th { padding: 10px 12px; color: #8b949e; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.4px; border-bottom: 1px solid #30363d; white-space: nowrap; }
 .ed-refs-tabla td { padding: 9px 12px; color: #c9d1d9; font-size: 0.85rem; border-bottom: 1px solid #21262d; }
+/* ✅ V00508: casillas para pasar operaciones a otra empresa */
+.ed-refs-tabla .ed-refs-marca { width: 34px; padding-right: 4px; text-align: center; }
+.ed-refs-pasar { padding: 6px 12px; border: 1px solid #1f6feb; border-radius: 6px; background: rgba(31, 111, 235, 0.12); color: #58a6ff; font: inherit; font-size: 0.82rem; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.ed-refs-pasar:hover { background: rgba(31, 111, 235, 0.22); }
+.ed-refs-pasar:disabled { border-color: #30363d; background: transparent; color: #6e7681; cursor: not-allowed; }
+.ed-refs-pasar:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
 
 .ed-refs-ref { color: #D84315; font-family: monospace; font-weight: 700; white-space: nowrap; }
 

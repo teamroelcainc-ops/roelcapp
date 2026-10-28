@@ -109,8 +109,8 @@ import type { PagoDeFactura } from '../services/pagosDeFactura';
 import { abrirPagoEnPagos } from '../../pagos/services/pagoPedido';
 import { puedeClave } from '../../../utils/permisos';
 import {
-  AVISO_AGREGAR_FACTURADA, AVISO_REMISION_FACTURADA, CANCELACION_VACIA, STATUS_AL_CREAR, avisoMonedaDistinta, avisoSinMoneda,
-  cancelacionDe, estaCancelada, importesDeRenglones, monedaDeEmpresa, puedeAgregarOperaciones, puedeGenerarRemision, sumaEnTotales,
+  AVISO_AGREGAR_FACTURADA, CANCELACION_VACIA, STATUS_AL_CREAR, avisoMonedaDistinta, avisoSinMoneda,
+  cancelacionDe, estaCancelada, importesDeRenglones, monedaDeEmpresa, puedeAgregarOperaciones, sumaEnTotales,
   totalSugeridoEn, validarCancelacion,
 } from '../services/reglasFactura';
 import type { DatosCancelacion } from '../services/reglasFactura';
@@ -1158,7 +1158,7 @@ export const FacturacionProveedoresDashboard = () => {
   // Preparar la remisión de una factura de PROVEEDOR → abre el modal editable.
   const abrirRemision = async (f: any) => {
     if (!f) return;
-    if (!puedeGenerarRemision(f.statusFactura)) { alert(AVISO_REMISION_FACTURADA); return; } // ✅ V00481
+    // ✅ V00508: la Remisión se genera en cualquier status (antes solo sin Facturar, V00481).
     setCargandoRemision(true);
     try {
       // ✅ Fase 1.8 (e): resolverMoneda puede devolver el NOMBRE del catálogo
@@ -3956,12 +3956,12 @@ export const FacturacionProveedoresDashboard = () => {
                 style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#10b981', color: '#0d1117', border: 'none', borderRadius: '6px', padding: '8px 16px', cursor: cargandoRate ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem', opacity: cargandoRate ? 0.7 : 1, marginRight: '8px' }}>
                 {cargandoRate ? 'Preparando...' : 'Rate Proveedor'}
               </button>
-{puedeGenerarRemision(facturaViendo.statusFactura) && (/* ✅ V00481: con la factura Facturada ya no hay Remisión */
+{/* ✅ V00508: Remisión visible en cualquier status (V00481 la ocultaba con la factura Facturada) */}
               <button onClick={() => abrirRemision(facturaViendo)} disabled={cargandoRemision}
                 title="Generar la Remisión en PDF de esta factura"
                 style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#fb923c', color: '#0d1117', border: 'none', borderRadius: '6px', padding: '8px 16px', cursor: cargandoRemision ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem', opacity: cargandoRemision ? 0.7 : 1, marginRight: '8px' }}>
                 {cargandoRemision ? 'Preparando...' : 'Remisión'}
-              </button>)}
+              </button>
               <button onClick={() => setFacturaViendo(null)} className="btn btn-outline fpd-x204">Cerrar Ficha</button>
             </div>
           </div>

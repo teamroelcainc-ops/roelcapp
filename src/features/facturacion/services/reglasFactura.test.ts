@@ -4,15 +4,13 @@ import { ID_MXN, ID_USD } from '../../../shared/dominio/constantes';
 import { totalNativoDeOperaciones } from '../../../shared/dominio/dinero';
 import {
   avisoMonedaDistinta, camposCancelacion, cancelacionDe, estaCancelada, estaFacturada, importesDeRenglones,
-  monedaDeEmpresa, planCancelacion, puedeAgregarOperaciones, puedeGenerarRemision, STATUS_AL_CREAR, sumaEnTotales, totalSugeridoEn, validarCancelacion,
+  monedaDeEmpresa, planCancelacion, puedeAgregarOperaciones, STATUS_AL_CREAR, sumaEnTotales, totalSugeridoEn, validarCancelacion,
 } from './reglasFactura';
 
 describe('status de la factura', () => {
-  it('Facturado (o sin status) bloquea la Remisión y agregar operaciones; No Facturado y Cancelado no', () => {
+  it('Facturado (o sin status) bloquea agregar operaciones; No Facturado y Cancelado no (la Remisión ya no se bloquea, V00508)', () => {
     expect([estaFacturada('Facturado'), estaFacturada(''), estaFacturada(undefined), estaFacturada('No Facturado'), estaFacturada('Cancelado')])
       .toEqual([true, true, true, false, false]);
-    expect(puedeGenerarRemision('Facturado')).toBe(false);
-    expect(puedeGenerarRemision('No Facturado')).toBe(true);
     expect(puedeAgregarOperaciones('facturado')).toBe(false);
     expect(puedeAgregarOperaciones('No Facturado')).toBe(true);
   });

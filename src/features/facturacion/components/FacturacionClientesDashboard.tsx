@@ -104,8 +104,8 @@ import type { PagoDeFactura } from '../services/pagosDeFactura';
 import { abrirPagoEnPagos } from '../../pagos/services/pagoPedido';
 import { puedeClave } from '../../../utils/permisos';
 import {
-  AVISO_AGREGAR_FACTURADA, AVISO_REMISION_FACTURADA, CANCELACION_VACIA, STATUS_AL_CREAR, avisoMonedaDistinta, avisoSinMoneda,
-  cancelacionDe, estaCancelada, importesDeRenglones, monedaDeEmpresa, puedeAgregarOperaciones, puedeGenerarRemision, sumaEnTotales,
+  AVISO_AGREGAR_FACTURADA, CANCELACION_VACIA, STATUS_AL_CREAR, avisoMonedaDistinta, avisoSinMoneda,
+  cancelacionDe, estaCancelada, importesDeRenglones, monedaDeEmpresa, puedeAgregarOperaciones, sumaEnTotales,
   totalSugeridoEn, validarCancelacion,
 } from '../services/reglasFactura';
 import type { DatosCancelacion } from '../services/reglasFactura';
@@ -2805,7 +2805,7 @@ export const FacturacionClientesDashboard = () => {
   //    Emisor según moneda: USD → Camila (emisorUSD), MXN → Rolando (emisorMXN).
   const abrirRemision = async (f: any) => {
     if (!f) return;
-    if (!puedeGenerarRemision(f.statusFactura)) { alert(AVISO_REMISION_FACTURADA); return; } // ✅ V00481
+    // ✅ V00508: la Remisión se genera en cualquier status (antes solo sin Facturar, V00481).
     setCargandoRemision(true);
     try {
       // ✅ El encabezado toma la MONEDA YA FACTURADA, la misma de la columna
@@ -3588,10 +3588,10 @@ export const FacturacionClientesDashboard = () => {
                           <button className="fcd-x115" title="Ver Ficha" onClick={() => setFacturaViendo(f)}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                           </button>
-{puedeGenerarRemision(f.statusFactura) && (/* ✅ V00481: con la factura Facturada ya no hay Remisión */
+{/* ✅ V00508: Remisión visible en cualquier status (V00481 la ocultaba con la factura Facturada) */}
                           <button className="fcd-x116" title="Generar Remisión (PDF)" onClick={() => abrirRemision(f)}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
-                          </button>)}
+                          </button>
                           <button className="fcd-x117" title="Editar Factura" onClick={(e) => abrirEditarFactura(e, f)}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                           </button>
@@ -3914,12 +3914,12 @@ export const FacturacionClientesDashboard = () => {
               <h2 className="fcd-x172">Ficha de Factura</h2>
               <div className="fcd-x173">
                 
-{puedeGenerarRemision(facturaViendo.statusFactura) && (/* ✅ V00481: con la factura Facturada ya no hay Remisión */
+{/* ✅ V00508: Remisión visible en cualquier status (V00481 la ocultaba con la factura Facturada) */}
                 <button onClick={() => abrirRemision(facturaViendo)} disabled={cargandoRemision}
                   title="Generar la Remisión en PDF de esta factura"
                   style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#fb923c', color: '#0d1117', border: 'none', borderRadius: '6px', padding: '8px 16px', cursor: cargandoRemision ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem', opacity: cargandoRemision ? 0.7 : 1 }}>
                   {cargandoRemision ? 'Preparando...' : 'Remisión'}
-                </button>)}
+                </button>
                 <button className="fcd-x45" onClick={() => setFacturaViendo(null)}>✕</button>
               </div>
             </div>

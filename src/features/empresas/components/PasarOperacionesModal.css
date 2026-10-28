@@ -1,0 +1,65 @@
+/* ✅ V00508: Pasar operaciones a otra empresa (Referencias de Empresas). Mismo lenguaje que el Reporte (rpe-). */
+.modal-overlay.pso-fondo { z-index: 2100; padding: 16px; box-sizing: border-box; background-color: rgba(0, 0, 0, 0.75); }
+.pso-ventana { display: flex; flex-direction: column; width: 680px; max-width: 100%; max-height: calc(100vh - 32px); box-sizing: border-box; border: 1px solid #30363d; border-radius: 12px; background: #0d1117; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55); overflow: hidden; }
+.pso-cabecera { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 22px 12px; border-bottom: 1px solid #21262d; }
+.pso-titulo { margin: 0 0 6px; color: #f0f6fc; font-size: 1.12rem; }
+.pso-sub { margin: 0; color: #8b949e; font-size: 0.86rem; line-height: 1.45; }
+.pso-sub b { color: #c9d1d9; }
+.pso-cerrar { flex-shrink: 0; padding: 4px 6px; border: none; background: none; color: #8b949e; font-size: 1.1rem; cursor: pointer; }
+.pso-cerrar:hover { color: #f0f6fc; }
+.pso-cerrar:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.pso-cuerpo { display: flex; flex-direction: column; gap: 14px; padding: 16px 22px; overflow-y: auto; }
+.pso-paso { display: grid; gap: 8px; }
+.pso-paso--pregunta { padding: 12px 14px; border: 1px solid #9e6a03; border-radius: 8px; background: rgba(187, 128, 9, 0.08); }
+.pso-paso-titulo { margin: 0; color: #c9d1d9; font-size: 0.88rem; font-weight: 600; line-height: 1.4; }
+.pso-buscar { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #30363d; border-radius: 6px; background: #161b22; color: #c9d1d9; font: inherit; font-size: 0.88rem; }
+.pso-buscar:focus-visible { outline: 2px solid #58a6ff; outline-offset: 1px; }
+.pso-opciones { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.pso-opcion { display: flex; justify-content: space-between; gap: 12px; width: 100%; padding: 7px 10px; border: 1px solid #21262d; border-radius: 6px; background: #0d1117; color: #c9d1d9; font: inherit; font-size: 0.86rem; text-align: left; cursor: pointer; }
+.pso-opcion:hover { border-color: #58a6ff; }
+.pso-opcion-nombre { font-weight: 600; }
+.pso-opcion-meta { color: #8b949e; font-size: 0.8rem; white-space: nowrap; }
+.pso-elegida { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; border: 1px solid #238636; border-radius: 6px; background: rgba(35, 134, 54, 0.08); color: #c9d1d9; font-size: 0.88rem; }
+.pso-link { padding: 0; border: none; background: none; color: #58a6ff; font: inherit; font-size: 0.82rem; cursor: pointer; }
+.pso-link:hover { text-decoration: underline; }
+.pso-link:disabled { color: #6e7681; cursor: not-allowed; }
+.pso-papeles { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.pso-check { display: inline-flex; align-items: center; gap: 6px; color: #c9d1d9; font-size: 0.86rem; cursor: pointer; }
+.pso-cuenta { padding: 1px 7px; border-radius: 999px; background: #21262d; color: #8b949e; font-size: 0.76rem; font-weight: 700; }
+.pso-modos { display: grid; gap: 6px; }
+.pso-modo { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; font-size: 0.86rem; line-height: 1.35; cursor: pointer; }
+.pso-modo:hover { border-color: #8b949e; }
+.pso-modo--activo { border-color: #e3b341; background: rgba(227, 179, 65, 0.08); }
+.pso-modo--activo:hover { border-color: #e3b341; }
+.pso-modo input { margin-top: 3px; }
+.pso-modo-detalle { color: #8b949e; font-size: 0.8rem; }
+.pso-ayuda { margin: 0; color: #8b949e; font-size: 0.8rem; line-height: 1.4; }
+
+.pso-avance { display: grid; gap: 10px; }
+.pso-progreso { width: 100%; height: 10px; accent-color: #3fb950; }
+.pso-resumen { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid #21262d; border-radius: 8px; background: #161b22; }
+.pso-resumen-linea { margin: 0; color: #f0f6fc; font-size: 0.88rem; }
+.pso-refs { margin: 0; max-height: 96px; overflow-y: auto; color: #8b949e; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.76rem; line-height: 1.5; overflow-wrap: anywhere; }
+.pso-omitidas { display: grid; gap: 4px; }
+.pso-omitidas-titulo { margin: 0; color: #f0883e; font-size: 0.84rem; font-weight: 600; }
+.pso-motivos { display: grid; gap: 4px; margin: 0; padding-left: 18px; max-height: 140px; overflow-y: auto; color: #8b949e; font-size: 0.8rem; line-height: 1.4; overflow-wrap: anywhere; }
+.pso-motivos b { color: #c9d1d9; font-weight: 600; }
+.pso-listo { display: grid; gap: 6px; padding: 12px 14px; border: 1px solid #238636; border-radius: 8px; background: rgba(35, 134, 54, 0.08); }
+.pso-listo-titulo { margin: 0; color: #3fb950; font-size: 0.9rem; font-weight: 600; line-height: 1.4; }
+.pso-error { margin: 0; color: #ff7b72; font-weight: 600; font-size: 0.86rem; }
+
+.pso-pie { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; padding: 12px 22px; border-top: 1px solid #21262d; background: #161b22; }
+.pso-confirmar { margin-right: auto; color: #e3b341; font-size: 0.86rem; font-weight: 600; }
+.pso-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border: 1px solid #30363d; border-radius: 6px; background: transparent; color: #c9d1d9; font: inherit; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+.pso-btn:hover { border-color: #8b949e; }
+.pso-btn--principal { border-color: #238636; background: #238636; color: #fff; }
+.pso-btn--principal:hover { border-color: #2ea043; background: #2ea043; }
+.pso-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.pso-btn:focus-visible, .pso-opcion:focus-visible, .pso-link:focus-visible, .pso-cerrar:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
+
+@media (max-width: 640px) {
+  .pso-ventana { border-radius: 0; max-height: 100vh; }
+  .pso-cabecera, .pso-cuerpo, .pso-pie { padding-left: 14px; padding-right: 14px; }
+  .pso-confirmar { flex-basis: 100%; }
+}

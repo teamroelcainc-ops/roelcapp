@@ -27,15 +27,13 @@ export const estaCancelada = (status: unknown): boolean => sinAcentos(status).st
 export const sumaEnTotales = (statusFila: unknown, filtroStatus: unknown): boolean =>
   !estaCancelada(statusFila || 'Facturado') || estaCancelada(filtroStatus);
 
-/** La Remisión es para lo que aún no se factura: con la factura emitida ya no se genera. */
-export const puedeGenerarRemision = (status: unknown): boolean => !estaFacturada(status);
+// ✅ V00508: la Remisión se genera en cualquier status (se quitó puedeGenerarRemision de la V00481).
 /** A una factura emitida ya no se le agregan operaciones (se quitan con la ✕ si hace falta). */
 export const puedeAgregarOperaciones = (status: unknown): boolean => !estaFacturada(status);
 
 /** Status para una factura NUEVA: se cancela después (con nota y reemplazo), no al crearla. */
 export const STATUS_AL_CREAR: readonly string[] = STATUS_FACTURA_OPCIONES.filter((s) => !estaCancelada(s));
 
-export const AVISO_REMISION_FACTURADA = 'La factura ya está Facturada: la Remisión solo se genera mientras no se factura.';
 export const AVISO_AGREGAR_FACTURADA = 'La factura ya está Facturada: no se le pueden agregar operaciones.';
 
 // ── Cancelación ─────────────────────────────────────────────────────────
