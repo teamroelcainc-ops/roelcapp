@@ -16,3 +16,8 @@
 .rdf-hallazgo { color: #c9d1d9; font-size: 0.8rem; line-height: 1.4; }
 .rdf-hallazgo--error { color: #f0c674; }
 .rdf-hallazgo--aviso, .rdf-hallazgo--info { color: #8b949e; }
+/* ✅ V00516: el mismo panel en la Ficha de Factura, para los documentos ya guardados */
+.rdf-panel--ficha { grid-column: 1 / -1; margin-top: 0; }
+.rdf-cabecera { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.rdf-cerrar { height: 28px; padding: 0 12px; border: 1px solid #3d444d; border-radius: 6px; background: #161b22; color: #c9d1d9; font-size: 0.78rem; font-weight: 600; cursor: pointer; }
+.rdf-cerrar:hover { border-color: #8b949e; background: #1c2129; }

@@ -15,6 +15,9 @@
 .tdf-btn:hover { border-color: #8b949e; background: #1c2129; }
 .tdf-btn--ver { background: #238636; border-color: #238636; color: #ffffff; }
 .tdf-btn--ver:hover { background: #2ea043; border-color: #2ea043; }
+.tdf-btn--analizar { border-color: #388bfd; color: #79c0ff; } /* ✅ V00516 */
+.tdf-btn--analizar:hover { border-color: #58a6ff; background: rgba(56, 139, 253, 0.12); }
+.tdf-btn--analizar.tdf-btn--activo { background: rgba(56, 139, 253, 0.18); }
 .tdf-btn--subir { background: #d29922; border-color: #d29922; color: #0d1117; }
 .tdf-btn--subir:hover { background: #e3b341; border-color: #e3b341; }
 

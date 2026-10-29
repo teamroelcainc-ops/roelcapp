@@ -5,6 +5,8 @@
 //   abre el archivo) y "Ver documentos" abre el modal "Documentos de la factura" (vista previa,
 //   agregar, reemplazar, quitar). La píldora de la fila (PildoraDocsFactura) abre lo mismo.
 //   Facturar y Editar factura usan AdjuntosArchivos (ya no la tarjeta con el archivo pendiente).
+// ✅ V00516: botón opcional "Analizar documento" (Clientes, DocumentoFichaCliente): revisa el PDF / XML
+//   ya guardado contra la factura.
 import type { MouseEvent } from 'react';
 import type { ArchivoGuardado } from '../../../shared/archivos/adjuntos';
 import { etiquetaPildoraDocs, tituloPildoraDocs } from '../services/documentosFactura';
@@ -14,6 +16,9 @@ interface Props {
   archivos: readonly ArchivoGuardado[];
   /** Abre "Documentos de la factura". */
   onAbrir: () => void;
+  /** ✅ V00516: muestra u oculta el análisis del documento (sin esto no hay botón). */
+  onAnalizar?: () => void;
+  analizando?: boolean;
 }
 
 const extension = (nombre: string): string => {
@@ -37,7 +42,7 @@ const IconoAlerta = () => (
   <svg className="tdf-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
 );
 
-export default function TarjetaDocumentoFactura({ archivos, onAbrir }: Props) {
+export default function TarjetaDocumentoFactura({ archivos, onAbrir, onAnalizar, analizando = false }: Props) {
   const primero = archivos[0];
 
   if (!primero) {
@@ -70,6 +75,12 @@ export default function TarjetaDocumentoFactura({ archivos, onAbrir }: Props) {
         {archivos.length === 1 && <span className="tdf-meta">{cargado(primero)}</span>}
       </div>
       <div className="tdf-acciones">
+        {onAnalizar && (
+          <button type="button" className={`tdf-btn tdf-btn--analizar${analizando ? ' tdf-btn--activo' : ''}`} onClick={onAnalizar} aria-pressed={analizando}
+            title="Lee el PDF o XML guardado y lo compara con la factura: número, cliente, moneda, operaciones, costo de cada una y subtotal">
+            {analizando ? 'Ocultar análisis' : archivos.length === 1 ? 'Analizar documento' : 'Analizar documentos'}
+          </button>
+        )}
         <button type="button" className="tdf-btn tdf-btn--ver" onClick={onAbrir} title="Ver, agregar, reemplazar o quitar documentos">Ver documentos</button>
       </div>
     </div>

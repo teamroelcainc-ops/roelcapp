@@ -4,13 +4,15 @@
 // cada PDF o XML nuevo dice qué se leyó (número, cliente, subtotal) y lo compara con la factura:
 // número, cliente, moneda, operaciones, costo de cada operación y subtotal. Solo AVISA (no impide
 // guardar). Se lee una vez por archivo; si cambias el número o la selección, se vuelve a comparar.
+// ✅ V00516: RevisionDocumentosGuardados hace lo mismo con los documentos YA GUARDADOS de una factura
+// (botón "Analizar documento" de la Ficha de Factura): los descarga y los compara con la factura.
 // ---------------------------------------------------------------------------
 import { useEffect, useEffectEvent, useState } from 'react';
-import type { Adjunto } from '../../../shared/archivos/adjuntos';
+import type { Adjunto, ArchivoGuardado } from '../../../shared/archivos/adjuntos';
 import CargandoDatos from '../../../shared/components/CargandoDatos';
 import { compararDocumentoFactura } from '../services/documentoFactura';
 import type { FacturaEsperada, Hallazgo } from '../services/documentoFactura';
-import { esDocumentoRevisable, leerDocumentoFactura } from '../services/leerDocumentoFactura';
+import { esDocumentoRevisable, esGuardadoRevisable, leerDocumentoFactura, leerDocumentoGuardado } from '../services/leerDocumentoFactura';
 import type { DocumentoFactura, LecturaDocumento } from '../services/leerFacturaPdf';
 import './RevisionDocumentosFactura.css';
 
@@ -80,6 +82,48 @@ export default function RevisionDocumentosFactura({ adjuntos, esperado }: Props)
       <ul className="rdf-docs">
         {nuevos.map((a) => <Documento key={a.clave} nombre={a.file.name} lectura={lecturas.get(a.file)} esperado={esperado} />)}
       </ul>
+    </section>
+  );
+}
+
+interface PropsGuardados {
+  archivos: readonly ArchivoGuardado[];
+  esperado: FacturaEsperada | null;
+  onCerrar: () => void;
+}
+
+/** ✅ V00516 — Analiza los documentos ya guardados de una factura (se descargan al abrir el panel). */
+export function RevisionDocumentosGuardados({ archivos, esperado, onCerrar }: PropsGuardados) {
+  const revisables = archivos.filter(esGuardadoRevisable);
+  const imagenes = archivos.length - revisables.length;
+  const [lecturas, setLecturas] = useState<ReadonlyMap<string, LecturaDocumento>>(() => new Map());
+
+  const claveUrls = revisables.map((a) => a.url).join('|');
+  const leerGuardados = useEffectEvent((sigue: { vigente: boolean }) => {
+    revisables.forEach((a) => {
+      void leerDocumentoGuardado(a).then((r) => { if (sigue.vigente) setLecturas((prev) => (prev.get(a.url) === r ? prev : new Map(prev).set(a.url, r))); });
+    });
+  });
+  useEffect(() => {
+    const sigue = { vigente: true };
+    leerGuardados(sigue);
+    return () => { sigue.vigente = false; };
+  }, [claveUrls]);
+
+  return (
+    <section className="rdf-panel rdf-panel--ficha" aria-label="Análisis del documento guardado contra la factura">
+      <div className="rdf-cabecera">
+        <h4 className="rdf-titulo">Análisis del documento contra la factura</h4>
+        <button type="button" className="rdf-cerrar" onClick={onCerrar}>Ocultar</button>
+      </div>
+      {revisables.length === 0
+        ? <p className="rdf-linea">Esta factura solo tiene imágenes: solo los PDF y XML se pueden revisar.</p>
+        : (
+          <ul className="rdf-docs">
+            {revisables.map((a) => <Documento key={a.url} nombre={a.nombre || 'Documento'} lectura={lecturas.get(a.url)} esperado={esperado} />)}
+          </ul>
+        )}
+      {revisables.length > 0 && imagenes > 0 && <p className="rdf-resumen">{imagenes === 1 ? '1 imagen no se revisa' : `${imagenes} imágenes no se revisan`}: solo los PDF y XML se pueden leer.</p>}
     </section>
   );
 }

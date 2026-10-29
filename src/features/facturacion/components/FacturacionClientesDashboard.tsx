@@ -37,7 +37,8 @@ import { exportarExcelProfesional } from './exportarExcelProfesional';
 import { generarRemisionPDF } from './generarRemisionPDF';
 import type { EmisorRemision, RemisionData } from './generarRemisionPDF';
 import './FacturacionClientesDashboard.css';
-import TarjetaDocumentoFactura, { PildoraDocsFactura } from './TarjetaDocumentoFactura';
+import { PildoraDocsFactura } from './TarjetaDocumentoFactura';
+import DocumentoFichaCliente from './DocumentoFichaCliente';
 import DocumentosFacturaModal from './DocumentosFacturaModal'; // ✅ V00451
 import AdjuntosArchivos from '../../../shared/components/AdjuntosArchivos'; // ✅ V00451
 import { adjuntoNuevo, desdeGuardados } from '../../../shared/archivos/adjuntos';
@@ -4064,8 +4065,8 @@ export const FacturacionClientesDashboard = () => {
                   <span className="fcd-x185"><Importe monto={totalDeGrupo(facturaViendo)} moneda={monedaFicha} conNombre /></span>
                 </div>
 
-                {/* ✅ V00381: documento de la factura bien visible */}
-                <TarjetaDocumentoFactura archivos={docsDeFactura(facturaViendo)} onAbrir={() => setDocsFacturaDe(facturaViendo)} />{/* ✅ V00451: varios */}
+                {/* ✅ V00381: documento de la factura bien visible · ✅ V00516: con "Analizar documento" */}
+                <DocumentoFichaCliente key={String(facturaViendo.id ?? facturaViendo.invoice ?? '')} archivos={docsDeFactura(facturaViendo)} esperado={esperadoDeFila(facturaViendo)} onAbrir={() => setDocsFacturaDe(facturaViendo)} />
                 <div className="fcd-x186"><hr className="fcd-x187" /></div>
 
                 <div className="fcd-x188">
