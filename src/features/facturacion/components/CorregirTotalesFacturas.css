@@ -17,23 +17,35 @@
 .ctf-chip:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
 .ctf-tabla-envoltura { border: 1px solid #30363d; border-radius: 10px; overflow-x: auto; }
 .ctf-tabla { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
-.ctf-tabla th { position: sticky; top: 0; padding: 10px 12px; background: #161b22; color: #8b949e; font-size: 0.72rem; font-weight: 700; text-align: left; text-transform: uppercase; letter-spacing: 0.4px; white-space: nowrap; }
-.ctf-tabla td { padding: 9px 12px; border-top: 1px solid #21262d; color: #c9d1d9; white-space: nowrap; }
+.ctf-tabla th { position: sticky; top: 0; padding: 10px; vertical-align: bottom; background: #161b22; color: #8b949e; font-size: 0.72rem; font-weight: 700; text-align: left; text-transform: uppercase; letter-spacing: 0.4px; white-space: normal; }
+.ctf-tabla td { padding: 8px 10px; border-top: 1px solid #21262d; color: #c9d1d9; white-space: nowrap; }
 .ctf-tabla tbody tr:hover td { background: #161b22; }
 .ctf-num { text-align: right; font-variant-numeric: tabular-nums; }
 .ctf-tabla th.ctf-num { text-align: right; }
-.ctf-invoice { color: #e07b00; font-family: Consolas, monospace; font-weight: 700; }
+.ctf-invoice { padding: 0; border: none; background: none; color: #e07b00; font-family: Consolas, monospace; font-size: 0.84rem; font-weight: 700; cursor: pointer; }
+.ctf-invoice:hover { text-decoration: underline; }
+.ctf-invoice:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
 .ctf-tenue { color: #8b949e; }
-.ctf-cliente { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.ctf-cliente { max-width: 170px; overflow: hidden; text-overflow: ellipsis; }
 .ctf-total { color: #f0f6fc; font-weight: 700; }
 .ctf-dif { font-weight: 700; }
 .ctf-dif--diferencia { color: #f85149; }
 .ctf-dif--iva { color: #d29922; }
 .ctf-dif--sinMontos, .ctf-dif--sinOperaciones { color: #8b949e; }
-.ctf-tabla td.ctf-motivo { min-width: 150px; max-width: 220px; color: #8b949e; font-size: 0.8rem; white-space: normal; line-height: 1.3; }
-.ctf-ver { padding: 4px 10px; border: 1px solid #30363d; border-radius: 6px; background: #21262d; color: #58a6ff; font: inherit; font-size: 0.78rem; font-weight: 600; cursor: pointer; }
-.ctf-ver:hover { border-color: #58a6ff; }
-.ctf-ver:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
+.ctf-tabla td.ctf-motivo { min-width: 140px; max-width: 200px; color: #8b949e; font-size: 0.8rem; white-space: normal; line-height: 1.3; }
 .ctf-mas { display: block; width: 100%; padding: 10px; border: none; border-top: 1px solid #21262d; background: #161b22; color: #58a6ff; font: inherit; font-size: 0.82rem; cursor: pointer; }
 .ctf-mas:hover { background: #1f2d44; }
-.ctf-oculto { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* ✅ V00523: fila clicable y columna Referencias (en la factura → hoy) */
+.ctf-fila { cursor: pointer; }
+.ctf-tabla td.ctf-refs { min-width: 230px; white-space: normal; }
+.ctf-refs-lista { display: flex; flex-direction: column; gap: 3px; margin: 0; padding: 0; list-style: none; }
+.ctf-ref { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; font-size: 0.8rem; }
+.ctf-ref-id { color: #58a6ff; font-family: Consolas, monospace; font-weight: 700; }
+.ctf-ref-monto { color: #c9d1d9; font-variant-numeric: tabular-nums; }
+.ctf-ref-monto--viejo { color: #8b949e; text-decoration: line-through; }
+.ctf-ref-hoy { color: #d29922; font-weight: 700; font-variant-numeric: tabular-nums; }
+.ctf-ref-sin, .ctf-ref-leyendo { color: #6e7681; font-size: 0.76rem; }
+.ctf-ref--mas { color: #8b949e; }
+.ctf-con-hoy { display: block; margin-top: 3px; color: #d29922; font-weight: 600; }
+.ctf-con-hoy--ok { color: #3fb950; }
+.ctf-error { margin: 0; padding: 8px 12px; border-top: 1px solid #21262d; color: #ff7b72; font-size: 0.82rem; }

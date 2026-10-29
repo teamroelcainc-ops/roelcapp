@@ -2829,13 +2829,19 @@ export const FacturacionClientesDashboard = () => {
     const vista: FilaCorregirVista[] = malas.map(({ fila, cuadre }, i) => {
       const clave = `${String(fila.id ?? '')}:${i}`;
       porClave.set(clave, fila);
+      const renglones: OpLike[] = Array.isArray(fila.operacionesGuardadas) ? (fila.operacionesGuardadas as OpLike[]) : [];
+      const sinMontos = cuadre.motivo === 'sinMontos';
       return {
         clave, cuadre,
         invoice: String(fila.invoice || ''),
         fecha: fechaFacturaISO(fila.fecha) || '',
         cliente: nombreClienteFactura_(fila),
         moneda: monedaFacturaMostrar(fila),
-        ops: cuadre.importes.length,
+        monedaCodigo: codigoMonedaFactura(fila), // ✅ V00523
+        refs: renglones.map((op, j) => { // ✅ V00523: cada referencia con lo que cobra en la factura
+          const id = String(op?.id || '');
+          return { opId: id && !esRefOperacion(id) ? id : '', ref: refDeOp(op), importe: sinMontos ? null : (cuadre.importes[j] ?? null) };
+        }),
       };
     });
     const en = new Date().toLocaleString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });

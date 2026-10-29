@@ -1,6 +1,6 @@
 // ✅ V00522 — La suma de las operaciones de la factura contra su total.
 import { describe, expect, it } from 'vitest';
-import { cuadreDeFactura, facturasQueNoCuadran } from './cuadreFactura';
+import { cuadreDeFactura, facturasQueNoCuadran, sumaConHoy } from './cuadreFactura';
 
 const renglones = [{ id: 'a', dol: 200, monto: 3700, subtotalBase: 200 }, { id: 'b', dol: 70, monto: 1295, subtotalBase: 70 }];
 
@@ -32,5 +32,15 @@ describe('facturasQueNoCuadran', () => {
     ];
     const r = facturasQueNoCuadran(filas, (f) => ({ renglones, moneda: 'USD', total: f.total, status: f.status, fecha: f.fecha }));
     expect(r.map((x) => [x.fila.invoice, x.cuadre.diferencia])).toEqual([['D', -269], ['B', 30]]);
+  });
+});
+
+describe('sumaConHoy', () => {
+  it('suma lo que cobra hoy cada operación y dice si así cuadra; si falta una, null', () => {
+    expect(sumaConHoy([140], 140)).toEqual({ suma: 140, cuadra: true });
+    expect(sumaConHoy([100, 50.5], 140)).toEqual({ suma: 150.5, cuadra: false });
+    expect(sumaConHoy([100, undefined], 140)).toBeNull();
+    expect(sumaConHoy([100, null], 140)).toBeNull();
+    expect(sumaConHoy([], 140)).toBeNull();
   });
 });

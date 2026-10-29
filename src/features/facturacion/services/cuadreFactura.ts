@@ -44,6 +44,16 @@ export const cuadreDeFactura = (renglones: unknown, moneda: unknown, total: numb
   return { ...base, motivo: 'diferencia' };
 };
 
+/**
+ * ✅ V00523: con lo que cobra HOY cada operación (en la moneda de la factura), ¿cuánto suman y cuadran con
+ * el total? null si falta alguna (no se leyó, no existe o es solo una referencia).
+ */
+export const sumaConHoy = (hoy: readonly (number | null | undefined)[], total: number): { suma: number; cuadra: boolean } | null => {
+  if (hoy.length === 0 || hoy.some((x) => typeof x !== 'number')) return null;
+  const c = hoy.reduce<number>((s, x) => s + aCentavos(x as number), 0);
+  return { suma: c / 100, cuadra: c === aCentavos(total) };
+};
+
 /** Una factura (fila del Historial) que no cuadra. */
 export interface FacturaPorCorregir<T> { fila: T; cuadre: CuadreFactura }
 
