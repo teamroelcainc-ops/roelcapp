@@ -69,7 +69,7 @@ export interface ResultadoCotejo {
   notas: string[];
 }
 
-const RFC_GENERICOS = new Set(['XEXX010101000', 'XAXX010101000']);
+export const RFC_GENERICOS = new Set(['XEXX010101000', 'XAXX010101000']);
 
 const texto = (v: unknown): string => (v === null || v === undefined || typeof v === 'object' ? '' : String(v).trim());
 
@@ -77,9 +77,9 @@ const texto = (v: unknown): string => (v === null || v === undefined || typeof v
 export const claveNombre = (nombre: string): string =>
   nombre.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 
-const soloAlfanumerico = (s: string): string => s.toUpperCase().replace(/[^A-Z0-9]/g, '');
+export const soloAlfanumerico = (s: string): string => s.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
-const mismoNombre = (a: string, b: string): boolean => {
+export const mismoNombre = (a: string, b: string): boolean => {
   const x = claveNombre(a);
   const y = claveNombre(b);
   if (!x || !y) return false;
@@ -105,7 +105,7 @@ export const problemaCliente = (cfdi: Cfdi, cliente: ClienteCotejo): string => {
 };
 
 /** Importe de una operación en una moneda, con la MISMA regla con que Generar Factura guarda el total. */
-const importeEn = (moneda: 'USD' | 'MXN', op: unknown): number => {
+export const importeEn = (moneda: 'USD' | 'MXN', op: unknown): number => { // ✅ V00514: también lo usa documentoFactura.ts
   const m = montoOperacion(op, 'cliente');
   return totalNativoDeOperaciones(moneda, [{ monto: m.conv, dol: m.dol, pes: m.pes, subtotalBase: m.subtotal }]);
 };

@@ -69,7 +69,7 @@ export const datosDeDescripcion = (descripcion: string): Omit<ConceptoCfdi, 'des
   const resto = primera >= 0 ? texto.slice(primera) : texto;
   const caja = /\bCAJA\s+(\S+)/i.exec(resto)?.[1] ?? '';
   const refCliente = /\bREF\s+(\S+)/i.exec(resto)?.[1] ?? '';
-  const tcDescripcion = numero(/\bTC\s+(\d+(?:\.\d+)?)/i.exec(resto)?.[1] ?? null);
+  const tcDescripcion = numero(/\bTC:?\s*(\d+(?:\.\d+)?)/i.exec(resto)?.[1] ?? null); // ✅ V00514: también "TC: 18.6670"
   return { refs, caja, refCliente, tcDescripcion };
 };
 

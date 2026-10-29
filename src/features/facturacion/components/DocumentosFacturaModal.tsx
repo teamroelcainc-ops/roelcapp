@@ -10,17 +10,21 @@ import type { Adjunto } from '../../../shared/archivos/adjuntos';
 import { MAX_DOCS_FACTURA, detalleError, docsDeFactura, folioDeFila, idsDeFila } from '../services/documentosFactura';
 import type { EscrituraDocs, LadoDocsFactura } from '../services/documentosFactura';
 import { guardarDocsFactura } from '../services/guardarDocsFactura';
+import type { FacturaEsperada } from '../services/documentoFactura';
+import RevisionDocumentosFactura from './RevisionDocumentosFactura'; // ✅ V00514
 import './DocumentosFacturaModal.css';
 
 interface Props {
   lado: LadoDocsFactura;
   /** Fila del Historial (puede juntar varios documentos con el mismo folio) o factura suelta. */
   fila: Record<string, unknown>;
+  /** ✅ V00514: los datos de la factura para revisar el PDF / XML que se agrega (solo Clientes). */
+  esperado?: FacturaEsperada | null;
   onGuardado: (escrituras: EscrituraDocs[]) => void;
   onCerrar: () => void;
 }
 
-export default function DocumentosFacturaModal({ lado, fila, onGuardado, onCerrar }: Props) {
+export default function DocumentosFacturaModal({ lado, fila, esperado = null, onGuardado, onCerrar }: Props) {
   const [antes] = useState(() => docsDeFactura(fila));
   const [adjuntos, setAdjuntos] = useState<Adjunto[]>(() => desdeGuardados(antes));
   const [guardando, setGuardando] = useState(false);
@@ -57,6 +61,7 @@ export default function DocumentosFacturaModal({ lado, fila, onGuardado, onCerra
         </div>
         {agrupados > 1 && <p className="dfm-nota">Este folio junta {agrupados} registros: los documentos se guardan juntos en el primero.</p>}
         <AdjuntosArchivos etiqueta="PDF o imagen" adjuntos={adjuntos} onCambiar={setAdjuntos} max={MAX_DOCS_FACTURA} deshabilitado={guardando} />
+        {esperado && <RevisionDocumentosFactura adjuntos={adjuntos} esperado={esperado} />}
         <div className="dfm-pie">
           <button type="button" className="dfm-btn" onClick={cerrar} disabled={guardando}>Cancelar</button>
           <button type="button" className="dfm-btn dfm-btn--guardar" onClick={() => void guardar()} disabled={guardando || !cambio}>

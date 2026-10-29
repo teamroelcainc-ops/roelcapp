@@ -105,6 +105,9 @@ import type { DatosSit } from '../services/datosParaSit';
 import { cotejarCfdi, opParaCotejo } from '../services/cotejoCfdi';
 import type { ClienteCotejo, ResultadoCotejo } from '../services/cotejoCfdi';
 import type { Cfdi } from '../services/leerCfdi';
+import RevisionDocumentosFactura from './RevisionDocumentosFactura'; // ✅ V00514
+import { monedaEsperada, opEsperadaDeOperacion, opsEsperadasDeFactura } from '../services/documentoFactura';
+import type { FacturaEsperada } from '../services/documentoFactura';
 import PagosDeFactura from './PagosDeFactura'; // ✅ V00483
 import { indexarPagos, numerosPorFactura, pagosDeFacturas } from '../services/pagosDeFactura';
 import type { PagoDeFactura } from '../services/pagosDeFactura';
@@ -987,6 +990,26 @@ export const FacturacionClientesDashboard = () => {
     // ✅ V00513: PDF (para verla; el portal y la app móvil abren el primero) y XML como documentos de la factura.
     setAdjuntosFacturar([...(pdf ? [adjuntoNuevo(pdf)] : []), adjuntoNuevo(archivo)]);
     setModalAbierto(true);
+  };
+
+  // ✅ V00514: con qué se compara el PDF / XML que se sube: el formulario de Generar Factura…
+  const esperadoGenerar = (): FacturaEsperada => ({
+    folio: invoiceForm,
+    cliente: clientesParaCotejo.get(String(clienteFacturaId)) ?? null,
+    moneda: monedaFacturacion,
+    ops: opsDeSeleccion().map((op) => opEsperadaDeOperacion(op, monedaFacturacion)),
+    subtotal: monedaFacturacion ? totalSeleccionEnMoneda : null,
+  });
+  // …o la factura ya registrada (Documentos de la factura).
+  const esperadoDeFila = (fila: Record<string, unknown>): FacturaEsperada => {
+    const moneda = monedaEsperada(monedaDeFactura(fila) ?? monedaClienteDe(fila.clienteId));
+    return {
+      folio: String(fila.invoice || ''),
+      cliente: clientesParaCotejo.get(String(fila.clienteId ?? '')) ?? null,
+      moneda,
+      ops: opsEsperadasDeFactura(fila, moneda),
+      subtotal: totalDeGrupo(fila),
+    };
   };
 
   const clienteFacturaId = useMemo(() => {
@@ -3145,7 +3168,7 @@ export const FacturacionClientesDashboard = () => {
     <div className="module-container fcd-x30">
       {/* ✅ V00451: "Documentos de la factura" (píldora de la fila y tarjeta de la Ficha) */}
       {docsFacturaDe && (
-        <DocumentosFacturaModal lado="clientes" fila={docsFacturaDe} onGuardado={aplicarDocsLocal} onCerrar={() => setDocsFacturaDe(null)} />
+        <DocumentosFacturaModal lado="clientes" fila={docsFacturaDe} esperado={esperadoDeFila(docsFacturaDe)} onGuardado={aplicarDocsLocal} onCerrar={() => setDocsFacturaDe(null)} />
       )}
       {hiloFacturaId && <HiloModal tipo="cliente" facturaId={hiloFacturaId} onClose={() => setHiloFacturaId(null)} onEditarOperacion={(id) => setOpEditandoId(id)} />}
       {corrigiendoFacturas && (
@@ -3955,6 +3978,8 @@ export const FacturacionClientesDashboard = () => {
                   <label className="fcd-x146">DOCUMENTO DE LA FACTURA</label>
                   {/* ✅ V00451: varios (hasta 10), con vista previa; se suben al confirmar */}
                   <AdjuntosArchivos etiqueta="Archivos (opcional)" adjuntos={adjuntosFacturar} onCambiar={setAdjuntosFacturar} max={MAX_DOCS_FACTURA} deshabilitado={guardando} />
+                  {/* ✅ V00514: el PDF / XML se revisa contra el formulario (solo avisa) */}
+                  <RevisionDocumentosFactura adjuntos={adjuntosFacturar} esperado={esperadoGenerar()} />
                 </div>
               </div>
               <div className="fcd-x167">

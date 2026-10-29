@@ -1,0 +1,18 @@
+/* ✅ V00514: revisión del documento (PDF / XML) contra la factura (prefijo rdf-) */
+.rdf-panel { display: grid; gap: 8px; margin-top: 10px; padding: 10px 12px; border: 1px solid #30363d; border-radius: 8px; background: #0d1117; }
+.rdf-titulo { margin: 0; color: #c9d1d9; font-size: 0.82rem; font-weight: 700; }
+.rdf-docs { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.rdf-doc { display: grid; gap: 4px; padding: 8px 10px; border: 1px solid #21262d; border-left: 3px solid #6e7681; border-radius: 6px; background: #161b22; }
+.rdf-doc--ok { border-left-color: #3fb950; }
+.rdf-doc--error { border-left-color: #e3b341; }
+.rdf-nombre { color: #f0f6fc; font-size: 0.82rem; font-weight: 600; overflow-wrap: anywhere; }
+.rdf-formato { margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: rgba(110, 118, 129, 0.2); color: #8b949e; font-size: 0.7rem; font-weight: 600; }
+.rdf-resumen { color: #8b949e; font-size: 0.78rem; }
+.rdf-linea { margin: 0; color: #e3b341; font-size: 0.8rem; }
+.rdf-veredicto { margin: 2px 0 0; font-size: 0.84rem; font-weight: 700; }
+.rdf-veredicto--ok { color: #3fb950; }
+.rdf-veredicto--error { color: #e3b341; }
+.rdf-hallazgos { display: grid; gap: 3px; margin: 0; padding: 0; list-style: none; }
+.rdf-hallazgo { color: #c9d1d9; font-size: 0.8rem; line-height: 1.4; }
+.rdf-hallazgo--error { color: #f0c674; }
+.rdf-hallazgo--aviso, .rdf-hallazgo--info { color: #8b949e; }
