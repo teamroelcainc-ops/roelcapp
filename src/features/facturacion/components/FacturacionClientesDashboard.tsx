@@ -32,13 +32,17 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import { SelectBuscable } from '../../catalogos/components/SelectBuscable';
-import { db } from '../../../config/firebase';
+import { auth, db } from '../../../config/firebase';
 import { exportarExcelProfesional } from './exportarExcelProfesional';
 import { generarRemisionPDF } from './generarRemisionPDF';
 import type { EmisorRemision, RemisionData } from './generarRemisionPDF';
 import './FacturacionClientesDashboard.css';
 import { PildoraDocsFactura } from './TarjetaDocumentoFactura';
 import DocumentoFichaCliente from './DocumentoFichaCliente';
+import OperacionesFacturaEdicion from './OperacionesFacturaEdicion'; // ✅ V00520
+import { useOperacionesDeFactura } from '../hooks/useOperacionesDeFactura'; // ✅ V00520
+import { opsDesfasadas, planSincronizarFactura, renglonesConImporte, sincronizarFacturaConOperaciones } from '../services/sincronizarFactura'; // ✅ V00520
+import type { PlanSincronizar } from '../services/sincronizarFactura';
 import DocumentosFacturaModal from './DocumentosFacturaModal'; // ✅ V00451
 import AdjuntosArchivos from '../../../shared/components/AdjuntosArchivos'; // ✅ V00451
 import { adjuntoNuevo, desdeGuardados } from '../../../shared/archivos/adjuntos';
@@ -105,6 +109,7 @@ import { datosParaSit } from '../services/datosParaSit';
 import type { DatosSit } from '../services/datosParaSit';
 import { cotejarCfdi, opParaCotejo } from '../services/cotejoCfdi';
 import type { ClienteCotejo, ResultadoCotejo } from '../services/cotejoCfdi';
+import { esRefOperacion } from '../services/leerCfdi';
 import type { Cfdi } from '../services/leerCfdi';
 import RevisionDocumentosFactura from './RevisionDocumentosFactura'; // ✅ V00514
 import { monedaEsperada, opEsperadaDeOperacion, opsEsperadasDeFactura } from '../services/documentoFactura';
@@ -186,6 +191,10 @@ const COLUMNAS_FACTURA_BASE = [
 // ✅ V00504: el Excel del Historial lleva además "Estado de pago" (Pagada / Parcial / Sin pagar),
 //   después de "# Pago" (no es columna de la tabla).
 const COL_ESTADO_PAGO = { id: 'estadoPago', label: 'Estado de pago', visible: true };
+/** ✅ V00520: lo que se puede cambiar en Editar factura, en una sola cadena (para saber si algo cambió). */
+const claveEdicion = (e: { invoice: string; fecha: string; ccp: string; status: string; cancelacion: DatosCancelacion; clienteId: string; total: string; adjuntos: readonly Adjunto[] }): string =>
+  JSON.stringify([e.invoice.trim(), e.fecha, e.ccp.trim(), e.status, e.cancelacion.nota, e.cancelacion.reemplazo, e.clienteId, e.total,
+    e.adjuntos.map((a) => (a.estado === 'nuevo' ? `n:${a.clave}` : `g:${a.archivo.url}`))]);
 const columnasParaExportar = (cols: readonly { id: string; label: string; visible: boolean }[]) => {
   const out = cols.map((c) => ({ id: c.id, label: c.label, visible: c.visible }));
   const i = out.findIndex((c) => c.id === 'numeroPago');
@@ -489,6 +498,8 @@ export const FacturacionClientesDashboard = () => {
   type FacturaACancelar = { id?: unknown; invoice?: unknown; clienteId?: unknown; statusFactura?: unknown; __groupIds?: unknown };
   // ✅ V00481: la moneda ya no se elige (es la del cliente); cancelar pide nota y factura de reemplazo.
   const [editCancelacion, setEditCancelacion] = useState<DatosCancelacion>(CANCELACION_VACIA);
+  // ✅ V00520: cómo estaba la factura al abrir Editar (Actualizar se activa solo si algo cambió).
+  const [editInicial, setEditInicial] = useState<string>('');
   const [cancelarDe, setCancelarDe] = useState<FacturaACancelar | null>(null);
 
   const [gestionOp, setGestionOp] = useState<any | null>(null);
@@ -1699,8 +1710,32 @@ export const FacturacionClientesDashboard = () => {
     // ✅ V00481: si la factura no está en la moneda del cliente, el total sugerido ya es el de esa moneda.
     setEditTotal(String(totalEditPara(f, String(f.clienteId || ''))));
     setEditClienteId(String(f.clienteId || '')); // ✅ NUEVO
-    setAdjuntosEdicion(desdeGuardados(docsDeFactura(f))); // ✅ V00451: los documentos actuales (de todo el grupo)
+    const adjuntos = desdeGuardados(docsDeFactura(f));
+    setAdjuntosEdicion(adjuntos); // ✅ V00451: los documentos actuales (de todo el grupo)
+    setEditInicial(claveEdicion({
+      invoice: String(f.invoice || ''), fecha: String(f.fecha || '').slice(0, 10), ccp: String(f.facturaCcp || ''), status: String(f.statusFactura || 'Facturado'),
+      cancelacion: cancelada ? { nota: cancelada.nota, reemplazo: cancelada.reemplazo } : CANCELACION_VACIA, clienteId: String(f.clienteId || ''),
+      total: String(totalEditPara(f, String(f.clienteId || ''))), adjuntos,
+    }));
   };
+
+  // ✅ V00520 — Editar factura: sus operaciones (con ✎ Editar), si alguna cambió de costo y cómo queda la
+  //   factura al presionar Actualizar (que se activa solo si algo cambió).
+  const monedaEdicion = facturaEditando ? (monedaDeFactura(facturaEditando) ?? '') : '';
+  const opsEdicion = useOperacionesDeFactura(facturaEditando, monedaEdicion);
+  const opsEdicionLista = Array.from(opsEdicion.actuales, ([id, datos]) => ({ id, datos }));
+  const desfasadasEdicion = facturaEditando && monedaEdicion && !opsEdicion.cargando ? opsDesfasadas(facturaEditando, opsEdicionLista, monedaEdicion) : [];
+  let planEdicion: PlanSincronizar | null = null;
+  let impedimentoEdicion = '';
+  if (desfasadasEdicion.length > 0 && facturaEditando && monedaEdicion) {
+    if (flags.dineroPorServidor) impedimentoEdicion = 'Con el dinero en el servidor encendido, la factura no se pone al día desde aquí: usa Recalcular montos en Pagos.';
+    else if (Array.isArray(facturaEditando.__groupIds) && facturaEditando.__groupIds.length > 1) impedimentoEdicion = 'Esta factura está en varios registros con el mismo folio: no se pone al día desde aquí.';
+    try { planEdicion = planSincronizarFactura(facturaEditando, opsEdicionLista, monedaEdicion, '', ''); } catch (e) { impedimentoEdicion = impedimentoEdicion || (e instanceof Error ? e.message : String(e)); }
+  }
+  const sincronizarAlActualizar = !!planEdicion && !impedimentoEdicion;
+  const cambiosEdicion = !!facturaEditando && (sincronizarAlActualizar || claveEdicion({
+    invoice: editInvoice, fecha: editFecha, ccp: editCcp, status: editStatus, cancelacion: editCancelacion, clienteId: editClienteId, total: editTotal, adjuntos: adjuntosEdicion,
+  }) !== editInicial);
 
   const handleGuardarEdicionFactura = async () => {
     if (!facturaEditando) return;
@@ -1789,6 +1824,15 @@ export const FacturacionClientesDashboard = () => {
       }));
       setFacturaViendo((prev: any) => (prev && ids.includes(prev.id)) ? canc.local({ ...prev, ...baseUpdate, ...(totalCambio ? { subtotalFactura: totalNum, subtotalMonedaFactura: totalNum, ...extraPago } : {}) }) : prev);
       if (!canc.vacia) void registrarLog('Facturación Clientes', 'Edición', cancelando ? `Canceló la factura ${editInvoice.trim()}: la reemplaza ${editCancelacion.reemplazo.trim()}. Nota: ${editCancelacion.nota.trim()}` : `La factura ${editInvoice.trim()} dejó de estar Cancelada (${editStatus}).`);
+      // ✅ V00520: Actualizar también pone la factura al día con sus operaciones (si alguna cambió de costo).
+      if (sincronizarAlActualizar) {
+        const plan = await sincronizarFacturaConOperaciones(ids[0], new Date().toISOString(), auth.currentUser?.email || '');
+        if (plan) {
+          setFacturasGlobales(prev => prev.map(f => (f.id === ids[0] ? normalizarFactura({ ...f, ...plan.datosFactura }) : f)));
+          setFacturaViendo((prev: Record<string, unknown> | null) => (prev && idsDeFila(prev).includes(ids[0])) ? { ...prev, ...plan.datosFactura } : prev);
+          void registrarLog('Facturación Clientes', 'Edición', `Factura ${editInvoice.trim()} al día con sus operaciones (${plan.desfasadas.map((d) => `${d.ref} ${d.antes.toFixed(2)} → ${d.ahora.toFixed(2)}`).join(', ')}): total ${plan.totalAntes.toFixed(2)} → ${plan.totalDespues.toFixed(2)}.`);
+        }
+      }
       setFacturaEditando(null);
     } catch (e) {
       console.error('Error guardando edición de factura:', e);
@@ -2733,11 +2777,65 @@ export const FacturacionClientesDashboard = () => {
   // ✅ V00493: el total de la FILA (un folio con varios documentos), el mismo de la tarjeta y la tabla.
   const totalTarjetaAbierta = useMemo(() => facturasDeTarjeta.reduce((acc: number, f) => acc + totalDeGrupo(f), 0), [facturasDeTarjeta, totalDeGrupo]);
   const opsTarjetaAbierta = useMemo(() => facturasDeTarjeta.reduce((acc: number, f) => acc + (Array.isArray(f.operacionesIds) ? f.operacionesIds.length : 0), 0), [facturasDeTarjeta]);
+  // ✅ V00521: Ops. Facturadas lista las OPERACIONES de las facturas filtradas (no las facturas): con el
+  //   historial filtrado a una factura salen sus operaciones; sin filtro, todas las facturadas. Sale de los
+  //   renglones de cada factura (cero lecturas); el Excel resuelve las referencias que falten.
+  type FilaOpTarjeta = { clave: string; opId: string; ref: string; caja: string; invoice: string; fecha: string; cliente: string; moneda: string; importe: number | null; factura: FacturaLike };
+  const filasOpsDeTarjeta = (facturas: readonly FacturaLike[], extra?: Record<string, InfoOp>): FilaOpTarjeta[] =>
+    facturas.flatMap((f) => {
+      const renglones: OpLike[] = Array.isArray(f.operacionesGuardadas) ? f.operacionesGuardadas : [];
+      const moneda = monedaFacturaMostrar(f);
+      const importes = importesDeRenglones(moneda, renglones);
+      const conMontos = importes.some((x) => x > 0); // las importadas no guardaron lo que cobró cada una
+      return renglones.map((op, i) => {
+        const id = String(op?.id || '');
+        return {
+          clave: `${String(f.id || f.invoice || '')}:${i}`,
+          opId: id && !esRefOperacion(id) ? id : '',
+          ref: refDeOpCon(op, extra),
+          caja: remolqueDeOp(op) || String((extra && extra[id]?.remolque) || '').trim(),
+          invoice: String(f.invoice || ''),
+          fecha: String(f.fecha || '').slice(0, 10),
+          cliente: nombreClienteFactura_(f),
+          moneda,
+          importe: conMontos ? importes[i] : null,
+          factura: f,
+        };
+      });
+    });
+  const TOPE_OPS_TARJETA = 300;
+  const [opsTarjetaVer, setOpsTarjetaVer] = useState(TOPE_OPS_TARJETA);
+  const opsDeTarjeta = tarjetaAbierta === 'ops' ? filasOpsDeTarjeta(facturasDeTarjeta) : [];
+  /** Una operación de la lista: su detalle (con ✎ Editar operación); sin la operación ligada, la Ficha de su factura. */
+  const abrirOpDeTarjeta = (o: FilaOpTarjeta) => { if (o.opId) void verDetalleOperacion(o.opId); else setFacturaViendo(o.factura); };
   const exportarTarjetaExcel = async () => {
     if (exportandoTarjeta || !tarjetaAbierta || facturasDeTarjeta.length === 0) return;
     setExportandoTarjeta(true);
     try {
       const mapaExport = await resolverOpsParaExport(facturasDeTarjeta);
+      if (tarjetaAbierta === 'ops') {
+        // ✅ V00521: una fila por operación facturada (como la ventana).
+        const filasOps = filasOpsDeTarjeta(facturasDeTarjeta, mapaExport).map((o) => ({
+          ref: o.ref, caja: o.caja, invoice: o.invoice, fecha: o.fecha, cliente: o.cliente, moneda: o.moneda, importe: o.importe ?? '',
+        }));
+        await exportarExcelProfesional({
+          nombreArchivo: `Tarjeta_OPS_${hoyLocalISO()}.xlsx`,
+          tituloReporte: `Facturación · ${tituloTarjeta.ops}`,
+          subtitulo: `${filasOps.length} operaciones de ${facturasDeTarjeta.length} facturas · filtros actuales del historial`,
+          nombreHoja: 'Operaciones',
+          columnas: [
+            { key: 'ref', label: 'Referencia', tipo: 'texto' as const },
+            { key: 'caja', label: 'Caja', tipo: 'texto' as const },
+            { key: 'invoice', label: 'Invoice', tipo: 'texto' as const },
+            { key: 'fecha', label: 'Fecha factura', tipo: 'fecha' as const },
+            { key: 'cliente', label: 'Cliente', tipo: 'texto' as const },
+            { key: 'moneda', label: 'Moneda', tipo: 'texto' as const },
+            { key: 'importe', label: 'Importe en la factura', tipo: 'monto' as const },
+          ],
+          filas: filasOps,
+        });
+        return;
+      }
       const filas = facturasDeTarjeta.map((f) => ({
         invoice: f.invoice || '',
         fecha: f.fecha || '',
@@ -3193,7 +3291,12 @@ export const FacturacionClientesDashboard = () => {
           onConfirmar={async (datos) => { await handleCambiarStatusFactura(cancelarDe, 'Cancelado', datos); setCancelarDe(null); }} />
       )}{/* ✅ V00481 */}
       {opEditandoId && (
-        <EditorOperacionEmbebido operacionId={opEditandoId} operacion={operacionesGlobales.find((o: any) => String(o.id) === opEditandoId)} onClose={() => setOpEditandoId(null)} />
+        <EditorOperacionEmbebido operacionId={opEditandoId} operacion={operacionesGlobales.find((o: any) => String(o.id) === opEditandoId)} onClose={() => setOpEditandoId(null)}
+          onSave={() => {
+            // ✅ V00520: una factura emitida no cambia sola (V00495). Desde la Ficha se avisa cómo ponerla al día;
+            // en Editar factura ya se ve el cambio y se aplica con Actualizar.
+            if (facturaViendo && !facturaEditando) avisar({ tipo: 'info', titulo: 'Operación guardada', texto: 'Si cambió su costo, abre Editar factura: ahí se ve el cambio y al presionar Actualizar la factura se pone al día.' });
+          }} />
       )}
       <div className="fcd-encabezado">{/* ✅ V00515: las tarjetas de la pestaña van al lado del título (la tabla sube) */}
         <h1 className="fcd-x31">Facturación de Clientes</h1>
@@ -3221,7 +3324,7 @@ export const FacturacionClientesDashboard = () => {
               {cargandoFacturas ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fcd-x106">{resumenHistorial.cuenta}</span>}{/* ✅ V00449 */}
               {!cargandoFacturas && resumenHistorial.canceladas > 0 && <small className="fcd-nota-canceladas">{resumenHistorial.canceladas} canceladas: no suman</small>}{/* ✅ V00493 */}
             </div>
-            <div className="fcd-x104 fac-tarjeta-clicable" role="button" tabIndex={0} title="Ver de dónde sale este número" onClick={() => setTarjetaAbierta('ops')}>
+            <div className="fcd-x104 fac-tarjeta-clicable" role="button" tabIndex={0} title="Ver de dónde sale este número" onClick={() => { setOpsTarjetaVer(TOPE_OPS_TARJETA); setTarjetaAbierta('ops'); }}>
               <span className="fcd-x105">Ops. Facturadas</span>
               {cargandoFacturas ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fcd-x107">{resumenHistorial.totalOps}</span>}
             </div>
@@ -3722,9 +3825,42 @@ export const FacturacionClientesDashboard = () => {
               <button type="button" className="fac-export-modal__cerrar" onClick={() => setTarjetaAbierta(null)}>✕</button>
             </div>
             <div className="fac-tarjeta-modal__resumen">
-              {facturasDeTarjeta.length.toLocaleString('es-MX')} factura(s) · {opsTarjetaAbierta.toLocaleString('es-MX')} operación(es) · Total <Importe monto={totalTarjetaAbierta} moneda={tarjetaAbierta === 'usd' ? 'USD' : tarjetaAbierta === 'mxn' ? 'MXN' : ''} />
+              {facturasDeTarjeta.length.toLocaleString('es-MX')} factura(s) · {(tarjetaAbierta === 'ops' ? opsDeTarjeta.length : opsTarjetaAbierta).toLocaleString('es-MX')} operación(es) · Total <Importe monto={totalTarjetaAbierta} moneda={tarjetaAbierta === 'usd' ? 'USD' : tarjetaAbierta === 'mxn' ? 'MXN' : ''} />
               <span className="fac-tarjeta-modal__nota"> — con los filtros actuales del historial{tarjetaAbierta === 'usd' ? ', solo facturas en Dólares' : tarjetaAbierta === 'mxn' ? ', solo facturas en Pesos' : ''}{tarjetaAbierta !== 'listadas' && resumenHistorial.canceladas > 0 ? ', sin las canceladas' : ''}.</span>
             </div>
+            {tarjetaAbierta === 'ops' ? (
+            <div className="fac-tarjeta-modal__lista">{/* ✅ V00521: las operaciones facturadas */}
+              <div className="fac-tarjeta-modal__fila fac-tarjeta-modal__fila--encabezado">
+                <span className="fac-tarjeta-modal__c-ref">Referencia</span>
+                <span className="fac-tarjeta-modal__c-caja">Caja</span>
+                <span className="fac-tarjeta-modal__c-invoice">Invoice</span>
+                <span className="fac-tarjeta-modal__c-fecha">Fecha</span>
+                <span className="fac-tarjeta-modal__c-cliente">Cliente</span>
+                <span className="fac-tarjeta-modal__c-moneda">Moneda</span>
+                <span className="fac-tarjeta-modal__c-total">Importe</span>
+              </div>
+              {opsDeTarjeta.slice(0, opsTarjetaVer).map((o) => (
+                <button type="button" key={o.clave} className="fac-tarjeta-modal__fila fac-tarjeta-modal__fila--boton" onClick={() => abrirOpDeTarjeta(o)}
+                  title={o.opId ? 'Ver el detalle de la operación' : 'Ver la factura (esta operación no está ligada)'}>
+                  <span className="fac-tarjeta-modal__c-ref">{o.ref || '—'}</span>
+                  <span className="fac-tarjeta-modal__c-caja">{o.caja || '—'}</span>
+                  <span className="fac-tarjeta-modal__c-invoice">{o.invoice || '—'}</span>
+                  <span className="fac-tarjeta-modal__c-fecha">{o.fecha || '—'}</span>
+                  <span className="fac-tarjeta-modal__c-cliente" title={o.cliente}>{o.cliente}</span>
+                  <span className="fac-tarjeta-modal__c-moneda"><NombreMoneda moneda={o.moneda} respaldo={o.moneda} /></span>
+                  <span className="fac-tarjeta-modal__c-total" title={o.importe === null ? 'La factura no guardó lo que cobró cada operación' : undefined}>
+                    {o.importe === null ? '—' : <Importe monto={o.importe} moneda={o.moneda} />}
+                  </span>
+                </button>
+              ))}
+              {opsDeTarjeta.length > opsTarjetaVer && (
+                <button type="button" className="fac-tarjeta-modal__mas" onClick={() => setOpsTarjetaVer((n) => n + TOPE_OPS_TARJETA)}>
+                  Mostrar {Math.min(TOPE_OPS_TARJETA, opsDeTarjeta.length - opsTarjetaVer).toLocaleString('es-MX')} más (van {opsTarjetaVer.toLocaleString('es-MX')} de {opsDeTarjeta.length.toLocaleString('es-MX')}; el Excel trae todas)
+                </button>
+              )}
+              {opsDeTarjeta.length === 0 && <div className="fac-tarjeta-modal__vacio">Sin operaciones facturadas con los filtros actuales.</div>}
+            </div>
+            ) : (
             <div className="fac-tarjeta-modal__lista">
               <div className="fac-tarjeta-modal__fila fac-tarjeta-modal__fila--encabezado">
                 <span className="fac-tarjeta-modal__c-invoice">Invoice</span>
@@ -3735,17 +3871,19 @@ export const FacturacionClientesDashboard = () => {
                 <span className="fac-tarjeta-modal__c-total">Total</span>
               </div>
               {facturasDeTarjeta.map((f) => (
-                <div key={f.id} className="fac-tarjeta-modal__fila">
+                // ✅ V00520: clic en la factura → su Ficha (encima de esta lista; al cerrarla se vuelve aquí)
+                <button type="button" key={f.id} className="fac-tarjeta-modal__fila fac-tarjeta-modal__fila--boton" title="Ver la factura" onClick={() => setFacturaViendo(f)}>
                   <span className="fac-tarjeta-modal__c-invoice">{String(f.invoice || '—')}</span>
                   <span className="fac-tarjeta-modal__c-fecha">{String(f.fecha || '').slice(0, 10) || '—'}</span>
                   <span className="fac-tarjeta-modal__c-cliente" title={nombreClienteFactura_(f)}>{nombreClienteFactura_(f)}</span>
                   <span className="fac-tarjeta-modal__c-ops">{Number(f.operacionesIds?.length || 0)}</span>
                   <span className="fac-tarjeta-modal__c-moneda"><NombreMoneda moneda={monedaFacturaMostrar(f)} respaldo={monedaFacturaMostrar(f)} /></span>
                   <span className="fac-tarjeta-modal__c-total"><Importe monto={totalDeGrupo(f)} moneda={monedaFacturaMostrar(f)} /></span>
-                </div>
+                </button>
               ))}
               {facturasDeTarjeta.length === 0 && <div className="fac-tarjeta-modal__vacio">Sin facturas con los filtros actuales.</div>}
             </div>
+            )}
             <div className="fac-export-modal__pie">
               <span className="fac-export-modal__separador" />
               <button type="button" className="btn btn-outline" onClick={() => setTarjetaAbierta(null)}>Cerrar</button>
@@ -4104,6 +4242,11 @@ export const FacturacionClientesDashboard = () => {
                           )}
                           {/* ✅ V00481: en la moneda de la factura (Dólares → Dólares (Cliente); Pesos → Conversión Final) */}
                           <span className="fcd-x195"><Importe monto={importesFicha[i]} moneda={monedaFicha} /></span>
+                          {/* ✅ V00520: editar la operación desde la factura (el formulario completo; la Ficha queda detrás) */}
+                          {op.id && !esRefOperacion(String(op.id)) && (
+                            <span role="button" className="fcd-op-editar" title="Editar esta operación en el formulario de Operaciones"
+                              onClick={(e) => { e.stopPropagation(); setOpEditandoId(String(op.id)); }}>✎ Editar</span>
+                          )}
                           {/* ✅ NUEVO: quitar esta referencia de la factura */}
                           <span
                             role="button"
@@ -4233,7 +4376,7 @@ export const FacturacionClientesDashboard = () => {
       )}
 
       {facturaEditando && (
-        <div className="modal-overlay fcd-x239">
+        <div className={`modal-overlay fcd-x239${opEditandoId ? ' fcd-detras-editor' : ''}`}>{/* ✅ V00520: detrás del formulario de la operación */}
           <div className="fcd-x240">
             <div className="fcd-x142">
               <h2 className="fcd-x143">Editar Factura</h2>
@@ -4323,7 +4466,7 @@ export const FacturacionClientesDashboard = () => {
                 <label className="fcd-x146">TOTAL FACTURADO</label>
                 {/* ✅ V00519: el monto NO se cambia aquí: sale de las operaciones */}
                 <span className="fcd-moneda-fija fcd-total-fijo" title="El total sale de sus operaciones">{(Number(editTotal) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                <small className="fcd-bloqueo-nota">Sale de sus operaciones: para cambiarlo, corrige el costo en cada operación (o pon la diferencia con Analizar documento).</small>
+                <small className="fcd-bloqueo-nota">Sale de sus operaciones: para cambiarlo, corrige el costo con ✎ Editar en la operación (abajo) y presiona Actualizar, o pon la diferencia con Analizar documento.</small>
               </div>
               <div>
                 <label className="fcd-x146">FACTURA CCP (Opcional)</label>
@@ -4331,9 +4474,16 @@ export const FacturacionClientesDashboard = () => {
               </div>
             </div>
 
+            {/* ✅ V00520: sus operaciones, con ✎ Editar (el formulario de la operación) y si alguna cambió de costo */}
+            <OperacionesFacturaEdicion datos={opsEdicion} moneda={monedaEdicion} desfasadas={desfasadasEdicion} plan={planEdicion} impedimento={impedimentoEdicion}
+              sinImportes={!!facturaEditando && !!monedaEdicion && renglonesConImporte(facturaEditando, monedaEdicion).length === 0}
+              onEditar={(id) => setOpEditandoId(id)} />
+
             <div className="fcd-x246">
               <button className="fcd-x153" onClick={() => setFacturaEditando(null)} disabled={guardandoEdit}>Cancelar</button>
-              <button onClick={handleGuardarEdicionFactura} disabled={guardandoEdit} style={{ padding: '8px 24px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: guardandoEdit ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: guardandoEdit ? 0.7 : 1 }}>{guardandoEdit ? 'Guardando...' : 'Guardar cambios'}</button>
+              {/* ✅ V00520: Actualizar (solo con cambios); nada se guarda hasta presionarlo */}
+              <button type="button" className="fcd-btn-actualizar" onClick={handleGuardarEdicionFactura} disabled={guardandoEdit || !cambiosEdicion}
+                title={cambiosEdicion ? 'Guardar los cambios de la factura' : 'Sin cambios'}>{guardandoEdit ? 'Actualizando…' : 'Actualizar'}</button>
             </div>
           </div>
         </div>
