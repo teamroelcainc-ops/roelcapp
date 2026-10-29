@@ -8,9 +8,10 @@ import './AccionesHistorial.css';
 interface Props {
   /** Buscador sobre la tabla (Clientes lo tiene; Proveedores busca desde Filtros). */
   buscar?: { valor: string; onCambiar: (v: string) => void; placeholder: string };
-  onCorregir: () => void;
+  /** Corregir monedas y montos (solo Proveedores: Clientes lo quitó en la V00522). */
+  onCorregir?: () => void;
   /** Mientras se cargan las facturas no se puede revisar. */
-  corregirDeshabilitado: boolean;
+  corregirDeshabilitado?: boolean;
   onColumnas: () => void;
   onExportar: () => void;
   exportando: boolean;
@@ -29,10 +30,12 @@ export default function AccionesHistorial({ buscar, onCorregir, corregirDeshabil
           )}
         </label>
       )}
-      <button type="button" className="ahi-btn ahi-btn--corregir" onClick={onCorregir} disabled={corregirDeshabilitado}
-        title="Pone en cada factura la moneda de su empresa (Empresas) y el total de sus operaciones en esa moneda">
-        <Wand2 size={15} aria-hidden="true" /> Corregir monedas y montos
-      </button>
+      {onCorregir && (
+        <button type="button" className="ahi-btn ahi-btn--corregir" onClick={onCorregir} disabled={corregirDeshabilitado}
+          title="Pone en cada factura la moneda de su empresa (Empresas) y el total de sus operaciones en esa moneda">
+          <Wand2 size={15} aria-hidden="true" /> Corregir monedas y montos
+        </button>
+      )}
       <button type="button" className="ahi-btn" onClick={onColumnas} title="Elegir y ordenar las columnas de la tabla">
         <Columns3 size={15} aria-hidden="true" /> Columnas
       </button>

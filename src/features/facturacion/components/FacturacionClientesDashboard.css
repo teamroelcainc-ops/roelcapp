@@ -498,6 +498,12 @@
 .fac-tarjeta-modal__fila--boton { width: 100%; border: none; border-bottom: 1px solid #161b22; background: transparent; color: inherit; font: inherit; font-size: 0.82rem; text-align: left; cursor: pointer; }
 .fac-tarjeta-modal__fila--boton:hover { background: #1f2d44; }
 .fac-tarjeta-modal__fila--boton:focus-visible { outline: 2px solid #58a6ff; outline-offset: -2px; }
+/* ✅ V00521: Ops. Facturadas — una fila por operación */
+.fac-tarjeta-modal__c-ref { width: 130px; flex-shrink: 0; color: #58a6ff; font-family: Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fac-tarjeta-modal__c-caja { width: 90px; flex-shrink: 0; color: #8b949e; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fac-tarjeta-modal__mas { display: block; width: 100%; padding: 10px; border: none; background: #161b22; color: #58a6ff; font: inherit; font-size: 0.82rem; cursor: pointer; }
+.fac-tarjeta-modal__mas:hover { background: #1f2d44; }
+.fac-tarjeta-modal__mas:focus-visible { outline: 2px solid #58a6ff; outline-offset: -2px; }
 
 /* ✅ V00276: documento de la factura (indicador en fila/ficha y campo en formularios).
    Clases compartidas también por Facturación de Proveedores. */
@@ -544,6 +550,13 @@
 /* ✅ V00482: "+N" cuando una factura tiene más de 3 referencias (el resto se ve en la ficha) */
 .fcd-mas-refs { padding: 3px 8px; border: 1px dashed #484f58; border-radius: 6px; background: transparent; color: #8b949e; font-size: 0.78rem; font-weight: 700; cursor: pointer; }
 .fcd-mas-refs:hover { color: #c9d1d9; border-color: #8b949e; }
+/* ✅ V00522: importe de cada referencia y aviso cuando no suman el total de la factura */
+.fcd-ref-chip { display: inline-flex; align-items: baseline; gap: 6px; }
+.fcd-ref-importe { color: #c9d1d9; font-family: inherit; font-weight: 600; }
+.fcd-ref-descuadre { align-self: center; padding: 2px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; white-space: nowrap; cursor: help; }
+.fcd-ref-descuadre--diferencia { border: 1px solid rgba(248, 81, 73, 0.5); background: rgba(248, 81, 73, 0.12); color: #ff7b72; }
+.fcd-ref-descuadre--iva { border: 1px solid rgba(210, 153, 34, 0.5); background: rgba(210, 153, 34, 0.12); color: #d29922; }
+.fcd-ref-descuadre--sinMontos, .fcd-ref-descuadre--sinOperaciones { border: 1px solid #30363d; background: #161b22; color: #8b949e; }
 
 /* ✅ V00483: ficha más ancha cuando la factura tiene pagos; los pagos van a la derecha */
 .fcd-x170.fcd-ficha--con-pagos { width: 1180px; }
