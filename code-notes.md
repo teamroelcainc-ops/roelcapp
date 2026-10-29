@@ -207,6 +207,13 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - Modales con `createPortal` a `document.body` (la tarjeta usa `transform` al pasar el mouse) y perezosos desde la tarjeta (`lazyWithRetry`): la carga inicial crece 0.3 KB (sin eso, ~20 KB por FormularioConfigurable).
 - Se quitaron las reglas `.rd-dos*` de App.css (solo las usaba la tarjeta TC · Diesel).
 
+## V00518 (Revisión de datos: confirmar como correctas las de D6)
+- Pedido del usuario (29-oct): un botón de check para confirmar que las 45 canceladas con monto (D6) están bien y sacarlas de la revisión.
+- Dónde se guarda: en la OPERACIÓN, `revisionOk.<grupo>` = { en, por, detalle } (genérico por grupo; hoy solo D6 en `GRUPOS_CONFIRMABLES`). Va con el DETALLE confirmado (`detalleD6`: los montos): si cambia, `confirmacionDe(op).detalle !== detalle` y vuelve a aparecer. No se hizo una colección aparte: la revisión ya lee todas las operaciones y así no hay lecturas nuevas ni reglas nuevas (la regla genérica permite escribir operaciones).
+- Una por una (✓ Está bien): `updateDoc` con el campo con punto (`revisionOk.D6`) para no pisar otros grupos; Deshacer con `deleteField()`. No es escritura masiva. Todas: reglas de escritura masiva del usuario (prueba → respaldo → APLICAR), transacción por tanda de 100 que relee la operación (si ya no es cancelada con monto o su detalle cambió, no se confirma).
+- La revisión se actualiza sin leer (`aplicarConfirmacionesLocales` mezcla `revisionOk` en memoria y recalcula). `confirmadas` cuenta las ocultas por grupo (todas, sin rango).
+- El panel de tres pasos es la tercera copia (F1, D3, D6: prefijos mf1-, csd3-, ccr-). Pendiente: un componente común cuando F1 ya se haya corrido (no tocar F1 antes).
+
 ## V00517 (Revisión de datos: corregir el status de D3)
 - Pedido del usuario (29-oct): D3 mostraba 5 operaciones del día con `status` = "3. Documentado (Asignado)" (un NOMBRE, no el id) que no se encontraba en el catálogo; el usuario dice que el status existe y que hay operaciones guardadas como "3. Documentado" (nombre viejo). Pidió un botón para corregirlas todas.
 - Causa: `calcularStatusDinamico` (statusRules.ts) devuelve el `nombreStatus` del nodo del flujo (un NOMBRE: el editor de Reglas de Estatus elige nombres del catálogo) y FormularioOperacion lo guarda tal cual en `status` cuando no es un id (`statusServicio.find(s => s.id === statusCalculado)` no encuentra nada). Si el nombre del flujo no es igual al del catálogo, o el status se renombra en Catálogos (la propagación `propagarStatus` solo alcanza a las operaciones con el id), la operación queda en D3. Los botones de status de Operaciones guardan el id (`resolverStatus`).

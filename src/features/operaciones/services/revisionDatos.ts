@@ -63,6 +63,13 @@ export interface StatusD3 {
   statusNombre: string;
 }
 
+/**
+ * ✅ V00518: grupos en los que una fila se puede CONFIRMAR como correcta (✓): sale de la revisión.
+ * Se guarda en la operación (`revisionOk.<grupo>`) con el detalle confirmado: si el detalle cambia
+ * (otro monto), vuelve a aparecer.
+ */
+export interface ConfirmacionRevision { en: string; por: string; detalle: string }
+
 export type CodigoRevision = 'F4' | 'F1' | 'D2' | 'F3' | 'D1' | 'D4' | 'D5' | 'F2' | 'F2c' | 'D6' | 'F5' | 'D3';
 export type Prioridad = 'Alta' | 'Media' | 'Baja';
 
@@ -85,7 +92,7 @@ export const GRUPOS_REVISION: readonly GrupoRevision[] = [
   { codigo: 'D5', titulo: 'Faltan datos para el ingreso', prioridad: 'Media', correccion: 'Completar en el formulario de la operación.' },
   { codigo: 'F2', titulo: 'Factura distinta a la suma de sus operaciones', prioridad: 'Media', correccion: 'Si está mal la operación, corregirla; si es la factura, Editar factura.' },
   { codigo: 'F2c', titulo: 'Factura distinta por centavos (menos de $1)', prioridad: 'Baja', correccion: 'Redondeo: Editar factura si se quiere exacto.' },
-  { codigo: 'D6', titulo: 'Canceladas que conservan su monto', prioridad: 'Baja', correccion: 'Solo revisar: los ingresos no deben sumarlas.' },
+  { codigo: 'D6', titulo: 'Canceladas que conservan su monto', prioridad: 'Baja', correccion: 'Solo revisar: los ingresos no deben sumarlas. Si de verdad se canceló y no se cobra, confírmala con ✓ Está bien y sale de la lista; si se cobra, cámbiala a Falso.' }, // ✅ V00518
   { codigo: 'F5', titulo: 'Terminadas sin facturar', prioridad: 'Baja', correccion: 'Facturar o cancelar.' },
   { codigo: 'D3', titulo: 'Sin status', prioridad: 'Baja', correccion: 'Las que tienen el status con otro nombre se corrigen con Corregir status (abajo); las demás, en el formulario.' }, // ✅ V00517
 ];
@@ -132,6 +139,8 @@ export interface ResultadoRevision {
   marcasF1: MarcaF1[];
   /** ✅ V00517: las operaciones de D3 con su status guardado. */
   statusD3: StatusD3[];
+  /** ✅ V00518: cuántas se confirmaron como correctas (✓) y por eso no se muestran, por grupo. */
+  confirmadas: Partial<Record<CodigoRevision, number>>;
 }
 
 // ── Utilidades ────────────────────────────────────────────────────────────
@@ -141,6 +150,29 @@ const normRef = (v: unknown): string => txt(v).toUpperCase();
 const normInvoice = (v: unknown): string => txt(v).toLowerCase();
 const lista = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 const fmt = (n: number): string => `$${n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** ✅ V00518: grupos con ✓ (confirmar como correcta). */
+export const GRUPOS_CONFIRMABLES: readonly CodigoRevision[] = ['D6'];
+
+/** La confirmación (✓) guardada en la operación para ese grupo, o null. */
+export const confirmacionDe = (op: Datos, codigo: CodigoRevision): ConfirmacionRevision | null => {
+  const r = op.revisionOk;
+  const c = r && typeof r === 'object' ? (r as Datos)[codigo] : null;
+  if (!c || typeof c !== 'object') return null;
+  const d = c as Datos;
+  return { en: txt(d.en), por: txt(d.por), detalle: txt(d.detalle) };
+};
+
+/** ✅ V00518: el detalle de D6 de una operación ('' si no es cancelada con monto). Lo usa también la confirmación al escribir. */
+export const detalleD6 = (op: Datos): string => {
+  if (estadoGrupoDe({ status: op.status, statusNombre: op.statusNombre }) !== 'cancelada') return '';
+  const montos: [string, number][] = [
+    ['Convenio', num(op.montoConvenioCliente)], ['Cargos', num(op.cargosAdicionales)],
+    ['Dólares', num(op.dolaresCliente)], ['Pesos', num(op.pesosCliente)], ['Conversión', num(op.conversionCliente)],
+  ];
+  const conMonto = montos.filter(([, n]) => n !== 0);
+  return conMonto.length ? `Cancelada con ${conMonto.map(([c, n]) => `${c} ${fmt(n)}`).join(', ')}` : '';
+};
 
 const MODULO_POR_ESTADO = { activa: 'operaciones', completada: 'serviciosCompletados', falso: 'serviciosCompletados', cancelada: 'serviciosCancelados' } as const;
 const grupoDe = (op: Datos) => estadoGrupoDe({ status: op.status, statusNombre: op.statusNombre });
@@ -328,16 +360,13 @@ export const revisarDatos = (e: EntradaRevision): ResultadoRevision => {
     });
   });
 
-  // D6 · canceladas con monto
+  // D6 · canceladas con monto. ✅ V00518: las confirmadas (✓) con ESE mismo detalle no se muestran.
+  const confirmadas: Partial<Record<CodigoRevision, number>> = {};
   operaciones.forEach((op) => {
-    if (grupoDe(op) !== 'cancelada') return;
-    const montos: [string, number][] = [
-      ['Convenio', num(op.montoConvenioCliente)], ['Cargos', num(op.cargosAdicionales)],
-      ['Dólares', num(op.dolaresCliente)], ['Pesos', num(op.pesosCliente)], ['Conversión', num(op.conversionCliente)],
-    ];
-    const conMonto = montos.filter(([, n]) => n !== 0);
-    if (conMonto.length === 0) return;
-    filas.push(filaOp('D6', op, `Cancelada con ${conMonto.map(([c, n]) => `${c} ${fmt(n)}`).join(', ')}`));
+    const detalle = detalleD6(op);
+    if (!detalle) return;
+    if (confirmacionDe(op, 'D6')?.detalle === detalle) { confirmadas.D6 = (confirmadas.D6 ?? 0) + 1; return; }
+    filas.push(filaOp('D6', op, detalle));
   });
 
   // F5 · terminadas sin facturar (ni marca ni factura no cancelada que las liste)
@@ -360,7 +389,7 @@ export const revisarDatos = (e: EntradaRevision): ResultadoRevision => {
   filas.sort((a, b) => (orden.get(a.codigo) ?? 0) - (orden.get(b.codigo) ?? 0) || b.fecha.localeCompare(a.fecha) || a.ref.localeCompare(b.ref));
   const conteo = Object.fromEntries(GRUPOS_REVISION.map((g) => [g.codigo, 0])) as Record<CodigoRevision, number>;
   filas.forEach((f) => { conteo[f.codigo]++; });
-  return { filas, conteo, referenciasRepetidas, operaciones: operaciones.length, facturas: facturas.length, sinLigar, marcasF1, statusD3 };
+  return { filas, conteo, referenciasRepetidas, operaciones: operaciones.length, facturas: facturas.length, sinLigar, marcasF1, statusD3, confirmadas };
 };
 
 // ── ✅ V00512 — Rango de fechas (filtra lo que se ve; la revisión siempre se hace con todo) ──

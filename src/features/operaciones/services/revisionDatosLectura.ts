@@ -33,7 +33,7 @@ import { consultaFacturasPagables } from '../../pagos/hooks/useFacturasPagables'
 import { conNombreDeStatus } from './excelOperaciones';
 import { leerMonedasEmpresas } from './monedasEmpresas';
 import { revisarDatos } from './revisionDatos';
-import type { DestinoRevision, FacturaRevision, OpRevision, ResultadoRevision } from './revisionDatos';
+import type { CodigoRevision, ConfirmacionRevision, DestinoRevision, FacturaRevision, OpRevision, ResultadoRevision } from './revisionDatos';
 
 type Datos = Record<string, unknown>;
 
@@ -191,6 +191,22 @@ export const refrescarRevisionDatos = async (): Promise<Refresco | null> => {
     idsFac.forEach((id) => pendientesFacturas.add(id));
     throw e;
   }
+};
+
+/**
+ * ✅ V00518 — Confirmaciones (✓) que ya se escribieron (o se deshicieron, con null): se ponen en las
+ * operaciones de la revisión sin leer y se recalcula (salen de su grupo o vuelven).
+ */
+export const aplicarConfirmacionesLocales = (codigo: CodigoRevision, marcas: ReadonlyMap<string, ConfirmacionRevision | null>): RevisionGuardada | null => {
+  if (!datos || marcas.size === 0) return ultima;
+  datos.operaciones = datos.operaciones.map((o) => {
+    if (!marcas.has(o.idDoc)) return o;
+    const previas = o.revisionOk && typeof o.revisionOk === 'object' ? { ...(o.revisionOk as Datos) } : {};
+    const m = marcas.get(o.idDoc);
+    if (m) previas[codigo] = m; else delete previas[codigo];
+    return { ...o, revisionOk: previas };
+  });
+  return recalcular();
 };
 
 /** ✅ V00512 — Operaciones que ya se sabe cómo quedaron (las marcadas en F1): se actualizan sin leer y se recalcula. */

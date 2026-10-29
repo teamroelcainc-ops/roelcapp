@@ -1,0 +1,27 @@
+/* ✅ V00518: Confirmar como correctas (✓) dentro de la Revisión de datos (prefijo ccr-). */
+.ccr-panel { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid #9e6a03; border-radius: 8px; background: rgba(187, 128, 9, 0.07); }
+.ccr-titulo { margin: 0; color: #f0f6fc; font-size: 0.92rem; }
+.ccr-texto { margin: 0; color: #c9d1d9; font-size: 0.84rem; line-height: 1.45; }
+.ccr-texto b { color: #f0f6fc; }
+.ccr-pasos { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.ccr-paso { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 10px; border: 1px solid #21262d; border-radius: 6px; background: #0d1117; }
+.ccr-paso--hecho { border-color: #238636; }
+.ccr-ayuda { color: #8b949e; font-size: 0.8rem; }
+.ccr-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid #30363d; border-radius: 6px; background: #161b22; color: #c9d1d9; font: inherit; font-size: 0.83rem; font-weight: 600; cursor: pointer; }
+.ccr-btn:hover { border-color: #8b949e; }
+.ccr-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.ccr-btn--aplicar { border-color: #238636; background: #238636; color: #fff; }
+.ccr-btn--aplicar:hover { border-color: #2ea043; background: #2ea043; }
+.ccr-btn:focus-visible, .ccr-input:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
+.ccr-autorizar { display: inline-flex; align-items: center; gap: 8px; color: #c9d1d9; font-size: 0.83rem; }
+.ccr-input { width: 110px; padding: 5px 8px; border: 1px solid #30363d; border-radius: 6px; background: #161b22; color: #f0f6fc; font: inherit; font-size: 0.85rem; letter-spacing: 0.04em; }
+.ccr-input:disabled { opacity: 0.5; }
+.ccr-avance { display: grid; gap: 8px; }
+.ccr-progreso { width: 100%; height: 10px; accent-color: #3fb950; }
+.ccr-error { margin: 0; color: #ff7b72; font-size: 0.84rem; font-weight: 600; }
+.ccr-resultado { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid #238636; border-radius: 6px; background: rgba(35, 134, 54, 0.08); }
+.ccr-resultado--error { border-color: #f85149; background: rgba(248, 81, 73, 0.08); }
+.ccr-resultado-titulo { margin: 0; color: #f0f6fc; font-size: 0.88rem; font-weight: 600; }
+.ccr-omitidas { display: grid; gap: 4px; margin: 0; padding-left: 18px; color: #8b949e; font-size: 0.8rem; line-height: 1.4; overflow-wrap: anywhere; }
+.ccr-omitidas b { color: #c9d1d9; font-weight: 600; }
+.ccr-cerrado { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }

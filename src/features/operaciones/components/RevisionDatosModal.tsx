@@ -7,23 +7,28 @@
 // ✅ V00512: rango de fechas (filtra lo que se ve, sin volver a leer), Cancelar mientras lee, y la
 // lista AL DÍA: lo que se corrige (abierto desde aquí o guardado en la app) se vuelve a revisar solo
 // y deja de mostrarse.
+// ✅ V00518: en los grupos confirmables (D6) cada fila tiene ✓ Está bien (con Deshacer) y el grupo,
+// "Confirmar todas como correctas" (prueba → respaldo → APLICAR): las confirmadas salen de la lista.
 // ---------------------------------------------------------------------------
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ExternalLink, FileSpreadsheet, RefreshCw, X } from 'lucide-react';
+import { Check, ExternalLink, FileSpreadsheet, RefreshCw, X } from 'lucide-react';
 import CargandoDatos from '../../../shared/components/CargandoDatos';
+import { auth } from '../../../config/firebase';
 import { abrirRegistro } from '../../../shared/data/aperturas';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { descargarExcel } from '../services/excelOperaciones';
 import { camposMarca } from '../services/marcarFacturadasF1';
-import { GRUPOS_REVISION, filasExcelRevision, filtrarPorFechas } from '../services/revisionDatos';
-import type { CodigoRevision, DestinoRevision, FilaRevision } from '../services/revisionDatos';
+import { confirmarFila, deshacerConfirmacion } from '../services/confirmarRevision'; // ✅ V00518
+import { GRUPOS_CONFIRMABLES, GRUPOS_REVISION, filasExcelRevision, filtrarPorFechas } from '../services/revisionDatos';
+import type { CodigoRevision, ConfirmacionRevision, DestinoRevision, FilaRevision } from '../services/revisionDatos';
 import {
-  aplicarCambiosLocales, guardarRangoRevisionDatos, hayPendientesRevision, leerYRevisarDatos, marcarParaRevisar,
+  aplicarCambiosLocales, aplicarConfirmacionesLocales, guardarRangoRevisionDatos, hayPendientesRevision, leerYRevisarDatos, marcarParaRevisar,
   rangoRevisionDatos, refrescarRevisionDatos, RevisionCancelada, suscribirPendientesRevision, ultimaRevisionDatos,
 } from '../services/revisionDatosLectura';
 import MarcarFacturadasF1 from './MarcarFacturadasF1'; // ✅ V00510
 import CorregirStatusD3 from './CorregirStatusD3'; // ✅ V00517
+import ConfirmarCorrectas from './ConfirmarCorrectas'; // ✅ V00518
 import type { AvanceRevisionDatos, Refresco, RevisionGuardada, SenalRevision } from '../services/revisionDatosLectura';
 import './RevisionDatosModal.css';
 
@@ -38,7 +43,15 @@ const textoRefresco = (r: Refresco): string => {
   return `Al día (${soloHora(r.revisada.actualizada ?? new Date())}): se volvieron a revisar ${miles(r.registros)} ${r.registros === 1 ? 'registro que cambió' : 'registros que cambiaron'} · ${cambio}.`;
 };
 
-function Fila({ f, onAbrir }: { f: FilaRevision; onAbrir: (d: DestinoRevision) => void }) {
+interface PropsFila {
+  f: FilaRevision;
+  onAbrir: (d: DestinoRevision) => void;
+  /** ✅ V00518: ✓ Está bien (solo en los grupos confirmables). */
+  onConfirmar?: (f: FilaRevision) => void;
+  confirmando?: boolean;
+}
+
+function Fila({ f, onAbrir, onConfirmar, confirmando = false }: PropsFila) {
   return (
     <li className="rvd-fila">
       <div className="rvd-fila-datos">
@@ -47,6 +60,11 @@ function Fila({ f, onAbrir }: { f: FilaRevision; onAbrir: (d: DestinoRevision) =
         <span className="rvd-detalle">{f.detalle}</span>
       </div>
       <div className="rvd-fila-acciones">
+        {onConfirmar && (
+          <button type="button" className="rvd-confirmar" onClick={() => onConfirmar(f)} disabled={confirmando} title="Ya la revisé y está bien: sale de esta lista (si cambia su monto, vuelve)">
+            <Check size={13} aria-hidden="true" /> {confirmando ? 'Confirmando…' : 'Está bien'}
+          </button>
+        )}
         <button type="button" className="rvd-abrir" onClick={() => onAbrir(f.destino)} title="Abrir su ficha en su módulo">
           <ExternalLink size={13} aria-hidden="true" /> Abrir
         </button>
@@ -72,6 +90,10 @@ export default function RevisionDatosModal({ onCerrar }: { onCerrar: () => void 
   const [pulso, setPulso] = useState(0);
   const [f1Aplicado, setF1Aplicado] = useState(false);
   const [d3Aplicado, setD3Aplicado] = useState(false); // ✅ V00517
+  // ✅ V00518: ✓ Está bien (la fila que se está confirmando y la última confirmada, para Deshacer).
+  const [confirmando, setConfirmando] = useState('');
+  const [ultimaConfirmada, setUltimaConfirmada] = useState<FilaRevision | null>(null);
+  const [confirmadasTodas, setConfirmadasTodas] = useState(false);
   const senalRef = useRef<SenalRevision | null>(null);
 
   const revisar = async () => {
@@ -86,6 +108,9 @@ export default function RevisionDatosModal({ onCerrar }: { onCerrar: () => void 
       if (senal.cancelada) return;
       setRevision(r);
       setF1Aplicado(false);
+      setD3Aplicado(false);
+      setConfirmadasTodas(false); // ✅ V00518
+      setUltimaConfirmada(null);
       const v = filtrarPorFechas(r.resultado, rango.desde, rango.hasta);
       setGrupo(GRUPOS_REVISION.find((g) => v.conteo[g.codigo] > 0)?.codigo ?? 'F4');
       setMostrar(POR_PAGINA);
@@ -179,6 +204,46 @@ export default function RevisionDatosModal({ onCerrar }: { onCerrar: () => void 
     setF1Aplicado(true);
   };
 
+  // ✅ V00518: ✓ Está bien en una fila (una escritura) y Deshacer.
+  const confirmar = async (f: FilaRevision) => {
+    setConfirmando(f.clave);
+    setError('');
+    try {
+      const marca = await confirmarFila(f.codigo, f, auth.currentUser?.email || '');
+      const nueva = aplicarConfirmacionesLocales(f.codigo, new Map([[f.destino.id, marca]]));
+      if (nueva) setRevision(nueva);
+      setUltimaConfirmada(f);
+    } catch (e) {
+      console.error('No se pudo confirmar la operación:', e);
+      setError(`No se pudo confirmar ${f.ref}. Revisa la conexión e intenta de nuevo.`);
+    } finally {
+      setConfirmando('');
+    }
+  };
+  const deshacer = async () => {
+    const f = ultimaConfirmada;
+    if (!f) return;
+    setConfirmando(f.clave);
+    setError('');
+    try {
+      await deshacerConfirmacion(f.codigo, f.destino.id);
+      const nueva = aplicarConfirmacionesLocales(f.codigo, new Map([[f.destino.id, null]]));
+      if (nueva) setRevision(nueva);
+      setUltimaConfirmada(null);
+    } catch (e) {
+      console.error('No se pudo deshacer la confirmación:', e);
+      setError(`No se pudo deshacer la confirmación de ${f.ref}. Intenta de nuevo.`);
+    } finally {
+      setConfirmando('');
+    }
+  };
+  const alConfirmarTodas = (codigo: CodigoRevision, marcas: ReadonlyMap<string, ConfirmacionRevision>) => {
+    const nueva = aplicarConfirmacionesLocales(codigo, marcas);
+    if (nueva) setRevision(nueva);
+    setUltimaConfirmada(null);
+    setConfirmadasTodas(true);
+  };
+
   // ✅ V00517: las corregidas en D3 salen de la lista al momento (ya se sabe qué se escribió).
   const alCorregirD3 = (cambios: ReadonlyMap<string, Record<string, unknown>>) => {
     const nueva = aplicarCambiosLocales(cambios);
@@ -188,6 +253,7 @@ export default function RevisionDatosModal({ onCerrar }: { onCerrar: () => void 
 
   const elegido = GRUPOS_REVISION.find((g) => g.codigo === grupo) ?? GRUPOS_REVISION[0];
   const filas = vista ? vista.filas.filter((f) => f.codigo === grupo) : [];
+  const confirmable = GRUPOS_CONFIRMABLES.includes(elegido.codigo); // ✅ V00518
   const elegir = (codigo: CodigoRevision) => { setGrupo(codigo); setMostrar(POR_PAGINA); };
 
   return createPortal(
@@ -197,8 +263,8 @@ export default function RevisionDatosModal({ onCerrar }: { onCerrar: () => void 
           <div>
             <h2 id="rvd-titulo" className="rvd-titulo">Revisión de datos</h2>
             <p className="rvd-sub">
-              Revisa todas las operaciones y las facturas de clientes y lista los errores por grupo. Solo lee: no cambia nada.
-              Abre cada registro para corregirlo en su módulo: al volver, lo corregido ya no aparece.
+              Revisa todas las operaciones y las facturas de clientes y lista los errores por grupo. Abre cada registro para corregirlo
+              en su módulo: al volver, lo corregido ya no aparece. Lo que se cambia desde aquí (F1, D3, ✓ de D6) pide tu confirmación.
             </p>
           </div>
           <button type="button" className="rvd-cerrar" onClick={onCerrar} disabled={revisando} aria-label="Cerrar">✕</button>
@@ -283,6 +349,20 @@ export default function RevisionDatosModal({ onCerrar }: { onCerrar: () => void 
                 {elegido.codigo === 'D3' && (vista.statusD3.length > 0 || d3Aplicado) && (
                   <CorregirStatusD3 key={`${revision?.en.getTime()}|${rango.desde}|${rango.hasta}`} ops={vista.statusD3} onCorregidas={alCorregirD3} />
                 )}
+                {/* ✅ V00518: confirmar como correctas (✓): una por una en cada fila o todas con prueba → respaldo → APLICAR */}
+                {confirmable && (r.confirmadas[elegido.codigo] ?? 0) > 0 && (
+                  <p className="rvd-nota">{miles(r.confirmadas[elegido.codigo] ?? 0)} {(r.confirmadas[elegido.codigo] ?? 0) === 1 ? 'confirmada como correcta no se muestra (si cambia su monto, vuelve)' : 'confirmadas como correctas no se muestran (si cambia su monto, vuelven)'}.</p>
+                )}
+                {confirmable && ultimaConfirmada && ultimaConfirmada.codigo === elegido.codigo && (
+                  <p className="rvd-confirmada" role="status">
+                    <Check size={14} aria-hidden="true" /> {ultimaConfirmada.ref} se confirmó como correcta y salió de la lista.
+                    <button type="button" className="rvd-deshacer" onClick={() => { void deshacer(); }} disabled={!!confirmando}>Deshacer</button>
+                  </p>
+                )}
+                {confirmable && (filas.length > 0 || confirmadasTodas) && (
+                  <ConfirmarCorrectas key={`${elegido.codigo}|${revision?.en.getTime()}|${rango.desde}|${rango.hasta}`} codigo={elegido.codigo} filas={filas}
+                    onConfirmadas={(m) => alConfirmarTodas(elegido.codigo, m)} />
+                )}
                 {(elegido.codigo === 'F2' || elegido.codigo === 'F4' || elegido.codigo === 'F1') && r.sinLigar > 0 && (
                   <p className="rvd-nota">
                     {miles(r.sinLigar)} renglones de facturas no se pudieron ligar a una operación (no existe, es de prueba o su referencia está repetida).
@@ -293,7 +373,9 @@ export default function RevisionDatosModal({ onCerrar }: { onCerrar: () => void 
                 ) : (
                   <>
                     <ul className="rvd-filas">
-                      {filas.slice(0, mostrar).map((f) => <Fila key={f.clave} f={f} onAbrir={abrir} />)}
+                      {filas.slice(0, mostrar).map((f) => (
+                        <Fila key={f.clave} f={f} onAbrir={abrir} onConfirmar={confirmable ? (x) => { void confirmar(x); } : undefined} confirmando={confirmando === f.clave} />
+                      ))}
                     </ul>
                     {filas.length > mostrar && (
                       <button type="button" className="rvd-btn rvd-mas" onClick={() => setMostrar((m) => m + POR_PAGINA)}>
