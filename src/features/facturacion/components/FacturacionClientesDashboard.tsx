@@ -104,6 +104,7 @@ import CancelacionFicha from './CancelacionFicha';
 import AccionesHistorial from './AccionesHistorial'; // ✅ V00482
 import CorregirTotalesFacturas from './CorregirTotalesFacturas'; // ✅ V00522
 import type { FilaCorregirVista, RevisionCuadre } from './CorregirTotalesFacturas';
+import type { DocSinImportes } from '../services/completarImportes'; // ✅ V00524
 import { cuadreDeFactura, facturasQueNoCuadran, TEXTO_MOTIVO } from '../services/cuadreFactura'; // ✅ V00522
 import SubirXmlModal from './SubirXmlModal'; // ✅ V00513
 import DatosSitModal from './DatosSitModal'; // ✅ V00513
@@ -2844,8 +2845,16 @@ export const FacturacionClientesDashboard = () => {
         }),
       };
     });
-    const en = new Date().toLocaleString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-    setRevisionCuadre({ vista: { filas: vista, revisadas: filas.filter((f) => !estaCancelada(f.statusFactura)).length, en }, filas: porClave });
+    // ✅ V00524: los DOCUMENTOS de las que no guardaron lo que cobró cada operación (Completar importes, por documento)
+    const sinImportes: DocSinImportes[] = malas.filter((m) => m.cuadre.motivo === 'sinMontos').flatMap(({ fila }) => {
+      const docs = Array.isArray(fila.__groupDocs) && fila.__groupDocs.length ? (fila.__groupDocs as Record<string, unknown>[]) : [fila];
+      return docs.map((d) => ({
+        id: String(d.id ?? ''), invoice: String(d.invoice || fila.invoice || ''), cliente: nombreClienteFactura_(fila),
+        fecha: fechaFacturaISO(d.fecha) || '', moneda: codigoMonedaFactura(d) ?? codigoMonedaFactura(fila), datos: d,
+      }));
+    }).filter((d) => d.id);
+    const en = new Date().toLocaleString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    setRevisionCuadre({ vista: { filas: vista, revisadas: filas.filter((f) => !estaCancelada(f.statusFactura)).length, en, sinImportes }, filas: porClave });
   };
   /** Abre la pestaña; la primera vez revisa sola (si las facturas ya llegaron). */
   const abrirCorregir = () => {
@@ -3635,7 +3644,13 @@ export const FacturacionClientesDashboard = () => {
       ) : activeTab === 'corregir' ? (
         <div className="animation-fade-in">
           <CorregirTotalesFacturas revision={revisionCuadre?.vista ?? null} cargando={facturasCargando} onRevisar={revisarCuadre}
-            onVer={(clave) => { const fila = revisionCuadre?.filas.get(clave); if (fila) setFacturaViendo(fila); }} />
+            onVer={(clave) => { const fila = revisionCuadre?.filas.get(clave); if (fila) setFacturaViendo(fila); }}
+            completar={{
+              // ✅ V00524: con el dinero en el servidor las reglas no dejan escribir los renglones de la factura desde la web
+              impedimento: flags.dineroPorServidor ? 'Con el dinero en el servidor encendido (dineroPorServidor) no se puede completar desde aquí.' : '',
+              // lo escrito se muestra al momento (el listener lo confirma); Revisar de nuevo pone la lista al día
+              onCompletadas: (escritas) => setFacturasGlobales((prev) => prev.map((f) => { const c = escritas.get(String(f.id)); return c ? normalizarFactura({ ...f, ...c }) : f; })),
+            }} />
         </div>
       ) : activeTab === 'operaciones' ? (
         <div className="animation-fade-in">

@@ -7,6 +7,7 @@
 // ✅ V00523: columna Referencias — cada referencia con lo que cobra en la factura y, si es distinto (o la
 // factura no lo guardó), lo que cobra HOY la operación. Solo se leen las operaciones de las filas que se
 // ven (useOperacionesPorId); con eso, el motivo dice si con el costo de hoy cuadraría.
+// ✅ V00524: "Completar importes" (CompletarImportes) para las que no guardaron lo que cobró cada operación.
 // ---------------------------------------------------------------------------
 import { useState } from 'react';
 import { Search } from 'lucide-react';
@@ -14,8 +15,10 @@ import CargandoDatos from '../../../shared/components/CargandoDatos';
 import { aCentavos } from '../../../shared/dominio/numeros';
 import { useOperacionesPorId } from '../hooks/useOperacionesPorId';
 import { importeEn } from '../services/cotejoCfdi';
+import type { DocSinImportes } from '../services/completarImportes';
 import { sumaConHoy, TEXTO_MOTIVO } from '../services/cuadreFactura';
 import type { CuadreFactura, MotivoCuadre } from '../services/cuadreFactura';
+import CompletarImportes from './CompletarImportes';
 import './CorregirTotalesFacturas.css';
 
 /** Una referencia de la factura: su operación (id real, o '' si solo se guardó la referencia) y lo que cobra en la factura. */
@@ -40,6 +43,8 @@ export interface RevisionCuadre {
   revisadas: number;
   /** Cuándo (texto para mostrar). */
   en: string;
+  /** ✅ V00524: los documentos de las que no guardaron lo que cobró cada operación (para Completar importes). */
+  sinImportes: readonly DocSinImportes[];
 }
 
 interface Props {
@@ -48,6 +53,8 @@ interface Props {
   cargando: boolean;
   onRevisar: () => void;
   onVer: (clave: string) => void;
+  /** ✅ V00524: Completar importes — por qué no se puede ('' = se puede) y qué hacer con lo escrito. */
+  completar: { impedimento: string; onCompletadas: (escritas: ReadonlyMap<string, Record<string, unknown>>) => void };
 }
 
 type Filtro = Exclude<MotivoCuadre, 'cuadra'> | 'todas';
@@ -58,7 +65,7 @@ const miles = (n: number): string => n.toLocaleString('es-MX');
 const dinero = (n: number): string => `$ ${n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const conSigno = (n: number): string => `${n > 0 ? '+' : n < 0 ? '−' : ''}${dinero(Math.abs(n))}`;
 
-export default function CorregirTotalesFacturas({ revision, cargando, onRevisar, onVer }: Props) {
+export default function CorregirTotalesFacturas({ revision, cargando, onRevisar, onVer, completar }: Props) {
   const [filtro, setFiltro] = useState<Filtro>('todas');
   const [ver, setVer] = useState(TOPE);
   const todas = revision?.filas ?? [];
@@ -106,6 +113,10 @@ export default function CorregirTotalesFacturas({ revision, cargando, onRevisar,
                 </button>
               ))}
             </div>
+          )}
+          {revision.sinImportes.length > 0 && (
+            // key: una revisión nueva empieza los tres pasos de cero
+            <CompletarImportes key={revision.en} docs={revision.sinImportes} impedimento={completar.impedimento} onCompletadas={completar.onCompletadas} />
           )}
           {todas.length === 0 ? <p className="ctf-vacio">Todas las facturas cuadran con sus operaciones.</p> : (
             <div className="ctf-tabla-envoltura">
