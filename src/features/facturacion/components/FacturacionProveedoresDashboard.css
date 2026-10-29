@@ -31,6 +31,21 @@
 .fpd-x27 { color: #8b949e; font-size: 0.75rem; margin-top: 2px; }
 .fpd-x28 { padding: 24px; animation: fadeIn 0.3s ease; }
 .fpd-x29 { color: #f0f6fc; font-size: 1.5rem; margin-bottom: 24px; }
+/* ✅ V00515: título y tarjetas de la pestaña en UNA fila (antes las tarjetas ocupaban su propio renglón sobre la tabla).
+   Las reglas van bajo .fpd-encabezado para no cambiar las mismas clases donde se usan en otro lugar (fpd-x65: contador de seleccionadas). */
+.fpd-encabezado { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 16px; margin-bottom: 16px; }
+.fpd-encabezado .fpd-x29 { margin: 0; }
+.fpd-encabezado .fpd-x60, .fpd-encabezado .fpd-x100 { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin: 0; }
+.fpd-encabezado .fpd-x61, .fpd-encabezado .fpd-x101 { padding: 6px 12px; min-width: 130px; }
+.fpd-encabezado .fpd-x61 { max-width: 185px; } /* el texto largo pasa a 2 renglones para que las 3 tarjetas quepan al lado del título */
+.fpd-encabezado .fpd-x62, .fpd-encabezado .fpd-x102, .fpd-encabezado .fpd-x105 { font-size: 0.64rem; margin-bottom: 1px; }
+.fpd-encabezado .fpd-x63, .fpd-encabezado .fpd-x64, .fpd-encabezado .fpd-x65, .fpd-encabezado .fpd-x103, .fpd-encabezado .fpd-x104, .fpd-encabezado .fpd-x106, .fpd-encabezado .fpd-x107 { font-size: 1.15rem; line-height: 1.25; }
+.fpd-encabezado .fpd-nota-canceladas { margin-top: 0; font-size: 0.64rem; }
+@media (max-width: 640px) {
+  .fpd-encabezado .fpd-x60, .fpd-encabezado .fpd-x100 { width: 100%; justify-content: stretch; }
+  .fpd-encabezado .fpd-x61 { max-width: none; }
+  .fpd-encabezado .fpd-x61, .fpd-encabezado .fpd-x101 { flex: 1 1 130px; }
+}
 .fpd-x30 { display: flex; border-bottom: 1px solid #30363d; margin-bottom: 24px; }
 .fpd-x31 { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
 .fpd-x32 { background-color: #D84315; color: #fff; border-radius: 10px; padding: 1px 8px; font-size: 0.72rem; }
@@ -79,7 +94,7 @@
 .fpd-x75 { color: #3fb950; font-size: 1.8rem; font-weight: bold; }
 .fpd-x76 { color: #f0f6fc; font-size: 1.1rem; font-weight: bold; }
 .fpd-x77 { color: #D84315; font-size: 1.8rem; font-weight: bold; }
-.fpd-x78 { border: 1px solid #30363d; border-radius: 8px; overflow-x: auto; overflow-y: auto; max-height: calc(100vh - 290px); background-color: #161b22; }
+.fpd-x78 { border: 1px solid #30363d; border-radius: 8px; overflow-x: auto; background-color: #161b22; } /* ✅ V00515: sin alto máximo ni scroll vertical propio: la tabla crece y se desplaza con la ventana */
 .fpd-x79 { width: 100%; border-collapse: collapse; text-align: left; }
 .fpd-x80 { background-color: #1f2937; color: #8b949e; font-size: 0.8rem; position: sticky; top: 0; z-index: 10; }
 .fpd-x81 { padding: 10px 12px; text-align: center; border-bottom: 1px solid #30363d; white-space: nowrap; }

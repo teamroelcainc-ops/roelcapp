@@ -33,6 +33,21 @@
 .fcd-x29 { color: #8b949e; font-size: 0.75rem; margin-top: 2px; }
 .fcd-x30 { padding: 24px; animation: fadeIn 0.3s ease; }
 .fcd-x31 { color: #f0f6fc; font-size: 1.5rem; margin-bottom: 24px; }
+/* ✅ V00515: título y tarjetas de la pestaña en UNA fila (antes las tarjetas ocupaban su propio renglón sobre la tabla).
+   Las reglas van bajo .fcd-encabezado para no cambiar las mismas clases donde se usan en otro lugar (fcd-x69: contador de seleccionadas). */
+.fcd-encabezado { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 16px; margin-bottom: 16px; }
+.fcd-encabezado .fcd-x31 { margin: 0; }
+.fcd-encabezado .fcd-x64, .fcd-encabezado .fcd-x103 { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin: 0; }
+.fcd-encabezado .fcd-x65, .fcd-encabezado .fcd-x104 { padding: 6px 12px; min-width: 130px; }
+.fcd-encabezado .fcd-x65 { max-width: 185px; } /* el texto largo pasa a 2 renglones para que las 3 tarjetas quepan al lado del título */
+.fcd-encabezado .fcd-x66, .fcd-encabezado .fcd-x105, .fcd-encabezado .fcd-x108 { font-size: 0.64rem; margin-bottom: 1px; }
+.fcd-encabezado .fcd-x67, .fcd-encabezado .fcd-x68, .fcd-encabezado .fcd-x69, .fcd-encabezado .fcd-x106, .fcd-encabezado .fcd-x107, .fcd-encabezado .fcd-x109, .fcd-encabezado .fcd-x110 { font-size: 1.15rem; line-height: 1.25; }
+.fcd-encabezado .fcd-nota-canceladas { margin-top: 0; font-size: 0.64rem; }
+@media (max-width: 640px) {
+  .fcd-encabezado .fcd-x64, .fcd-encabezado .fcd-x103 { width: 100%; justify-content: stretch; }
+  .fcd-encabezado .fcd-x65 { max-width: none; }
+  .fcd-encabezado .fcd-x65, .fcd-encabezado .fcd-x104 { flex: 1 1 130px; }
+}
 .fcd-x32 { display: flex; align-items: center; border-bottom: 1px solid #30363d; margin-bottom: 24px; }
 .fcd-x33 { font-size: 1rem; line-height: 1; }
 .fcd-x34 { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
@@ -83,7 +98,7 @@
 .fcd-x79 { color: #3fb950; font-size: 1.8rem; font-weight: bold; }
 .fcd-x80 { color: #f0f6fc; font-size: 1.1rem; font-weight: bold; }
 .fcd-x81 { color: #D84315; font-size: 1.8rem; font-weight: bold; }
-.fcd-x82 { border: 1px solid #30363d; border-radius: 8px; overflow-x: auto; overflow-y: auto; max-height: calc(100vh - 290px); background-color: #161b22; }
+.fcd-x82 { border: 1px solid #30363d; border-radius: 8px; overflow-x: auto; background-color: #161b22; } /* ✅ V00515: sin alto máximo ni scroll vertical propio: la tabla crece y se desplaza con la ventana */
 .fcd-x83 { width: 100%; border-collapse: collapse; text-align: left; }
 .fcd-x84 { background-color: #1f2937; color: #8b949e; font-size: 0.8rem; position: sticky; top: 0; z-index: 10; }
 .fcd-x85 { padding: 10px 12px; text-align: center; border-bottom: 1px solid #30363d; white-space: nowrap; }

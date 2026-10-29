@@ -3169,7 +3169,46 @@ export const FacturacionProveedoresDashboard = () => {
       {opEditandoId && (
         <EditorOperacionEmbebido operacionId={opEditandoId} operacion={operacionesGlobales.find((o: any) => String(o.id) === opEditandoId)} onClose={() => setOpEditandoId(null)} />
       )}
-      <h1 className="fpd-x29">Facturación de Proveedores</h1>
+      <div className="fpd-encabezado">{/* ✅ V00515: las tarjetas de la pestaña van al lado del título (la tabla sube) */}
+        <h1 className="fpd-x29">Facturación de Proveedores</h1>
+        {activeTab === 'operaciones' && (
+          <div className="fpd-x60">
+            <div className="fpd-x61">
+              <span className="fpd-x62">Operaciones en espera por facturar</span>
+              {mostrarCargandoOps ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fpd-x63">{resumenOps.porFacturar}</span>}
+            </div>
+            <div className="fpd-x61">
+              <span className="fpd-x62">Operaciones ya facturadas (en historial)</span>
+              {mostrarCargandoOps ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fpd-x64">{resumenOps.facturadas}</span>}
+            </div>
+            <div className="fpd-x61">
+              <span className="fpd-x62">Total completadas cargadas</span>
+              {mostrarCargandoOps ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fpd-x65">{resumenOps.total}</span>}
+            </div>
+          </div>
+        )}
+        {esHistorial && (
+          <div className="fpd-x100">
+            <div className="fpd-x101">
+              <span className="fpd-x102">Facturas Listadas</span>
+              {cargandoFacturas ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fpd-x103">{resumenHistorial.cuenta}</span>}{/* ✅ V00449 */}
+              {!cargandoFacturas && resumenHistorial.canceladas > 0 && <small className="fpd-nota-canceladas">{resumenHistorial.canceladas} canceladas: no suman</small>}{/* ✅ V00493 */}
+            </div>
+            <div className="fpd-x101">
+              <span className="fpd-x102">Ops. Facturadas</span>
+              {cargandoFacturas ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fpd-x104">{resumenHistorial.totalOps}</span>}
+            </div>
+            <div className="fpd-x101">
+              <span className="fpd-x105">Total Facturado (<NombreMoneda moneda="USD" forma="codigo" />)</span>
+              {cargandoFacturas ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fpd-x106">{formatoMoneda(resumenHistorial.totalUSD)}</span>}
+            </div>
+            <div className="fpd-x101">
+              <span className="fpd-x105">Total Facturado (<NombreMoneda moneda="MXN" forma="codigo" />)</span>
+              {cargandoFacturas ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fpd-x107">{formatoMoneda(resumenHistorial.totalMXN)}</span>}
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className="fpd-x30">
         <button onClick={() => setActiveTab('operaciones')} style={tabStyle(activeTab === 'operaciones')}>Asignar Operaciones</button>
@@ -3369,20 +3408,6 @@ export const FacturacionProveedoresDashboard = () => {
 
       {activeTab === 'operaciones' ? (
         <div className="animation-fade-in">
-          <div className="fpd-x60">
-            <div className="fpd-x61">
-              <span className="fpd-x62">Operaciones en espera por facturar</span>
-              {mostrarCargandoOps ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fpd-x63">{resumenOps.porFacturar}</span>}
-            </div>
-            <div className="fpd-x61">
-              <span className="fpd-x62">Operaciones ya facturadas (en historial)</span>
-              {mostrarCargandoOps ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fpd-x64">{resumenOps.facturadas}</span>}
-            </div>
-            <div className="fpd-x61">
-              <span className="fpd-x62">Total completadas cargadas</span>
-              {mostrarCargandoOps ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fpd-x65">{resumenOps.total}</span>}
-            </div>
-          </div>
 
           <div className="fpd-x66">
             <div className="fpd-x67">
@@ -3544,25 +3569,6 @@ export const FacturacionProveedoresDashboard = () => {
 
       ) : (
         <div className="animation-fade-in">
-          <div className="fpd-x100">
-            <div className="fpd-x101">
-              <span className="fpd-x102">Facturas Listadas</span>
-              {cargandoFacturas ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fpd-x103">{resumenHistorial.cuenta}</span>}{/* ✅ V00449 */}
-              {!cargandoFacturas && resumenHistorial.canceladas > 0 && <small className="fpd-nota-canceladas">{resumenHistorial.canceladas} canceladas: no suman</small>}{/* ✅ V00493 */}
-            </div>
-            <div className="fpd-x101">
-              <span className="fpd-x102">Ops. Facturadas</span>
-              {cargandoFacturas ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fpd-x104">{resumenHistorial.totalOps}</span>}
-            </div>
-            <div className="fpd-x101">
-              <span className="fpd-x105">Total Facturado (<NombreMoneda moneda="USD" forma="codigo" />)</span>
-              {cargandoFacturas ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fpd-x106">{formatoMoneda(resumenHistorial.totalUSD)}</span>}
-            </div>
-            <div className="fpd-x101">
-              <span className="fpd-x105">Total Facturado (<NombreMoneda moneda="MXN" forma="codigo" />)</span>
-              {cargandoFacturas ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fpd-x107">{formatoMoneda(resumenHistorial.totalMXN)}</span>}
-            </div>
-          </div>
 
           <div className="table-container fpd-x78">
             <table className="fpd-x79">
