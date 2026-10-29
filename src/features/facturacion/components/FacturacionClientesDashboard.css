@@ -498,12 +498,6 @@
 .fac-tarjeta-modal__fila--boton { width: 100%; border: none; border-bottom: 1px solid #161b22; background: transparent; color: inherit; font: inherit; font-size: 0.82rem; text-align: left; cursor: pointer; }
 .fac-tarjeta-modal__fila--boton:hover { background: #1f2d44; }
 .fac-tarjeta-modal__fila--boton:focus-visible { outline: 2px solid #58a6ff; outline-offset: -2px; }
-/* ✅ V00521: Ops. Facturadas — una fila por operación */
-.fac-tarjeta-modal__c-ref { width: 130px; flex-shrink: 0; color: #58a6ff; font-family: Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fac-tarjeta-modal__c-caja { width: 90px; flex-shrink: 0; color: #8b949e; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fac-tarjeta-modal__mas { display: block; width: 100%; padding: 10px; border: none; background: #161b22; color: #58a6ff; font: inherit; font-size: 0.82rem; cursor: pointer; }
-.fac-tarjeta-modal__mas:hover { background: #1f2d44; }
-.fac-tarjeta-modal__mas:focus-visible { outline: 2px solid #58a6ff; outline-offset: -2px; }
 
 /* ✅ V00276: documento de la factura (indicador en fila/ficha y campo en formularios).
    Clases compartidas también por Facturación de Proveedores. */

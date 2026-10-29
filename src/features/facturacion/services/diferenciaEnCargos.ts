@@ -46,7 +46,8 @@ export interface DatosDiferenciaCargos {
 export interface CambioOp { id: string; ref: string; cargosAntes: number; cargosDespues: number; cobroAntes: number; cobroDespues: number; datos: Datos }
 export interface PlanCargos { ops: CambioOp[]; facturaId: string; totalAntes: number; totalDespues: number; datosFactura: Datos }
 
-const importeRenglon = (r: Datos, moneda: MonedaFactura): number =>
+/** Lo que cobra un renglón de la factura en su moneda (Dólares: dol; Pesos: la conversión). */
+export const importeRenglon = (r: Datos, moneda: MonedaFactura): number =>
   moneda === 'USD' ? r2(num(r.dol) || num(r.subtotalBase)) : r2(num(r.monto) || num(r.pes) || num(r.subtotalBase));
 
 /** Las operaciones de la factura (con su id real) y lo que cobra cada una en la moneda de la factura. */

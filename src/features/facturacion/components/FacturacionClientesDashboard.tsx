@@ -2777,65 +2777,11 @@ export const FacturacionClientesDashboard = () => {
   // ✅ V00493: el total de la FILA (un folio con varios documentos), el mismo de la tarjeta y la tabla.
   const totalTarjetaAbierta = useMemo(() => facturasDeTarjeta.reduce((acc: number, f) => acc + totalDeGrupo(f), 0), [facturasDeTarjeta, totalDeGrupo]);
   const opsTarjetaAbierta = useMemo(() => facturasDeTarjeta.reduce((acc: number, f) => acc + (Array.isArray(f.operacionesIds) ? f.operacionesIds.length : 0), 0), [facturasDeTarjeta]);
-  // ✅ V00521: Ops. Facturadas lista las OPERACIONES de las facturas filtradas (no las facturas): con el
-  //   historial filtrado a una factura salen sus operaciones; sin filtro, todas las facturadas. Sale de los
-  //   renglones de cada factura (cero lecturas); el Excel resuelve las referencias que falten.
-  type FilaOpTarjeta = { clave: string; opId: string; ref: string; caja: string; invoice: string; fecha: string; cliente: string; moneda: string; importe: number | null; factura: FacturaLike };
-  const filasOpsDeTarjeta = (facturas: readonly FacturaLike[], extra?: Record<string, InfoOp>): FilaOpTarjeta[] =>
-    facturas.flatMap((f) => {
-      const renglones: OpLike[] = Array.isArray(f.operacionesGuardadas) ? f.operacionesGuardadas : [];
-      const moneda = monedaFacturaMostrar(f);
-      const importes = importesDeRenglones(moneda, renglones);
-      const conMontos = importes.some((x) => x > 0); // las importadas no guardaron lo que cobró cada una
-      return renglones.map((op, i) => {
-        const id = String(op?.id || '');
-        return {
-          clave: `${String(f.id || f.invoice || '')}:${i}`,
-          opId: id && !esRefOperacion(id) ? id : '',
-          ref: refDeOpCon(op, extra),
-          caja: remolqueDeOp(op) || String((extra && extra[id]?.remolque) || '').trim(),
-          invoice: String(f.invoice || ''),
-          fecha: String(f.fecha || '').slice(0, 10),
-          cliente: nombreClienteFactura_(f),
-          moneda,
-          importe: conMontos ? importes[i] : null,
-          factura: f,
-        };
-      });
-    });
-  const TOPE_OPS_TARJETA = 300;
-  const [opsTarjetaVer, setOpsTarjetaVer] = useState(TOPE_OPS_TARJETA);
-  const opsDeTarjeta = tarjetaAbierta === 'ops' ? filasOpsDeTarjeta(facturasDeTarjeta) : [];
-  /** Una operación de la lista: su detalle (con ✎ Editar operación); sin la operación ligada, la Ficha de su factura. */
-  const abrirOpDeTarjeta = (o: FilaOpTarjeta) => { if (o.opId) void verDetalleOperacion(o.opId); else setFacturaViendo(o.factura); };
   const exportarTarjetaExcel = async () => {
     if (exportandoTarjeta || !tarjetaAbierta || facturasDeTarjeta.length === 0) return;
     setExportandoTarjeta(true);
     try {
       const mapaExport = await resolverOpsParaExport(facturasDeTarjeta);
-      if (tarjetaAbierta === 'ops') {
-        // ✅ V00521: una fila por operación facturada (como la ventana).
-        const filasOps = filasOpsDeTarjeta(facturasDeTarjeta, mapaExport).map((o) => ({
-          ref: o.ref, caja: o.caja, invoice: o.invoice, fecha: o.fecha, cliente: o.cliente, moneda: o.moneda, importe: o.importe ?? '',
-        }));
-        await exportarExcelProfesional({
-          nombreArchivo: `Tarjeta_OPS_${hoyLocalISO()}.xlsx`,
-          tituloReporte: `Facturación · ${tituloTarjeta.ops}`,
-          subtitulo: `${filasOps.length} operaciones de ${facturasDeTarjeta.length} facturas · filtros actuales del historial`,
-          nombreHoja: 'Operaciones',
-          columnas: [
-            { key: 'ref', label: 'Referencia', tipo: 'texto' as const },
-            { key: 'caja', label: 'Caja', tipo: 'texto' as const },
-            { key: 'invoice', label: 'Invoice', tipo: 'texto' as const },
-            { key: 'fecha', label: 'Fecha factura', tipo: 'fecha' as const },
-            { key: 'cliente', label: 'Cliente', tipo: 'texto' as const },
-            { key: 'moneda', label: 'Moneda', tipo: 'texto' as const },
-            { key: 'importe', label: 'Importe en la factura', tipo: 'monto' as const },
-          ],
-          filas: filasOps,
-        });
-        return;
-      }
       const filas = facturasDeTarjeta.map((f) => ({
         invoice: f.invoice || '',
         fecha: f.fecha || '',
@@ -3324,7 +3270,7 @@ export const FacturacionClientesDashboard = () => {
               {cargandoFacturas ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fcd-x106">{resumenHistorial.cuenta}</span>}{/* ✅ V00449 */}
               {!cargandoFacturas && resumenHistorial.canceladas > 0 && <small className="fcd-nota-canceladas">{resumenHistorial.canceladas} canceladas: no suman</small>}{/* ✅ V00493 */}
             </div>
-            <div className="fcd-x104 fac-tarjeta-clicable" role="button" tabIndex={0} title="Ver de dónde sale este número" onClick={() => { setOpsTarjetaVer(TOPE_OPS_TARJETA); setTarjetaAbierta('ops'); }}>
+            <div className="fcd-x104 fac-tarjeta-clicable" role="button" tabIndex={0} title="Ver de dónde sale este número" onClick={() => setTarjetaAbierta('ops')}>
               <span className="fcd-x105">Ops. Facturadas</span>
               {cargandoFacturas ? <CargandoDatos compacto texto="Cargando…" /> : <span className="fcd-x107">{resumenHistorial.totalOps}</span>}
             </div>
@@ -3825,42 +3771,9 @@ export const FacturacionClientesDashboard = () => {
               <button type="button" className="fac-export-modal__cerrar" onClick={() => setTarjetaAbierta(null)}>✕</button>
             </div>
             <div className="fac-tarjeta-modal__resumen">
-              {facturasDeTarjeta.length.toLocaleString('es-MX')} factura(s) · {(tarjetaAbierta === 'ops' ? opsDeTarjeta.length : opsTarjetaAbierta).toLocaleString('es-MX')} operación(es) · Total <Importe monto={totalTarjetaAbierta} moneda={tarjetaAbierta === 'usd' ? 'USD' : tarjetaAbierta === 'mxn' ? 'MXN' : ''} />
+              {facturasDeTarjeta.length.toLocaleString('es-MX')} factura(s) · {opsTarjetaAbierta.toLocaleString('es-MX')} operación(es) · Total <Importe monto={totalTarjetaAbierta} moneda={tarjetaAbierta === 'usd' ? 'USD' : tarjetaAbierta === 'mxn' ? 'MXN' : ''} />
               <span className="fac-tarjeta-modal__nota"> — con los filtros actuales del historial{tarjetaAbierta === 'usd' ? ', solo facturas en Dólares' : tarjetaAbierta === 'mxn' ? ', solo facturas en Pesos' : ''}{tarjetaAbierta !== 'listadas' && resumenHistorial.canceladas > 0 ? ', sin las canceladas' : ''}.</span>
             </div>
-            {tarjetaAbierta === 'ops' ? (
-            <div className="fac-tarjeta-modal__lista">{/* ✅ V00521: las operaciones facturadas */}
-              <div className="fac-tarjeta-modal__fila fac-tarjeta-modal__fila--encabezado">
-                <span className="fac-tarjeta-modal__c-ref">Referencia</span>
-                <span className="fac-tarjeta-modal__c-caja">Caja</span>
-                <span className="fac-tarjeta-modal__c-invoice">Invoice</span>
-                <span className="fac-tarjeta-modal__c-fecha">Fecha</span>
-                <span className="fac-tarjeta-modal__c-cliente">Cliente</span>
-                <span className="fac-tarjeta-modal__c-moneda">Moneda</span>
-                <span className="fac-tarjeta-modal__c-total">Importe</span>
-              </div>
-              {opsDeTarjeta.slice(0, opsTarjetaVer).map((o) => (
-                <button type="button" key={o.clave} className="fac-tarjeta-modal__fila fac-tarjeta-modal__fila--boton" onClick={() => abrirOpDeTarjeta(o)}
-                  title={o.opId ? 'Ver el detalle de la operación' : 'Ver la factura (esta operación no está ligada)'}>
-                  <span className="fac-tarjeta-modal__c-ref">{o.ref || '—'}</span>
-                  <span className="fac-tarjeta-modal__c-caja">{o.caja || '—'}</span>
-                  <span className="fac-tarjeta-modal__c-invoice">{o.invoice || '—'}</span>
-                  <span className="fac-tarjeta-modal__c-fecha">{o.fecha || '—'}</span>
-                  <span className="fac-tarjeta-modal__c-cliente" title={o.cliente}>{o.cliente}</span>
-                  <span className="fac-tarjeta-modal__c-moneda"><NombreMoneda moneda={o.moneda} respaldo={o.moneda} /></span>
-                  <span className="fac-tarjeta-modal__c-total" title={o.importe === null ? 'La factura no guardó lo que cobró cada operación' : undefined}>
-                    {o.importe === null ? '—' : <Importe monto={o.importe} moneda={o.moneda} />}
-                  </span>
-                </button>
-              ))}
-              {opsDeTarjeta.length > opsTarjetaVer && (
-                <button type="button" className="fac-tarjeta-modal__mas" onClick={() => setOpsTarjetaVer((n) => n + TOPE_OPS_TARJETA)}>
-                  Mostrar {Math.min(TOPE_OPS_TARJETA, opsDeTarjeta.length - opsTarjetaVer).toLocaleString('es-MX')} más (van {opsTarjetaVer.toLocaleString('es-MX')} de {opsDeTarjeta.length.toLocaleString('es-MX')}; el Excel trae todas)
-                </button>
-              )}
-              {opsDeTarjeta.length === 0 && <div className="fac-tarjeta-modal__vacio">Sin operaciones facturadas con los filtros actuales.</div>}
-            </div>
-            ) : (
             <div className="fac-tarjeta-modal__lista">
               <div className="fac-tarjeta-modal__fila fac-tarjeta-modal__fila--encabezado">
                 <span className="fac-tarjeta-modal__c-invoice">Invoice</span>
@@ -3883,7 +3796,6 @@ export const FacturacionClientesDashboard = () => {
               ))}
               {facturasDeTarjeta.length === 0 && <div className="fac-tarjeta-modal__vacio">Sin facturas con los filtros actuales.</div>}
             </div>
-            )}
             <div className="fac-export-modal__pie">
               <span className="fac-export-modal__separador" />
               <button type="button" className="btn btn-outline" onClick={() => setTarjetaAbierta(null)}>Cerrar</button>

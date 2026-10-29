@@ -1,0 +1,18 @@
+/* ✅ V00520: operaciones de la factura dentro de Editar factura (prefijo ofe-) */
+.ofe-panel { display: grid; gap: 8px; margin-bottom: 20px; padding: 12px 14px; border: 1px solid #30363d; border-radius: 8px; background: #010409; }
+.ofe-titulo { margin: 0; color: #8b949e; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; }
+.ofe-lista { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; max-height: 260px; overflow-y: auto; }
+.ofe-op { display: grid; grid-template-columns: 150px minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 6px 10px; border: 1px solid #21262d; border-radius: 6px; background: #0d1117; }
+.ofe-op--cambio { border-color: #9e6a03; background: rgba(187, 128, 9, 0.08); }
+.ofe-ref { color: #58a6ff; font-family: ui-monospace, monospace; font-size: 0.82rem; font-weight: 700; }
+.ofe-convenio { color: #8b949e; font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ofe-monto { color: #c9d1d9; font-size: 0.82rem; white-space: nowrap; }
+.ofe-monto b { color: #e3b341; }
+.ofe-editar { padding: 4px 10px; border: 1px solid #30363d; border-radius: 6px; background: #161b22; color: #58a6ff; font: inherit; font-size: 0.78rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.ofe-editar:hover { border-color: #58a6ff; }
+.ofe-editar:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
+.ofe-nota { margin: 0; color: #8b949e; font-size: 0.8rem; }
+.ofe-aviso { margin: 0; padding: 6px 10px; border-left: 3px solid #e3b341; border-radius: 4px; background: rgba(187, 128, 9, 0.08); color: #c9d1d9; font-size: 0.82rem; }
+.ofe-aviso--error { border-left-color: #f85149; background: rgba(248, 81, 73, 0.08); }
+.ofe-error { margin: 0; color: #ff7b72; font-size: 0.8rem; font-weight: 600; }
+@media (max-width: 640px) { .ofe-op { grid-template-columns: 1fr auto; } .ofe-convenio, .ofe-monto { grid-column: 1 / -1; } }
