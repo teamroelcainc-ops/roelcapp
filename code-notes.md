@@ -207,6 +207,27 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - Modales con `createPortal` a `document.body` (la tarjeta usa `transform` al pasar el mouse) y perezosos desde la tarjeta (`lazyWithRetry`): la carga inicial crece 0.3 KB (sin eso, ~20 KB por FormularioConfigurable).
 - Se quitaron las reglas `.rd-dos*` de App.css (solo las usaba la tarjeta TC · Diesel).
 
+## V00513 (Facturación de Clientes: Subir XML y PDF de facturas fiscales · Datos para el SIT)
+- Trabajo de OTRA sesión (rama feat/subir-xml-cfdi, entregado como correcciones_roelca.zip el 29-oct) hecho encima de la V00510 de esta línea con los números V00511–V00513, que chocaban con la V00511 (Falso al 50%) y la V00512 (Revisión de datos al día) de aquí. Se unió como UNA versión, V00513: solo toca Facturación de Clientes (no se cruza con la V00511/V00512); sus comentarios `✅ V00511/12/13` se renumeraron a `✅ V00513`. Verificado aquí dentro de la app (simulador): Datos para el SIT, Subir XML (cuadra / TC distinto) y Registrar → Generar Factura llenado con PDF y XML.
+
+### Datos para el SIT (su V00513)
+- El TC y la conversión los calcula a mano la persona de facturación al capturar en el SIT (el SIT no convierte): ahí nacían los errores de centavos. `services/datosParaSit.ts` da el importe por operación con `montoOperacion` + `totalNativoDeOperaciones` (la misma regla de Generar Factura y del cotejo de XML), así captura y cotejo salen de la misma fuente.
+- "Se convirtió" = la moneda del convenio (`monedaConvenioDe`, guardada o deducida) es distinta de la de la factura; solo entonces va el renglón `TC x.xxxx` (4 decimales, como en los XML del SIT).
+- Formato de la descripción copiado de los XML reales: referencia, fecha DD/MM/AAAA, `CAJA <#caja>`, `REF <Ref Cliente>` (se omite vacía o N/A), `TC`. El nombre del servicio NO va en el texto: en el SIT se elige el producto (p. ej. ICAJLDOIMPC); se muestra el convenio como guía.
+- Solo subtotales (la app no maneja impuestos; los controla el SIT).
+
+### PDF y XML juntos (su V00512)
+- **Pareo PDF↔XML** (`services/parearPdfXml.ts`, puro): mismo nombre sin extensión (sin el " (1)" del navegador) → UUID en el nombre del PDF → folio como palabra completa. Cada PDF se usa una vez. Formato del SIT observado: `ROE180119IV4-I8663.pdf` / `.xml`.
+- **El PDF va primero** en los documentos de la factura: `camposDeArchivos` copia el PRIMER archivo a los campos de siempre, que leen el portal de clientes y la app móvil (V00451); así abren el PDF y no el XML.
+- Sin PDF no se bloquea el registro (se marca "⚠ Sin PDF"): se puede agregar después desde "Sin doc"/Documentos de la factura.
+- Pendiente: "Registrar todas las que cuadran" en una sola acción (requiere sacar el guardado de Generar Factura a un servicio reutilizable).
+
+### Subir XML (su V00511)
+- **Lector propio con DOMParser** (`services/leerCfdi.ts`), sin dependencias. Lee CFDI 4.0 por nombre local de los elementos (`getElementsByTagNameNS('*', …)`), así no depende del prefijo. Los saltos de línea de `Descripcion` llegan como espacios (normalización de atributos de XML); la referencia, la caja (`CAJA x` después de la referencia, para no tomar "CAJA POR LAREDO") y la Ref Cliente (`REF x`) se sacan de ahí. Formato observado en el SIT (oct-2026): un concepto por referencia, con su importe.
+- **El cotejo es puro** (`services/cotejoCfdi.ts`) y no escribe. El importe de cada operación sale de `montoOperacion` + `totalNativoDeOperaciones`, la MISMA regla con que Generar Factura guarda el total, y se compara en centavos. Cliente: por RFC; si el XML trae el RFC genérico de extranjero, por Tax ID (`NumRegIdTrib` dentro de `rfcTaxId`) o por nombre normalizado. El folio repetido se busca en `facturasGlobales` sin importar mayúsculas.
+- **Registrar = el Generar Factura de siempre, ya llenado** (selección, folio = Serie+Folio, fecha, el XML como documento). A propósito no se escribe la factura desde el modal: la escritura de dinero sigue por un solo camino (callable `facturarOperaciones` o el batch con sus revisiones del servidor). El modal de XML queda montado pero oculto mientras está abierto Generar Factura, para no perder la carga; al volver, la factura aparece como "Registrada".
+- **Pendientes (no pedidos todavía)**: guardar el UUID en la factura (requiere el campo en `planFacturar`/callable y su bandera); registrar todas las que cuadran en una sola acción; consultar en el SAT si cada UUID sigue vigente (servicio público de estado de CFDI, sin credenciales; va en una callable). Solo se buscan las operaciones ya cargadas en la lista (pendientes; las facturadas si se abrió "Facturadas"/"Todas").
+
 ## V00512 (Revisión de datos al día, con fechas y Cancelar · Observaciones de costos adicionales)
 - Pedido del usuario (29-oct), antes de correr F1 en producción (se le recordó; no toca dinero).
 - **Rango de fechas**: `filtrarPorFechas` (puro) filtra las FILAS ya calculadas por su fecha (servicio de la operación; fecha de la factura en F2/F2c); la revisión sigue leyendo y comparando TODO (un rango en la lectura inventaría errores en las orillas: facturas con operaciones fuera del rango, referencias repetidas en otro día). Con rango, las filas sin fecha no se muestran y se cuentan. El rango se guarda en memoria de la sesión (la ventana se cierra al abrir un registro). Excel y "Marcar facturadas" usan lo filtrado; cambiar el rango reinicia los pasos de F1 (key).

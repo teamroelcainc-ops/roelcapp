@@ -534,3 +534,10 @@
 
 /* ✅ V00493: aviso bajo "Facturas Listadas": las canceladas siguen en la lista pero no suman */
 .fcd-nota-canceladas { display: block; margin-top: 2px; color: #f0883e; font-size: 0.72rem; }
+/* ✅ V00513: botón Subir XML */
+.fcd-subir-xml { padding: 8px 16px; border: 1px solid #3fb950; border-radius: 6px; background: transparent; color: #3fb950; font-weight: 700; font-size: 0.85rem; white-space: nowrap; cursor: pointer; }
+.fcd-subir-xml:hover { background: rgba(63, 185, 80, 0.12); }
+/* ✅ V00513: botón Datos para el SIT */
+.fcd-datos-sit { padding: 8px 16px; border: 1px solid #a371f7; border-radius: 6px; background: transparent; color: #a371f7; font-weight: 700; font-size: 0.85rem; white-space: nowrap; cursor: pointer; }
+.fcd-datos-sit:hover { background: rgba(163, 113, 247, 0.12); }
+.fcd-datos-sit:disabled { border-color: #30363d; color: #484f58; background: transparent; cursor: not-allowed; }

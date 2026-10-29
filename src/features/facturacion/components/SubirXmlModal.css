@@ -1,0 +1,62 @@
+/* ✅ V00513: Subir XML de facturas fiscales (prefijo sxm-) */
+.modal-overlay.sxm-fondo { z-index: 2000; padding: 16px; box-sizing: border-box; background-color: rgba(0, 0, 0, 0.75); }
+.sxm-ventana { display: flex; flex-direction: column; width: 980px; max-width: 100%; max-height: calc(100vh - 32px); box-sizing: border-box; border: 1px solid #30363d; border-radius: 12px; background: #0d1117; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55); overflow: hidden; }
+.sxm-cabecera { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 22px 14px; border-bottom: 1px solid #21262d; }
+.sxm-titulo { margin: 0 0 6px; color: #f0f6fc; font-size: 1.15rem; }
+.sxm-sub { margin: 0; max-width: 70ch; color: #8b949e; font-size: 0.86rem; line-height: 1.45; }
+.sxm-cerrar { flex-shrink: 0; border: none; background: none; color: #8b949e; font-size: 1.1rem; cursor: pointer; padding: 4px 6px; }
+.sxm-cerrar:hover { color: #f0f6fc; }
+.sxm-cuerpo { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 14px; padding: 16px 22px; overflow-y: auto; min-height: 0; }
+
+.sxm-cifras { display: flex; flex-wrap: wrap; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.sxm-cifra { padding: 6px 12px; border: 1px solid #30363d; border-radius: 8px; color: #c9d1d9; font-size: 0.86rem; }
+.sxm-cifra b { margin-right: 4px; font-size: 1.02rem; color: #f0f6fc; }
+.sxm-cifra--listo { border-color: rgba(63, 185, 80, 0.55); }
+.sxm-cifra--listo b { color: #3fb950; }
+.sxm-cifra--diferencias { border-color: rgba(210, 153, 34, 0.55); }
+.sxm-cifra--diferencias b { color: #e3b341; }
+.sxm-cifra--sin b { color: #8b949e; }
+.sxm-cifra--bloqueada { border-color: rgba(248, 81, 73, 0.55); }
+.sxm-cifra--bloqueada b { color: #ff7b72; }
+
+.sxm-lista { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.sxm-fila { display: flex; align-items: flex-start; gap: 10px; padding: 8px 12px; border: 1px solid #30363d; border-left-width: 4px; border-radius: 8px; background: #161b22; }
+.sxm-fila > details { flex: 1; min-width: 0; }
+.sxm-fila--listo { border-left-color: #3fb950; }
+.sxm-fila--diferencias { border-left-color: #e3b341; }
+.sxm-fila--sin_operacion { border-left-color: #8b949e; }
+.sxm-fila--bloqueada { border-left-color: #f85149; }
+.sxm-fila--registrada { border-left-color: #58a6ff; opacity: 0.8; }
+.sxm-resumen { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; cursor: pointer; color: #c9d1d9; font-size: 0.88rem; }
+.sxm-folio { color: #f0883e; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 700; }
+.sxm-cliente { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sxm-fecha { color: #8b949e; }
+.sxm-importe { font-weight: 600; }
+.sxm-estado { margin-left: auto; font-weight: 600; }
+.sxm-pdf { padding: 1px 8px; border: 1px solid rgba(88, 166, 255, 0.45); border-radius: 10px; color: #58a6ff; font-size: 0.76rem; white-space: nowrap; }
+.sxm-pdf--falta { border-color: rgba(210, 153, 34, 0.55); color: #e3b341; }
+.sxm-detalle { display: grid; gap: 8px; margin-top: 10px; }
+.sxm-archivo { margin: 0; color: #8b949e; font-size: 0.78rem; overflow-wrap: anywhere; }
+.sxm-tabla { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.sxm-tabla th { padding: 6px 8px; background: #0d1117; color: #8b949e; font-size: 0.74rem; font-weight: 600; text-align: left; white-space: nowrap; }
+.sxm-tabla td { padding: 6px 8px; border-top: 1px solid #21262d; color: #c9d1d9; }
+.sxm-tabla .sxm-num { text-align: right; white-space: nowrap; }
+.sxm-ref { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
+.sxm-concepto { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #8b949e; }
+.sxm-renglon--mal td { background: rgba(210, 153, 34, 0.08); }
+.sxm-problemas { display: grid; gap: 4px; margin: 0; padding: 8px 12px 8px 28px; border: 1px solid rgba(248, 81, 73, 0.4); border-radius: 6px; color: #ffa198; font-size: 0.84rem; }
+.sxm-notas { display: grid; gap: 4px; margin: 0; padding: 0 0 0 18px; color: #8b949e; font-size: 0.8rem; }
+.sxm-registrar { flex-shrink: 0; padding: 7px 14px; border: none; border-radius: 6px; background: #238636; color: #fff; font: inherit; font-size: 0.85rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.sxm-registrar:hover { background: #2ea043; }
+
+.sxm-pie { display: flex; justify-content: flex-end; gap: 10px; padding: 12px 22px; border-top: 1px solid #21262d; background: #161b22; }
+.sxm-btn { padding: 8px 18px; border: 1px solid #30363d; border-radius: 6px; background: transparent; color: #c9d1d9; font: inherit; font-size: 0.88rem; font-weight: 700; cursor: pointer; }
+.sxm-btn:hover { border-color: #8b949e; }
+
+@media (max-width: 640px) {
+  .sxm-cabecera, .sxm-cuerpo, .sxm-pie { padding-left: 14px; padding-right: 14px; }
+  .sxm-fila { flex-direction: column; }
+  .sxm-estado { margin-left: 0; }
+  .sxm-detalle { overflow-x: auto; }
+  .sxm-registrar { align-self: stretch; }
+}

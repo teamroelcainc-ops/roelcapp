@@ -40,7 +40,7 @@ import './FacturacionClientesDashboard.css';
 import TarjetaDocumentoFactura, { PildoraDocsFactura } from './TarjetaDocumentoFactura';
 import DocumentosFacturaModal from './DocumentosFacturaModal'; // ✅ V00451
 import AdjuntosArchivos from '../../../shared/components/AdjuntosArchivos'; // ✅ V00451
-import { desdeGuardados } from '../../../shared/archivos/adjuntos';
+import { adjuntoNuevo, desdeGuardados } from '../../../shared/archivos/adjuntos';
 import type { Adjunto } from '../../../shared/archivos/adjuntos';
 import {
   MAX_DOCS_FACTURA, aplicarEscriturasDocs, camposDocsFactura, detalleError, docsDeFactura, idsDeFila,
@@ -98,6 +98,13 @@ import ModalCancelarFactura from './ModalCancelarFactura';
 import CancelacionFicha from './CancelacionFicha';
 import AccionesHistorial from './AccionesHistorial'; // ✅ V00482
 import CorregirFacturasModal from './CorregirFacturasModal';
+import SubirXmlModal from './SubirXmlModal'; // ✅ V00513
+import DatosSitModal from './DatosSitModal'; // ✅ V00513
+import { datosParaSit } from '../services/datosParaSit';
+import type { DatosSit } from '../services/datosParaSit';
+import { cotejarCfdi, opParaCotejo } from '../services/cotejoCfdi';
+import type { ClienteCotejo, ResultadoCotejo } from '../services/cotejoCfdi';
+import type { Cfdi } from '../services/leerCfdi';
 import PagosDeFactura from './PagosDeFactura'; // ✅ V00483
 import { indexarPagos, numerosPorFactura, pagosDeFacturas } from '../services/pagosDeFactura';
 import type { PagoDeFactura } from '../services/pagosDeFactura';
@@ -379,6 +386,8 @@ export const FacturacionClientesDashboard = () => {
   const registrosPorPagina = 50;
 
   const [modalAbierto, setModalAbierto] = useState(false);
+  const [subirXmlAbierto, setSubirXmlAbierto] = useState(false); // ✅ V00513
+  const [datosSit, setDatosSit] = useState<DatosSit | null>(null); // ✅ V00513
   const [guardando, setGuardando] = useState(false);
   const [facturaViendo, setFacturaViendo] = useState<any | null>(null);
   // ✅ V00502: el buscador global pidió abrir la ficha de una factura: la misma fila (grupo) del Historial.
@@ -864,6 +873,18 @@ export const FacturacionClientesDashboard = () => {
   // ✅ V00481: la moneda de una factura es SIEMPRE la del cliente en Empresas (null si no tiene).
   const monedaClienteDe = (clienteId: unknown): Moneda | null =>
     monedaDeEmpresa(empresasList.find((e) => e.id === clienteId), 'monedaFacturacion', (id) => mapaCatalogos[id]);
+  // ✅ V00513: DATOS PARA EL SIT — descripción e importe (subtotal) por operación seleccionada,
+  //   con la misma regla de dinero con que se factura y se coteja el XML.
+  const abrirDatosSit = (): void => {
+    const ops = opsDeSeleccion();
+    if (ops.length === 0) return;
+    if (seleccionMultiCliente) { alert('Las operaciones seleccionadas deben ser de un mismo cliente.'); return; }
+    if (monedaFacturacion !== 'USD' && monedaFacturacion !== 'MXN') { alert(avisoSinMoneda('cliente')); return; }
+    setDatosSit(datosParaSit(ops, monedaFacturacion, (op) => {
+      const convenio = txt(op.convenioNombre, op.convenioClienteNombre, op.convenio);
+      return { caja: remolqueOpTokens(op)[0] ?? '', convenio: convenio === '-' ? '' : convenio };
+    }));
+  };
   const avisoMonedaDe = (f: { clienteId?: unknown } | null | undefined): string | null =>
     f ? avisoMonedaDistinta(monedaDeFactura(f), monedaClienteDe(f.clienteId), 'cliente') : null;
   // Folios del mismo cliente que se sugieren como la factura que reemplaza a una cancelada.
@@ -935,6 +956,38 @@ export const FacturacionClientesDashboard = () => {
         ? { ...o, refClienteRevisado: clave } : o)));
   };
   const invoiceDeOp = (op: any): string => op.facturaClienteInvoice || opIndex.get(String(op.id))?.invoice || '';
+  // ✅ V00513: SUBIR XML — cotejo de cada CFDI contra la lista cargada (operaciones, Empresas y
+  //   facturas). Lo que cuadra se registra por el Generar Factura de siempre, ya llenado.
+  const opsParaCotejo = useMemo(() => operacionesGlobales.map((op: Record<string, unknown>) => {
+    const facturada = opIndex.has(String(op.id)) || !!op.facturaClienteId || !!op.facturado;
+    const folio = facturada ? String(op.facturaClienteInvoice || opIndex.get(String(op.id))?.invoice || 'sin folio') : '';
+    return opParaCotejo(op, folio, enRevisionRef.has(idDeLista(op)));
+  }), [operacionesGlobales, opIndex, enRevisionRef]);
+  const clientesParaCotejo = useMemo(() => new Map<string, ClienteCotejo>(empresasList.map((e) => {
+    const extra = e as EmpresaFacturacion & { rfcTaxId?: unknown };
+    return [String(e.id), {
+      nombre: String(e.nombre || e.nombreCorto || e.id),
+      rfc: String(extra.rfcTaxId || e.rfc || ''),
+      moneda: monedaDeEmpresa(e, 'monedaFacturacion', (id) => mapaCatalogos[id]) ?? '',
+    }];
+  })), [empresasList, mapaCatalogos]);
+  const foliosParaCotejo = useMemo(() => facturasGlobales.map((f) => ({ folio: String(f.invoice || ''), clienteNombre: String(f.clienteNombre || '') })), [facturasGlobales]);
+  const cotejarXml = (cfdi: Cfdi): ResultadoCotejo => cotejarCfdi(cfdi, opsParaCotejo, clientesParaCotejo, foliosParaCotejo);
+  const registrarDesdeXml = (r: ResultadoCotejo, archivo: File, pdf: File | null): void => {
+    const ops = r.opsIds.map((id) => operacionesGlobales.find((o) => String(o.id) === id)).filter((o): o is Record<string, unknown> => !!o);
+    if (ops.length !== r.opsIds.length) { alert('Algunas operaciones ya no están en la lista. Actualiza y vuelve a intentarlo.'); return; }
+    const bloqueo = bloqueoPorRevision(ops);
+    if (bloqueo) { alert(bloqueo); return; }
+    if (filtroCliente && filtroCliente !== r.clienteId) setFiltroCliente(''); // el cliente sale de las operaciones
+    setSeleccionadas(r.opsIds);
+    setInvoiceForm(r.cfdi.folio);
+    setFechaForm(r.cfdi.fecha);
+    setFacturaCcpForm('');
+    setStatusFacturaForm('Facturado');
+    // ✅ V00513: PDF (para verla; el portal y la app móvil abren el primero) y XML como documentos de la factura.
+    setAdjuntosFacturar([...(pdf ? [adjuntoNuevo(pdf)] : []), adjuntoNuevo(archivo)]);
+    setModalAbierto(true);
+  };
 
   const clienteFacturaId = useMemo(() => {
     if (filtroCliente) return filtroCliente;
@@ -3101,6 +3154,11 @@ export const FacturacionClientesDashboard = () => {
           onCorregidas={(cambios) => setFacturasGlobales(prev => prev.map(f => (cambios[f.id] ? normalizarFactura({ ...f, ...cambios[f.id] }) : f)))}
           onCerrar={() => setCorrigiendoFacturas(false)} />
       )}{/* ✅ V00482 */}
+      {subirXmlAbierto && (
+        <SubirXmlModal cotejar={cotejarXml} nombreCliente={getNombreCliente} onRegistrar={registrarDesdeXml}
+          onCerrar={() => setSubirXmlAbierto(false)} oculto={modalAbierto} />
+      )}{/* ✅ V00513 */}
+      {datosSit && <DatosSitModal cliente={nombreClienteFactura} datos={datosSit} onCerrar={() => setDatosSit(null)} />}{/* ✅ V00513 */}
       {cancelarDe && (
         <ModalCancelarFactura invoice={String(cancelarDe.invoice || '')} sugerencias={foliosDelCliente(cancelarDe)}
           onVolver={() => setCancelarDe(null)}
@@ -3395,6 +3453,8 @@ export const FacturacionClientesDashboard = () => {
                 title="Agregar un costo adicional al cliente en una operación seleccionada">
                 Costo adicional
               </button>
+              <button type="button" className="fcd-datos-sit" disabled={seleccionadas.length === 0 || seleccionMultiCliente} onClick={abrirDatosSit} title="Descripción e importe de cada operación seleccionada, listos para capturar en el SIT">Datos para el SIT</button>
+              <button type="button" className="fcd-subir-xml" onClick={() => setSubirXmlAbierto(true)} title="Leer los XML de facturas fiscales y cotejarlos contra las operaciones por facturar">Subir XML</button>
               <button disabled={seleccionadas.length === 0 || seleccionMultiCliente} onClick={() => { const bloqueo = bloqueoPorRevision(opsDeSeleccion()); if (bloqueo) { alert(bloqueo); return; } setStatusFacturaForm('Facturado'); setAdjuntosFacturar([]); setModalAbierto(true); }}
                 style={{ padding: '8px 20px', backgroundColor: (seleccionadas.length > 0 && !seleccionMultiCliente) ? '#D84315' : '#30363d', color: '#fff', border: 'none', borderRadius: '6px', cursor: (seleccionadas.length > 0 && !seleccionMultiCliente) ? 'pointer' : 'not-allowed', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
                 Generar Factura ({seleccionadas.length})
