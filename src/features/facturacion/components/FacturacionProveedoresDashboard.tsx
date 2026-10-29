@@ -4078,19 +4078,28 @@ export const FacturacionProveedoresDashboard = () => {
 
             <div className="fpd-x247">
               <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '4px', fontWeight: 600, textTransform: 'uppercase' }}>Proveedor de la factura</label>
-              <SelectBuscable
-                opciones={empresasList
-                  .slice()
-                  .sort((a: any, b: any) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' }))
-                  .map((e: any) => ({ value: e.id, label: String(e.nombre || e.id) }))}
-                value={editProveedorId}
-                onChange={(id: string) => {
-                  // ✅ V00481: otro proveedor con otra moneda → el total sugerido pasa a esa moneda.
-                  if (monedaProveedorDe(id) !== monedaProveedorDe(editProveedorId)) setEditTotal(String(totalEditPara(facturaEditando, id)));
-                  setEditProveedorId(id);
-                }}
-                placeholder="Buscar proveedor..."
-              />
+              {/* ✅ V00519: el proveedor NO se cambia aquí: sale de las operaciones (para cambiarlo, cámbialo en cada
+                  operación de la factura). Solo se elige si la factura todavía no tiene proveedor. */}
+              {facturaEditando.proveedorId ? (
+                <>
+                  <span className="fpd-moneda-fija" title="Para cambiarlo, cámbialo en cada operación de la factura">{String(facturaEditando.proveedorNombre || getNombreEmpresa(editProveedorId) || editProveedorId)}</span>
+                  <small className="fpd-bloqueo-nota">Para cambiar el proveedor, cámbialo primero en cada operación de la factura.</small>
+                </>
+              ) : (
+                <SelectBuscable
+                  opciones={empresasList
+                    .slice()
+                    .sort((a: any, b: any) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' }))
+                    .map((e: any) => ({ value: e.id, label: String(e.nombre || e.id) }))}
+                  value={editProveedorId}
+                  onChange={(id: string) => {
+                    // ✅ V00481: otro proveedor con otra moneda → el total sugerido pasa a esa moneda.
+                    if (monedaProveedorDe(id) !== monedaProveedorDe(editProveedorId)) setEditTotal(String(totalEditPara(facturaEditando, id)));
+                    setEditProveedorId(id);
+                  }}
+                  placeholder="Buscar proveedor..."
+                />
+              )}
               {Array.isArray(facturaEditando.__groupIds) && facturaEditando.__groupIds.length > 1 && (
                 <span> · <b className="fpd-x248">{facturaEditando.__groupIds.length} documentos agrupados</b> (el total y los archivos se guardan en el primero)</span>
               )}
@@ -4140,13 +4149,15 @@ export const FacturacionProveedoresDashboard = () => {
                     const pagos = tienePagosAplicados(facturaEditando) ? ' Tiene pagos aplicados: revisa su saldo en Pagos.' : '';
                     const monNueva = monedaProveedorDe(editProveedorId);
                     const recalculado = monNueva ? totalSugeridoEn(monNueva, facturaEditando.operacionesGuardadas) > 0 : false;
-                    return `${aviso} Al guardar queda en ${nombreMoneda(monNueva)}; ${recalculado ? 'el total sugerido es el de sus operaciones en esa moneda' : 'sus operaciones no traen importe en esa moneda: captura el total'}. Revísalo.${pagos}`;
+                    return `${aviso} Al guardar queda en ${nombreMoneda(monNueva)}; ${recalculado ? 'el total sugerido es el de sus operaciones en esa moneda' : 'sus operaciones no traen importe en esa moneda: corrige el costo en cada operación'}. Revísalo.${pagos}`;
                   })()} />
                 )}
               </div>
               <div>
                 <label className="fpd-x143">TOTAL FACTURADO</label>
-                <input className="fpd-x251" type="number" step="any" value={editTotal} onChange={e => setEditTotal(e.target.value)} placeholder="0.00" />
+                {/* ✅ V00519: el monto NO se cambia aquí: sale de las operaciones */}
+                <span className="fpd-moneda-fija fpd-total-fijo" title="El total sale de sus operaciones">{(Number(editTotal) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <small className="fpd-bloqueo-nota">Sale de sus operaciones: para cambiarlo, corrige el costo en cada operación.</small>
               </div>
               <div>
                 <label className="fpd-x143">REFERENCIA (Opcional)</label>

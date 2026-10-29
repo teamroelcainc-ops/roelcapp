@@ -11,7 +11,7 @@
 //     SUBTOTAL / TOTAL. En dólares.
 // Lo que no sea de ninguno de los dos: solo las referencias, el subtotal y el total que se encuentren.
 // ---------------------------------------------------------------------------
-import { normalizarRef } from './leerCfdi';
+import { normalizarRef, refsRegex } from './leerCfdi';
 
 /** Un pedazo de texto de una página del PDF (x, y en puntos; y crece hacia arriba). */
 export interface ItemPdf { s: string; x: number; y: number; w: number }
@@ -48,7 +48,7 @@ export interface DocumentoFactura {
 
 export type LecturaDocumento = { ok: true; doc: DocumentoFactura } | { ok: false; error: string };
 
-const REF_RE = /\b(TR|LO|FL|RE)-(\d{6})-(\d{1,3})\b/gi;
+const REF_RE = refsRegex(); // ✅ V00519: también las viejas ("TR46028-05")
 const TC_RE = /\bTC:?\s*(\d+(?:\.\d+)?)/i;
 const DINERO_RE = /^\$?\s*-?\d{1,3}(?:,\d{3})*(?:\.\d+)?$|^\$?\s*-?\d+(?:\.\d+)?$/;
 

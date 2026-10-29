@@ -8,10 +8,13 @@
 // (botón "Analizar documento" de la Ficha de Factura): los descarga y los compara con la factura.
 // ---------------------------------------------------------------------------
 import { useEffect, useEffectEvent, useState } from 'react';
+import type { ReactNode } from 'react';
 import type { Adjunto, ArchivoGuardado } from '../../../shared/archivos/adjuntos';
 import CargandoDatos from '../../../shared/components/CargandoDatos';
 import { compararDocumentoFactura } from '../services/documentoFactura';
-import type { FacturaEsperada, Hallazgo } from '../services/documentoFactura';
+import type { FacturaEsperada, Hallazgo, RevisionDocumento } from '../services/documentoFactura';
+import DiferenciaEnCargos, { ResumenDiferenciaAplicada } from './DiferenciaEnCargos';
+import type { PlanCargos } from '../services/diferenciaEnCargos';
 import { esDocumentoRevisable, esGuardadoRevisable, leerDocumentoFactura, leerDocumentoGuardado } from '../services/leerDocumentoFactura';
 import type { DocumentoFactura, LecturaDocumento } from '../services/leerFacturaPdf';
 import './RevisionDocumentosFactura.css';
@@ -33,7 +36,15 @@ const resumen = (d: DocumentoFactura): string => [
   `${d.conceptos.flatMap((c) => c.refs).length} referencia(s)`,
 ].filter(Boolean).join(' · ');
 
-function Documento({ nombre, lectura, esperado }: { nombre: string; lectura: LecturaDocumento | undefined; esperado: FacturaEsperada | null }) {
+interface PropsDocumento {
+  nombre: string;
+  lectura: LecturaDocumento | undefined;
+  esperado: FacturaEsperada | null;
+  /** ✅ V00519: lo que va debajo de la revisión (la propuesta de poner la diferencia en costos adicionales). */
+  extra?: (r: RevisionDocumento) => ReactNode;
+}
+
+function Documento({ nombre, lectura, esperado, extra }: PropsDocumento) {
   if (!lectura) return <li className="rdf-doc"><span className="rdf-nombre">{nombre}</span><CargandoDatos compacto texto="Leyendo el documento…" /></li>;
   if (!lectura.ok) return <li className="rdf-doc rdf-doc--error"><span className="rdf-nombre">{nombre}</span><p className="rdf-linea">⚠️ {lectura.error}</p></li>;
   const revision = esperado ? compararDocumentoFactura(lectura.doc, esperado) : null;
@@ -52,6 +63,7 @@ function Documento({ nombre, lectura, esperado }: { nombre: string; lectura: Lec
               <li key={`${x.campo}:${x.texto}`} className={`rdf-hallazgo rdf-hallazgo--${x.nivel}`}><span aria-hidden="true">{ICONO[x.nivel]}</span> {x.texto}</li>
             ))}
           </ul>
+          {extra?.(revision)}
         </>
       )}
     </li>
@@ -90,13 +102,17 @@ interface PropsGuardados {
   archivos: readonly ArchivoGuardado[];
   esperado: FacturaEsperada | null;
   onCerrar: () => void;
+  /** ✅ V00519: la factura (para poner la diferencia en costos adicionales) y cómo refrescarla. */
+  fila?: Record<string, unknown>;
+  onFacturaCambiada?: (facturaId: string, campos: Record<string, unknown>) => void;
 }
 
 /** ✅ V00516 — Analiza los documentos ya guardados de una factura (se descargan al abrir el panel). */
-export function RevisionDocumentosGuardados({ archivos, esperado, onCerrar }: PropsGuardados) {
+export function RevisionDocumentosGuardados({ archivos, esperado, onCerrar, fila, onFacturaCambiada }: PropsGuardados) {
   const revisables = archivos.filter(esGuardadoRevisable);
   const imagenes = archivos.length - revisables.length;
   const [lecturas, setLecturas] = useState<ReadonlyMap<string, LecturaDocumento>>(() => new Map());
+  const [aplicadas, setAplicadas] = useState<ReadonlyMap<string, PlanCargos>>(() => new Map()); // ✅ V00519
 
   const claveUrls = revisables.map((a) => a.url).join('|');
   const leerGuardados = useEffectEvent((sigue: { vigente: boolean }) => {
@@ -120,7 +136,18 @@ export function RevisionDocumentosGuardados({ archivos, esperado, onCerrar }: Pr
         ? <p className="rdf-linea">Esta factura solo tiene imágenes: solo los PDF y XML se pueden revisar.</p>
         : (
           <ul className="rdf-docs">
-            {revisables.map((a) => <Documento key={a.url} nombre={a.nombre || 'Documento'} lectura={lecturas.get(a.url)} esperado={esperado} />)}
+            {revisables.map((a) => (
+              <Documento key={a.url} nombre={a.nombre || 'Documento'} lectura={lecturas.get(a.url)} esperado={esperado}
+                extra={(r) => {
+                  const hecha = aplicadas.get(a.url);
+                  if (hecha) return <ResumenDiferenciaAplicada plan={hecha} moneda={esperado?.moneda ?? ''} />;
+                  if (!r.diferencia || !fila || !onFacturaCambiada || !esperado?.moneda) return null;
+                  return (
+                    <DiferenciaEnCargos fila={fila} folio={esperado.folio} moneda={esperado.moneda} diferencia={r.diferencia} difOps={r.difOps}
+                      onAplicado={(plan) => { setAplicadas((m) => new Map(m).set(a.url, plan)); onFacturaCambiada(plan.facturaId, plan.datosFactura); }} />
+                  );
+                }} />
+            ))}
           </ul>
         )}
       {revisables.length > 0 && imagenes > 0 && <p className="rdf-resumen">{imagenes === 1 ? '1 imagen no se revisa' : `${imagenes} imágenes no se revisan`}: solo los PDF y XML se pueden leer.</p>}

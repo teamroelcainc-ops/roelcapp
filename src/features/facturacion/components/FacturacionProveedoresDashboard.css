@@ -502,6 +502,8 @@
 /* ✅ V00481: moneda fija del proveedor, avisos, cancelación y Editar desde el detalle de la operación */
 .modal-overlay.fpd-detras-editor { z-index: 900; }
 .fpd-moneda-fija { display: block; width: 100%; box-sizing: border-box; padding: 10px; border: 1px dashed #30363d; border-radius: 6px; background-color: #010409; cursor: default; }
+.fpd-total-fijo { color: #f0f6fc; font-weight: 700; text-align: right; } /* ✅ V00519: el total sale de las operaciones */
+.fpd-bloqueo-nota { display: block; margin-top: 4px; color: #8b949e; font-size: 0.74rem; }
 .fpd-edit-aviso:empty { display: none; }
 .fpd-aviso-crear { margin: -12px 0 20px; }
 .fpd-aviso-moneda { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }

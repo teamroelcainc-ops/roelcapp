@@ -10,7 +10,7 @@ import type { ItemPdf } from './leerFacturaPdf';
 const doc = (n: string) => { const r = leerFacturaPdf((fixture as Record<string, ItemPdf[][]>)[n]); if (!r.ok) throw new Error(r.error); return r.doc; };
 const extranjero = { nombre: 'Cliente Extranjero, Inc.', rfc: '123456789', moneda: 'USD' as const };
 const I8663: FacturaEsperada = {
-  folio: 'I8663', cliente: extranjero, moneda: 'USD', subtotal: 275,
+  folio: 'I8663', cliente: extranjero, moneda: 'USD', monto: 275,
   ops: [{ ref: 'TR-271026-026', importe: 150, tc: 0 }, { ref: 'TR-271026-010', importe: 50, tc: 0 }, { ref: 'TR-271026-014', importe: 75, tc: 0 }],
 };
 const errores = (e: FacturaEsperada, n = 'sit-I8663-usd-3') => compararDocumentoFactura(doc(n), e).hallazgos.filter((h) => h.nivel === 'error').map((h) => h.texto);
@@ -19,7 +19,8 @@ describe('compararDocumentoFactura', () => {
   it('coincide: número, cliente (por Tax ID), operaciones, costos y subtotal', () => {
     const r = compararDocumentoFactura(doc('sit-I8663-usd-3'), I8663);
     expect(r.coincide).toBe(true);
-    expect(r.hallazgos.map((h) => h.campo)).toEqual(['folio', 'cliente', 'operaciones', 'importes', 'subtotal']);
+    expect(r.hallazgos.map((h) => h.campo)).toEqual(['folio', 'cliente', 'operaciones', 'importes', 'total']);
+    expect(r.diferencia).toBeNull();
   });
   it('otro número, otro cliente, otra moneda', () => {
     expect(errores({ ...I8663, folio: 'I8662' })).toEqual(['El número no es el mismo: el documento es la factura I8663 y en el formulario dice I8662.']);
@@ -33,26 +34,43 @@ describe('compararDocumentoFactura', () => {
     expect(errores(e)).toContain('Esas no son las operaciones que van en esa factura: el documento trae TR-271026-014, que no está en la factura; la factura tiene TR-271026-099, que no está en el documento.');
   });
   it('costo de una operación y subtotal distintos', () => {
-    const e = { ...I8663, subtotal: 270, ops: [I8663.ops[0], { ...I8663.ops[1], importe: 45 }, I8663.ops[2]] };
+    const e = { ...I8663, monto: 270, ops: [I8663.ops[0], { ...I8663.ops[1], importe: 45 }, I8663.ops[2]] };
     expect(errores(e)).toEqual([
       'El costo no concuerda: TR-271026-010: el documento cobra 50.00 USD y la factura 45.00 (diferencia +5.00).',
-      'Ese subtotal no concuerda con la factura: el documento dice 275.00 USD y la factura 270.00 USD (diferencia +5.00).',
+      'Ese total no concuerda con la factura: el documento dice 275.00 USD y la factura 270.00 USD (diferencia +5.00).',
     ]);
+    // ✅ V00519: la diferencia y en qué operación está (para ponerla en costos adicionales).
+    const r = compararDocumentoFactura(doc('sit-I8663-usd-3'), e);
+    expect(r.diferencia).toEqual({ base: 'total', documento: 275, app: 270, monto: 5 });
+    expect(r.difOps).toEqual([{ refs: ['TR-271026-010'], documento: 50, app: 45, monto: 5 }]);
   });
-  it('dos referencias en un concepto se suman; con IVA compara el subtotal y avisa el total', () => {
+  it('dos referencias en un concepto se suman; con IVA, si la app lleva el subtotal también coincide (V00519)', () => {
     const r = compararDocumentoFactura(doc('sit-F1072-mxn-iva'), {
-      folio: 'F1072', cliente: { nombre: 'CLIENTE NACIONAL UNO SA DE CV', rfc: 'CNU820506AB1', moneda: 'MXN' }, moneda: 'MXN', subtotal: 135000,
+      folio: 'F1072', cliente: { nombre: 'CLIENTE NACIONAL UNO SA DE CV', rfc: 'CNU820506AB1', moneda: 'MXN' }, moneda: 'MXN', monto: 135000,
       ops: [{ ref: 'TR-221026-006', importe: 100000, tc: 0 }, { ref: 'FL-201026-001', importe: 35000, tc: 0 }],
     });
     expect(r.coincide).toBe(true);
-    expect(r.hallazgos.find((h) => h.campo === 'total')?.texto).toContain('Total con impuestos: 156,600.00 MXN');
+    expect(r.hallazgos.find((h) => h.campo === 'total')?.texto).toBe('Subtotal: 135,000.00 MXN. La factura de la app no lleva los impuestos; el documento con impuestos da 156,600.00 MXN.');
+    // La app con el total (con IVA): también coincide, y los costos por operación con impuestos.
+    const conIva = compararDocumentoFactura(doc('sit-F1072-mxn-iva'), {
+      folio: 'F1072', cliente: { nombre: 'CLIENTE NACIONAL UNO SA DE CV', rfc: 'CNU820506AB1', moneda: 'MXN' }, moneda: 'MXN', monto: 156600,
+      ops: [{ ref: 'TR-221026-006', importe: 116000, tc: 0 }, { ref: 'FL-201026-001', importe: 40600, tc: 0 }],
+    });
+    expect(conIva.coincide).toBe(true);
+    expect(conIva.hallazgos.find((h) => h.campo === 'total')?.texto).toBe('Total: 156,600.00 MXN.');
+    // Ni total ni subtotal: la diferencia es contra el más cercano (aquí el subtotal).
+    const mal = compararDocumentoFactura(doc('sit-F1072-mxn-iva'), {
+      folio: 'F1072', cliente: { nombre: 'CLIENTE NACIONAL UNO SA DE CV', rfc: 'CNU820506AB1', moneda: 'MXN' }, moneda: 'MXN', monto: 134000,
+      ops: [{ ref: 'TR-221026-006', importe: 99000, tc: 0 }, { ref: 'FL-201026-001', importe: 35000, tc: 0 }],
+    });
+    expect(mal.diferencia).toEqual({ base: 'subtotal', documento: 135000, app: 134000, monto: 1000 });
   });
   it('en pesos con otro TC lo dice; el Invoice de Roelca Inc compara el cliente por nombre', () => {
-    const a = errores({ folio: 'A5756', cliente: { nombre: 'Cliente Nacional Dos', rfc: 'CND040604XY2', moneda: 'MXN' }, moneda: 'MXN', subtotal: 2051.5, ops: [{ ref: 'LO-261026-001', importe: 2051.5, tc: 18.65 }] }, 'sit-A5756-mxn-tc');
+    const a = errores({ folio: 'A5756', cliente: { nombre: 'Cliente Nacional Dos', rfc: 'CND040604XY2', moneda: 'MXN' }, moneda: 'MXN', monto: 2051.5, ops: [{ ref: 'LO-261026-001', importe: 2051.5, tc: 18.65 }] }, 'sit-A5756-mxn-tc');
     expect(a[0]).toBe('El costo no concuerda: LO-261026-001: el documento cobra 2,053.37 MXN y la factura 2,051.50 (diferencia +1.87). El documento usa TC 18.667 y la operación 18.65.');
-    const inv = compararDocumentoFactura(doc('invoice-39838-usd'), { folio: '39838', cliente: { nombre: 'CLIENTE AMERICANO LOGISTICS INC', rfc: '', moneda: 'USD' }, moneda: 'USD', subtotal: 210, ops: [{ ref: 'TR-271026-006', importe: 210, tc: 0 }] });
+    const inv = compararDocumentoFactura(doc('invoice-39838-usd'), { folio: '39838', cliente: { nombre: 'CLIENTE AMERICANO LOGISTICS INC', rfc: '', moneda: 'USD' }, moneda: 'USD', monto: 210, ops: [{ ref: 'TR-271026-006', importe: 210, tc: 0 }] });
     expect(inv.coincide).toBe(true);
-    expect(errores({ folio: '39838', cliente: { nombre: 'Otro Cliente', rfc: '', moneda: 'USD' }, moneda: 'USD', subtotal: 210, ops: [{ ref: 'TR-271026-006', importe: 210, tc: 0 }] }, 'invoice-39838-usd')[0]).toContain('El cliente no es el mismo');
+    expect(errores({ folio: '39838', cliente: { nombre: 'Otro Cliente', rfc: '', moneda: 'USD' }, moneda: 'USD', monto: 210, ops: [{ ref: 'TR-271026-006', importe: 210, tc: 0 }] }, 'invoice-39838-usd')[0]).toContain('El cliente no es el mismo');
   });
   it('lo esperado: de las operaciones seleccionadas y de una factura registrada', () => {
     const op = { ref: 'tr-271026-26', montoConvenioCliente: 150, monedaConvenioCliente: ID_USD, facturadoEnCobrar: ID_USD, tipoCambioDia: 18 };

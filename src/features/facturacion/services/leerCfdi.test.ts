@@ -2,7 +2,7 @@
 // ✅ V00513 — Lector de XML de CFDI. Los XML de prueba copian la FORMA de los del SIT
 // (CFDI 4.0, descripción con saltos de línea), con datos ficticios.
 import { describe, expect, it } from 'vitest';
-import { datosDeDescripcion, leerCfdi, normalizarRef } from './leerCfdi';
+import { datosDeDescripcion, esRefOperacion, leerCfdi, normalizarRef } from './leerCfdi';
 
 const xml = (atributos: string, receptor: string, conceptos: string, uuid = '7E3F034C-9061-4945-9B33-7240FB07E80E') => `<?xml version="1.0" encoding="UTF-8"?>
 <cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" Version="4.0" ${atributos}>
@@ -96,5 +96,10 @@ describe('normalizarRef / datosDeDescripcion', () => {
   it('un concepto puede traer varias referencias (o ninguna)', () => {
     expect(datosDeDescripcion('CRUCES TR-010126-1 Y TR-010126-002').refs).toEqual(['TR-010126-001', 'TR-010126-002']);
     expect(datosDeDescripcion('SERVICIO SIN REFERENCIA').refs).toEqual([]);
+    // ✅ V00519: también las referencias viejas (AppSheet) "TR46028-05".
+    expect(datosDeDescripcion('MOVIMIENTO EN NUEVO LAREDO CARGADO TR46028-05 19/01/2026 CAJA 1096 535963738').refs).toEqual(['TR46028-05']);
+    expect(esRefOperacion('TR46028-05')).toBe(true);
+    expect(esRefOperacion(' lo-271026-26 ')).toBe(true);
+    expect(esRefOperacion('TR-27102-026')).toBe(false);
   });
 });

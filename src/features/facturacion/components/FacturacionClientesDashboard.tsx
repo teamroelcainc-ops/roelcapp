@@ -422,6 +422,10 @@ export const FacturacionClientesDashboard = () => {
     setFacturasGlobales(prev => aplicarEscriturasDocs(prev, escrituras));
     setFacturaViendo((prev: Record<string, unknown> | null) => (prev && idsDeFila(prev).includes(primera.id)) ? { ...prev, ...primera.campos } : prev);
   };
+  /** ✅ V00519: la factura cambió (diferencia en costos adicionales): la Ficha abierta la refleja al instante (la lista llega por el listener). */
+  const aplicarFacturaLocal = (id: string, campos: Record<string, unknown>): void => {
+    setFacturaViendo((prev: Record<string, unknown> | null) => (prev && idsDeFila(prev).includes(id)) ? { ...prev, ...campos } : prev);
+  };
   /** Facturar: sube los documentos elegidos y los AGREGA a los de la factura (el folio pudo existir). Devuelve los campos para la fila. */
   const subirDocsAlFacturar = async (idFactura: string, folio: string): Promise<Record<string, unknown>> => {
     if (adjuntosFacturar.length === 0 || !idFactura) return {};
@@ -999,7 +1003,7 @@ export const FacturacionClientesDashboard = () => {
     cliente: clientesParaCotejo.get(String(clienteFacturaId)) ?? null,
     moneda: monedaFacturacion,
     ops: opsDeSeleccion().map((op) => opEsperadaDeOperacion(op, monedaFacturacion)),
-    subtotal: monedaFacturacion ? totalSeleccionEnMoneda : null,
+    monto: monedaFacturacion ? totalSeleccionEnMoneda : null, // ✅ V00519
   });
   // …o la factura ya registrada (Documentos de la factura).
   const esperadoDeFila = (fila: Record<string, unknown>): FacturaEsperada => {
@@ -1009,7 +1013,7 @@ export const FacturacionClientesDashboard = () => {
       cliente: clientesParaCotejo.get(String(fila.clienteId ?? '')) ?? null,
       moneda,
       ops: opsEsperadasDeFactura(fila, moneda),
-      subtotal: totalDeGrupo(fila),
+      monto: totalDeGrupo(fila), // ✅ V00519
     };
   };
 
@@ -4066,7 +4070,8 @@ export const FacturacionClientesDashboard = () => {
                 </div>
 
                 {/* ✅ V00381: documento de la factura bien visible · ✅ V00516: con "Analizar documento" */}
-                <DocumentoFichaCliente key={String(facturaViendo.id ?? facturaViendo.invoice ?? '')} archivos={docsDeFactura(facturaViendo)} esperado={esperadoDeFila(facturaViendo)} onAbrir={() => setDocsFacturaDe(facturaViendo)} />
+                <DocumentoFichaCliente key={String(facturaViendo.id ?? facturaViendo.invoice ?? '')} archivos={docsDeFactura(facturaViendo)} esperado={esperadoDeFila(facturaViendo)} onAbrir={() => setDocsFacturaDe(facturaViendo)}
+                  fila={facturaViendo} onFacturaCambiada={aplicarFacturaLocal} />{/* ✅ V00519: la diferencia en costos adicionales */}
                 <div className="fcd-x186"><hr className="fcd-x187" /></div>
 
                 <div className="fcd-x188">
@@ -4239,19 +4244,28 @@ export const FacturacionClientesDashboard = () => {
                 facturas a nombre del cliente equivocado; Pagos lo hereda). */}
             <div className="fcd-x241" style={{ display: 'block' }}>
               <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '4px', fontWeight: 600, textTransform: 'uppercase' }}>Cliente de la factura</label>
-              <SelectBuscable
-                opciones={empresasList
-                  .slice()
-                  .sort((a: any, b: any) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' }))
-                  .map((e: any) => ({ value: e.id, label: String(e.nombre || e.id) }))}
-                value={editClienteId}
-                onChange={(id: string) => {
-                  // ✅ V00481: otro cliente con otra moneda → el total sugerido pasa a esa moneda.
-                  if (monedaClienteDe(id) !== monedaClienteDe(editClienteId)) setEditTotal(String(totalEditPara(facturaEditando, id)));
-                  setEditClienteId(id);
-                }}
-                placeholder="Buscar cliente..."
-              />
+              {/* ✅ V00519: el cliente NO se cambia aquí: sale de las operaciones (para cambiarlo, cámbialo en cada
+                  operación de la factura). Solo se elige si la factura todavía no tiene cliente. */}
+              {facturaEditando.clienteId ? (
+                <>
+                  <span className="fcd-moneda-fija" title="Para cambiarlo, cámbialo en cada operación de la factura">{String(facturaEditando.clienteNombre || getNombreCliente(editClienteId) || editClienteId)}</span>
+                  <small className="fcd-bloqueo-nota">Para cambiar el cliente, cámbialo primero en cada operación de la factura.</small>
+                </>
+              ) : (
+                <SelectBuscable
+                  opciones={empresasList
+                    .slice()
+                    .sort((a: any, b: any) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' }))
+                    .map((e: any) => ({ value: e.id, label: String(e.nombre || e.id) }))}
+                  value={editClienteId}
+                  onChange={(id: string) => {
+                    // ✅ V00481: otro cliente con otra moneda → el total sugerido pasa a esa moneda.
+                    if (monedaClienteDe(id) !== monedaClienteDe(editClienteId)) setEditTotal(String(totalEditPara(facturaEditando, id)));
+                    setEditClienteId(id);
+                  }}
+                  placeholder="Buscar cliente..."
+                />
+              )}
               {Array.isArray(facturaEditando.__groupIds) && facturaEditando.__groupIds.length > 1 && (
                 <span> · <b className="fcd-x242">{facturaEditando.__groupIds.length} documentos agrupados</b> (el total y los archivos se guardan en el primero)</span>
               )}
@@ -4301,13 +4315,15 @@ export const FacturacionClientesDashboard = () => {
                     const pagos = tienePagosAplicados(facturaEditando) ? ' Tiene pagos aplicados: revisa su saldo en Pagos.' : '';
                     const monNueva = monedaClienteDe(editClienteId);
                     const recalculado = monNueva ? totalSugeridoEn(monNueva, facturaEditando.operacionesGuardadas) > 0 : false;
-                    return `${aviso} Al guardar queda en ${nombreMoneda(monNueva)}; ${recalculado ? 'el total sugerido es el de sus operaciones en esa moneda' : 'sus operaciones no traen importe en esa moneda: captura el total'}. Revísalo.${pagos}`;
+                    return `${aviso} Al guardar queda en ${nombreMoneda(monNueva)}; ${recalculado ? 'el total sugerido es el de sus operaciones en esa moneda' : 'sus operaciones no traen importe en esa moneda: corrige el costo en cada operación'}. Revísalo.${pagos}`;
                   })()} />
                 )}
               </div>
               <div>
                 <label className="fcd-x146">TOTAL FACTURADO</label>
-                <input className="fcd-x245" type="number" step="any" value={editTotal} onChange={e => setEditTotal(e.target.value)} placeholder="0.00" />
+                {/* ✅ V00519: el monto NO se cambia aquí: sale de las operaciones */}
+                <span className="fcd-moneda-fija fcd-total-fijo" title="El total sale de sus operaciones">{(Number(editTotal) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <small className="fcd-bloqueo-nota">Sale de sus operaciones: para cambiarlo, corrige el costo en cada operación (o pon la diferencia con Analizar documento).</small>
               </div>
               <div>
                 <label className="fcd-x146">FACTURA CCP (Opcional)</label>

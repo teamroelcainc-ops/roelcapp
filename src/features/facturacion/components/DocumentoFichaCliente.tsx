@@ -16,15 +16,18 @@ interface Props {
   archivos: readonly ArchivoGuardado[];
   esperado: FacturaEsperada;
   onAbrir: () => void;
+  /** ✅ V00519: la factura, para poner la diferencia con el documento en costos adicionales. */
+  fila?: Record<string, unknown>;
+  onFacturaCambiada?: (facturaId: string, campos: Record<string, unknown>) => void;
 }
 
-export default function DocumentoFichaCliente({ archivos, esperado, onAbrir }: Props) {
+export default function DocumentoFichaCliente({ archivos, esperado, onAbrir, fila, onFacturaCambiada }: Props) {
   const [analizando, setAnalizando] = useState(false);
   const hayRevisables = archivos.some(esGuardadoRevisable);
   return (
     <>
       <TarjetaDocumentoFactura archivos={archivos} onAbrir={onAbrir} onAnalizar={hayRevisables ? () => setAnalizando((v) => !v) : undefined} analizando={analizando} />
-      {analizando && <RevisionDocumentosGuardados archivos={archivos} esperado={esperado} onCerrar={() => setAnalizando(false)} />}
+      {analizando && <RevisionDocumentosGuardados archivos={archivos} esperado={esperado} onCerrar={() => setAnalizando(false)} fila={fila} onFacturaCambiada={onFacturaCambiada} />}
     </>
   );
 }

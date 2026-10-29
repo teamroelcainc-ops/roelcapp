@@ -19,7 +19,7 @@ const XML = `<?xml version="1.0" encoding="UTF-8"?>
 </cfdi:Comprobante>`;
 
 const esperado: FacturaEsperada = {
-  folio: 'I8663', moneda: 'USD', subtotal: 200,
+  folio: 'I8663', moneda: 'USD', monto: 200,
   cliente: { nombre: 'Cliente Extranjero, Inc.', rfc: '123456789', moneda: 'USD' },
   ops: [{ ref: 'TR-271026-026', importe: 150, tc: 0 }, { ref: 'TR-271026-010', importe: 50, tc: 0 }],
 };
@@ -58,11 +58,11 @@ describe('Analizar documento', () => {
   });
   it('dice qué no coincide', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => respuesta(XML)));
-    render(<DocumentoFichaCliente archivos={[{ url: 'https://x/otro', nombre: 'I8663.xml' }]} esperado={{ ...esperado, folio: 'I8670', subtotal: 210 }} onAbrir={() => {}} />);
+    render(<DocumentoFichaCliente archivos={[{ url: 'https://x/otro', nombre: 'I8663.xml' }]} esperado={{ ...esperado, folio: 'I8670', monto: 210 }} onAbrir={() => {}} />);
     fireEvent.click(screen.getByRole('button', { name: 'Analizar documento' }));
     expect(await screen.findByText(/no coincide con la factura \(2 diferencias\)/)).toBeTruthy();
     expect(screen.getByText(/El número no es el mismo/)).toBeTruthy();
-    expect(screen.getByText(/Ese subtotal no concuerda con la factura/)).toBeTruthy();
+    expect(screen.getByText(/Ese total no concuerda con la factura/)).toBeTruthy();
   });
   it('si no se pudo descargar lo dice y lo reintenta al volver a analizar', async () => {
     const fetchSim = vi.fn(async () => respuesta('', 404));

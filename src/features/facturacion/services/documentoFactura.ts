@@ -18,7 +18,7 @@ import { aCentavos, r2 } from '../../../shared/dominio/numeros';
 import type { ClienteCotejo } from './cotejoCfdi';
 import { claveNombre, importeEn, mismoNombre, RFC_GENERICOS, soloAlfanumerico } from './cotejoCfdi';
 import type { Cfdi } from './leerCfdi';
-import { normalizarRef } from './leerCfdi';
+import { esRefOperacion, normalizarRef } from './leerCfdi';
 import type { DocumentoFactura } from './leerFacturaPdf';
 
 type Datos = Record<string, unknown>;
@@ -33,15 +33,33 @@ export interface FacturaEsperada {
   cliente: ClienteCotejo | null;
   moneda: Moneda;
   ops: OpEsperada[];
-  /** Subtotal de la factura en su moneda (null = no se sabe). */
-  subtotal: number | null;
+  /** ✅ V00519: el monto de la factura en la app, en su moneda (null = no se sabe). Se compara con el TOTAL
+   *  del documento; si la app lleva el subtotal (sin impuestos), también cuenta como bien. */
+  monto: number | null;
 }
 
 export type NivelHallazgo = 'ok' | 'error' | 'aviso' | 'info';
 export type CampoHallazgo = 'folio' | 'cliente' | 'moneda' | 'operaciones' | 'importes' | 'subtotal' | 'total';
 export interface Hallazgo { campo: CampoHallazgo; nivel: NivelHallazgo; texto: string }
 
-export interface RevisionDocumento { coincide: boolean; hallazgos: Hallazgo[] }
+/** ✅ V00519: la diferencia del documento contra la factura (documento − app), en la moneda de la factura. */
+export interface DiferenciaDocumento {
+  /** Con qué se comparó: el total del documento o su subtotal (el que está más cerca de la app). */
+  base: 'total' | 'subtotal';
+  documento: number;
+  app: number;
+  monto: number;
+}
+/** ✅ V00519: un concepto cuyo costo no concuerda (para proponer en qué operación va la diferencia). */
+export interface DiferenciaOp { refs: string[]; documento: number; app: number; monto: number }
+
+export interface RevisionDocumento {
+  coincide: boolean;
+  hallazgos: Hallazgo[];
+  /** null = el monto coincide (o no se pudo comparar). */
+  diferencia: DiferenciaDocumento | null;
+  difOps: DiferenciaOp[];
+}
 
 const txt = (v: unknown): string => (v === null || v === undefined || typeof v === 'object' ? '' : String(v).trim());
 const lista = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
@@ -79,7 +97,7 @@ export const opsEsperadasDeFactura = (f: Datos, moneda: Moneda): OpEsperada[] =>
     if (!ref || porRef.has(ref)) return;
     porRef.set(ref, { ref, importe: moneda ? r2(totalNativoDeOperaciones(moneda, [r])) : null, tc: 0 });
   });
-  lista(f.operaciones).map(txt).filter((x) => /^(TR|LO|FL|RE)-\d{6}-\d{1,3}$/i.test(x)).forEach((x) => {
+  lista(f.operaciones).map(txt).filter(esRefOperacion).forEach((x) => { // ✅ V00519: también las viejas
     const ref = normalizarRef(x);
     if (!porRef.has(ref)) porRef.set(ref, { ref, importe: null, tc: 0 });
   });
@@ -146,9 +164,15 @@ export const compararDocumentoFactura = (d: DocumentoFactura, e: FacturaEsperada
     h.push({ campo: 'operaciones', nivel: 'ok', texto: `Operaciones: ${refsDoc.length === 1 ? 'la del documento es la de' : `las ${refsDoc.length} del documento son las de`} la factura.` });
   }
 
-  // Costo de cada operación (conceptos cuyas referencias están en la factura)
+  // Subtotal del documento (o la suma de sus conceptos) y, si trae impuestos, cuánto pesan (total / subtotal).
+  const subDoc = d.subtotal ?? (d.conceptos.every((c) => c.importe !== null) && d.conceptos.length ? r2(d.conceptos.reduce((s, c) => s + (c.importe ?? 0), 0)) : null);
+  const factor = d.total !== null && subDoc !== null && subDoc > 0 && aCentavos(d.total) !== aCentavos(subDoc) ? d.total / subDoc : 1;
+
+  // Costo de cada operación (conceptos cuyas referencias están en la factura). ✅ V00519: el concepto
+  // del documento va sin impuestos; si la app lleva el importe con impuestos, también coincide.
   const porRef = new Map(e.ops.map((o) => [o.ref, o] as const));
   const difs: string[] = [];
+  const difOps: DiferenciaOp[] = [];
   let comparados = 0;
   d.conceptos.forEach((c) => {
     if (c.importe === null || c.refs.length === 0) return;
@@ -156,26 +180,40 @@ export const compararDocumentoFactura = (d: DocumentoFactura, e: FacturaEsperada
     if (ops.some((o) => !o || o.importe === null)) return;
     comparados++;
     const app = r2(ops.reduce((s, o) => s + (o?.importe ?? 0), 0));
-    if (aCentavos(app) === aCentavos(c.importe)) return;
-    const dif = r2(c.importe - app);
+    const conImpuestos = r2(c.importe * factor);
+    if (aCentavos(app) === aCentavos(c.importe) || (factor !== 1 && aCentavos(app) === aCentavos(conImpuestos))) return;
+    const docRef = factor !== 1 && Math.abs(conImpuestos - app) < Math.abs(c.importe - app) ? conImpuestos : c.importe;
+    const dif = r2(docRef - app);
+    difOps.push({ refs: c.refs, documento: docRef, app, monto: dif });
     const tcOp = ops[0]?.tc ?? 0;
     const pista = moneda === 'MXN' && c.tc > 0 && tcOp > 0 && Math.abs(c.tc - tcOp) > 0.00005 ? ` El documento usa TC ${c.tc} y la operación ${tcOp}.` : '';
-    difs.push(`${c.refs.join(' + ')}: el documento cobra ${conMoneda(c.importe, moneda)} y la factura ${dinero(app)} (diferencia ${dif > 0 ? '+' : ''}${dinero(dif)}).${pista}`);
+    difs.push(`${c.refs.join(' + ')}: el documento cobra ${conMoneda(docRef, moneda)}${docRef !== c.importe ? ' con impuestos' : ''} y la factura ${dinero(app)} (diferencia ${dif > 0 ? '+' : ''}${dinero(dif)}).${pista}`);
   });
   if (difs.length) difs.forEach((t) => h.push({ campo: 'importes', nivel: 'error', texto: `El costo no concuerda: ${t}` }));
   else if (comparados > 0) h.push({ campo: 'importes', nivel: 'ok', texto: `Costo de cada operación: ${comparados === 1 ? 'coincide' : `coinciden las ${comparados}`}.` });
 
-  // Subtotal (y el total con impuestos, solo informativo)
-  const subDoc = d.subtotal ?? (d.conceptos.every((c) => c.importe !== null) && d.conceptos.length ? r2(d.conceptos.reduce((s, c) => s + (c.importe ?? 0), 0)) : null);
-  if (subDoc === null) h.push({ campo: 'subtotal', nivel: 'aviso', texto: 'No se encontró el subtotal en el documento.' });
-  else if (e.subtotal === null) h.push({ campo: 'subtotal', nivel: 'aviso', texto: `El documento dice subtotal ${conMoneda(subDoc, d.moneda || moneda)}; la factura no tiene subtotal para comparar.` });
-  else if (aCentavos(subDoc) !== aCentavos(e.subtotal)) {
-    const dif = r2(subDoc - e.subtotal);
-    h.push({ campo: 'subtotal', nivel: 'error', texto: `Ese subtotal no concuerda con la factura: el documento dice ${conMoneda(subDoc, d.moneda || moneda)} y la factura ${conMoneda(e.subtotal, moneda)} (diferencia ${dif > 0 ? '+' : ''}${dinero(dif)}).` });
-  } else h.push({ campo: 'subtotal', nivel: 'ok', texto: `Subtotal: ${conMoneda(subDoc, moneda)}.` });
-  if (d.total !== null && subDoc !== null && aCentavos(d.total) !== aCentavos(subDoc)) {
-    h.push({ campo: 'total', nivel: 'info', texto: `Total con impuestos: ${conMoneda(d.total, d.moneda || moneda)} (los impuestos los controla el SIT; la app compara el subtotal).` });
+  // ✅ V00519: el monto de la factura se compara con el TOTAL del documento; si la app lleva el subtotal
+  // (sin impuestos), también está bien. Si no coincide ninguno, la diferencia es contra el más cercano.
+  const mDoc = d.moneda || moneda;
+  const bases = ([['total', d.total], ['subtotal', subDoc]] as const)
+    .flatMap(([base, v]) => (v === null ? [] : [{ base, v }]))
+    .filter((x, i, a) => a.findIndex((y) => aCentavos(y.v) === aCentavos(x.v)) === i);
+  let diferencia: DiferenciaDocumento | null = null;
+  if (bases.length === 0) h.push({ campo: 'total', nivel: 'aviso', texto: 'No se encontró el total en el documento.' });
+  else if (e.monto === null) h.push({ campo: 'total', nivel: 'aviso', texto: `El documento dice total ${conMoneda(bases[0].v, mDoc)}; la factura no tiene monto para comparar.` });
+  else {
+    const app = e.monto;
+    const igual = bases.find((b) => aCentavos(b.v) === aCentavos(app));
+    if (igual?.base === 'total') h.push({ campo: 'total', nivel: 'ok', texto: `Total: ${conMoneda(igual.v, moneda)}.` });
+    else if (igual) {
+      h.push({ campo: 'total', nivel: 'ok', texto: `Subtotal: ${conMoneda(igual.v, moneda)}. La factura de la app no lleva los impuestos; el documento con impuestos da ${conMoneda(d.total ?? igual.v, mDoc)}.` });
+    } else {
+      const cerca = bases.reduce((a, b) => (Math.abs(b.v - app) < Math.abs(a.v - app) ? b : a));
+      const dif = r2(cerca.v - app);
+      diferencia = { base: cerca.base, documento: cerca.v, app, monto: dif };
+      h.push({ campo: 'total', nivel: 'error', texto: `${cerca.base === 'total' ? 'Ese total' : 'Ese subtotal'} no concuerda con la factura: el documento dice ${conMoneda(cerca.v, mDoc)} y la factura ${conMoneda(app, moneda)} (diferencia ${dif > 0 ? '+' : ''}${dinero(dif)}).` });
+    }
   }
 
-  return { coincide: !h.some((x) => x.nivel === 'error'), hallazgos: h };
+  return { coincide: !h.some((x) => x.nivel === 'error'), hallazgos: h, diferencia, difOps };
 };

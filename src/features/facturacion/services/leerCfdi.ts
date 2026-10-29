@@ -46,9 +46,16 @@ export type ResultadoLectura =
   | { ok: true; cfdi: Cfdi }
   | { ok: false; error: string };
 
-const REF_RE = /\b(TR|LO|FL|RE)-(\d{6})-(\d{1,3})\b/gi;
+// ✅ V00519: también las referencias VIEJAS (AppSheet), sin guion después del tipo: "TR46028-05".
+const PATRON_REF = '\\b(?:(TR|LO|FL|RE)-(\\d{6})-(\\d{1,3})|(?:TR|LO|FL|RE)\\d{4,5}-\\d{1,3})\\b';
+/** Expresión nueva en cada uso (lleva la bandera g: no se comparte su lastIndex). */
+export const refsRegex = (): RegExp => new RegExp(PATRON_REF, 'gi');
+const REF_RE = refsRegex();
 
-/** "tr-271026-26" → "TR-271026-026" (la app guarda ambas formas). */
+/** ¿Es una referencia de operación (nueva "TR-271026-026" o vieja "TR46028-05")? */
+export const esRefOperacion = (v: string): boolean => new RegExp(`^\\s*${PATRON_REF}\\s*$`, 'i').test(v);
+
+/** "tr-271026-26" → "TR-271026-026" (la app guarda ambas formas); las viejas, en mayúsculas. */
 export const normalizarRef = (ref: string): string => {
   const m = /^\s*(TR|LO|FL|RE)-(\d{6})-(\d{1,3})\s*$/i.exec(ref);
   return m ? `${m[1].toUpperCase()}-${m[2]}-${m[3].padStart(3, '0')}` : ref.trim().toUpperCase();
