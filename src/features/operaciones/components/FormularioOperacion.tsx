@@ -45,7 +45,7 @@ import { AlertaDocumentos } from '../../documentos/AlertaDocumentos';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
 import { validarFormularioConfigurable } from '../../formularios/configFormularios';
-import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
+import { ajusteOperadorPorStatus } from '../../../utils/sueldoFalso'; // ✅ V00511: sueldo y diesel de Falso
 import { ajusteConvenioAlCambiarStatus, avisarAjusteConvenio } from '../services/convenioFalsoDatos'; // ✅ V00509
 import { cargarCtxCobroPuente, nombresAduana, normPuente } from '../../../utils/puenteColombia';
 import { avisarCrucePuente } from '../../puentes/services/crucePuente'; // ✅ V00470
@@ -1621,14 +1621,15 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     if (Number(formData.sueldoOperador) !== 0) setFormData(prev => ({ ...prev, sueldoOperador: 0, sueldoMitadAplicada: false }));
   }, [esTrompoOp, formData.sueldoOperador, initialData, sueldoManualForm]);
 
-  // ✅ V00387: con el estatus en FALSO el Sueldo Operador se muestra (y guarda) a la mitad
+  // ✅ V00387 · V00511: con el estatus en FALSO el Sueldo Operador y el Combustible se muestran (y
+  //   guardan) con la regla de Falso: sueldo fijo ($200 cruce / $150 movimiento) y 3 galones.
   useEffect(() => {
     if (!statusPreview) return;
     setFormData(prev => {
-      const aj = ajusteSueldoPorStatus(prev as Record<string, unknown>, statusPreview);
+      const aj = ajusteOperadorPorStatus(prev as Record<string, unknown>, statusPreview);
       return Object.keys(aj).length ? { ...prev, ...aj } : prev;
     });
-  }, [statusPreview, formData.sueldoOperador]);
+  }, [statusPreview, formData.sueldoOperador, formData.combustible]);
 
   // ✅ V00386: al CAMBIAR el convenio (también en una operación ya guardada) o al
   //   pulsar "↻ Actualizar convenio", se traen TODOS los datos ligados a él:
@@ -1798,7 +1799,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     setFormData(prev => ({
       ...prev,
       ...(sueldo !== null && !isNaN(sueldo) && (prev as { sueldoManual?: unknown }).sueldoManual !== true ? { sueldoOperador: esTrompoOp ? 0 : sueldo, sueldoMitadAplicada: false } : {}), // ✅ V00387 · V00406: trompo = $0 · V00433: respeta el cambio manual con motivo
-      ...(combustible !== null && !isNaN(combustible) ? { combustible: Math.round(combustible) } : {}),
+      ...(combustible !== null && !isNaN(combustible) ? { combustible: Math.round(combustible), combustibleFalsoAplicado: false } : {}), // ✅ V00511: en Falso se vuelve a aplicar
     }));
   }, [formData.convenio, listaConveniosCliente, gastosIncluidosLocal, rendimientoLocal, initialData, refrescoConvenio, esTrompoOp]);
 
@@ -2163,7 +2164,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
         montoConvenioCliente: nuevo,
         monedaConvenioCliente: c.monedaMaestro || prev.monedaConvenioCliente,
         ...(v.sueldo !== null ? { sueldoOperador: v.sueldo, sueldoMitadAplicada: false } : {}), // ✅ V00387
-        ...(v.combustible !== null ? { combustible: v.combustible } : {}),
+        ...(v.combustible !== null ? { combustible: v.combustible, combustibleFalsoAplicado: false } : {}), // ✅ V00511
       }));
       // vuelve a derivar servicio / tráfico / carga del convenio
       convMontoAplicadoRef.current = '';
@@ -2456,7 +2457,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
         // ✅ FIX: se guarda el NOMBRE del status (la descripción larga del catálogo
         //    solo es texto de ayuda y estaba filtrándose a la tabla del dashboard)
         statusNombre: statusObj?.nombre || statusObj?.descripcion || statusCalculado || 'Pendiente',
-        ...ajusteSueldoPorStatus({ ...formData, ...datosLimpios }, statusObj?.nombre || statusObj?.descripcion || statusCalculado || ''), // ✅ V00387: Falso = sueldo a la mitad
+        ...ajusteOperadorPorStatus({ ...formData, ...datosLimpios }, statusObj?.nombre || statusObj?.descripcion || statusCalculado || ''), // ✅ V00387 · V00511: Falso = sueldo fijo y 3 galones
         clienteNombre: searchClientePaga || '', origenNombre: searchOrigen || '',
         destinoNombre: searchDestino || '', remolqueNombre: searchRemolque || '',clienteMercanciaNombre: searchClienteMercancia || '', provServiciosNombre: searchProvServicios || '',
         proveedorUnidadNombre: searchProvTransporte || '', unidadNombre: searchUnidad || '',

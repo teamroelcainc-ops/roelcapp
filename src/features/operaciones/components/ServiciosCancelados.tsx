@@ -25,7 +25,7 @@ import './ServiciosCancelados.css';
 import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
 import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
 import { ModalFechaStatus } from './ModalFechaStatus';
-import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
+import { ajusteOperadorPorStatus } from '../../../utils/sueldoFalso'; // ✅ V00511: sueldo y diesel de Falso
 import { ajusteConvenioAlCambiarStatus, avisarAjusteConvenio } from '../services/convenioFalsoDatos'; // ✅ V00509
 import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
 import { docPorId, nombreEmpresaPdf } from '../../../utils/docPorId';
@@ -678,7 +678,7 @@ const ServiciosCancelados = () => {
       const opRef = doc(db, 'operaciones', String(operacionViendo.id));
       // ✅ V00509: al entrar a Falso, el convenio Falso del cliente (impo / expo); al salir, el de antes.
       const convFalso = await ajusteConvenioAlCambiarStatus(String(operacionViendo.id), statusNombreResuelto);
-      batch.update(opRef, { status: statusId, statusNombre: statusNombreResuelto, ...ajusteSueldoPorStatus(operacionViendo, statusNombreResuelto), ...convFalso.cambios }); // ✅ V00387
+      batch.update(opRef, { status: statusId, statusNombre: statusNombreResuelto, ...ajusteOperadorPorStatus(operacionViendo, statusNombreResuelto), ...convFalso.cambios }); // ✅ V00387
       await batch.commit();
       avisarAjusteConvenio(convFalso);
       if (esStatusVerde(statusNombreResuelto)) registrarVerdeAutomatico({ ...operacionViendo }, statusNombreResuelto, nuevaFechaHora); // ✅ V00402
@@ -766,7 +766,7 @@ const ServiciosCancelados = () => {
       const opRef = doc(db, 'operaciones', String(operacionViendo.id));
       // ✅ V00509: al entrar a Falso, el convenio Falso del cliente (impo / expo); al salir, el de antes.
       const convFalso = await ajusteConvenioAlCambiarStatus(String(operacionViendo.id), statusFinal.nombre);
-      batch.update(opRef, { status: statusFinal.id, statusNombre: statusFinal.nombre, ...ajusteSueldoPorStatus(operacionViendo, statusFinal.nombre), ...convFalso.cambios }); // ✅ V00387
+      batch.update(opRef, { status: statusFinal.id, statusNombre: statusFinal.nombre, ...ajusteOperadorPorStatus(operacionViendo, statusFinal.nombre), ...convFalso.cambios }); // ✅ V00387
       await batch.commit();
       avisarAjusteConvenio(convFalso);
       { const pasoVerde = cadenaResuelta.find((p) => esStatusVerde(p.nombre)); if (pasoVerde) registrarVerdeAutomatico({ ...operacionViendo }, pasoVerde.nombre, fechaHoraLocal); } // ✅ V00402

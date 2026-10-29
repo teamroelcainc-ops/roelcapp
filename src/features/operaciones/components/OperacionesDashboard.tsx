@@ -35,7 +35,7 @@ import { leerOperacionesDeHoy, type DocResumen } from '../services/resumenDiaDat
 import { usePedidosCompletadasHoy } from '../services/pestanaCompletadas'; // ✅ V00456
 import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 import { ModalFechaStatus } from './ModalFechaStatus';
-import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
+import { ajusteOperadorPorStatus } from '../../../utils/sueldoFalso'; // ✅ V00511: sueldo y diesel de Falso
 import { ajusteConvenioAlCambiarStatus, avisarAjusteConvenio } from '../services/convenioFalsoDatos'; // ✅ V00509
 import { avisarCrucePuente, cobroPuenteDelPaso } from '../../puentes/services/crucePuente'; // ✅ V00470
 import { aplicaPeaje, puenteYaCobrado } from '../../../shared/dominio/cobroPuente'; // ✅ V00469
@@ -950,7 +950,7 @@ const OperacionesDashboard = () => {
       const extraSPManual = await cobroParaEscribirSP(cobroSPManual);
       // ✅ V00509: al entrar a Falso, el convenio Falso del cliente (impo / expo); al salir, el de antes.
       const convFalso = await ajusteConvenioAlCambiarStatus(String(operacionViendo._docId || operacionViendo.id), statusNombreResuelto);
-      batch.update(opRef, limpiarUndefined({ status: statusId, statusNombre: statusNombreResuelto, ...extraSPManual, ...ajusteSueldoPorStatus(operacionViendo, statusNombreResuelto), ...convFalso.cambios })); // ✅ V00387: Falso = sueldo a la mitad
+      batch.update(opRef, limpiarUndefined({ status: statusId, statusNombre: statusNombreResuelto, ...extraSPManual, ...ajusteOperadorPorStatus(operacionViendo, statusNombreResuelto), ...convFalso.cambios })); // ✅ V00387 · V00511: Falso = sueldo fijo y 3 galones
 
       await batch.commit();
       avisarAjusteConvenio(convFalso);
@@ -1126,7 +1126,7 @@ const OperacionesDashboard = () => {
             status: statusFinal.id,
             statusNombre: statusFinal.nombre,
             ...extraSaldoPuente,
-            ...ajusteSueldoPorStatus(operacionViendo, statusFinal.nombre), // ✅ V00387: Falso = sueldo a la mitad
+            ...ajusteOperadorPorStatus(operacionViendo, statusFinal.nombre), // ✅ V00387 · V00511: Falso = sueldo fijo y 3 galones
             ...convFalso.cambios,
           }));
 

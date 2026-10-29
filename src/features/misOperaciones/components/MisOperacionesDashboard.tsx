@@ -28,7 +28,7 @@ import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
 import { ChevronLeft, MapPin, Truck, CheckCircle2, Clock } from 'lucide-react';
 import './MisOperacionesDashboard.css';
 import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
-import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
+import { ajusteOperadorPorStatus } from '../../../utils/sueldoFalso'; // ✅ V00511: sueldo y diesel de Falso
 import { ajusteConvenioAlCambiarStatus } from '../../operaciones/services/convenioFalsoDatos'; // ✅ V00509
 import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
 
@@ -243,7 +243,7 @@ export function MisOperacionesDashboard() {
     batch.update(doc(db, 'operaciones', String(opAbierta._docId || opAbierta.id)), {
       status: siguiente.id,
       statusNombre: siguiente.nombre,
-      ...ajusteSueldoPorStatus(opAbierta as Record<string, unknown>, siguiente.nombre), // ✅ V00387: Falso = sueldo a la mitad
+      ...ajusteOperadorPorStatus(opAbierta as Record<string, unknown>, siguiente.nombre), // ✅ V00387 · V00511: Falso = sueldo fijo y 3 galones
       ...convFalso.cambios,
     });
 
@@ -299,7 +299,7 @@ export function MisOperacionesDashboard() {
       await updateDoc(doc(db, 'operaciones', String(opAbierta._docId || opAbierta.id)), {
         status: ultimaMarca.statusAnteriorId,
         statusNombre: ultimaMarca.statusAnteriorNombre,
-        ...ajusteSueldoPorStatus(opAbierta as Record<string, unknown>, ultimaMarca.statusAnteriorNombre), // ✅ V00387
+        ...ajusteOperadorPorStatus(opAbierta as Record<string, unknown>, ultimaMarca.statusAnteriorNombre), // ✅ V00387
         ...convFalso.cambios,
       });
       setHorariosOp((prev) => prev.filter((h) => h.id !== ultimaMarca.horarioId));

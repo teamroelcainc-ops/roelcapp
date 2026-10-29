@@ -15,8 +15,9 @@ import { obtenerFlags } from '../../../shared/data/flags';
 import { puenteYaCobrado } from '../../../shared/dominio/cobroPuente';
 import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
 import { registrarLog } from '../../../utils/logger';
-import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
-import { ajusteConCatalogos, avisarAjusteConvenio, catalogosSiCambiaFalso } from './convenioFalsoDatos'; // ✅ V00509
+import { ajusteOperadorPorStatus } from '../../../utils/sueldoFalso'; // ✅ V00511: sueldo y diesel de Falso
+import { ajusteConvenioPorStatus } from './convenioFalso'; // ✅ V00511
+import { avisarAjusteConvenio } from './convenioFalsoDatos'; // ✅ V00509
 import type { AjusteConvenio } from './convenioFalso';
 import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
 import { avisarCrucePuente, cobroPuenteDelPaso } from '../../puentes/services/crucePuente';
@@ -56,8 +57,6 @@ export const regresarStatusOperacion = async (op: Datos, destino: StatusResuelto
   catch (e) { console.warn('[regresoStatus] cobro del puente:', e); }
   const cobroEnServidor = (await obtenerFlags()).cobroPuenteEnServidor;
   const opRef = doc(db, 'operaciones', idDoc);
-  // ✅ V00509: si entra o sale de Falso, los convenios del cliente (antes de la transacción).
-  const catConvenio = await catalogosSiCambiaFalso(op.statusNombre, destino.nombre);
 
   const { cambios, cobro, anterior, convFalso } = await runTransaction(db, async (tx) => {
     const snap = await tx.get(opRef);
@@ -67,14 +66,14 @@ export const regresarStatusOperacion = async (op: Datos, destino: StatusResuelto
       throw new ErrorRegreso(`La operación cambió a "${String(actual.statusNombre || actual.status || 'otro estatus')}" mientras la veías. Ciérrala y vuelve a abrirla.`);
     }
     const cobroVigente = puenteYaCobrado(actual) ? {} : cobroCalculado;
-    // ✅ V00509: con el dato actual (no la copia de la lista): al entrar a Falso, el convenio Falso del
-    //   cliente; al salir, el que tenía.
-    const ajusteConv: AjusteConvenio = ajusteConCatalogos(actual, destino.nombre, catConvenio, String(actual.statusNombre ?? ''));
+    // ✅ V00509 · V00511: con el dato actual (no la copia de la lista): al entrar a Falso, cliente y
+    //   proveedor al 50%; al salir, regresan al 100%.
+    const ajusteConv: AjusteConvenio = ajusteConvenioPorStatus(actual, destino.nombre, String(actual.statusNombre ?? ''));
     const campos = limpiarUndefined({
       status: destino.id,
       statusNombre: destino.nombre,
       ...(cobroEnServidor ? {} : cobroVigente),
-      ...ajusteSueldoPorStatus(actual, destino.nombre),
+      ...ajusteOperadorPorStatus(actual, destino.nombre),
       ...ajusteConv.cambios,
     }) as Datos;
     tx.set(doc(collection(db, 'horarios')), limpiarUndefined({

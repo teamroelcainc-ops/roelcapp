@@ -76,6 +76,12 @@ const sinMontoConvenio = (nombre: any): string => {
   return s || original;
 };
 
+// ✅ V00511 — Ficha de nómina: la columna muestra el CONVENIO que se le paga al operador (antes, el
+//   cliente; el cliente queda en el tooltip). El guardado en la nómina y, si no lo trae, el de la
+//   operación en vivo (overlaySueldosEnVivo); sin convenio, el tipo de servicio.
+const convenioDeFila = (op: { convenio?: unknown; tipoServicio?: unknown }): string =>
+  [op.convenio, op.tipoServicio].map((v) => String(v ?? '').trim()).find((v) => v && v !== '-') || '-';
+
 const COLUMNAS_OPS_NOMINA_BASE = [
   { id: 'ref',           label: 'Ref. Operación', visible: true, orden: true },
   { id: 'fechaServicio', label: 'Fecha Servicio',  visible: true, orden: true },
@@ -301,7 +307,8 @@ export const ReferenciasNominaDashboard = () => {
       if (!v) return o;
       const base = (v.sueldoOperador != null && v.sueldoOperador !== '') ? aNum(v.sueldoOperador) : aNum(v.sueldoTotal);
       const extra = aNum(v.sueldoExtra);
-      return { ...o, sueldo: base, importe: base, sueldoOperador: base, sueldoExtra: extra, sueldoTotal: base + extra };
+      const convenio = convenioDeFila(o) === '-' ? sinMontoConvenio(v.convenioNombre || '') || o.convenio : o.convenio; // ✅ V00511
+      return { ...o, convenio, sueldo: base, importe: base, sueldoOperador: base, sueldoExtra: extra, sueldoTotal: base + extra };
     });
   };
 
@@ -2921,7 +2928,7 @@ export const ReferenciasNominaDashboard = () => {
                           <tr>
                             <th className="rnd-x142">REFERENCIA</th>
                             <th className="rnd-x142">FECHA</th>
-                            <th className="rnd-x187">CLIENTE</th>
+                            <th className="rnd-x187">CONVENIO</th>
                             <th className="rnd-x143">SUELDO</th>
                             <th className="rnd-x143">SUELDO EXTRA</th>
                             <th className="rnd-x144">SUELDO TOTAL</th>
@@ -2936,7 +2943,7 @@ export const ReferenciasNominaDashboard = () => {
                               <tr className="rnd-x146" key={op.id}>
                                 <td className="rnd-x147" onClick={() => abrirDetalleOperacion(op.id)} title="Abrir el detalle de la operación para editar">{op.ref}</td>
                                 <td className="rnd-x148">{op.fecha ? formatearFechaSpanish(op.fecha) : '-'}</td>
-                                <td className="rnd-x188">{op.cliente || getNombreEmpresa(op.clientePagaId) || '-'}</td>
+                                <td className="rnd-x188" title={op.cliente || getNombreEmpresa(op.clientePagaId) || ''}>{convenioDeFila(op)}</td>
                                 <td className="rnd-x143">
                                   <button className="rnd-x149" type="button" onClick={(e) => abrirEditorSueldo(e, op)} title="Editar sueldo base de esta operación">
                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>

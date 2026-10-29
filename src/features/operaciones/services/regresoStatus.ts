@@ -10,7 +10,8 @@
 // ---------------------------------------------------------------------------
 import { normalizarNombreFlujo } from '../../../shared/dominio/flujos';
 import { estadoGrupoDe, esGrupoTerminado, facturadaCliente, facturadaProveedor } from '../../../shared/dominio/operacionCanonica';
-import { ajusteSueldoPorStatus } from '../../../utils/sueldoFalso';
+import { ajusteOperadorPorStatus } from '../../../utils/sueldoFalso'; // ✅ V00511: sueldo y diesel de Falso
+import { ajusteConvenioPorStatus } from './convenioFalso';
 
 type Datos = Record<string, unknown>;
 
@@ -77,20 +78,30 @@ const txt = (v: unknown): string => String(v ?? '').trim();
 export interface EfectosRegreso {
   /** Deja Servicios Completados y vuelve a Operaciones Activas. */
   vuelveAActivas: boolean;
-  /** Cómo cambia el sueldo del operador ('' si no cambia). */
+  /** Cómo cambian el sueldo, el diesel y los montos por entrar o salir de Falso ('' si no cambian). ✅ V00511 */
   sueldo: string;
   /** Referencias a las que la operación sigue ligada (no se tocan al regresar). */
   conexiones: string[];
 }
 
 export const efectosDelRegreso = (op: Datos, destino: StatusResuelto): EfectosRegreso => {
-  const ajuste = ajusteSueldoPorStatus(op, destino.nombre);
-  let sueldo = '';
+  const ajuste = ajusteOperadorPorStatus(op, destino.nombre);
+  const partes: string[] = [];
   if (typeof ajuste.sueldoOperador === 'number') {
-    sueldo = ajuste.sueldoMitadAplicada === true
-      ? `En Falso el sueldo del operador se paga a la mitad: ${fmt(ajuste.sueldoOperador)}.`
-      : `El sueldo del operador regresa al completo: ${fmt(ajuste.sueldoOperador)}.`;
+    partes.push(ajuste.sueldoMitadAplicada === true
+      ? `En Falso el sueldo del operador queda en ${fmt(ajuste.sueldoOperador)}.`
+      : `El sueldo del operador regresa al completo: ${fmt(ajuste.sueldoOperador)}.`);
   }
+  // ✅ V00511: diesel de Falso (galones) y cobro al 50% (con la copia de la lista: solo es el aviso
+  //   previo; al aplicar se recalcula con la operación actual dentro de la transacción).
+  if (typeof ajuste.combustible === 'number') {
+    partes.push(ajuste.combustibleFalsoAplicado === true
+      ? `El diesel queda en ${ajuste.combustible} galones.`
+      : `El diesel regresa a ${ajuste.combustible} galones.`);
+  }
+  const montos = ajusteConvenioPorStatus(op, destino.nombre);
+  if (montos.mensaje) partes.push(montos.mensaje);
+  const sueldo = partes.join(' ');
   const conexiones: string[] = [];
   if (facturadaCliente(op)) conexiones.push(`Factura del cliente ${txt(op.facturaClienteInvoice)}`.trim());
   if (facturadaProveedor(op)) conexiones.push(`Factura del proveedor ${txt(op.facturaProveedorFolio)}`.trim());

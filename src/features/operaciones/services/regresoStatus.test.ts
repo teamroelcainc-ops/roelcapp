@@ -1,6 +1,6 @@
 // ✅ V00476 — regresar el estatus: opciones (flujo / bitácora / catálogo) y efectos (Activas, sueldo, ligas).
 import { describe, expect, it } from 'vitest';
-import { STATUS_COMPLETADOS } from '../../../shared/dominio/constantes';
+import { ID_USD, STATUS_COMPLETADOS } from '../../../shared/dominio/constantes';
 import { efectosDelRegreso, fechaHoraCorta, opcionesDeRegreso } from './regresoStatus';
 import type { StatusResuelto } from './regresoStatus';
 
@@ -44,8 +44,11 @@ describe('efectos del regreso', () => {
   it('de Falso a Completado: se queda en Completados', () => {
     expect(efectosDelRegreso(falso, resolver('6. Servicio Completado')).vuelveAActivas).toBe(false);
   });
-  it('de Completado a Falso: sueldo a la mitad', () => {
-    expect(efectosDelRegreso({ sueldoOperador: 400 }, resolver('7. Falso')).sueldo).toBe('En Falso el sueldo del operador se paga a la mitad: $200.00.');
+  it('de Completado a Falso: sueldo de Falso, 3 galones y cobro al 50% (✅ V00511)', () => {
+    const op = { ref: 'TR-1', convenioNombre: 'Cruce de Exportacion - Cargado', sueldoOperador: 400, combustible: 6, montoConvenioCliente: 100, monedaConvenioCliente: ID_USD, facturadoEnCobrar: ID_USD, tipoCambioDia: 18 };
+    expect(efectosDelRegreso(op, resolver('7. Falso')).sueldo).toBe(
+      'En Falso el sueldo del operador queda en $200.00. El diesel queda en 3 galones. TR-1 en Falso se cobra al 50%: cliente $50.00 USD (antes $100.00 USD).');
+    expect(efectosDelRegreso({ sueldoOperador: 400 }, resolver('7. Falso')).sueldo).toBe(''); // sin clasificar: no se toca
   });
   it('avisa las referencias a las que sigue ligada', () => {
     const op = { facturaClienteInvoice: 'F-120', facturadoProveedor: true, referenciaNominaConsecutivo: 'NOM-45', referenciaDieselId: 'd1' };
