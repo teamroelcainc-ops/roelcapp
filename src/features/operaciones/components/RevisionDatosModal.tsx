@@ -23,6 +23,7 @@ import {
   rangoRevisionDatos, refrescarRevisionDatos, RevisionCancelada, suscribirPendientesRevision, ultimaRevisionDatos,
 } from '../services/revisionDatosLectura';
 import MarcarFacturadasF1 from './MarcarFacturadasF1'; // ✅ V00510
+import CorregirStatusD3 from './CorregirStatusD3'; // ✅ V00517
 import type { AvanceRevisionDatos, Refresco, RevisionGuardada, SenalRevision } from '../services/revisionDatosLectura';
 import './RevisionDatosModal.css';
 
@@ -70,6 +71,7 @@ export default function RevisionDatosModal({ onCerrar }: { onCerrar: () => void 
   const [actualizando, setActualizando] = useState(false);
   const [pulso, setPulso] = useState(0);
   const [f1Aplicado, setF1Aplicado] = useState(false);
+  const [d3Aplicado, setD3Aplicado] = useState(false); // ✅ V00517
   const senalRef = useRef<SenalRevision | null>(null);
 
   const revisar = async () => {
@@ -177,6 +179,13 @@ export default function RevisionDatosModal({ onCerrar }: { onCerrar: () => void 
     setF1Aplicado(true);
   };
 
+  // ✅ V00517: las corregidas en D3 salen de la lista al momento (ya se sabe qué se escribió).
+  const alCorregirD3 = (cambios: ReadonlyMap<string, Record<string, unknown>>) => {
+    const nueva = aplicarCambiosLocales(cambios);
+    if (nueva) setRevision(nueva);
+    setD3Aplicado(true);
+  };
+
   const elegido = GRUPOS_REVISION.find((g) => g.codigo === grupo) ?? GRUPOS_REVISION[0];
   const filas = vista ? vista.filas.filter((f) => f.codigo === grupo) : [];
   const elegir = (codigo: CodigoRevision) => { setGrupo(codigo); setMostrar(POR_PAGINA); };
@@ -269,6 +278,10 @@ export default function RevisionDatosModal({ onCerrar }: { onCerrar: () => void 
                     elegido; cambiar el rango vuelve a pedir la prueba. */}
                 {elegido.codigo === 'F1' && (vista.marcasF1.length > 0 || f1Aplicado) && (
                   <MarcarFacturadasF1 key={`${revision?.en.getTime()}|${rango.desde}|${rango.hasta}`} marcas={vista.marcasF1} onMarcadas={alMarcarF1} />
+                )}
+                {/* ✅ V00517: corrección de D3 (status con otro nombre o con el nombre viejo), mismos pasos que F1 */}
+                {elegido.codigo === 'D3' && (vista.statusD3.length > 0 || d3Aplicado) && (
+                  <CorregirStatusD3 key={`${revision?.en.getTime()}|${rango.desde}|${rango.hasta}`} ops={vista.statusD3} onCorregidas={alCorregirD3} />
                 )}
                 {(elegido.codigo === 'F2' || elegido.codigo === 'F4' || elegido.codigo === 'F1') && r.sinLigar > 0 && (
                   <p className="rvd-nota">

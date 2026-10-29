@@ -1,0 +1,26 @@
+/* ✅ V00517: Corregir status (D3) dentro de la Revisión de datos (prefijo csd3-). */
+.csd3-panel { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid #9e6a03; border-radius: 8px; background: rgba(187, 128, 9, 0.07); }
+.csd3-titulo { margin: 0; color: #f0f6fc; font-size: 0.92rem; }
+.csd3-texto { margin: 0; color: #c9d1d9; font-size: 0.84rem; line-height: 1.45; }
+.csd3-texto b { color: #f0f6fc; }
+.csd3-pasos { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.csd3-paso { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 10px; border: 1px solid #21262d; border-radius: 6px; background: #0d1117; }
+.csd3-paso--hecho { border-color: #238636; }
+.csd3-ayuda { color: #8b949e; font-size: 0.8rem; }
+.csd3-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid #30363d; border-radius: 6px; background: #161b22; color: #c9d1d9; font: inherit; font-size: 0.83rem; font-weight: 600; cursor: pointer; }
+.csd3-btn:hover { border-color: #8b949e; }
+.csd3-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.csd3-btn--aplicar { border-color: #238636; background: #238636; color: #fff; }
+.csd3-btn--aplicar:hover { border-color: #2ea043; background: #2ea043; }
+.csd3-btn:focus-visible, .csd3-input:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
+.csd3-autorizar { display: inline-flex; align-items: center; gap: 8px; color: #c9d1d9; font-size: 0.83rem; }
+.csd3-input { width: 110px; padding: 5px 8px; border: 1px solid #30363d; border-radius: 6px; background: #161b22; color: #f0f6fc; font: inherit; font-size: 0.85rem; letter-spacing: 0.04em; }
+.csd3-input:disabled { opacity: 0.5; }
+.csd3-avance { display: grid; gap: 8px; }
+.csd3-progreso { width: 100%; height: 10px; accent-color: #3fb950; }
+.csd3-error { margin: 0; color: #ff7b72; font-size: 0.84rem; font-weight: 600; }
+.csd3-resultado { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid #238636; border-radius: 6px; background: rgba(35, 134, 54, 0.08); }
+.csd3-resultado--error { border-color: #f85149; background: rgba(248, 81, 73, 0.08); }
+.csd3-resultado-titulo { margin: 0; color: #f0f6fc; font-size: 0.88rem; font-weight: 600; }
+.csd3-omitidas { display: grid; gap: 4px; margin: 0; padding-left: 18px; color: #8b949e; font-size: 0.8rem; line-height: 1.4; overflow-wrap: anywhere; }
+.csd3-omitidas b { color: #c9d1d9; font-weight: 600; }

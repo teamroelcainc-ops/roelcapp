@@ -98,7 +98,9 @@ describe('revisarDatos', () => {
       operaciones: [op('c1', 'TR-C1', { ...facturada('A-1'), status: STATUS_CANCELADO, statusNombre: '' }), op('c2', 'TR-C2', { status: 'zzz', statusNombre: '' })],
       facturas: [], monedaEmpresa: MONEDAS, reglaUnica: true,
     });
-    expect(sinNombre.filas.filter((f) => f.codigo === 'D3').map((f) => [f.ref, f.detalle])).toEqual([['TR-C2', 'El status "zzz" no está en el catálogo']]);
+    expect(sinNombre.filas.filter((f) => f.codigo === 'D3').map((f) => [f.ref, f.detalle])).toEqual([['TR-C2', 'El status "zzz" no está en el catálogo']]);    // ✅ V00517: con lo guardado, para "Corregir status".
+    expect(sinNombre.statusD3).toMatchObject([{ opId: 'c2', ref: 'TR-C2', status: 'zzz', statusNombre: '' }]);
+    expect(filtrarPorFechas(sinNombre, '2030-01-01', '').statusD3).toEqual([]);
   });
   it('conteo por grupo, claves únicas y Excel con el grupo y dónde se corrige', () => {
     expect(r.conteo).toMatchObject({ F4: 1, F1: 1, D2: 2, F3: 1, D1: 1, D4: 1, D5: 1, F2: 1, F2c: 1, D6: 1, F5: 1, D3: 1 });

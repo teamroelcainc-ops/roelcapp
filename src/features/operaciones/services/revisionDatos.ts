@@ -52,6 +52,17 @@ export interface MarcaF1 {
   facturas: number;
 }
 
+/** ✅ V00517: una operación de D3 con lo que tiene guardado (para "Corregir status"). */
+export interface StatusD3 {
+  opId: string;
+  ref: string;
+  cliente: string;
+  fecha: string;
+  /** Lo guardado en `status` (un id o un nombre) y en `statusNombre`. */
+  status: string;
+  statusNombre: string;
+}
+
 export type CodigoRevision = 'F4' | 'F1' | 'D2' | 'F3' | 'D1' | 'D4' | 'D5' | 'F2' | 'F2c' | 'D6' | 'F5' | 'D3';
 export type Prioridad = 'Alta' | 'Media' | 'Baja';
 
@@ -76,7 +87,7 @@ export const GRUPOS_REVISION: readonly GrupoRevision[] = [
   { codigo: 'F2c', titulo: 'Factura distinta por centavos (menos de $1)', prioridad: 'Baja', correccion: 'Redondeo: Editar factura si se quiere exacto.' },
   { codigo: 'D6', titulo: 'Canceladas que conservan su monto', prioridad: 'Baja', correccion: 'Solo revisar: los ingresos no deben sumarlas.' },
   { codigo: 'F5', titulo: 'Terminadas sin facturar', prioridad: 'Baja', correccion: 'Facturar o cancelar.' },
-  { codigo: 'D3', titulo: 'Sin status', prioridad: 'Baja', correccion: 'Capturar el status en el formulario.' },
+  { codigo: 'D3', titulo: 'Sin status', prioridad: 'Baja', correccion: 'Las que tienen el status con otro nombre se corrigen con Corregir status (abajo); las demás, en el formulario.' }, // ✅ V00517
 ];
 
 export interface DestinoRevision { modulo: string; id: string }
@@ -119,6 +130,8 @@ export interface ResultadoRevision {
   sinLigar: number;
   /** ✅ V00510: las operaciones de F1 con su factura. */
   marcasF1: MarcaF1[];
+  /** ✅ V00517: las operaciones de D3 con su status guardado. */
+  statusD3: StatusD3[];
 }
 
 // ── Utilidades ────────────────────────────────────────────────────────────
@@ -334,9 +347,12 @@ export const revisarDatos = (e: EntradaRevision): ResultadoRevision => {
   });
 
   // D3 · sin status (los ids fijos de Completado y Cancelado cuentan como status aunque no traigan nombre)
+  const statusD3: StatusD3[] = [];
   operaciones.forEach((op) => {
     if (valorExcelOperacion(op, 'status') !== '-' || STATUS_FINALES.includes(txt(op.status))) return;
-    filas.push(filaOp('D3', op, txt(op.status) ? `El status "${txt(op.status)}" no está en el catálogo` : 'La operación no tiene status'));
+    const fila = filaOp('D3', op, txt(op.status) ? `El status "${txt(op.status)}" no está en el catálogo` : 'La operación no tiene status');
+    filas.push(fila);
+    statusD3.push({ opId: op.idDoc, ref: fila.ref, cliente: fila.cliente, fecha: fila.fecha, status: txt(op.status), statusNombre: txt(op.statusNombre) }); // ✅ V00517
   });
 
   // Orden: por grupo (el de GRUPOS_REVISION), luego fecha (recientes primero) y referencia.
@@ -344,7 +360,7 @@ export const revisarDatos = (e: EntradaRevision): ResultadoRevision => {
   filas.sort((a, b) => (orden.get(a.codigo) ?? 0) - (orden.get(b.codigo) ?? 0) || b.fecha.localeCompare(a.fecha) || a.ref.localeCompare(b.ref));
   const conteo = Object.fromEntries(GRUPOS_REVISION.map((g) => [g.codigo, 0])) as Record<CodigoRevision, number>;
   filas.forEach((f) => { conteo[f.codigo]++; });
-  return { filas, conteo, referenciasRepetidas, operaciones: operaciones.length, facturas: facturas.length, sinLigar, marcasF1 };
+  return { filas, conteo, referenciasRepetidas, operaciones: operaciones.length, facturas: facturas.length, sinLigar, marcasF1, statusD3 };
 };
 
 // ── ✅ V00512 — Rango de fechas (filtra lo que se ve; la revisión siempre se hace con todo) ──
@@ -353,6 +369,8 @@ export interface VistaRevision {
   conteo: Record<CodigoRevision, number>;
   /** Las de F1 que entran en el rango (para "Marcar facturadas"). */
   marcasF1: MarcaF1[];
+  /** ✅ V00517: las de D3 que entran en el rango (para "Corregir status"). */
+  statusD3: StatusD3[];
   /** Con rango: cuántas filas no tienen fecha y por eso no se muestran. */
   sinFecha: number;
 }
@@ -374,7 +392,9 @@ export const filtrarPorFechas = (r: ResultadoRevision, desde: string, hasta: str
   filas.forEach((f) => { conteo[f.codigo]++; });
   const enF1 = new Set(filas.filter((f) => f.codigo === 'F1').map((f) => f.destino.id));
   const marcasF1 = conRango ? r.marcasF1.filter((m) => enF1.has(m.opId)) : r.marcasF1;
-  return { filas, conteo, marcasF1, sinFecha };
+  const enD3 = new Set(filas.filter((f) => f.codigo === 'D3').map((f) => f.destino.id));
+  const statusD3 = conRango ? r.statusD3.filter((d) => enD3.has(d.opId)) : r.statusD3;
+  return { filas, conteo, marcasF1, statusD3, sinFecha };
 };
 
 /** Filas del Excel (todas, con el grupo y dónde se corrige). */
