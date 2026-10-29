@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { ID_MXN, ID_USD, STATUS_CANCELADO, STATUS_COMPLETADOS } from '../../../shared/dominio/constantes';
 import type { Moneda } from '../../../shared/dominio/moneda';
-import { filasExcelRevision, revisarDatos } from './revisionDatos';
+import { filasExcelRevision, filtrarPorFechas, revisarDatos } from './revisionDatos';
 import type { FacturaRevision, OpRevision } from './revisionDatos';
 
 const COMPLETADA = { status: STATUS_COMPLETADOS[0], statusNombre: '14. Servicio Completado' };
@@ -114,5 +114,24 @@ describe('revisarDatos', () => {
       monedaEmpresa: MONEDAS, reglaUnica: true,
     });
     expect(enPesos.filas).toEqual([]);
+  });
+});
+
+describe('✅ V00512 — rango de fechas', () => {
+  it('sin rango se ve todo; con rango, por fecha de servicio (o de la factura) y sin las que no tienen fecha', () => {
+    const todo = filtrarPorFechas(r, '', '');
+    expect(todo.filas).toHaveLength(r.filas.length);
+    expect(todo.sinFecha).toBe(0);
+    const sept = filtrarPorFechas(r, '2026-09-01', '2026-09-30');
+    expect(sept.filas.map((f) => f.ref)).toEqual(['tr-3']); // la otra de la referencia repetida (D2)
+    const octubre = filtrarPorFechas(r, '2026-10-01', '');
+    expect(octubre.conteo.D2).toBe(1);
+    expect(octubre.conteo.F2).toBe(r.conteo.F2); // facturas del 2-oct
+    expect(octubre.marcasF1.map((m) => m.ref)).toEqual(['TR-2']);
+    expect(filtrarPorFechas(r, '2026-11-01', '').marcasF1).toEqual([]);
+  });
+  it('las filas sin fecha no entran en un rango y se cuentan', () => {
+    const sinFecha = revisarDatos({ operaciones: [op('x1', 'TR-X', { fechaServicio: '', status: '', statusNombre: '' })], facturas: [], monedaEmpresa: MONEDAS, reglaUnica: true });
+    expect(filtrarPorFechas(sinFecha, '2026-01-01', '2026-12-31')).toMatchObject({ filas: [], sinFecha: sinFecha.filas.length });
   });
 });

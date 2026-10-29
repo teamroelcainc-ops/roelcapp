@@ -93,6 +93,8 @@ export const motivoAlMarcar = (op: Datos | null, factura: Datos | null, m: Marca
 
 export interface ResultadoF1 {
   marcadas: number;
+  /** ✅ V00512: ids de las operaciones que sí se marcaron (para quitarlas de la revisión sin volver a leer). */
+  marcadasIds: string[];
   omitidas: OmitidaF1[];
   /** Si una tanda falló (conexión, permiso): lo de las tandas anteriores ya quedó; las demás no se escribieron. */
   error: string;
@@ -102,6 +104,7 @@ export interface ResultadoF1 {
 export const aplicarMarcasF1 = async (plan: PlanF1, cuando: string, alAvanzar: (hechas: number, total: number) => void): Promise<ResultadoF1> => {
   const total = plan.marcar.length;
   const omitidas: OmitidaF1[] = [];
+  const marcadasIds: string[] = [];
   let marcadas = 0;
   let error = '';
   alAvanzar(0, total);
@@ -117,23 +120,24 @@ export const aplicarMarcasF1 = async (plan: PlanF1, cuando: string, alAvanzar: (
       ]);
       const facPorId = new Map<string, DocumentSnapshot>(idsFac.map((id, k) => [id, sFac[k]]));
       const fuera: OmitidaF1[] = [];
-      let hechas = 0;
+      const ids: string[] = [];
       tanda.forEach((m, k) => {
         const so = sOps[k];
         const sf = facPorId.get(m.facturaId);
         const motivo = motivoAlMarcar(so.exists() ? (so.data() as Datos) : null, sf?.exists() ? (sf.data() as Datos) : null, m);
         if (motivo) { fuera.push({ marca: m, motivo }); return; }
         tx.update(refsOps[k], camposMarca(m, cuando));
-        hechas += 1;
+        ids.push(m.opId);
       });
-      return { fuera, hechas };
+      return { fuera, ids };
     }).catch((e: unknown) => {
       console.error('[F1] No se pudo escribir una tanda de operaciones:', e);
       error = String((e as { message?: string })?.message || e);
       return null;
     });
     if (!r) break;
-    marcadas += r.hechas;
+    marcadas += r.ids.length;
+    marcadasIds.push(...r.ids);
     omitidas.push(...r.fuera);
     alAvanzar(Math.min(i + TANDA, total), total);
   }
@@ -141,7 +145,7 @@ export const aplicarMarcasF1 = async (plan: PlanF1, cuando: string, alAvanzar: (
     await registrarLog('Operaciones', 'Edición',
       `Revisión de datos (F1): marcó ${marcadas} operación(es) como facturadas con la factura que las lista (facturadoPorRevision = ${cuando}). ${plan.omitidas.length + omitidas.length} no se marcaron (${plan.omitidas.length} para revisar a mano, ${omitidas.length} cambiaron desde la revisión).${error ? ` Se detuvo por un error: ${error}` : ''}`);
   }
-  return { marcadas, omitidas, error };
+  return { marcadas, marcadasIds, omitidas, error };
 };
 
 /** Descarga un objeto como archivo .json (el respaldo). */

@@ -11,14 +11,23 @@ import { auth } from '../../../config/firebase';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { descargarExcel } from '../services/excelOperaciones';
 import { aplicarMarcasF1, descargarJSON, filasPruebaF1, planMarcarF1, respaldoF1, TEXTO_AUTORIZACION } from '../services/marcarFacturadasF1';
-import type { ResultadoF1 } from '../services/marcarFacturadasF1';
+import type { PlanF1, ResultadoF1 } from '../services/marcarFacturadasF1';
 import type { MarcaF1 } from '../services/revisionDatos';
 import './MarcarFacturadasF1.css';
 
 const miles = (n: number): string => n.toLocaleString('es-MX');
 
-export default function MarcarFacturadasF1({ marcas }: { marcas: readonly MarcaF1[] }) {
-  const plan = planMarcarF1(marcas);
+interface Props {
+  marcas: readonly MarcaF1[];
+  /** ✅ V00512: las que se marcaron, para quitarlas de la revisión al momento. */
+  onMarcadas?: (ids: readonly string[], cuando: string) => void;
+}
+
+export default function MarcarFacturadasF1({ marcas, onMarcadas }: Props) {
+  // ✅ V00512: la revisión se actualiza sola; el plan se CONGELA al bajar la prueba, para que lo que
+  //   se aplica sea exactamente lo de la prueba y el respaldo (al aplicar se relee cada una).
+  const [congelado, setCongelado] = useState<PlanF1 | null>(null);
+  const plan = congelado ?? planMarcarF1(marcas);
   const [prueba, setPrueba] = useState(false);
   const [respaldo, setRespaldo] = useState(false);
   const [texto, setTexto] = useState('');
@@ -34,6 +43,7 @@ export default function MarcarFacturadasF1({ marcas }: { marcas: readonly MarcaF
     setError('');
     try {
       await descargarExcel({ filas: filasPruebaF1(plan), columnasMoneda: [] }, 'Prueba F1', `Prueba_F1_marcar_facturadas_${hoyLocalISO()}.xlsx`);
+      setCongelado(plan);
       setPrueba(true);
     } catch (e) {
       console.error('No se pudo armar el Excel de prueba de F1:', e);
@@ -53,7 +63,10 @@ export default function MarcarFacturadasF1({ marcas }: { marcas: readonly MarcaF
     setTrabajando('Marcando operaciones…');
     setError('');
     try {
-      setResultado(await aplicarMarcasF1(plan, new Date().toISOString(), (hechas, total) => setAvance({ hechas, total })));
+      const cuando = new Date().toISOString();
+      const r = await aplicarMarcasF1(plan, cuando, (hechas, total) => setAvance({ hechas, total }));
+      setResultado(r);
+      if (r.marcadasIds.length) onMarcadas?.(r.marcadasIds, cuando);
     } catch (e) {
       console.error('No se pudieron marcar las operaciones de F1:', e);
       setError('No se pudo terminar. Presiona Revisar de nuevo para ver cuántas quedaron.');
@@ -85,7 +98,7 @@ export default function MarcarFacturadasF1({ marcas }: { marcas: readonly MarcaF
           <p className="mf1-texto">
             {resultado.error
               ? 'Lo marcado antes del error ya quedó (cada tanda es todo o nada). Presiona Revisar de nuevo y vuelve a aplicar: las ya marcadas no se repiten.'
-              : 'Presiona Revisar de nuevo: F1 debe quedar en cero (salvo las que no se marcaron). Quedó en la bitácora.'}
+              : 'Ya salieron de la lista de F1: quedan solo las que no se marcaron. Quedó en la bitácora.'}
           </p>
         </div>
       ) : (

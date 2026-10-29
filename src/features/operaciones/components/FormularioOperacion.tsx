@@ -109,7 +109,7 @@ const CAMPO_TAB_MAP: Record<string, TabType> = {
   sueldoOperador: 'unidad', sueldoExtra: 'unidad', combustible: 'unidad', combustibleExtra: 'unidad',
   unidadProveedor: 'unidad', operadorProveedor: 'unidad', observacionesUnidad: 'unidad',
 
-  facturadoEnCobrar: 'cobrar', montoConvenioCliente: 'cobrar', cargosAdicionales: 'cobrar',
+  facturadoEnCobrar: 'cobrar', montoConvenioCliente: 'cobrar', cargosAdicionales: 'cobrar', cargosAdicionalesNotas: 'cobrar',
   tipoCambioAprobado: 'cobrar', observacionesCobrar: 'cobrar',
 };
 
@@ -485,7 +485,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
     dolaresProv: 0, pesosProv: 0, conversionProv: 0,
     unidad: '', operador: '', sueldoOperador: 0, sueldoExtra: 0, sueldoTotal: 0, 
     combustible: 0, combustibleExtra: 0, combustibleTotal: 0,
-    sueldoExtraNotas: '', combustibleExtraNotas: '',
+    sueldoExtraNotas: '', combustibleExtraNotas: '', cargosAdicionalesNotas: '', // ✅ V00512
     puenteId: '', puenteNombre: '', puenteMonto: 0,
     unidadProveedor: '', operadorProveedor: '', observacionesUnidad: '', observacionesCobrar: '',
     totalGastos: 0,
@@ -1027,6 +1027,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
         operadorProveedor: initialData.operadorProveedor || '',
         sueldoExtraNotas: initialData.sueldoExtraNotas || '',
         combustibleExtraNotas: initialData.combustibleExtraNotas || '',
+        cargosAdicionalesNotas: initialData.cargosAdicionalesNotas || '', // ✅ V00512
         observacionesUnidad: initialData.observacionesUnidad || '',
         observacionesCobrar: initialData.observacionesCobrar || '',     
         totalGastos: Number(initialData.totalGastos) || 0,
@@ -3622,6 +3623,13 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
                           <BotonAgregar title="Administrar costos adicionales del CLIENTE de esta operación" onClick={() => { if (!initialData?.id && !(formData as any).id) { alert('Guarda la operación primero; los costos adicionales se ligan a la operación ya guardada.'); return; } setMostrarCostosAdic('cliente'); }} />
                         </div>
                       </div>
+                      {/* ✅ V00512: con cargos adicionales distintos de 0, sus observaciones (a lo ancho, debajo). */}
+                      {Number(formData.cargosAdicionales) !== 0 && (
+                        <div className="form-group fo-x24">
+                          <label className="form-label fo-x26" htmlFor="fo-cargos-notas">Observaciones de costos adicionales <span className="campo-badge">cargosAdicionalesNotas</span></label>
+                          <textarea id="fo-cargos-notas" name="cargosAdicionalesNotas" className="form-control" rows={2} placeholder="Qué se cobra en los costos adicionales y por qué..." value={formData.cargosAdicionalesNotas || ''} onChange={handleChange} />
+                        </div>
+                      )}
                       <div className="form-group"><label className="form-label">Total <span className="campo-badge">subtotalCliente</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.subtotalCliente || 0} readOnly style={{ opacity: 0.9, color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 600 : undefined }} /></ConSimboloMoneda></div>
                       <div className="form-group"><label className="form-label">Tipo de Cambio <span className="campo-badge">tipoCambioAprobado</span></label><ConSimboloMoneda><input type="number" step="0.0001" className="form-control" value={formData.tipoCambioAprobado || 0} readOnly={campoBloqueadoAut('tipoCambioAprobado')} onChange={e => { tcEditadoAMano.current = true; setFormData(prev => ({ ...prev, tipoCambioAprobado: Number(e.target.value) || 0 })); }} title={campoBloqueadoAut('tipoCambioAprobado') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del TC oficial de la fecha de servicio; puedes ajustarlo manualmente'} style={campoBloqueadoAut('tipoCambioAprobado') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} /></ConSimboloMoneda>{avisoTC}</div>
                     </div>

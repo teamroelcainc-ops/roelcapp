@@ -16,7 +16,7 @@
 // ---------------------------------------------------------------------------
 import { STATUS_FINALES } from '../../../shared/dominio/constantes';
 import { conversionOperacion, monedaDeFactura, refDeOperacion, totalNativoFactura, totalNativoFacturaLegado } from '../../../shared/dominio/dinero';
-import { fechaServicioDeOperacion } from '../../../shared/dominio/fechas';
+import { aFechaISO, fechaServicioDeOperacion } from '../../../shared/dominio/fechas';
 import { idMoneda, nombreMoneda } from '../../../shared/dominio/moneda';
 import type { Moneda } from '../../../shared/dominio/moneda';
 import { sumarMontos } from '../../../shared/dominio/numeros';
@@ -347,8 +347,38 @@ export const revisarDatos = (e: EntradaRevision): ResultadoRevision => {
   return { filas, conteo, referenciasRepetidas, operaciones: operaciones.length, facturas: facturas.length, sinLigar, marcasF1 };
 };
 
+// ── ✅ V00512 — Rango de fechas (filtra lo que se ve; la revisión siempre se hace con todo) ──
+export interface VistaRevision {
+  filas: FilaRevision[];
+  conteo: Record<CodigoRevision, number>;
+  /** Las de F1 que entran en el rango (para "Marcar facturadas"). */
+  marcasF1: MarcaF1[];
+  /** Con rango: cuántas filas no tienen fecha y por eso no se muestran. */
+  sinFecha: number;
+}
+
+/**
+ * Las filas cuya fecha (servicio de la operación; fecha de la factura en F2) cae entre `desde` y
+ * `hasta` (AAAA-MM-DD, ambos incluidos; vacío = sin límite). Solo filtra: las comparaciones entre
+ * facturas y operaciones se hicieron con TODO, así un rango no inventa errores en sus orillas.
+ */
+export const filtrarPorFechas = (r: ResultadoRevision, desde: string, hasta: string): VistaRevision => {
+  const conRango = !!(desde || hasta);
+  let sinFecha = 0;
+  const filas = !conRango ? r.filas : r.filas.filter((f) => {
+    const fecha = aFechaISO(f.fecha);
+    if (!fecha) { sinFecha++; return false; }
+    return (!desde || fecha >= desde) && (!hasta || fecha <= hasta);
+  });
+  const conteo = Object.fromEntries(GRUPOS_REVISION.map((g) => [g.codigo, 0])) as Record<CodigoRevision, number>;
+  filas.forEach((f) => { conteo[f.codigo]++; });
+  const enF1 = new Set(filas.filter((f) => f.codigo === 'F1').map((f) => f.destino.id));
+  const marcasF1 = conRango ? r.marcasF1.filter((m) => enF1.has(m.opId)) : r.marcasF1;
+  return { filas, conteo, marcasF1, sinFecha };
+};
+
 /** Filas del Excel (todas, con el grupo y dónde se corrige). */
-export const filasExcelRevision = (r: ResultadoRevision): Record<string, string>[] => {
+export const filasExcelRevision = (r: Pick<ResultadoRevision, 'filas'>): Record<string, string>[] => {
   const grupo = new Map(GRUPOS_REVISION.map((g) => [g.codigo, g]));
   return r.filas.map((f) => {
     const g = grupo.get(f.codigo);

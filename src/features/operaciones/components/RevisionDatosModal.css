@@ -15,6 +15,16 @@
 .rvd-btn--principal { border-color: #9e6a03; background: #9e6a03; color: #fff; }
 .rvd-btn--principal:hover { border-color: #bb8009; background: #bb8009; }
 .rvd-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+/* ✅ V00512: Cancelar, rango de fechas y el aviso de "al día" */
+.rvd-btn--cancelar { border-color: #da3633; color: #ff7b72; }
+.rvd-btn--cancelar:hover { border-color: #f85149; background: rgba(248, 81, 73, 0.1); }
+.rvd-btn--chico { padding: 5px 10px; font-size: 0.78rem; }
+.rvd-rango { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; padding: 0; border: none; }
+.rvd-rango-titulo { float: left; margin-right: 2px; padding: 0; color: #8b949e; font-size: 0.8rem; font-weight: 600; }
+.rvd-rango-campo { display: inline-flex; align-items: center; gap: 6px; color: #8b949e; font-size: 0.8rem; }
+.rvd-fecha { padding: 5px 8px; border: 1px solid #30363d; border-radius: 6px; background: #0d1117; color: #c9d1d9; font: inherit; font-size: 0.82rem; color-scheme: dark; }
+.rvd-fecha:focus-visible { outline: 2px solid #58a6ff; outline-offset: 1px; }
+.rvd-aviso { margin: 0; padding: 6px 10px; border-left: 3px solid #3fb950; border-radius: 4px; background: rgba(63, 185, 80, 0.08); color: #c9d1d9; font-size: 0.82rem; }
 
 .rvd-cuerpo { flex: 1; min-height: 0; padding: 14px 22px 16px; overflow: hidden; display: flex; flex-direction: column; gap: 12px; }
 .rvd-error { margin: 0; color: #ff7b72; font-weight: 600; }
