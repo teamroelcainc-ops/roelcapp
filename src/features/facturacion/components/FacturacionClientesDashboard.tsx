@@ -15,6 +15,8 @@ import { AuditoriaCadenaCliente } from './AuditoriaCadenaCliente'; // ✅ V00318
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { useModuloEscuchando } from '../../../utils/moduloVivoContexto'; // ✅ V00438 (Fase 2.7)
 import { EditorOperacionEmbebido } from '../../operaciones/components/EditorOperacionEmbebido';
+import { precargarOperacion } from '../../operaciones/services/lecturaOperacion'; // ✅ V00528
+import { precalentarCatalogosFormulario } from '../../operaciones/services/catalogosFormulario'; // ✅ V00528
 import { HiloModal } from '../../hilo/HiloModal';
 import { datosAAplicar, notificarOperacionGuardada, suscribirOperacionGuardada } from '../../../utils/operacionesBus';
 import { avisoYaFacturadas, facturaExistenteFresca, operacionesYaFacturadas, planLiberarAlEliminar } from '../services/facturarSeguro'; // ✅ V00451 · V00494
@@ -41,8 +43,8 @@ import { PildoraDocsFactura } from './TarjetaDocumentoFactura';
 import DocumentoFichaCliente from './DocumentoFichaCliente';
 import OperacionesFacturaEdicion from './OperacionesFacturaEdicion'; // ✅ V00520
 import { useOperacionesDeFactura } from '../hooks/useOperacionesDeFactura'; // ✅ V00520
-import { opsDesfasadas, planSincronizarFactura, renglonesConImporte, sincronizarFacturaConOperaciones } from '../services/sincronizarFactura'; // ✅ V00520
-import type { PlanSincronizar } from '../services/sincronizarFactura';
+import { aplicarActualizarFactura, hayQueActualizar, planActualizarFactura, textoActualizar } from '../services/actualizarFactura'; // ✅ V00528
+import type { PlanActualizarFactura, ResultadoActualizar } from '../services/actualizarFactura';
 import DocumentosFacturaModal from './DocumentosFacturaModal'; // ✅ V00451
 import AdjuntosArchivos from '../../../shared/components/AdjuntosArchivos'; // ✅ V00451
 import { adjuntoNuevo, desdeGuardados } from '../../../shared/archivos/adjuntos';
@@ -94,7 +96,7 @@ import {
   fechaFacturaISO, moverIdAlInicio, pareceReferencia, refNaturalKey, STATUS_FACTURA_OPCIONES, textoFacturadoEn, valorGenericoOp,
 } from '../selectores'; // ✅ V00444 (Fase 8.1): una sola copia (antes idéntica en Clientes y Proveedores)
 import { useOperacionesFacturables } from '../hooks/useOperacionesFacturables'; // ✅ V00444 (Fase 8.1)
-import { conversionOperacion, monedaDeFactura, monedaFacturaOperacion, montoOperacion } from '../../../shared/dominio/dinero';
+import { conversionOperacion, ErrorDinero, monedaDeFactura, monedaFacturaOperacion, montoOperacion } from '../../../shared/dominio/dinero';
 import type { Moneda } from '../../../shared/dominio/moneda';
 import Importe, { NombreMoneda } from './Importe'; // ✅ V00481: Pesos en verde, Dólares en azul
 import AvisoMonedaFactura from './AvisoMonedaFactura';
@@ -104,9 +106,7 @@ import CancelacionFicha from './CancelacionFicha';
 import AccionesHistorial from './AccionesHistorial'; // ✅ V00482
 import CorregirTotalesFacturas from './CorregirTotalesFacturas'; // ✅ V00522
 import type { FilaCorregirVista, RevisionCuadre } from './CorregirTotalesFacturas';
-import type { DocSinImportes, PlanCompletar } from '../services/completarImportes'; // ✅ V00524
-import { completarImportes, planCompletarImportes } from '../services/completarImportes'; // ✅ V00525
-import type { CompletarEdicion } from './OperacionesFacturaEdicion';
+import type { DocSinImportes } from '../services/completarImportes'; // ✅ V00524
 import { cuadreDeFactura, facturasQueNoCuadran, TEXTO_MOTIVO } from '../services/cuadreFactura'; // ✅ V00522
 import SubirXmlModal from './SubirXmlModal'; // ✅ V00513
 import DatosSitModal from './DatosSitModal'; // ✅ V00513
@@ -355,6 +355,14 @@ export const FacturacionClientesDashboard = () => {
   const setFacturasGlobales = facturasVivas.setFacturas;
   // ✅ V00449: mientras no llega ninguna lista se muestra "Cargando…" (no "Aún no hay facturas").
   const cargandoFacturas = facturasVivas.cargando;
+  // ✅ V00528: con las facturas ya pintadas, los catálogos del formulario de operación se abren en segundo plano
+  //   (uno por uno, con el navegador libre), como en Operaciones Activas: el primer ✎ Editar de la sesión ya no
+  //   espera a que lleguen (ni se traba mientras llegan). Son las mismas lecturas que haría abrir el formulario.
+  useEffect(() => {
+    if (cargandoFacturas) return undefined;
+    const t = setTimeout(precalentarCatalogosFormulario, 3000);
+    return () => clearTimeout(t);
+  }, [cargandoFacturas]);
 
   // ✅ V00439 (Fase 3.x): empresas y catálogos de nombres desde los listeners
   //   compartidos (antes: getDocs + copias en localStorage).
@@ -441,6 +449,20 @@ export const FacturacionClientesDashboard = () => {
   /** ✅ V00519: la factura cambió (diferencia en costos adicionales): la Ficha abierta la refleja al instante (la lista llega por el listener). */
   const aplicarFacturaLocal = (id: string, campos: Record<string, unknown>): void => {
     setFacturaViendo((prev: Record<string, unknown> | null) => (prev && idsDeFila(prev).includes(id)) ? { ...prev, ...campos } : prev);
+  };
+  /** ✅ V00528: lo que escribió Actualizar (Editar factura o la Ficha): la lista y la Ficha abierta al día sin volver a leer. */
+  const aplicarEscritosFactura = (r: ResultadoActualizar): void => {
+    if (r.escritos.size > 0) {
+      setFacturasGlobales(prev => prev.map(f => { const c = r.escritos.get(String(f.id)); return c ? normalizarFactura({ ...f, ...c }) : f; }));
+      setFacturaViendo((prev: Record<string, unknown> | null) => {
+        if (!prev) return prev;
+        const idsFila = idsDeFila(prev);
+        const escritos = idsFila.map((id) => r.escritos.get(id)).filter((c): c is Record<string, unknown> => !!c);
+        if (escritos.length === 0) return prev;
+        return idsFila.length === 1 ? { ...prev, ...escritos[0] } : { ...prev, operacionesGuardadas: escritos.flatMap((c) => (Array.isArray(c.operacionesGuardadas) ? c.operacionesGuardadas : [])) };
+      });
+    }
+    if (r.omitidas.length > 0) avisar({ tipo: 'alerta', titulo: 'No se guardó lo que cobra cada operación', texto: r.omitidas.join('; ') });
   };
   /** Facturar: sube los documentos elegidos y los AGREGA a los de la factura (el folio pudo existir). Devuelve los campos para la fila. */
   const subirDocsAlFacturar = async (idFactura: string, folio: string): Promise<Record<string, unknown>> => {
@@ -1761,43 +1783,18 @@ export const FacturacionClientesDashboard = () => {
 
   // ✅ V00520 — Editar factura: sus operaciones (con ✎ Editar), si alguna cambió de costo y cómo queda la
   //   factura al presionar Actualizar (que se activa solo si algo cambió).
+  // ✅ V00525: una factura que no guardó lo que cobró cada operación (las de AppSheet): Actualizar le guarda lo que
+  //   cobra hoy cada una, SIN cambiar el total (la misma regla de Completar importes, para esta factura sola).
+  // ✅ V00528: la regla está en services/actualizarFactura.ts (la usa también el botón Actualizar factura de la Ficha).
   const monedaEdicion = facturaEditando ? (monedaDeFactura(facturaEditando) ?? '') : '';
   // ✅ V00525: la moneda con la que se ve (la del cliente si la factura no trae) para leer sus operaciones y completar importes
   const monedaCompletar = facturaEditando ? codigoMonedaFactura(facturaEditando) : null;
   const opsEdicion = useOperacionesDeFactura(facturaEditando, monedaEdicion || monedaCompletar || '');
-  const opsEdicionLista = Array.from(opsEdicion.actuales, ([id, datos]) => ({ id, datos }));
-  const desfasadasEdicion = facturaEditando && monedaEdicion && !opsEdicion.cargando ? opsDesfasadas(facturaEditando, opsEdicionLista, monedaEdicion) : [];
-  let planEdicion: PlanSincronizar | null = null;
-  let impedimentoEdicion = '';
-  if (desfasadasEdicion.length > 0 && facturaEditando && monedaEdicion) {
-    if (flags.dineroPorServidor) impedimentoEdicion = 'Con el dinero en el servidor encendido, la factura no se pone al día desde aquí: usa Recalcular montos en Pagos.';
-    else if (Array.isArray(facturaEditando.__groupIds) && facturaEditando.__groupIds.length > 1) impedimentoEdicion = 'Esta factura está en varios registros con el mismo folio: no se pone al día desde aquí.';
-    try { planEdicion = planSincronizarFactura(facturaEditando, opsEdicionLista, monedaEdicion, '', ''); } catch (e) { impedimentoEdicion = impedimentoEdicion || (e instanceof Error ? e.message : String(e)); }
-  }
-  const sincronizarAlActualizar = !!planEdicion && !impedimentoEdicion;
-  // ✅ V00525: una factura que no guardó lo que cobró cada operación (las de AppSheet): Actualizar le guarda lo que
-  //   cobra hoy cada una, SIN cambiar el total (la misma regla de Completar importes, para esta factura sola).
-  const sinImportesEdicion = !!facturaEditando && !!monedaCompletar && renglonesConImporte(facturaEditando, monedaCompletar).length === 0;
-  let planCompletarEdicion: PlanCompletar | null = null;
-  let completarEdicion: CompletarEdicion | null = null;
-  if (sinImportesEdicion && facturaEditando && !opsEdicion.cargando) {
-    if (flags.dineroPorServidor) completarEdicion = { motivo: 'con el dinero en el servidor encendido (dineroPorServidor) no se guarda desde aquí' };
-    else {
-      const docsEdicion = (Array.isArray(facturaEditando.__groupDocs) && facturaEditando.__groupDocs.length ? facturaEditando.__groupDocs : [facturaEditando]) as Record<string, unknown>[];
-      const plan = planCompletarImportes(docsEdicion.map((d): DocSinImportes => ({
-        id: String(d.id ?? ''), invoice: String(d.invoice || facturaEditando.invoice || ''), cliente: '', fecha: fechaFacturaISO(d.fecha) || '',
-        moneda: codigoMonedaFactura(d) ?? monedaCompletar, datos: d,
-      })), opsEdicion.actuales);
-      if (plan.omitidas.length > 0) completarEdicion = { motivo: plan.omitidas[0].motivo };
-      else if (plan.completar.length > 0) {
-        planCompletarEdicion = plan;
-        const suma = plan.completar.reduce((s, p) => s + Math.round(p.suma * 100), 0) / 100;
-        const total = plan.completar.reduce((s, p) => s + Math.round(p.total * 100), 0) / 100;
-        completarEdicion = { suma, total, cuadra: Math.round(suma * 100) === Math.round(total * 100) };
-      }
-    }
-  }
-  const completarAlActualizar = !!planCompletarEdicion && !estaCancelada(editStatus);
+  const planEdicion: PlanActualizarFactura | null = facturaEditando ? planActualizarFactura(facturaEditando, opsEdicion.actuales, {
+    moneda: monedaEdicion || null, monedaVista: monedaCompletar, monedaDoc: codigoMonedaFactura, cargando: opsEdicion.cargando, dineroPorServidor: !!flags.dineroPorServidor,
+  }) : null;
+  const sincronizarAlActualizar = !!planEdicion?.sincronizar && !planEdicion.impedimento;
+  const completarAlActualizar = !!planEdicion?.completar && !estaCancelada(editStatus);
   const cambiosEdicion = !!facturaEditando && (sincronizarAlActualizar || completarAlActualizar || claveEdicion({
     invoice: editInvoice, fecha: editFecha, ccp: editCcp, status: editStatus, cancelacion: editCancelacion, clienteId: editClienteId, total: editTotal, adjuntos: adjuntosEdicion,
   }) !== editInicial);
@@ -1890,29 +1887,11 @@ export const FacturacionClientesDashboard = () => {
       setFacturaViendo((prev: any) => (prev && ids.includes(prev.id)) ? canc.local({ ...prev, ...baseUpdate, ...(totalCambio ? { subtotalFactura: totalNum, subtotalMonedaFactura: totalNum, ...extraPago } : {}) }) : prev);
       if (!canc.vacia) void registrarLog('Facturación Clientes', 'Edición', cancelando ? `Canceló la factura ${editInvoice.trim()}: la reemplaza ${editCancelacion.reemplazo.trim()}. Nota: ${editCancelacion.nota.trim()}` : `La factura ${editInvoice.trim()} dejó de estar Cancelada (${editStatus}).`);
       // ✅ V00520: Actualizar también pone la factura al día con sus operaciones (si alguna cambió de costo).
-      if (sincronizarAlActualizar) {
-        const plan = await sincronizarFacturaConOperaciones(ids[0], new Date().toISOString(), auth.currentUser?.email || '');
-        if (plan) {
-          setFacturasGlobales(prev => prev.map(f => (f.id === ids[0] ? normalizarFactura({ ...f, ...plan.datosFactura }) : f)));
-          setFacturaViendo((prev: Record<string, unknown> | null) => (prev && idsDeFila(prev).includes(ids[0])) ? { ...prev, ...plan.datosFactura } : prev);
-          void registrarLog('Facturación Clientes', 'Edición', `Factura ${editInvoice.trim()} al día con sus operaciones (${plan.desfasadas.map((d) => `${d.ref} ${d.antes.toFixed(2)} → ${d.ahora.toFixed(2)}`).join(', ')}): total ${plan.totalAntes.toFixed(2)} → ${plan.totalDespues.toFixed(2)}.`);
-        }
-      }
       // ✅ V00525: no guardó lo que cobró cada operación → se guarda lo que cobra hoy cada una (el total no cambia).
-      if (completarAlActualizar && planCompletarEdicion) {
-        const r = await completarImportes(planCompletarEdicion.completar, new Date().toISOString(), auth.currentUser?.email || '', () => undefined);
-        if (r.error) throw new Error(`Los demás cambios se guardaron, pero no lo que cobra cada operación: ${r.error}`);
-        if (r.completadas.size > 0) {
-          setFacturasGlobales(prev => prev.map(f => { const c = r.completadas.get(String(f.id)); return c ? normalizarFactura({ ...f, ...c }) : f; }));
-          setFacturaViendo((prev: Record<string, unknown> | null) => {
-            if (!prev) return prev;
-            const idsFila = idsDeFila(prev);
-            const escritos = idsFila.map((id) => r.completadas.get(id)).filter((c): c is Record<string, unknown> => !!c);
-            if (escritos.length === 0) return prev;
-            return idsFila.length === 1 ? { ...prev, ...escritos[0] } : { ...prev, operacionesGuardadas: escritos.flatMap((c) => (Array.isArray(c.operacionesGuardadas) ? c.operacionesGuardadas : [])) };
-          });
-        }
-        if (r.omitidas.length > 0) avisar({ tipo: 'alerta', titulo: 'No se guardó lo que cobra cada operación', texto: r.omitidas.map((o) => `${o.invoice}: ${o.motivo}`).join('; ') });
+      if (planEdicion && (sincronizarAlActualizar || completarAlActualizar)) {
+        const r = await aplicarActualizarFactura(facturaEditando, { ...planEdicion, completar: completarAlActualizar ? planEdicion.completar : null }, editInvoice.trim(), auth.currentUser?.email || '');
+        aplicarEscritosFactura(r);
+        if (r.errorCompletar) throw new Error(`Los demás cambios se guardaron, pero no lo que cobra cada operación: ${r.errorCompletar}`);
       }
       setFacturaEditando(null);
     } catch (e) {
@@ -3314,8 +3293,37 @@ export const FacturacionClientesDashboard = () => {
   //   factura (p. ej. guardó el subtotal y los cargos se capturaron después), se muestra y se explica cómo ponerla al día.
   const monedaFichaCodigo = facturaViendo ? codigoMonedaFactura(facturaViendo) : null;
   const opsFicha = useOperacionesDeFactura(facturaViendo, monedaFichaCodigo ?? '');
-  const desfasadasFicha = new Map((facturaViendo && monedaFichaCodigo && !opsFicha.cargando
-    ? opsDesfasadas(facturaViendo, Array.from(opsFicha.actuales, ([id, datos]) => ({ id, datos })), monedaFichaCodigo) : []).map((d) => [d.opId, d] as const));
+  // ✅ V00528: lo que hace "Actualizar factura" desde la Ficha: la MISMA regla del Actualizar de Editar factura.
+  const planFicha = facturaViendo ? planActualizarFactura(facturaViendo, opsFicha.actuales, {
+    moneda: monedaDeFactura(facturaViendo), monedaVista: monedaFichaCodigo, monedaDoc: codigoMonedaFactura, cargando: opsFicha.cargando, dineroPorServidor: !!flags.dineroPorServidor,
+  }) : null;
+  const desfasadasFicha = new Map((planFicha?.desfasadas ?? []).map((d) => [d.opId, d] as const));
+  const [actualizandoFicha, setActualizandoFicha] = useState(false);
+  const actualizarDesdeFicha = async (fila: Record<string, unknown>, plan: PlanActualizarFactura) => {
+    if (!hayQueActualizar(plan) || actualizandoFicha) return;
+    const folio = String(fila.invoice || '');
+    setActualizandoFicha(true);
+    try {
+      const r = await aplicarActualizarFactura(fila, plan, folio, auth.currentUser?.email || '');
+      aplicarEscritosFactura(r);
+      if (r.errorCompletar) throw new ErrorDinero(`Se detuvo: ${r.errorCompletar}`);
+      const s = r.sincronizado;
+      const dinero2 = (n: number) => n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      avisar({
+        tipo: 'info', titulo: `Factura ${folio} actualizada`,
+        texto: s
+          ? (Math.round(s.totalAntes * 100) === Math.round(s.totalDespues * 100)
+            ? `Cada operación quedó con su total de hoy. El total sigue en ${dinero2(s.totalDespues)}.`
+            : `Cada operación quedó con su total de hoy. El total pasó de ${dinero2(s.totalAntes)} a ${dinero2(s.totalDespues)}.`)
+          : r.escritos.size > 0 ? 'Se guardó lo que cobra hoy cada operación. El total no cambió.' : 'La factura ya estaba al día.',
+      });
+    } catch (e) {
+      console.error('[Facturación] No se pudo actualizar la factura desde la Ficha:', e);
+      avisar({ tipo: 'alerta', titulo: `No se pudo actualizar la factura ${folio}`, texto: e instanceof ErrorDinero ? e.message : 'No se guardó nada. Revisa tu conexión e intenta de nuevo.' });
+    } finally {
+      setActualizandoFicha(false);
+    }
+  };
   // ✅ V00483: pagos aplicados a la factura abierta (todos los documentos de su folio).
   const pagosFicha = facturaViendo
     ? pagosDeFacturas(pagosDetalle, (Array.isArray(facturaViendo.__groupIds) && facturaViendo.__groupIds.length ? facturaViendo.__groupIds : [facturaViendo.id]).map(String))
@@ -3846,7 +3854,8 @@ export const FacturacionClientesDashboard = () => {
                         style={{ cursor: yaFacturada ? 'default' : 'pointer', borderBottom: '1px solid #21262d', backgroundColor: seleccionadas.includes(op.id) ? 'rgba(216,67,21,0.1)' : (yaFacturada ? 'rgba(16,185,129,0.04)' : 'transparent') }}>
                         <td className="fcd-x93">
                           {/* ✅ V00126: editar la operación completa (hilo Operaciones → Facturación) */}
-                          <button className="fcd-btn-editar-op" onClick={(e) => { e.stopPropagation(); setOpEditandoId(String(op.id)); }} title="Editar esta operación en el formulario de Operaciones">✎ Operación</button>
+                          <button className="fcd-btn-editar-op" onClick={(e) => { e.stopPropagation(); setOpEditandoId(String(op.id)); }} title="Editar esta operación en el formulario de Operaciones"
+                            onPointerEnter={() => precargarOperacion(String(op.id))}>✎ Operación</button>{/* ✅ V00528 */}
                           {yaFacturada && op.facturaClienteId && <button className="fcd-btn-editar-op fcd-btn-hilo" onClick={(e) => { e.stopPropagation(); setHiloFacturaId(String(op.facturaClienteId)); }} title="Verificar el hilo Operaciones → Facturación → Pagos de esta factura">🔗 Hilo</button>}
                           {yaFacturada ? (
                             <div className="fcd-x94">
@@ -4372,22 +4381,23 @@ export const FacturacionClientesDashboard = () => {
                     <span className="fcd-x176">
                       Referencias / Operaciones Facturadas ({facturaViendo.operacionesGuardadas?.length || 0}) — haz clic para ver el detalle
                     </span>
-                    {/* ✅ V00527: operaciones cuyo total de hoy no es el que guardó la factura */}
-                    {desfasadasFicha.size > 0 && !estaCancelada(facturaViendo.statusFactura) && (
-                      <p className="fcd-ficha-sin-importes">
-                        {desfasadasFicha.size === 1 ? 'Una operación tiene otro total hoy' : `${desfasadasFicha.size} operaciones tienen otro total hoy`} (por ejemplo, cargos adicionales capturados después de facturar).
-                        {' '}Para ponerla al día, ábrela en{' '}
-                        <button type="button" className="fcd-ficha-sin-importes__btn" onClick={(e) => abrirEditarFactura(e, facturaViendo)}>Editar factura</button>
-                        {' '}y presiona Actualizar: ahí dice si el total de la factura cambia o si ya lo incluía.
-                      </p>
-                    )}
-                    {/* ✅ V00525: no guardó lo que cobró cada operación (por eso salen en $0.00): se guarda en Editar factura → Actualizar */}
-                    {importesFicha.length > 0 && importesFicha.every((x) => !x) && totalDeGrupo(facturaViendo) > 0 && !estaCancelada(facturaViendo.statusFactura) && (
-                      <p className="fcd-ficha-sin-importes">
-                        Esta factura no guardó lo que cobró cada operación (por eso salen en $ 0.00). Para guardarlo, ábrela en{' '}
-                        <button type="button" className="fcd-ficha-sin-importes__btn" onClick={(e) => abrirEditarFactura(e, facturaViendo)}>Editar factura</button>
-                        {' '}y presiona Actualizar: se guarda lo que cobra hoy cada una y el total no cambia.
-                      </p>
+                    {/* ✅ V00527: operaciones cuyo total de hoy no es el que guardó la factura.
+                        ✅ V00525: no guardó lo que cobró cada operación (por eso salen en $0.00).
+                        ✅ V00528: se pone al día AQUÍ con "Actualizar factura" (antes había que entrar a Editar factura). */}
+                    {planFicha && !estaCancelada(facturaViendo.statusFactura) && (desfasadasFicha.size > 0
+                      || (importesFicha.length > 0 && importesFicha.every((x) => !x) && totalDeGrupo(facturaViendo) > 0)) && (
+                      <div className="fcd-ficha-sin-importes" role="status">
+                        <p className="fcd-ficha-sin-importes__texto">
+                          {desfasadasFicha.size > 0
+                            ? `${desfasadasFicha.size === 1 ? 'Una operación tiene otro total hoy' : `${desfasadasFicha.size} operaciones tienen otro total hoy`} (por ejemplo, cargos adicionales capturados después de facturar).`
+                            : 'Esta factura no guardó lo que cobró cada operación (por eso salen en $ 0.00).'}
+                          {' '}{opsFicha.cargando ? 'Leyendo sus operaciones…' : textoActualizar(planFicha, monedaFicha)}
+                        </p>
+                        <button type="button" className="fcd-btn-actualizar fcd-btn-actualizar--ficha" disabled={!hayQueActualizar(planFicha) || actualizandoFicha}
+                          onClick={() => { void actualizarDesdeFicha(facturaViendo, planFicha); }}>
+                          {actualizandoFicha ? 'Actualizando…' : 'Actualizar factura'}
+                        </button>
+                      </div>
                     )}
 {puedeAgregarOperaciones(facturaViendo.statusFactura) && (/* ✅ V00481: a una factura Facturada no se le agregan */
                     <button className="fcd-x190"
@@ -4422,6 +4432,7 @@ export const FacturacionClientesDashboard = () => {
                           {/* ✅ V00520: editar la operación desde la factura (el formulario completo; la Ficha queda detrás) */}
                           {op.id && !esRefOperacion(String(op.id)) && (
                             <span role="button" className="fcd-op-editar" title="Editar esta operación en el formulario de Operaciones"
+                              onPointerEnter={() => precargarOperacion(String(op.id))} /* ✅ V00528: se empieza a leer antes del clic */
                               onClick={(e) => { e.stopPropagation(); setOpEditandoId(String(op.id)); }}>✎ Editar</span>
                           )}
                           {/* ✅ NUEVO: quitar esta referencia de la factura */}
@@ -4652,8 +4663,8 @@ export const FacturacionClientesDashboard = () => {
             </div>
 
             {/* ✅ V00520: sus operaciones, con ✎ Editar (el formulario de la operación) y si alguna cambió de costo */}
-            <OperacionesFacturaEdicion datos={opsEdicion} moneda={monedaEdicion || monedaCompletar || ''} desfasadas={desfasadasEdicion} plan={planEdicion} impedimento={impedimentoEdicion}
-              sinImportes={sinImportesEdicion} monedaHoy={monedaCompletar} completar={completarEdicion}
+            <OperacionesFacturaEdicion datos={opsEdicion} moneda={monedaEdicion || monedaCompletar || ''} desfasadas={planEdicion?.desfasadas ?? []} plan={planEdicion?.sincronizar ?? null} impedimento={planEdicion?.impedimento ?? ''}
+              sinImportes={!!planEdicion?.sinImportes} monedaHoy={monedaCompletar} completar={planEdicion?.resumenCompletar ?? null}
               onEditar={(id) => setOpEditandoId(id)} />
 
             <div className="fcd-x246">
@@ -4832,7 +4843,8 @@ export const FacturacionClientesDashboard = () => {
 
                 <div className="form-actions fcd-x297">
                   {/* ✅ V00481: editar la operación en el formulario de Operaciones (la ficha queda detrás) */}
-                  <button type="button" className="fcd-btn-editar-detalle" onClick={() => { const id = String(det.id); setOperacionDetalle(null); setOpEditandoId(id); }}>✎ Editar operación</button>
+                  <button type="button" className="fcd-btn-editar-detalle" onClick={() => { const id = String(det.id); setOperacionDetalle(null); setOpEditandoId(id); }}
+                    onPointerEnter={() => precargarOperacion(String(det.id))}>✎ Editar operación</button>{/* ✅ V00528 */}
                   <button onClick={() => setOperacionDetalle(null)} className="btn btn-outline fcd-x298">Cerrar Detalle</button>
                 </div>
               </>

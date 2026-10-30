@@ -5,13 +5,12 @@
 // cambió de costo lo marca y dice cómo queda la factura al presionar Actualizar.
 // ---------------------------------------------------------------------------
 import CargandoDatos from '../../../shared/components/CargandoDatos';
+import { precargarOperacion } from '../../operaciones/services/lecturaOperacion';
 import { importeEn } from '../services/cotejoCfdi';
 import type { OperacionesDeFactura } from '../hooks/useOperacionesDeFactura';
+import type { CompletarEdicion } from '../services/actualizarFactura'; // ✅ V00528: el tipo vive con la regla
 import type { OpDesfasada, PlanSincronizar } from '../services/sincronizarFactura';
 import './OperacionesFacturaEdicion.css';
-
-/** ✅ V00525: Actualizar guarda lo que cobra hoy cada operación (suma vs. total, que no cambia), o por qué no puede. */
-export type CompletarEdicion = { suma: number; total: number; cuadra: boolean } | { motivo: string };
 
 const dinero = (n: number): string => n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -51,7 +50,8 @@ export default function OperacionesFacturaEdicion({ datos, moneda, desfasadas, s
                     ? (op && monedaHoy ? <>Sin importe en la factura · <b>hoy {dinero(importeEn(monedaHoy, op))} {moneda}</b></> : null)
                     : <>{dinero(r.importe)} {moneda}</>}
                 </span>
-                <button type="button" className="ofe-editar" onClick={() => onEditar(r.opId)} title="Abrir el formulario de la operación">✎ Editar</button>
+                <button type="button" className="ofe-editar" onClick={() => onEditar(r.opId)} title="Abrir el formulario de la operación"
+                  onPointerEnter={() => precargarOperacion(r.opId)} onFocus={() => precargarOperacion(r.opId)}>✎ Editar</button>{/* ✅ V00528 */}
               </li>
             );
           })}

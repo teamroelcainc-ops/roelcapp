@@ -207,6 +207,23 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - Modales con `createPortal` a `document.body` (la tarjeta usa `transform` al pasar el mouse) y perezosos desde la tarjeta (`lazyWithRetry`): la carga inicial crece 0.3 KB (sin eso, ~20 KB por FormularioConfigurable).
 - Se quitaron las reglas `.rd-dos*` de App.css (solo las usaba la tarjeta TC · Diesel).
 
+## V00528 (Actualizar factura en la Ficha · el formulario de operación abre más rápido)
+- Pedido (30-oct, I8650): "el botón para actualizar la factura desde acá sin entrar a Editar factura" y "que las operaciones abran más rápido".
+- `services/actualizarFactura.ts`: la decisión de Actualizar (antes en línea en el tablero, V00520/V00525/V00527) sale a `planActualizarFactura(fila, actuales, { moneda, monedaVista, monedaDoc, cargando, dineroPorServidor })`.
+  - Editar factura y la Ficha la usan igual. La escritura va en `aplicarActualizarFactura` (sincronizarFacturaConOperaciones o completarImportes, más la bitácora).
+  - El parche local va en `aplicarEscritosFactura` del tablero. `CompletarEdicion` vive ahí ahora (antes en OperacionesFacturaEdicion.tsx).
+  - Cambio menor: si la factura no tiene su moneda guardada, ahora se ven sus operaciones desfasadas (con la moneda que se ve) y se dice por qué no se puede. Antes no se veían.
+- Ficha: el aviso pasó de `<p>` con un enlace a Editar factura a un `<div>` con el texto (`textoActualizar`) y el botón `fcd-btn-actualizar--ficha`. Ya no lleva el enlace a Editar factura.
+- Velocidad: se midió en el simulador (`$S/v528/m528.cjs`).
+  - El primer ✎ Editar de la sesión abría ~24 catálogos del formulario: ~14k documentos y ~1.7 s de CPU con el formulario ya visible.
+  - Facturación no los precalentaba: solo Operaciones Activas lo hace, y solo si se visitó.
+  - Ahora: `precalentarCatalogosFormulario` 3 s después de `!cargandoFacturas`.
+  - Lo siguiente, en estado estable, es la ida y vuelta de `getDoc`. `lecturaOperacion.ts` la empieza en `onPointerEnter` de ✎ Editar.
+  - Esa lectura vale 8 s y se usa una sola vez (`leerOperacionParaEditar` la saca del mapa), así que no se reutiliza una lectura vieja después de guardar.
+  - No se puso en los chips de referencia de la tabla: pasar el mouse por la tabla dispararía lecturas.
+- Pendiente (no se tocó): `cargarInfoUnidad` del formulario, sin `consultasCanonicas`, lee hasta 300+300 operaciones y 300 `referencias_diesel` en CADA apertura.
+  - La consulta de diesel no tiene orden: `orderBy fecha desc limit 1` necesitaría un índice nuevo (unidadId + fecha). Hay que preguntar antes de agregarlo.
+
 ## V00527 (cada operación cuenta con su TOTAL, no con el subtotal)
 - Reporte del usuario (30-oct, factura 39802): TR-241026-005 = Subtotal 140 + Cargos 250 = Total 390 (`subtotalCliente`); la factura dice 390 y la Ficha mostraba 140. El renglón guardó `dol` 140 (el total de ese momento, antes de los cargos) y el total de la factura ya incluía los 250 (capturado aparte). "Se debe tomar el total, no el subtotal."
 - La regla de dinero NO estaba mal: `montoOperacion` da `dol`/`pes` = total con cargos; `subtotalBase` = sin cargos (solo respaldo cuando un renglón no trae `dol`). Lo que estaba mal era el dato viejo del renglón y que el Actualizar de la V00520 lo hubiera sumado otra vez (390 + 250 = 640).

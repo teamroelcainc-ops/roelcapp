@@ -7,10 +7,11 @@
 //   y el formulario esperaba a que llegaran todos). El formulario lee sus catálogos de la
 //   capa compartida (useCatalogos); aquí solo se le pasa el tipo de cambio, que es lo
 //   único que sigue leyendo de `catalogosCacheados`.
+// ✅ V00528: la lectura de la operación puede venir ya en camino (precargarOperacion, al pasar el
+//   mouse por ✎ Editar): el formulario abre sin esperar la ida y vuelta al servidor.
 import React, { useEffect, useMemo, useState } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../../../config/firebase';
 import { useCatalogo } from '../../../shared/data/catalogos';
+import { leerOperacionParaEditar } from '../services/lecturaOperacion';
 import { FormularioOperacion } from './FormularioOperacion';
 import './EditorOperacionEmbebido.css';
 
@@ -35,7 +36,7 @@ export const EditorOperacionEmbebido: React.FC<Props> = ({ operacionId, operacio
     let activo = true;
     (async () => {
       try {
-        const snap = await getDoc(doc(db, 'operaciones', String(operacionId)));
+        const snap = await leerOperacionParaEditar(String(operacionId));
         if (!activo) return;
         if (snap.exists()) setOp({ id: snap.id, ...(snap.data() as any) });
         else if (!operacion) { setError('La operación ya no existe en la base de datos.'); return; }
