@@ -207,6 +207,16 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - Modales con `createPortal` a `document.body` (la tarjeta usa `transform` al pasar el mouse) y perezosos desde la tarjeta (`lazyWithRetry`): la carga inicial crece 0.3 KB (sin eso, ~20 KB por FormularioConfigurable).
 - Se quitaron las reglas `.rd-dos*` de App.css (solo las usaba la tarjeta TC · Diesel).
 
+## V00532 (Corregir desglose: Total, Dólares y Pesos en la moneda de su Facturado en)
+- Reporte (30-oct, TR-221026-023 / E4542): convenio $120 USD, Facturado en Pesos, TC 18.6425. Guardado: subtotalCliente 120, dolaresCliente 120, pesosCliente 0, conversionCliente 2237.10.
+  - El campo "Subtotal" del formulario es `subtotalClienteFact.monto` (calculado al momento); "Total" es `subtotalCliente` (guardado).
+  - Causa: propagación de moneda vieja (antes de la V00490) que cambió Facturado en sin recalcular; la V00494 (`conservarMontosGuardados`) los deja fijos al abrir una facturada.
+  - El dinero está bien: `montoOperacion` calcula con convenio, cargos, TC y monedas, y solo cae a lo guardado si la conversión calculada es 0.
+- Regla (`corregirDesglose.ts`, puro): por lado, si hay monto, Facturado en y TC, y la conversión GUARDADA = `conversionOperacion(op, lado).conv` (±0.01) → subtotal/dol/pes = total/dol/pes de la regla. Si la conversión guardada es otra → `otraConversion` (no se toca; se lista).
+- Escritura (`corregirDesgloseDatos.ts`): tandas de 100 en `runTransaction`; `motivoAlAplicar` relee cada operación y solo escribe si da EXACTAMENTE lo de la prueba (antes y después). Escribe los campos que cambian + `desgloseCorregido` (ISO).
+- Cascada: subtotal/dol/pes están en `DINERO_CLIENTE`/`DINERO_PROVEEDOR` → la escritura dispara la cascada 'dinero'. Con funciones V00495+ una factura emitida solo copia textos (`valorCongelado`); un borrador se recalcula con `renglonFactura` (usa `montoOperacion`, no estos campos: mismo resultado). Con funciones viejas recalcularía las emitidas: por eso el paso 3 es una casilla "funciones V00496 publicadas". No hay forma de saber desde la web qué versión de funciones está publicada.
+- No se tocan la Conversión, la Utilidad ni `montoConvenio*`. No va detrás de bandera: no depende de nada nuevo del servidor (la casilla cubre el riesgo de la cascada).
+
 ## V00531 (Ver documento en otra pestaña · Editar factura en la Ficha)
 - TarjetaDocumentoFactura (Clientes y Proveedores):
   - "Ver documento" es un `<a target="_blank">` al `documentoPrincipal` (PDF > imagen > primero; vive en documentosFactura.ts para no exportar funciones desde un componente). Es un enlace, no `window.open`, para que no lo bloquee el navegador.

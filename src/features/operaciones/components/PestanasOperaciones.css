@@ -24,3 +24,12 @@
 }
 .pop-btn-revision:hover { border-color: #e3b341; background: rgba(227, 179, 65, 0.16); }
 .pop-btn-revision:focus-visible { outline: 2px solid #e3b341; outline-offset: 2px; }
+
+/* ✅ V00532: botón "Corregir desglose" (Total, Dólares y Pesos en la moneda de su Facturado en) */
+.pop-btn-desglose {
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px;
+  border: 1px solid rgba(163, 113, 247, 0.45); border-radius: 6px; background: rgba(163, 113, 247, 0.08);
+  color: #a371f7; font: inherit; font-size: 0.82rem; font-weight: 600; white-space: nowrap; cursor: pointer;
+}
+.pop-btn-desglose:hover { border-color: #a371f7; background: rgba(163, 113, 247, 0.16); }
+.pop-btn-desglose:focus-visible { outline: 2px solid #a371f7; outline-offset: 2px; }

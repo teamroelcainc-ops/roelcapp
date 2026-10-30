@@ -9,9 +9,10 @@
 // ✅ V00498: + pestaña Reportes (antes su propio ítem del menú) y botón "Excel" (todas las
 //   operaciones de un rango de fechas, de cualquier status).
 // ✅ V00505: + botón "Revisión de datos" (solo lectura: lista los errores de datos por grupo).
+// ✅ V00532: + botón "Corregir desglose" (Total, Dólares y Pesos en la moneda de su Facturado en).
 // ---------------------------------------------------------------------------
 import { Suspense, useState } from 'react';
-import { BarChart3, CheckCircle2, ClipboardCheck, FileSpreadsheet, Truck, Wand2, XCircle } from 'lucide-react';
+import { BarChart3, Calculator, CheckCircle2, ClipboardCheck, FileSpreadsheet, Truck, Wand2, XCircle } from 'lucide-react';
 import PestanasModulo from '../../../shared/components/PestanasModulo';
 import type { PestanaModulo } from '../../../shared/components/PestanasModulo';
 import { lazyWithRetry } from '../../../utils/lazyWithRetry';
@@ -22,6 +23,7 @@ import './PestanasOperaciones.css';
 const CorregirMonedasConvenioModal = lazyWithRetry(() => import('./CorregirMonedasConvenioModal'), 'CorregirMonedasConvenioModal');
 const ExcelOperaciones = lazyWithRetry(() => import('./exportar/ExcelOperaciones'), 'ExcelOperaciones'); // ✅ V00498
 const RevisionDatosModal = lazyWithRetry(() => import('./RevisionDatosModal'), 'RevisionDatosModal'); // ✅ V00505
+const CorregirDesgloseModal = lazyWithRetry(() => import('./CorregirDesgloseModal'), 'CorregirDesgloseModal'); // ✅ V00532
 
 const PESTANAS: readonly PestanaModulo<ModuloOperaciones>[] = [
   { modulo: 'operaciones', texto: 'Activas', Icono: Truck, color: '#d84315' },
@@ -40,6 +42,7 @@ export default function PestanasOperaciones({ activo, puede, onCambiar }: Props)
   const [corrigiendo, setCorrigiendo] = useState(false);
   const [exportando, setExportando] = useState(false);
   const [revisando, setRevisando] = useState(false);
+  const [desglose, setDesglose] = useState(false);
   return (
     <>
       <PestanasModulo etiqueta="Operaciones" pestanas={PESTANAS} activo={activo} puede={puede} onCambiar={onCambiar}
@@ -52,6 +55,10 @@ export default function PestanasOperaciones({ activo, puede, onCambiar }: Props)
             <button type="button" className="pop-btn-corregir" onClick={() => setCorrigiendo(true)}
               title="Pone Facturado en con la moneda de su empresa y la moneda del convenio a las que no la tienen, y recalcula sus montos (primero muestra qué cambia)">
               <Wand2 size={15} aria-hidden="true" /> Corregir monedas
+            </button>
+            <button type="button" className="pop-btn-desglose" onClick={() => setDesglose(true)}
+              title="Pone Total, Dólares y Pesos en la moneda de su Facturado en (la Conversión no cambia). Primero muestra qué cambia; pide prueba, respaldo y APLICAR">
+              <Calculator size={15} aria-hidden="true" /> Corregir desglose
             </button>
             <button type="button" className="pop-btn-revision" onClick={() => setRevisando(true)}
               title="Revisa operaciones y facturas de clientes y lista los errores de datos por grupo (solo lee, no cambia nada)">
@@ -72,6 +79,11 @@ export default function PestanasOperaciones({ activo, puede, onCambiar }: Props)
       {revisando && (
         <Suspense fallback={null}>
           <RevisionDatosModal onCerrar={() => setRevisando(false)} />
+        </Suspense>
+      )}
+      {desglose && (
+        <Suspense fallback={null}>
+          <CorregirDesgloseModal onCerrar={() => setDesglose(false)} />
         </Suspense>
       )}
     </>
