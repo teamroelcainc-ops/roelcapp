@@ -65,7 +65,7 @@ class DescargaFallida extends Error {
 export const mensajeDescarga = (e: unknown): string => {
   if (e instanceof DescargaFallida) {
     return e.estado === 403 || e.estado === 404
-      ? 'El documento ya no está en el almacenamiento o su enlace ya no es válido: vuelve a subirlo en Ver documentos.'
+      ? 'El documento ya no está en el almacenamiento o su enlace ya no es válido: vuelve a subirlo en Agregar o cambiar.'
       : `No se pudo descargar el documento (el almacenamiento respondió ${e.estado}). Intenta de nuevo.`;
   }
   return 'No se pudo descargar el documento guardado. Revisa tu conexión e intenta de nuevo; si pasa con todos los documentos, falta permitir que la app lea el almacenamiento (CORS, ver CAMBIOS-V00516.md).';

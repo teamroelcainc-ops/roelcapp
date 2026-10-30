@@ -51,6 +51,23 @@ export const esImagen = (nombre: string, tipo = ''): boolean =>
 /** ✅ V00530: el XML de una factura (CFDI). */
 export const esXml = (nombre: string, tipo = ''): boolean => /\.xml($|\?)/i.test(nombre) || /(^|\/)xml$/i.test(tipo);
 
+/**
+ * ✅ V00531: URL para abrir un archivo guardado en otra pestaña. Los guardados en base64 (`data:`, legado)
+ * no se pueden abrir directo (el navegador lo bloquea): se pasan a un `blob:` que se libera al minuto.
+ */
+export const urlParaPestana = (url: string): string => {
+  if (!url.startsWith('data:')) return url;
+  const coma = url.indexOf(',');
+  const cabeza = url.slice(0, coma);
+  const cuerpo = url.slice(coma + 1);
+  const tipo = /^data:([^;,]+)/i.exec(cabeza)?.[1] || 'application/octet-stream';
+  const bin = /;base64/i.test(cabeza) ? atob(cuerpo) : decodeURIComponent(cuerpo);
+  const blob = new Blob([Uint8Array.from(bin, (c) => c.charCodeAt(0))], { type: tipo });
+  const local = URL.createObjectURL(blob);
+  setTimeout(() => URL.revokeObjectURL(local), 60_000);
+  return local;
+};
+
 /** Tipo de un `data:` URL (fotos guardadas en base64); '' si no es uno. */
 export const tipoDeDataUrl = (url: string): string => /^data:([^;,]+)[;,]/i.exec(url)?.[1] ?? '';
 

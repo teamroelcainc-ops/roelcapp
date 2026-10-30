@@ -8,7 +8,7 @@
 //     completa queda en el primero y los demás que tenían archivos quedan vacíos (se consolida).
 //   Lógica pura (probada); lo que toca Storage/Firestore está en guardarDocsFactura.ts.
 // ---------------------------------------------------------------------------
-import { MAX_ADJUNTOS, archivosDeDocumento, camposDeArchivos } from '../../../shared/archivos/adjuntos';
+import { MAX_ADJUNTOS, archivosDeDocumento, camposDeArchivos, esImagen, esPdf } from '../../../shared/archivos/adjuntos';
 import type { ArchivoGuardado, CamposLegado } from '../../../shared/archivos/adjuntos';
 
 type Datos = Record<string, unknown>;
@@ -54,6 +54,10 @@ export const camposDocsDeGrupo = (fila: unknown, otro: unknown): Datos => {
   const union = unirDocs(docsDeFactura(fila), docsDeFactura(otro));
   return union.length > 0 ? camposDocsFactura(union) : {};
 };
+
+/** ✅ V00531: el documento que abre "Ver documento": la factura en PDF; si no hay, una imagen; si no, el primero. */
+export const documentoPrincipal = (archivos: readonly ArchivoGuardado[]): ArchivoGuardado | undefined =>
+  archivos.find((a) => esPdf(a.nombre || a.url, a.tipo)) ?? archivos.find((a) => esImagen(a.nombre || a.url, a.tipo)) ?? archivos[0];
 
 /** Ids de los documentos de Firestore de una fila del Historial (grupo) o de una factura suelta. */
 export const idsDeFila = (fila: Datos): string[] => {

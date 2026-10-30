@@ -207,6 +207,14 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - Modales con `createPortal` a `document.body` (la tarjeta usa `transform` al pasar el mouse) y perezosos desde la tarjeta (`lazyWithRetry`): la carga inicial crece 0.3 KB (sin eso, ~20 KB por FormularioConfigurable).
 - Se quitaron las reglas `.rd-dos*` de App.css (solo las usaba la tarjeta TC · Diesel).
 
+## V00531 (Ver documento en otra pestaña · Editar factura en la Ficha)
+- TarjetaDocumentoFactura (Clientes y Proveedores):
+  - "Ver documento" es un `<a target="_blank">` al `documentoPrincipal` (PDF > imagen > primero; vive en documentosFactura.ts para no exportar funciones desde un componente). Es un enlace, no `window.open`, para que no lo bloquee el navegador.
+  - Con `data:` el clic hace `preventDefault` + `window.open(urlParaPestana(url))`: un blob creado en el mismo clic, que se libera a los 60 s.
+  - El modal pasó a "Agregar o cambiar".
+- Ficha de Clientes: `fcd-btn-editar-ficha` antes de Remisión → `abrirEditarFactura`. El ✕ sigue siendo el último botón de `.fcd-x173`; las pruebas del simulador cierran con él.
+- Proveedores no tiene botón de editar en su Ficha: no se pidió.
+
 ## V00530 (XML en documentos de factura · orden y barra horizontal en Corregir)
 - "No está funcionando el botón para subir los XML".
   - En el simulador, Subir PDF y XML (Asignar Operaciones) sí funciona.

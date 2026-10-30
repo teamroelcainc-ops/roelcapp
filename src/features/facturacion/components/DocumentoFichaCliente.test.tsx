@@ -79,6 +79,7 @@ describe('Analizar documento', () => {
   it('sin PDF ni XML no hay botón', () => {
     render(<DocumentoFichaCliente archivos={[{ url: 'https://x/foto.jpg', nombre: 'foto.jpg' }]} esperado={esperado} onAbrir={() => {}} />);
     expect(screen.queryByRole('button', { name: /Analizar/ })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Ver documentos' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Ver documento' }).getAttribute('href')).toBe('https://x/foto.jpg'); // ✅ V00531: abre en otra pestaña
+    expect(screen.getByRole('button', { name: 'Agregar o cambiar' })).toBeTruthy();
   });
 });

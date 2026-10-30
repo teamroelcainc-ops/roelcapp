@@ -593,3 +593,7 @@
 /* ✅ V00527: Ficha — lo que guardó la factura (tachado) y el total de hoy de la operación */
 .fcd-op-viejo { color: #8b949e; text-decoration: line-through; margin-right: 6px; }
 .fcd-op-hoy { color: #d29922; font-weight: 700; }
+/* ✅ V00531: Editar factura en la cabecera de la Ficha */
+.fcd-btn-editar-ficha { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border: 1px solid #388bfd; border-radius: 6px; background: transparent; color: #79c0ff; font: inherit; font-size: 0.85rem; font-weight: 700; white-space: nowrap; cursor: pointer; }
+.fcd-btn-editar-ficha:hover { background: rgba(56, 139, 253, 0.14); border-color: #58a6ff; }
+.fcd-btn-editar-ficha:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }

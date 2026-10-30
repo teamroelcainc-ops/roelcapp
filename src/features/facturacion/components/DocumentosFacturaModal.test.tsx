@@ -31,6 +31,16 @@ describe('píldora y tarjeta', () => {
     rerender(<TarjetaDocumentoFactura archivos={[]} onAbrir={() => {}} />);
     expect(screen.getByRole('button', { name: 'Subir documentos' })).toBeTruthy();
   });
+  it('✅ V00531: "Ver documento" abre la factura (el PDF) en otra pestaña y "Agregar o cambiar" abre el modal', () => {
+    const onAbrir = vi.fn();
+    const xml = { url: 'https://x/c.xml', nombre: 'c.xml' };
+    render(<TarjetaDocumentoFactura archivos={[xml, b, a]} onAbrir={onAbrir} />);
+    const ver = screen.getByRole('link', { name: 'Ver documento' });
+    expect(ver.getAttribute('href')).toBe(a.url);
+    expect(ver.getAttribute('target')).toBe('_blank');
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar o cambiar' }));
+    expect(onAbrir).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('modal "Documentos de la factura"', () => {

@@ -2,14 +2,17 @@
 // ✅ V00381: tarjeta GRANDE del documento de la factura (Clientes y Proveedores) en la Ficha de
 //   Factura, para que se note a simple vista si el documento YA está cargado.
 // ✅ V00451: VARIOS documentos por factura (hasta 10). La tarjeta lista los archivos (cada nombre
-//   abre el archivo) y "Ver documentos" abre el modal "Documentos de la factura" (vista previa,
+//   abre el archivo) y "Ver documentos" abría el modal "Documentos de la factura" (vista previa,
 //   agregar, reemplazar, quitar). La píldora de la fila (PildoraDocsFactura) abre lo mismo.
 //   Facturar y Editar factura usan AdjuntosArchivos (ya no la tarjeta con el archivo pendiente).
 // ✅ V00516: botón opcional "Analizar documento" (Clientes, DocumentoFichaCliente): revisa el PDF / XML
 //   ya guardado contra la factura.
+// ✅ V00531: "Ver documento" abre la factura (el PDF; si no hay, la imagen o el primero) en OTRA PESTAÑA.
+//   Agregar, reemplazar o quitar documentos pasó al botón "Agregar o cambiar" (el modal de siempre).
 import type { MouseEvent } from 'react';
+import { urlParaPestana } from '../../../shared/archivos/adjuntos';
 import type { ArchivoGuardado } from '../../../shared/archivos/adjuntos';
-import { etiquetaPildoraDocs, tituloPildoraDocs } from '../services/documentosFactura';
+import { documentoPrincipal, etiquetaPildoraDocs, tituloPildoraDocs } from '../services/documentosFactura';
 import './TarjetaDocumentoFactura.css';
 
 interface Props {
@@ -42,8 +45,16 @@ const IconoAlerta = () => (
   <svg className="tdf-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
 );
 
+/** Un archivo guardado en base64 no se abre con el enlace directo: se abre como blob. */
+const abrirEnPestana = (e: MouseEvent<HTMLAnchorElement>, url: string): void => {
+  if (!url.startsWith('data:')) return; // el enlace lo abre en otra pestaña
+  e.preventDefault();
+  window.open(urlParaPestana(url), '_blank', 'noopener');
+};
+
 export default function TarjetaDocumentoFactura({ archivos, onAbrir, onAnalizar, analizando = false }: Props) {
   const primero = archivos[0];
+  const principal = documentoPrincipal(archivos);
 
   if (!primero) {
     return (
@@ -81,7 +92,11 @@ export default function TarjetaDocumentoFactura({ archivos, onAbrir, onAnalizar,
             {analizando ? 'Ocultar análisis' : archivos.length === 1 ? 'Analizar documento' : 'Analizar documentos'}
           </button>
         )}
-        <button type="button" className="tdf-btn tdf-btn--ver" onClick={onAbrir} title="Ver, agregar, reemplazar o quitar documentos">Ver documentos</button>
+        {principal && (
+          <a className="tdf-btn tdf-btn--ver" href={principal.url} target="_blank" rel="noopener noreferrer" onClick={(e) => abrirEnPestana(e, principal.url)}
+            title={`Abrir ${principal.nombre || 'el documento'} en otra pestaña`}>Ver documento</a>
+        )}
+        <button type="button" className="tdf-btn" onClick={onAbrir} title="Agregar, reemplazar o quitar documentos de la factura">Agregar o cambiar</button>
       </div>
     </div>
   );

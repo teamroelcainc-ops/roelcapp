@@ -4341,6 +4341,9 @@ export const FacturacionClientesDashboard = () => {
               <h2 className="fcd-x172">Ficha de Factura</h2>
               <div className="fcd-x173">
                 
+{/* ✅ V00531: Editar factura desde la Ficha (número, fecha, status, cliente, total, documentos y sus operaciones) */}
+                <button type="button" className="fcd-btn-editar-ficha" onClick={(e) => abrirEditarFactura(e, facturaViendo)}
+                  title="Editar la factura: número, fecha, status, cliente, total, documentos y sus operaciones">✎ Editar factura</button>
 {/* ✅ V00508: Remisión visible en cualquier status (V00481 la ocultaba con la factura Facturada) */}
                 <button onClick={() => abrirRemision(facturaViendo)} disabled={cargandoRemision}
                   title="Generar la Remisión en PDF de esta factura"
