@@ -39,10 +39,10 @@ export default function DatosSitModal({ cliente, datos, onCerrar }: Props) {
       <div className="dsm-ventana">
         <header className="dsm-cabecera">
           <div>
-            <h2 id="dsm-titulo" className="dsm-titulo">Datos para el SIT</h2>
+            <h2 id="dsm-titulo" className="dsm-titulo">Datos para la Factura</h2>
             <p className="dsm-sub">
               {cliente} · {conceptos.length} {conceptos.length === 1 ? 'concepto' : 'conceptos'} en {moneda === 'USD' ? 'Dólares' : 'Pesos'}.
-              Un concepto por referencia: copia la descripción y el importe tal cual. Los importes son <b>subtotales</b>; el IVA y las retenciones los calcula el SIT.
+              Un concepto por referencia: copia la leyenda y el importe tal cual, al SIT o a QuickBooks. Cada importe es el <b>total de la operación</b> (con sus cargos adicionales), sin IVA: el IVA y las retenciones los calcula el SIT.{/* ✅ V00527 */}
             </p>
           </div>
           <button type="button" className="dsm-cerrar" onClick={onCerrar} aria-label="Cerrar">✕</button>
@@ -61,7 +61,7 @@ export default function DatosSitModal({ cliente, datos, onCerrar }: Props) {
           ))}
         </ol>
         <footer className="dsm-pie">
-          <span className="dsm-total">Subtotal <Importe monto={subtotal} moneda={moneda} conNombre /></span>
+          <span className="dsm-total">Total sin IVA <Importe monto={subtotal} moneda={moneda} conNombre /></span>{/* ✅ V00527: el total de las operaciones (antes decía Subtotal) */}
           <button type="button" className="dsm-btn" onClick={() => { void copiar(todo, 'todo'); }}>{etiqueta('todo', 'Copiar todo')}</button>
           <button type="button" className="dsm-btn dsm-btn--cerrar" onClick={onCerrar}>Cerrar</button>
         </footer>

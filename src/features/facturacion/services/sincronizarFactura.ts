@@ -14,6 +14,7 @@ import { db } from '../../../config/firebase';
 import { ErrorDinero, monedaDeFactura, montoOperacion, montoPagadoDe, totalNativoFacturaLegado } from '../../../shared/dominio/dinero';
 import { avisoTotalBajoPagado, renglonesDeFactura } from '../../../shared/dominio/facturacion';
 import { aCentavos, r2 } from '../../../shared/dominio/numeros';
+import { cuadreDeFactura } from './cuadreFactura';
 import { importeRenglon, opsDeFactura } from './diferenciaEnCargos';
 
 type Datos = Record<string, unknown>;
@@ -53,7 +54,16 @@ export const opsDesfasadas = (fac: Datos, ops: readonly { id: string; datos: Dat
   });
 };
 
-export interface PlanSincronizar { desfasadas: OpDesfasada[]; totalAntes: number; totalDespues: number; datosFactura: Datos }
+/**
+ * ✅ V00527 — Cómo queda el total al poner los renglones al día (cada uno con el TOTAL de hoy de su operación):
+ *  · 'yaIncluido': lo que suman hoy sus operaciones YA es el total de la factura (p. ej. la 39802: el renglón
+ *    guardó el subtotal $140 y después se capturaron $250 de cargos; el total ya decía $390). El total no cambia.
+ *  · 'diferencia': la factura cuadraba con sus renglones (o con su IVA): el total sube o baja la diferencia (V00520).
+ *  · 'soloImportes': no cuadraba antes ni cuadra con lo de hoy: se guardan los importes de hoy y el total NO se
+ *    toca (no se inventa un total); queda en Corregir con la diferencia real.
+ */
+export type ModoSincronizar = 'yaIncluido' | 'diferencia' | 'soloImportes';
+export interface PlanSincronizar { desfasadas: OpDesfasada[]; totalAntes: number; totalDespues: number; modo: ModoSincronizar; datosFactura: Datos }
 
 /** Qué se escribe en la factura (null = ya está al día). Lanza ErrorDinero si no se puede. */
 export const planSincronizarFactura = (fac: Datos, ops: readonly { id: string; datos: Datos }[], moneda: MonedaFactura, ahoraISO: string, usuario: string): PlanSincronizar | null => {
@@ -71,17 +81,21 @@ export const planSincronizarFactura = (fac: Datos, ops: readonly { id: string; d
   });
   const delta = desfasadas.reduce((s, d) => s + (d.ahora - d.antes), 0);
   const totalAntes = r2(totalNativoFacturaLegado(fac));
-  const totalDespues = r2(totalAntes + delta);
+  // ✅ V00527: no se suma dos veces lo que el total ya incluía (ver ModoSincronizar).
+  const sumaHoy = renglones.reduce((s, r) => s + aCentavos(importeRenglon(r, moneda)), 0);
+  const antes = cuadreDeFactura(renglonesDeFactura(fac), moneda, totalAntes).motivo;
+  const modo: ModoSincronizar = sumaHoy === aCentavos(totalAntes) ? 'yaIncluido' : (antes === 'cuadra' || antes === 'iva') ? 'diferencia' : 'soloImportes';
+  const totalDespues = modo === 'diferencia' ? r2(totalAntes + delta) : totalAntes;
   if (totalDespues <= 0) throw new ErrorDinero('La factura quedaría en $0.00 o menos: revisa los costos de sus operaciones. No se guardó nada.');
   const pagado = montoPagadoDe(fac);
   if (totalDespues < pagado - 0.009) throw new ErrorDinero(avisoTotalBajoPagado(totalDespues, pagado));
   const saldo = r2(Math.max(0, totalDespues - pagado));
   return {
-    desfasadas, totalAntes, totalDespues,
+    desfasadas, totalAntes, totalDespues, modo,
     datosFactura: {
       operacionesGuardadas: renglones,
       subtotalMonedaFactura: totalDespues,
-      ...(num(fac.subtotalFactura) > 0 ? { subtotalFactura: r2(num(fac.subtotalFactura) + deltaConv) } : {}),
+      ...(modo === 'diferencia' && num(fac.subtotalFactura) > 0 ? { subtotalFactura: r2(num(fac.subtotalFactura) + deltaConv) } : {}),
       ...(num(fac.totalManualCentavos) > 0 ? { totalManualCentavos: aCentavos(totalDespues) } : {}),
       saldoPendiente: saldo,
       ...(pagado > 0.009 ? { statusPago: saldo <= 0.009 ? 'PAGADA' : 'PARCIAL' } : {}),

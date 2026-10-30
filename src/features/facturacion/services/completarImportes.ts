@@ -10,6 +10,10 @@
 // Se comprueba antes de escribir: el total que se ve hoy = el total después (si no, no se completa).
 // Escritura MASIVA: reglas del usuario (PRUEBA → RESPALDO → "APLICAR"), en transacciones por tanda que
 // releen cada factura y sus operaciones; lo que cambió desde la prueba no se toca.
+// ✅ V00527 — También PONE AL DÍA los importes viejos: si la factura ya tenía su desglose pero no suma su total
+// y con el TOTAL de hoy de cada operación (con sus cargos adicionales) SÍ cuadra (p. ej. la 39802: guardó el
+// subtotal $140 y el total ya era $390 con $250 de cargos), sus renglones toman lo de hoy. El total tampoco
+// cambia. Si con lo de hoy tampoco cuadra, no se toca (revisarla a mano).
 // No se completa (queda para revisarla a mano): sin operaciones ligadas (solo referencias), una
 // operación que no existe o que está en otra factura, sin moneda, sin total, o si sus operaciones hoy
 // cobran $0.00. Con dineroPorServidor no se ofrece (las reglas no dejan escribir dinero de la factura).
@@ -18,7 +22,8 @@ import { doc, runTransaction } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { porIds } from '../../../shared/data/consultas';
 import { idReal } from '../../../shared/data/coleccionesVivas';
-import { renglonFactura, totalNativoFacturaLegado } from '../../../shared/dominio/dinero';
+import { montoOperacion, renglonFactura, totalNativoFacturaLegado } from '../../../shared/dominio/dinero';
+import { renglonesDeFactura } from '../../../shared/dominio/facturacion';
 import { aCentavos } from '../../../shared/dominio/numeros';
 import { registrarLog } from '../../../utils/logger';
 import type { CeldaExcel } from '../../operaciones/services/excelOperaciones';
@@ -62,13 +67,19 @@ export interface PlanDoc {
   /** Lo que suman hoy sus operaciones. */
   suma: number;
   cuadra: boolean;
+  /** ✅ V00527: ya tenía su desglose (viejo): se reemplaza por el de hoy (solo cuando así cuadra con el total). */
+  reemplaza: boolean;
+  /** Los renglones que tenía (para el respaldo y la prueba); [] si no tenía importes. */
+  antes: Datos[];
 }
 export interface OmitidaCompletar { id: string; invoice: string; cliente: string; fecha: string; motivo: string }
 export interface PlanCompletar { completar: PlanDoc[]; omitidas: OmitidaCompletar[] }
 
-/** Los ids de las operaciones de cada factura (los que se pueden leer). */
+/** Los ids de las operaciones de cada factura (los que se pueden leer): los de sus renglones si ya tiene importes; si no, las ligadas. */
 export const idsPorLeer = (docs: readonly DocSinImportes[]): string[] =>
-  Array.from(new Set(docs.flatMap((d) => lista(d.datos.operacionesIds).filter((id) => !esRefOperacion(id)))));
+  Array.from(new Set(docs.flatMap((d) => (d.moneda && centavosDe(d.moneda, d.datos.operacionesGuardadas) > 0
+    ? renglonesDeFactura(d.datos).map((r) => txt(r.id))
+    : lista(d.datos.operacionesIds))).filter((id) => id && !esRefOperacion(id))));
 
 /** El plan de UNA factura, o el motivo por el que no se completa. Puro. */
 export const planDeDoc = (d: DocSinImportes, ops: ReadonlyMap<string, Datos | null>): PlanDoc | { motivo: string } => {
@@ -77,15 +88,17 @@ export const planDeDoc = (d: DocSinImportes, ops: ReadonlyMap<string, Datos | nu
   if (!d.moneda) return { motivo: 'La factura no tiene moneda' };
   const total = totalNativoFacturaLegado(fac);
   if (!(aCentavos(total) > 0)) return { motivo: 'La factura no tiene total' };
-  if (centavosDe(d.moneda, fac.operacionesGuardadas) > 0) return { motivo: 'Ya tiene sus importes' };
+  // ✅ V00527: con importes (viejos) se ponen al día SUS renglones; sin importes se arman de las operaciones ligadas.
+  const guardados = renglonesDeFactura(fac);
+  const yaTiene = centavosDe(d.moneda, fac.operacionesGuardadas) > 0;
   // Un total guardado EN CERO (el campo existe con 0) se usa así en las filas agrupadas: no se toca.
   if (fac.subtotalMonedaFactura !== undefined && fac.subtotalMonedaFactura !== null && fac.subtotalMonedaFactura !== '' && !(Number(fac.subtotalMonedaFactura) > 0)) {
     return { motivo: 'Tiene su total guardado en $ 0.00: revisarla a mano' };
   }
-  const ids = lista(fac.operacionesIds);
-  if (ids.length === 0 || ids.some(esRefOperacion)) return { motivo: 'Solo guardó las referencias, no las operaciones: revisarla a mano' };
+  const ids = yaTiene ? guardados.map((r) => txt(r.id)) : lista(fac.operacionesIds);
+  if (ids.length === 0 || ids.some((id) => !id || esRefOperacion(id))) return { motivo: 'Solo guardó las referencias, no las operaciones: revisarla a mano' };
   const renglones: Datos[] = [];
-  for (const id of ids) {
+  for (const [i, id] of ids.entries()) {
     const op = ops.get(id);
     if (!op) return { motivo: `No se encontró la operación ${id}` };
     const otraId = txt(op.facturaClienteId);
@@ -93,15 +106,26 @@ export const planDeDoc = (d: DocSinImportes, ops: ReadonlyMap<string, Datos | nu
     if (otraId && otraId !== d.id && otraInvoice && otraInvoice.toLowerCase() !== d.invoice.toLowerCase()) {
       return { motivo: `La operación ${txt(op.ref) || id} está en otra factura (${otraInvoice})` };
     }
-    renglones.push({ ...renglonFactura(id, op, 'cliente') });
+    if (yaTiene) {
+      // El mismo renglón con el TOTAL de hoy de su operación (sus demás datos se quedan).
+      const m = montoOperacion(op, 'cliente');
+      renglones.push({ ...guardados[i], monto: m.conv, subtotalBase: m.subtotal, dol: m.dol, pes: m.pes });
+    } else renglones.push({ ...renglonFactura(id, op, 'cliente') });
   }
   const sumaC = centavosDe(d.moneda, renglones);
   if (sumaC === 0) return { motivo: 'Sus operaciones hoy cobran $ 0.00' };
+  if (yaTiene) {
+    if (importesDeRenglones(d.moneda, renglones).join('|') === importesDeRenglones(d.moneda, guardados).join('|')) return { motivo: 'Ya tiene sus importes al día' };
+    if (sumaC !== aCentavos(total)) return { motivo: 'Ya tiene sus importes y con el total de hoy de sus operaciones tampoco cuadra: revisarla a mano' };
+  }
   const fijarTotal = !(Number(fac.subtotalMonedaFactura) > 0) && !(Number(fac.totalManualCentavos) > 0);
   // El total NO puede cambiar: se comprueba con la misma regla que usa la pantalla.
   const despues = totalNativoFacturaLegado({ ...fac, operacionesGuardadas: renglones, ...(fijarTotal ? { subtotalMonedaFactura: total } : {}) });
   if (aCentavos(despues) !== aCentavos(total)) return { motivo: `El total cambiaría (${dinero(total)} → ${dinero(despues)})` };
-  return { id: d.id, invoice: d.invoice, cliente: d.cliente, fecha: d.fecha, moneda: d.moneda, ids, renglones, total, fijarTotal, suma: sumaC / 100, cuadra: sumaC === aCentavos(total) };
+  return {
+    id: d.id, invoice: d.invoice, cliente: d.cliente, fecha: d.fecha, moneda: d.moneda, ids, renglones, total, fijarTotal,
+    suma: sumaC / 100, cuadra: sumaC === aCentavos(total), reemplaza: yaTiene, antes: yaTiene ? guardados : [],
+  };
 };
 
 /** El plan de todas. Puro. */
@@ -129,34 +153,35 @@ export const categoriaMotivo = (motivo: string): string => {
 export const datosCompletar = (p: PlanDoc, ahoraISO: string, usuario: string): Datos => ({
   operacionesGuardadas: p.renglones,
   ...(p.fijarTotal ? { subtotalMonedaFactura: p.total } : {}),
-  importesCompletados: { en: ahoraISO, por: usuario, total: p.total, fijoTotal: p.fijarTotal },
+  importesCompletados: { en: ahoraISO, por: usuario, total: p.total, fijoTotal: p.fijarTotal, reemplazo: p.reemplaza },
 });
 
-const refsConImporte = (p: PlanDoc): string =>
-  p.renglones.map((r, i) => `${txt(r.ref) || p.ids[i]} ${dinero(importesDeRenglones(p.moneda, p.renglones)[i] ?? 0)}`).join('; ');
+const refsConImporte = (p: PlanDoc, renglones: readonly Datos[]): string =>
+  renglones.map((r, i) => `${txt(r.ref) || p.ids[i]} ${dinero(importesDeRenglones(p.moneda, renglones)[i] ?? 0)}`).join('; ');
 
 /** Excel de PRUEBA: una fila por factura (las que se completan y las que no, con su motivo). */
 export const filasPruebaCompletar = (plan: PlanCompletar): Record<string, CeldaExcel>[] => [
   ...plan.completar.map((p) => ({
-    'Acción': 'Se completa', Invoice: p.invoice, Fecha: p.fecha, Cliente: p.cliente, Moneda: p.moneda === 'USD' ? 'Dólares' : 'Pesos',
-    'Total (no cambia)': p.total, 'Referencias (lo que cobra hoy)': refsConImporte(p), 'Suman hoy': p.suma,
+    'Acción': p.reemplaza ? 'Se ponen al día sus importes' : 'Se completa', Invoice: p.invoice, Fecha: p.fecha, Cliente: p.cliente, Moneda: p.moneda === 'USD' ? 'Dólares' : 'Pesos',
+    'Total (no cambia)': p.total, 'Referencias antes (en la factura)': p.reemplaza ? refsConImporte(p, p.antes) : 'sin importes',
+    'Referencias (total de hoy)': refsConImporte(p, p.renglones), 'Suman hoy': p.suma,
     Diferencia: (aCentavos(p.total) - aCentavos(p.suma)) / 100,
     Resultado: p.cuadra ? 'Cuadra: sale de Corregir' : 'No cuadra: pasa a "Sus operaciones no suman el total"',
     'Se guarda el mismo total': p.fijarTotal ? 'Sí (no lo tenía guardado)' : 'No (ya lo tenía)', Motivo: '',
   })),
   ...plan.omitidas.map((o) => ({
-    'Acción': 'No se completa', Invoice: o.invoice, Fecha: o.fecha, Cliente: o.cliente, Moneda: '', 'Total (no cambia)': '',
-    'Referencias (lo que cobra hoy)': '', 'Suman hoy': '', Diferencia: '', Resultado: 'Queda en Corregir (revisarla a mano)', 'Se guarda el mismo total': '', Motivo: o.motivo,
+    'Acción': 'No se toca', Invoice: o.invoice, Fecha: o.fecha, Cliente: o.cliente, Moneda: '', 'Total (no cambia)': '',
+    'Referencias antes (en la factura)': '', 'Referencias (total de hoy)': '', 'Suman hoy': '', Diferencia: '', Resultado: 'Queda en Corregir (revisarla a mano)', 'Se guarda el mismo total': '', Motivo: o.motivo,
   })),
 ];
 
 /** RESPALDO: cómo estaban (sin desglose) y qué se escribe; para deshacer, quitar lo escrito. */
 export const respaldoCompletar = (plan: readonly PlanDoc[], cuando: string, quien: string): Datos => ({
   tipo: 'respaldo-completar-importes', generado: cuando, por: quien,
-  nota: 'Para deshacer: en cada factura, quitar operacionesGuardadas e importesCompletados; si "fijoTotal" es true, quitar también subtotalMonedaFactura (antes no lo tenía). El total no cambió.',
+  nota: 'Para deshacer: en cada factura, regresar operacionesGuardadas a "antes" (si dice "sin importes", quitarlo) y quitar importesCompletados; si "fijoTotal" es true, quitar también subtotalMonedaFactura (antes no lo tenía). El total no cambió.',
   facturas: plan.map((p) => ({
     id: p.id, invoice: p.invoice, cliente: p.cliente, total: p.total, fijoTotal: p.fijarTotal,
-    antes: { operacionesGuardadas: 'sin importes', subtotalMonedaFactura: p.fijarTotal ? null : p.total, operacionesIds: p.ids },
+    antes: { operacionesGuardadas: p.reemplaza ? p.antes : 'sin importes', subtotalMonedaFactura: p.fijarTotal ? null : p.total, operacionesIds: p.ids },
     despues: { operacionesGuardadas: p.renglones, ...(p.fijarTotal ? { subtotalMonedaFactura: p.total } : {}) },
   })),
 });
@@ -209,7 +234,7 @@ export const completarImportes = async (plan: readonly PlanDoc[], ahoraISO: stri
         const datos = normalizarFacturaDe(snapsFac[k].data() as Datos, 'cliente');
         const nuevo = planDeDoc({ id: p.id, invoice: p.invoice, cliente: p.cliente, fecha: p.fecha, moneda: p.moneda, datos }, ops);
         if ('motivo' in nuevo) { omitir(`${nuevo.motivo} (cambió desde la prueba)`); return; }
-        const iguales = nuevo.ids.join('|') === p.ids.join('|') && aCentavos(nuevo.total) === aCentavos(p.total) && nuevo.fijarTotal === p.fijarTotal
+        const iguales = nuevo.ids.join('|') === p.ids.join('|') && aCentavos(nuevo.total) === aCentavos(p.total) && nuevo.fijarTotal === p.fijarTotal && nuevo.reemplaza === p.reemplaza
           && importesDeRenglones(p.moneda, nuevo.renglones).join('|') === importesDeRenglones(p.moneda, p.renglones).join('|');
         if (!iguales) { omitir('Cambió desde la prueba (su total, sus operaciones o lo que cobran): vuelve a revisarla'); return; }
         const escribir = datosCompletar(p, ahoraISO, usuario);
@@ -229,7 +254,7 @@ export const completarImportes = async (plan: readonly PlanDoc[], ahoraISO: stri
   }
   if (completadas.size > 0) {
     await registrarLog('Facturación Clientes', 'Edición',
-      `Completar importes: ${completadas.size} factura(s) recibieron su desglose por operación (lo que cobra hoy cada una); ningún total cambió (${ahoraISO}). ${omitidas.length} no se completaron porque cambiaron desde la prueba.${error ? ` Se detuvo por un error: ${error}` : ''}`);
+      `Completar importes: ${completadas.size} factura(s) recibieron (o pusieron al día) su desglose por operación con el total de hoy de cada una; ningún total cambió (${ahoraISO}). ${omitidas.length} no se completaron porque cambiaron desde la prueba.${error ? ` Se detuvo por un error: ${error}` : ''}`);
   }
   return { completadas, omitidas, error };
 };

@@ -41,7 +41,7 @@ describe('planDeDoc', () => {
     expect(m(docDe(raw()), new Map([['a', op('TR-1', 140, { facturaClienteId: 'f9', facturaClienteInvoice: 'I7777' })]]))).toMatch(/está en otra factura \(I7777\)/);
     expect(m(docDe(raw(), { moneda: null }))).toMatch(/no tiene moneda/);
     expect(m(docDe(raw({ total: 0 })))).toMatch(/no tiene total/);
-    expect(m(docDe(raw({ operacionesGuardadas: [{ id: 'a', ref: 'TR-1', dol: 140, subtotalBase: 140 }] })))).toMatch(/Ya tiene sus importes/);
+    expect(m(docDe(raw({ operacionesGuardadas: [{ id: 'a', ref: 'TR-1', dol: 140, subtotalBase: 140 }] })))).toMatch(/Ya tiene sus importes al día/);
     expect(m(docDe(raw({ subtotalMonedaFactura: 0 })))).toMatch(/total guardado en \$ 0.00/);
     expect(m(docDe(raw()), new Map([['a', op('TR-1', 0)]]))).toMatch(/hoy cobran \$ 0.00/);
     expect(m(docDe(raw({ statusFactura: 'Cancelado' })))).toMatch(/cancelada/);
@@ -49,6 +49,24 @@ describe('planDeDoc', () => {
   it('la misma factura (otro documento del mismo folio) no cuenta como "otra factura"', () => {
     const p = planDeDoc(docDe(raw()), new Map([['a', op('TR-1', 140, { facturaClienteId: 'f2', facturaClienteInvoice: '35539' })]]));
     expect('motivo' in p).toBe(false);
+  });
+});
+
+describe('✅ V00527: importes viejos que con el total de hoy cuadran', () => {
+  // 39802: guardó el subtotal ($140) y después se capturaron $250 de cargos; el total ya decía $390.
+  const viejo = (extra: Record<string, unknown> = {}) => raw({ subtotalMonedaFactura: 390, operacionesGuardadas: [{ id: 'a', ref: 'TR-241026-005', dol: 140, subtotalBase: 140, remolque: 'D07149' }], ...extra });
+  it('pone al día el renglón con el TOTAL de hoy (con cargos) y no toca el total', () => {
+    const p = planDeDoc(docDe(viejo()), new Map([['a', op('TR-241026-005', 140, { cargosAdicionales: 250 })]])) as PlanDoc;
+    expect(p).toMatchObject({ reemplaza: true, total: 390, fijarTotal: false, suma: 390, cuadra: true });
+    expect(p.renglones[0]).toMatchObject({ id: 'a', ref: 'TR-241026-005', dol: 390, subtotalBase: 140, remolque: 'D07149' });
+    expect(p.antes[0]).toMatchObject({ dol: 140 });
+    expect(datosCompletar(p, 'T', 'yo')).not.toHaveProperty('subtotalMonedaFactura');
+    const fila = filasPruebaCompletar({ completar: [p], omitidas: [] })[0];
+    expect(fila).toMatchObject({ 'Acción': 'Se ponen al día sus importes', 'Referencias antes (en la factura)': 'TR-241026-005 $ 140.00', 'Referencias (total de hoy)': 'TR-241026-005 $ 390.00' });
+  });
+  it('si con lo de hoy tampoco cuadra, no se toca', () => {
+    const p = planDeDoc(docDe(viejo({ subtotalMonedaFactura: 500 })), new Map([['a', op('TR-241026-005', 140, { cargosAdicionales: 250 })]]));
+    expect((p as { motivo: string }).motivo).toMatch(/tampoco cuadra/);
   });
 });
 
@@ -61,8 +79,8 @@ describe('planCompletarImportes y la prueba', () => {
     expect(plan.omitidas.map((o) => o.invoice)).toEqual(['X']);
     const filas = filasPruebaCompletar(plan);
     expect(filas).toHaveLength(3);
-    expect(filas[1]).toMatchObject({ 'Acción': 'Se completa', 'Total (no cambia)': 140, 'Suman hoy': 100, Diferencia: 40, 'Referencias (lo que cobra hoy)': 'TR-2 $ 100.00' });
-    expect(filas[2]).toMatchObject({ 'Acción': 'No se completa', Motivo: expect.stringMatching(/Solo guardó/) });
+    expect(filas[1]).toMatchObject({ 'Acción': 'Se completa', 'Total (no cambia)': 140, 'Suman hoy': 100, Diferencia: 40, 'Referencias (total de hoy)': 'TR-2 $ 100.00' });
+    expect(filas[2]).toMatchObject({ 'Acción': 'No se toca', Motivo: expect.stringMatching(/Solo guardó/) });
   });
 });
 

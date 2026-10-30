@@ -43,8 +43,9 @@ export interface RevisionCuadre {
   revisadas: number;
   /** Cuándo (texto para mostrar). */
   en: string;
-  /** ✅ V00524: los documentos de las que no guardaron lo que cobró cada operación (para Completar importes). */
-  sinImportes: readonly DocSinImportes[];
+  /** ✅ V00524: los documentos para Completar importes: los que no guardaron lo que cobró cada operación y
+   *  (✅ V00527) los que no suman su total (si con el total de hoy de sus operaciones cuadran, se ponen al día). */
+  porCompletar: readonly DocSinImportes[];
 }
 
 interface Props {
@@ -114,9 +115,9 @@ export default function CorregirTotalesFacturas({ revision, cargando, onRevisar,
               ))}
             </div>
           )}
-          {revision.sinImportes.length > 0 && (
+          {revision.porCompletar.length > 0 && (
             // key: una revisión nueva empieza los tres pasos de cero
-            <CompletarImportes key={revision.en} docs={revision.sinImportes} impedimento={completar.impedimento} onCompletadas={completar.onCompletadas} />
+            <CompletarImportes key={revision.en} docs={revision.porCompletar} impedimento={completar.impedimento} onCompletadas={completar.onCompletadas} />
           )}
           {todas.length === 0 ? <p className="ctf-vacio">Todas las facturas cuadran con sus operaciones.</p> : (
             <div className="ctf-tabla-envoltura">
@@ -171,7 +172,7 @@ export default function CorregirTotalesFacturas({ revision, cargando, onRevisar,
                           {f.cuadre.motivo === 'cuadra' ? '' : TEXTO_MOTIVO[f.cuadre.motivo]}
                           {conHoy && (
                             <span className={`ctf-con-hoy${conHoy.cuadra ? ' ctf-con-hoy--ok' : ''}`}>
-                              {conHoy.cuadra ? 'Con el costo de hoy, cuadra.' : `Con el costo de hoy suman ${dinero(conHoy.suma)}.`}
+                              {conHoy.cuadra ? 'Con el total de hoy, cuadra.' : `Con el total de hoy suman ${dinero(conHoy.suma)}.`}
                             </span>
                           )}
                         </td>

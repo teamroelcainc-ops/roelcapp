@@ -69,8 +69,13 @@ export default function OperacionesFacturaEdicion({ datos, moneda, desfasadas, s
       {error && <p className="ofe-error" role="alert">{error}</p>}
       {desfasadas.length > 0 && (
         <p className={`ofe-aviso${impedimento ? ' ofe-aviso--error' : ''}`} role="status">
-          {desfasadas.length === 1 ? '1 operación cambió de costo' : `${desfasadas.length} operaciones cambiaron de costo`}.{' '}
-          {impedimento || (plan && <>Al presionar <b>Actualizar</b>, la factura toma el costo de hoy: total {dinero(plan.totalAntes)} → <b>{dinero(plan.totalDespues)} {moneda}</b>.</>)}
+          {desfasadas.length === 1 ? '1 operación tiene otro total hoy' : `${desfasadas.length} operaciones tienen otro total hoy`}.{' '}
+          {impedimento || (plan && (plan.modo === 'diferencia'
+            ? <>Al presionar <b>Actualizar</b>, la factura toma el total de hoy de cada operación: total {dinero(plan.totalAntes)} → <b>{dinero(plan.totalDespues)} {moneda}</b>.</>
+            : plan.modo === 'yaIncluido'
+              // ✅ V00527: el total ya incluía lo de hoy (p. ej. cargos capturados después de facturar): no se suma dos veces
+              ? <>Al presionar <b>Actualizar</b> se guarda el total de hoy de cada operación. El total de la factura (<b>{dinero(plan.totalAntes)} {moneda}</b>) no cambia: ya lo incluía.</>
+              : <>Al presionar <b>Actualizar</b> se guarda el total de hoy de cada operación. El total de la factura ({dinero(plan.totalAntes)} {moneda}) <b>no cambia</b>: no cuadraba con sus operaciones y seguirá en Corregir con la diferencia.</>))}
         </p>
       )}
     </section>

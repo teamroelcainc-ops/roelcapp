@@ -583,8 +583,15 @@
 .fcd-datos-sit { padding: 8px 16px; border: 1px solid #a371f7; border-radius: 6px; background: transparent; color: #a371f7; font-weight: 700; font-size: 0.85rem; white-space: nowrap; cursor: pointer; }
 .fcd-datos-sit:hover { background: rgba(163, 113, 247, 0.12); }
 .fcd-datos-sit:disabled { border-color: #30363d; color: #484f58; background: transparent; cursor: not-allowed; }
+/* ✅ V00526: botón Reporte por facturar */
+.fcd-reporte-facturar { padding: 8px 16px; border: 1px solid #d29922; border-radius: 6px; background: transparent; color: #e3b341; font-weight: 700; font-size: 0.85rem; white-space: nowrap; cursor: pointer; }
+.fcd-reporte-facturar:hover { background: rgba(210, 153, 34, 0.12); }
+.fcd-reporte-facturar:disabled { opacity: 0.6; cursor: wait; }
 
 /* ✅ V00525: Ficha — la factura no guardó lo que cobró cada operación */
 .fcd-ficha-sin-importes { flex-basis: 100%; margin: 6px 0 0; padding: 8px 10px; border: 1px dashed #9e6a03; border-radius: 6px; background: rgba(187, 128, 9, 0.08); color: #d29922; font-size: 0.8rem; line-height: 1.45; }
 .fcd-ficha-sin-importes__btn { padding: 0; border: none; background: none; color: #58a6ff; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
 .fcd-ficha-sin-importes__btn:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
+/* ✅ V00527: Ficha — lo que guardó la factura (tachado) y el total de hoy de la operación */
+.fcd-op-viejo { color: #8b949e; text-decoration: line-through; margin-right: 6px; }
+.fcd-op-hoy { color: #d29922; font-weight: 700; }

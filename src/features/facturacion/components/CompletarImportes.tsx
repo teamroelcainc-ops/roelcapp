@@ -43,6 +43,7 @@ export default function CompletarImportes({ docs, impedimento, onCompletadas }: 
   const quien = auth.currentUser?.email || '';
   const aCompletar = plan?.completar ?? [];
   const cuadran = aCompletar.filter((p) => p.cuadra).length;
+  const alDia = aCompletar.filter((p) => p.reemplaza).length; // ✅ V00527: importes viejos que se ponen al día (siempre cuadran)
   const listo = !!plan && respaldo && texto.trim().toUpperCase() === TEXTO_AUTORIZACION && aCompletar.length > 0 && !trabajando && !resultado;
 
   const bajarPrueba = async () => {
@@ -96,7 +97,7 @@ export default function CompletarImportes({ docs, impedimento, onCompletadas }: 
         <button type="button" className="cim-btn" onClick={() => setAbierto(true)} disabled={!!impedimento || docs.length === 0}>
           <ListPlus size={14} aria-hidden="true" /> Completar importes ({miles(docs.length)})
         </button>
-        <span className="cim-ayuda">{impedimento || 'Guarda en cada factura lo que cobra hoy cada operación. El total no cambia.'}</span>
+        <span className="cim-ayuda">{impedimento || 'Guarda en cada factura el total de hoy de cada operación (con sus cargos adicionales). El total de la factura no cambia.'}</span>
       </div>
     );
   }
@@ -107,13 +108,18 @@ export default function CompletarImportes({ docs, impedimento, onCompletadas }: 
     <section className="cim-panel" aria-labelledby="cim-titulo">
       <h4 id="cim-titulo" className="cim-titulo">Completar importes</h4>
       <p className="cim-texto">
-        A cada factura que no guardó lo que cobró cada operación se le guarda su desglose con lo que cobra <b>hoy</b> cada una.
-        <b> El total no cambia</b>: si la factura no lo tenía guardado, se guarda el mismo que ya muestra. Las que cuadran salen de Corregir;
+        A cada factura que no guardó lo que cobró cada operación se le guarda su desglose con el <b>total de hoy</b> de cada una (con sus cargos adicionales).
+        Y a las que lo guardaron viejo (por ejemplo, solo el subtotal, sin los cargos que se capturaron después) se les pone al día, <b>solo si así cuadran con su total</b>.
+        <b> El total de la factura no cambia</b>: si no lo tenía guardado, se guarda el mismo que ya muestra. Las que cuadran salen de Corregir;
         las demás pasan a “Sus operaciones no suman el total” con la diferencia por referencia.
       </p>
       {plan && !resultado && (
         <p className="cim-resumen" role="status">
-          Según la prueba: se completan <b>{miles(aCompletar.length)}</b> ({miles(cuadran)} cuadran y {miles(aCompletar.length - cuadran)} quedan con diferencia);
+          Según la prueba:{' '}
+          {aCompletar.length - alDia > 0 && <>se completan <b>{miles(aCompletar.length - alDia)}</b> sin importes ({miles(cuadran - alDia)} cuadran y {miles(aCompletar.length - cuadran)} quedan con diferencia)</>}
+          {aCompletar.length - alDia > 0 && alDia > 0 && ' y '}
+          {alDia > 0 && <>se ponen al día <b>{miles(alDia)}</b> con importes viejos (todas cuadran)</>}
+          {aCompletar.length === 0 && 'no hay nada que completar'};
           {' '}<b>{miles(plan.omitidas.length)}</b> no se pueden (abajo dice por qué; quedan para revisarlas a mano).
         </p>
       )}
@@ -122,7 +128,7 @@ export default function CompletarImportes({ docs, impedimento, onCompletadas }: 
         <div className={`cim-resultado${resultado.error ? ' cim-resultado--error' : ''}`} role="status">
           <p className="cim-resultado-titulo">
             {resultado.error ? `Se detuvo por un error: ${resultado.error}. ` : ''}
-            Se completaron {miles(resultado.completadas.size)} facturas{resultado.omitidas.length > 0 ? `; ${miles(resultado.omitidas.length)} no (cambiaron desde la prueba)` : ''}. Ningún total cambió.
+            Se completaron o pusieron al día {miles(resultado.completadas.size)} facturas{resultado.omitidas.length > 0 ? `; ${miles(resultado.omitidas.length)} no (cambiaron desde la prueba)` : ''}. Ningún total cambió.
           </p>
           <p className="cim-texto">
             {resultado.error
@@ -136,7 +142,7 @@ export default function CompletarImportes({ docs, impedimento, onCompletadas }: 
             <button type="button" className="cim-btn" onClick={() => { void bajarPrueba(); }} disabled={!!trabajando}>
               <FileSpreadsheet size={14} aria-hidden="true" /> 1. Descargar la prueba (Excel)
             </button>
-            <span className="cim-ayuda">Lee las operaciones de {miles(docs.length)} facturas (una vez) y dice qué se completa, cuánto suman hoy y si cuadran. Revísalo antes de seguir.</span>
+            <span className="cim-ayuda">Lee las operaciones de {miles(docs.length)} facturas (una vez) y dice qué se completa o se pone al día, cuánto suman hoy y si cuadran. Revísalo antes de seguir.</span>
           </li>
           <li className={`cim-paso${respaldo ? ' cim-paso--hecho' : ''}`}>
             <button type="button" className="cim-btn" onClick={bajarRespaldo} disabled={!plan || !!trabajando}>

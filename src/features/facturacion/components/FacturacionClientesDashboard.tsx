@@ -112,6 +112,7 @@ import SubirXmlModal from './SubirXmlModal'; // ✅ V00513
 import DatosSitModal from './DatosSitModal'; // ✅ V00513
 import { datosParaSit } from '../services/datosParaSit';
 import type { DatosSit } from '../services/datosParaSit';
+import { armarReporte } from '../services/reportePorFacturar'; // ✅ V00526
 import { cotejarCfdi, opParaCotejo } from '../services/cotejoCfdi';
 import type { ClienteCotejo, ResultadoCotejo } from '../services/cotejoCfdi';
 import { esRefOperacion } from '../services/leerCfdi';
@@ -406,6 +407,7 @@ export const FacturacionClientesDashboard = () => {
   const [modalAbierto, setModalAbierto] = useState(false);
   const [subirXmlAbierto, setSubirXmlAbierto] = useState(false); // ✅ V00513
   const [datosSit, setDatosSit] = useState<DatosSit | null>(null); // ✅ V00513
+  const [generandoReporte, setGenerandoReporte] = useState(false); // ✅ V00526
   const [guardando, setGuardando] = useState(false);
   const [facturaViendo, setFacturaViendo] = useState<any | null>(null);
   // ✅ V00502: el buscador global pidió abrir la ficha de una factura: la misma fila (grupo) del Historial.
@@ -907,6 +909,40 @@ export const FacturacionClientesDashboard = () => {
       const convenio = txt(op.convenioNombre, op.convenioClienteNombre, op.convenio);
       return { caja: remolqueOpTokens(op)[0] ?? '', convenio: convenio === '-' ? '' : convenio };
     }));
+  };
+  // ✅ V00526: REPORTE POR FACTURAR — lo pendiente de lo que muestra la tabla (respeta los filtros de
+  //   fechas, cliente, tipo y búsqueda; sin las de Revisión), en Excel para imprimir. ExcelJS se carga al descargar.
+  const descargarReporte = async (): Promise<void> => {
+    const pendientes = operacionesMostradas.filter((op: Record<string, unknown>) => !esFacturada(op));
+    if (pendientes.length === 0) {
+      avisar({ tipo: 'info', titulo: 'Reporte por facturar', texto: 'No hay operaciones pendientes por facturar con los filtros actuales.' });
+      return;
+    }
+    setGenerandoReporte(true);
+    try {
+      const reporte = armarReporte(pendientes, (op) => {
+        const clienteId = String(op.clientePaga || op.clienteId || '');
+        const convenio = txt(op.convenioNombre, op.convenioClienteNombre, op.convenio);
+        return {
+          clienteId, cliente: getNombreCliente(clienteId), monedaCliente: monedaClienteDe(clienteId),
+          monedaOperacion: monedaFacturacionOp(op) || null, caja: remolqueOpTokens(op)[0] ?? '', convenio: convenio === '-' ? '' : convenio,
+        };
+      });
+      // Lo que se filtró, para el encabezado del reporte (sin filtros = todo lo pendiente).
+      const partes = [
+        fechaDesdeOps || fechaHastaOps ? `Fecha de servicio ${fechaDesdeOps || '…'} a ${fechaHastaOps || '…'}` : '',
+        filtroCliente ? `Cliente: ${getNombreCliente(filtroCliente)}` : '',
+        filtroTipoOp ? `Tipo: ${filtroTipoOp}` : '',
+        textoBuscarRemolqueOps.trim() ? `Búsqueda: ${textoBuscarRemolqueOps.trim()}` : '',
+      ].filter(Boolean);
+      const { descargarReportePorFacturar } = await import('../services/reportePorFacturar');
+      await descargarReportePorFacturar(reporte, partes.length ? partes.join(' · ') : 'Todo lo pendiente', new Date().toLocaleString('es-MX'), `Por facturar ${hoyLocalISO()}.xlsx`);
+    } catch (e) {
+      console.error('Error generando el reporte por facturar:', e);
+      avisar({ tipo: 'alerta', titulo: 'Reporte por facturar', texto: 'No se pudo generar el reporte. Intenta de nuevo.' });
+    } finally {
+      setGenerandoReporte(false);
+    }
   };
   const avisoMonedaDe = (f: { clienteId?: unknown } | null | undefined): string | null =>
     f ? avisoMonedaDistinta(monedaDeFactura(f), monedaClienteDe(f.clienteId), 'cliente') : null;
@@ -2889,7 +2925,8 @@ export const FacturacionClientesDashboard = () => {
       };
     });
     // ✅ V00524: los DOCUMENTOS de las que no guardaron lo que cobró cada operación (Completar importes, por documento)
-    const sinImportes: DocSinImportes[] = malas.filter((m) => m.cuadre.motivo === 'sinMontos').flatMap(({ fila }) => {
+    //   ✅ V00527: también las que no suman su total ('diferencia'): si con el total de hoy cuadran, se ponen al día.
+    const porCompletar: DocSinImportes[] = malas.filter((m) => m.cuadre.motivo === 'sinMontos' || m.cuadre.motivo === 'diferencia').flatMap(({ fila }) => {
       const docs = Array.isArray(fila.__groupDocs) && fila.__groupDocs.length ? (fila.__groupDocs as Record<string, unknown>[]) : [fila];
       return docs.map((d) => ({
         id: String(d.id ?? ''), invoice: String(d.invoice || fila.invoice || ''), cliente: nombreClienteFactura_(fila),
@@ -2897,7 +2934,7 @@ export const FacturacionClientesDashboard = () => {
       }));
     }).filter((d) => d.id);
     const en = new Date().toLocaleString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    setRevisionCuadre({ vista: { filas: vista, revisadas: filas.filter((f) => !estaCancelada(f.statusFactura)).length, en, sinImportes }, filas: porClave });
+    setRevisionCuadre({ vista: { filas: vista, revisadas: filas.filter((f) => !estaCancelada(f.statusFactura)).length, en, porCompletar }, filas: porClave });
   };
   /** Abre la pestaña; la primera vez revisa sola (si las facturas ya llegaron). */
   const abrirCorregir = () => {
@@ -3273,6 +3310,12 @@ export const FacturacionClientesDashboard = () => {
   // ✅ V00481: moneda e importes por operación de la ficha abierta (en la moneda de la factura).
   const monedaFicha = facturaViendo ? monedaFacturaMostrar(facturaViendo) : '';
   const importesFicha = facturaViendo ? importesDeRenglones(monedaFicha, facturaViendo.operacionesGuardadas) : [];
+  // ✅ V00527: el TOTAL de hoy de cada operación de la Ficha (con sus cargos adicionales): si no es el que guardó la
+  //   factura (p. ej. guardó el subtotal y los cargos se capturaron después), se muestra y se explica cómo ponerla al día.
+  const monedaFichaCodigo = facturaViendo ? codigoMonedaFactura(facturaViendo) : null;
+  const opsFicha = useOperacionesDeFactura(facturaViendo, monedaFichaCodigo ?? '');
+  const desfasadasFicha = new Map((facturaViendo && monedaFichaCodigo && !opsFicha.cargando
+    ? opsDesfasadas(facturaViendo, Array.from(opsFicha.actuales, ([id, datos]) => ({ id, datos })), monedaFichaCodigo) : []).map((d) => [d.opId, d] as const));
   // ✅ V00483: pagos aplicados a la factura abierta (todos los documentos de su folio).
   const pagosFicha = facturaViendo
     ? pagosDeFacturas(pagosDetalle, (Array.isArray(facturaViendo.__groupIds) && facturaViendo.__groupIds.length ? facturaViendo.__groupIds : [facturaViendo.id]).map(String))
@@ -3720,8 +3763,10 @@ export const FacturacionClientesDashboard = () => {
                 title="Agregar un costo adicional al cliente en una operación seleccionada">
                 Costo adicional
               </button>
-              <button type="button" className="fcd-datos-sit" disabled={seleccionadas.length === 0 || seleccionMultiCliente} onClick={abrirDatosSit} title="Descripción e importe de cada operación seleccionada, listos para capturar en el SIT">Datos para el SIT</button>
-              <button type="button" className="fcd-subir-xml" onClick={() => setSubirXmlAbierto(true)} title="Leer los XML de facturas fiscales y cotejarlos contra las operaciones por facturar">Subir XML</button>
+              {/* ✅ V00526: Reporte por facturar · "Datos para la Factura" (SIT o QuickBooks) · "Subir PDF y XML" */}
+              <button type="button" className="fcd-reporte-facturar" disabled={generandoReporte} onClick={() => { void descargarReporte(); }} title="Excel para imprimir: lo pendiente por facturar (con los filtros que tengas), agrupado por cliente, con la leyenda y el importe de cada referencia">{generandoReporte ? 'Generando…' : 'Reporte por facturar'}</button>
+              <button type="button" className="fcd-datos-sit" disabled={seleccionadas.length === 0 || seleccionMultiCliente} onClick={abrirDatosSit} title="Leyenda e importe de cada operación seleccionada, listos para capturar en el SIT o en QuickBooks">Datos para la Factura</button>
+              <button type="button" className="fcd-subir-xml" onClick={() => setSubirXmlAbierto(true)} title="Subir los PDF y XML de las facturas fiscales y cotejarlos contra las operaciones por facturar">Subir PDF y XML</button>
               <button disabled={seleccionadas.length === 0 || seleccionMultiCliente} onClick={() => { const bloqueo = bloqueoPorRevision(opsDeSeleccion()); if (bloqueo) { alert(bloqueo); return; } setStatusFacturaForm('Facturado'); setAdjuntosFacturar([]); setModalAbierto(true); }}
                 style={{ padding: '8px 20px', backgroundColor: (seleccionadas.length > 0 && !seleccionMultiCliente) ? '#D84315' : '#30363d', color: '#fff', border: 'none', borderRadius: '6px', cursor: (seleccionadas.length > 0 && !seleccionMultiCliente) ? 'pointer' : 'not-allowed', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
                 Generar Factura ({seleccionadas.length})
@@ -4327,6 +4372,15 @@ export const FacturacionClientesDashboard = () => {
                     <span className="fcd-x176">
                       Referencias / Operaciones Facturadas ({facturaViendo.operacionesGuardadas?.length || 0}) — haz clic para ver el detalle
                     </span>
+                    {/* ✅ V00527: operaciones cuyo total de hoy no es el que guardó la factura */}
+                    {desfasadasFicha.size > 0 && !estaCancelada(facturaViendo.statusFactura) && (
+                      <p className="fcd-ficha-sin-importes">
+                        {desfasadasFicha.size === 1 ? 'Una operación tiene otro total hoy' : `${desfasadasFicha.size} operaciones tienen otro total hoy`} (por ejemplo, cargos adicionales capturados después de facturar).
+                        {' '}Para ponerla al día, ábrela en{' '}
+                        <button type="button" className="fcd-ficha-sin-importes__btn" onClick={(e) => abrirEditarFactura(e, facturaViendo)}>Editar factura</button>
+                        {' '}y presiona Actualizar: ahí dice si el total de la factura cambia o si ya lo incluía.
+                      </p>
+                    )}
                     {/* ✅ V00525: no guardó lo que cobró cada operación (por eso salen en $0.00): se guarda en Editar factura → Actualizar */}
                     {importesFicha.length > 0 && importesFicha.every((x) => !x) && totalDeGrupo(facturaViendo) > 0 && !estaCancelada(facturaViendo.statusFactura) && (
                       <p className="fcd-ficha-sin-importes">
@@ -4359,7 +4413,12 @@ export const FacturacionClientesDashboard = () => {
                             <span className="fcd-x194"><span className="fcd-x1">Convenio:</span> {op.convenioNombre}</span>
                           )}
                           {/* ✅ V00481: en la moneda de la factura (Dólares → Dólares (Cliente); Pesos → Conversión Final) */}
-                          <span className="fcd-x195"><Importe monto={importesFicha[i]} moneda={monedaFicha} /></span>
+                          {desfasadasFicha.has(String(op.id)) ? (
+                            <span className="fcd-x195">
+                              <span className="fcd-op-viejo" title="Lo que guardó la factura"><Importe monto={importesFicha[i]} moneda={monedaFicha} /></span>
+                              <span className="fcd-op-hoy" title="El total de hoy de la operación (con sus cargos adicionales)">→ hoy <Importe monto={desfasadasFicha.get(String(op.id))?.ahora ?? 0} moneda={monedaFicha} /></span>
+                            </span>
+                          ) : <span className="fcd-x195"><Importe monto={importesFicha[i]} moneda={monedaFicha} /></span>}
                           {/* ✅ V00520: editar la operación desde la factura (el formulario completo; la Ficha queda detrás) */}
                           {op.id && !esRefOperacion(String(op.id)) && (
                             <span role="button" className="fcd-op-editar" title="Editar esta operación en el formulario de Operaciones"

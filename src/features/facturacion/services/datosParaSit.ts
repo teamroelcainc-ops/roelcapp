@@ -42,6 +42,22 @@ export const fechaSit = (v: unknown): string => {
   return `${d}/${m}/${a}`;
 };
 
+/**
+ * ✅ V00526 — Nombre del ejecutivo que pidió el servicio (Obs. Ejecutivo), como va en la leyenda:
+ * "Goretti Rangel <grangel@ljtsi.com>" → "GORETTI RANGEL"; solo el correo → la parte antes de la @
+ * ("kevin.gaytan@…" → "KEVIN GAYTAN"). Primer renglón. No es un nombre (''): más de 40 letras, más de
+ * 4 palabras, o con números o signos (una nota como "URGENTE 2 CAJAS" o "LLAMAR AL 899…").
+ */
+export const ejecutivoSit = (v: unknown): string => {
+  const primera = texto(v).split(/\r?\n/)[0] ?? '';
+  let nombre = primera.replace(/<[^>]*>/g, '').trim();
+  if (!nombre && /@/.test(primera)) nombre = (/<?([^<@\s]+)@/.exec(primera)?.[1] ?? '').replace(/[._-]+/g, ' ');
+  else if (/^\S+@\S+$/.test(nombre)) nombre = nombre.split('@')[0].replace(/[._-]+/g, ' ');
+  nombre = nombre.replace(/\s+/g, ' ').trim().toUpperCase();
+  const pareceNombre = nombre.length <= 40 && nombre.split(' ').length <= 4 && /^[A-ZÁÉÍÓÚÜÑ' ]+$/.test(nombre);
+  return pareceNombre ? nombre : '';
+};
+
 /** Datos de una operación que no son de dinero (los resuelve el tablero: caja y convenio con nombre). */
 export interface ExtrasOperacion { caja: string; convenio: string }
 
@@ -59,6 +75,7 @@ export const conceptoSit = (op: Record<string, unknown>, moneda: 'USD' | 'MXN', 
     fecha,
     extras.caja ? `CAJA ${extras.caja}` : '',
     refCliente && refCliente.toUpperCase() !== 'N/A' ? `REF ${refCliente}` : '',
+    ejecutivoSit(op.observacionesEjecutivo), // ✅ V00526: quién pidió el servicio
     convertido ? `TC ${m.tc.toFixed(4)}` : '',
   ].filter(Boolean);
   return { id: texto(op.id), ref, convenio: extras.convenio, lineas, importe, tipoCambio: convertido ? m.tc : 0 };

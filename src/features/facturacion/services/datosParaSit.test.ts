@@ -1,7 +1,7 @@
 // ✅ V00513 — Datos para el SIT: descripción e importe por operación, con la regla de dinero de la app.
 import { describe, expect, it } from 'vitest';
 import { ID_MXN, ID_USD } from '../../../shared/dominio/constantes';
-import { conceptoSit, datosParaSit, fechaSit, textoDescripcion, textoImporte } from './datosParaSit';
+import { conceptoSit, datosParaSit, ejecutivoSit, fechaSit, textoDescripcion, textoImporte } from './datosParaSit';
 
 const temm = {
   id: 'o1', ref: 'LO-211026-8', fechaServicioISO: '2026-10-21', refCliente: '',
@@ -45,5 +45,27 @@ describe('datosParaSit', () => {
     expect(fechaSit('2026-10-21')).toBe('21/10/2026');
     expect(fechaSit('')).toBe('');
     expect(textoImporte(3131.4)).toBe('3131.40');
+  });
+});
+
+describe('ejecutivoSit (V00526)', () => {
+  it('nombre en mayúsculas, sin el correo', () => {
+    expect(ejecutivoSit('Goretti Rangel <grangel@ljtsi.com>')).toBe('GORETTI RANGEL');
+    expect(ejecutivoSit('Kevin Gaytan <Kevin.Gaytan@chrobinson.com>')).toBe('KEVIN GAYTAN');
+    expect(ejecutivoSit('ORLANDO  NAVARRO')).toBe('ORLANDO NAVARRO');
+    expect(ejecutivoSit('cdeluna@landstar.com')).toBe('CDELUNA');
+    expect(ejecutivoSit('<nyamagata@landstar.com>')).toBe('NYAMAGATA');
+  });
+  it('una nota (larga, con números o signos, o de más de 4 palabras) o vacío no es un nombre', () => {
+    expect(ejecutivoSit('TROMPO DE EXPORTACION POR IMPORTACION HAZMAT')).toBe('');
+    expect(ejecutivoSit('URGENTE 2 CAJAS')).toBe('');
+    expect(ejecutivoSit('Llamar antes de cruzar, por favor')).toBe('');
+    expect(ejecutivoSit('María José Pérez Núñez')).toBe('MARÍA JOSÉ PÉREZ NÚÑEZ');
+    expect(ejecutivoSit('')).toBe('');
+    expect(ejecutivoSit(null)).toBe('');
+  });
+  it('va en la leyenda después de la Ref Cliente', () => {
+    const c = conceptoSit({ ...chr, observacionesEjecutivo: 'Orlando Navarro' }, 'USD', { caja: 'APH5321', convenio: '' });
+    expect(c.lineas).toEqual(['TR-271026-026', '27/10/2026', 'CAJA APH5321', 'REF 568917117', 'ORLANDO NAVARRO']);
   });
 });
