@@ -60,7 +60,8 @@ export default function DocumentosFacturaModal({ lado, fila, esperado = null, on
           <button type="button" className="dfm-cerrar" onClick={cerrar} disabled={guardando} aria-label="Cerrar">✕</button>
         </div>
         {agrupados > 1 && <p className="dfm-nota">Este folio junta {agrupados} registros: los documentos se guardan juntos en el primero.</p>}
-        <AdjuntosArchivos etiqueta="PDF o imagen" adjuntos={adjuntos} onCambiar={setAdjuntos} max={MAX_DOCS_FACTURA} deshabilitado={guardando} />
+        {/* ✅ V00530: también el XML (CFDI): antes solo PDF o imagen y el XML no se podía elegir ni arrastrar */}
+        <AdjuntosArchivos etiqueta="PDF, XML o imagen" tipos="factura" adjuntos={adjuntos} onCambiar={setAdjuntos} max={MAX_DOCS_FACTURA} deshabilitado={guardando} />
         {esperado && <RevisionDocumentosFactura adjuntos={adjuntos} esperado={esperado} />}
         <div className="dfm-pie">
           <button type="button" className="dfm-btn" onClick={cerrar} disabled={guardando}>Cancelar</button>

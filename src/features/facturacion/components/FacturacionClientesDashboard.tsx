@@ -71,6 +71,7 @@ import { ID_MXN, ID_USD, STATUS_COMPLETADOS, TIPO_EMPRESA } from '../../../share
 import { useCatalogo, useCatalogos } from '../../../shared/data/catalogos'; // ✅ V00439 (Fase 3.x)
 import { CATALOGOS_NOMBRES_FACTURACION, construirMapaCatalogos } from '../services/mapaCatalogos';
 import { useMapaEstable } from '../../../shared/hooks/useMapaEstable'; // ✅ V00447
+import { useValorEstable } from '../../../shared/hooks/useValorEstable'; // ✅ V00529
 import type { EmpresaFacturacion } from '../services/mapaCatalogos';
 import { aCentavos, r2 } from '../../../shared/dominio/numeros';
 import {
@@ -105,6 +106,7 @@ import ModalCancelarFactura from './ModalCancelarFactura';
 import CancelacionFicha from './CancelacionFicha';
 import AccionesHistorial from './AccionesHistorial'; // ✅ V00482
 import CorregirTotalesFacturas from './CorregirTotalesFacturas'; // ✅ V00522
+import ActualizarFacturaFicha from './ActualizarFacturaFicha'; // ✅ V00529
 import type { FilaCorregirVista, RevisionCuadre } from './CorregirTotalesFacturas';
 import type { DocSinImportes } from '../services/completarImportes'; // ✅ V00524
 import { cuadreDeFactura, facturasQueNoCuadran, TEXTO_MOTIVO } from '../services/cuadreFactura'; // ✅ V00522
@@ -215,6 +217,13 @@ const CLAVES_CACHE_LEGADO = ['roelca_ops_completadas_v2', 'roelca_facturas_clien
 // ✅ V00493: la forma de la factura vive en services/normalizarFactura.ts (la misma que usa Estadísticas).
 //   Devuelve `any` como antes: el tablero aún trata sus facturas sin tipo (no se amplía aquí).
 const normalizarFactura = (raw: Record<string, unknown>): any => normalizarFacturaDe(raw, 'cliente');
+// ✅ V00529: el índice operación → factura y cuándo es el mismo (para useValorEstable).
+type EntradaOpIndex = { invoice: string; facturaId: string; fecha: string; clienteId: string; moneda: string };
+const mismoOpIndex = (a: ReadonlyMap<string, EntradaOpIndex>, b: ReadonlyMap<string, EntradaOpIndex>): boolean =>
+  a.size === b.size && Array.from(b).every(([k, v]) => {
+    const x = a.get(k);
+    return !!x && x.invoice === v.invoice && x.facturaId === v.facturaId && x.fecha === v.fecha && x.clienteId === v.clienteId && x.moneda === v.moneda;
+  });
 
 const COLUMNAS_OPS_BASE: any[] = [
   { id: 'factura',       label: '# Factura',       visible: true,  orden: true,  grupo: 'General' },
@@ -463,6 +472,19 @@ export const FacturacionClientesDashboard = () => {
       });
     }
     if (r.omitidas.length > 0) avisar({ tipo: 'alerta', titulo: 'No se guardó lo que cobra cada operación', texto: r.omitidas.join('; ') });
+    // ✅ V00529: la Ficha toma también las operaciones como están en el servidor ("→ hoy" verdadero).
+    opsFicha.ponerAlDia(r.opsServidor);
+    // ✅ V00529: se esperaba cambiar algo y en el servidor no había nada que cambiar: se dice por qué, con sus números.
+    if (!r.sincronizado && r.diferencias.length > 0) {
+      avisar({ tipo: 'alerta', titulo: 'No se cambió nada en la factura', texto: `En el servidor no había nada que poner al día. ${r.diferencias.join('; ')}. La Ficha ya muestra lo que hay en el servidor.` });
+    }
+    // ✅ V00529: la lista de Corregir (que es una foto de cuando se presionó Revisar) se pone al día con lo escrito.
+    //   Después de pintar lo demás (revisa todas las facturas: no se espera por eso).
+    if (revisionCuadre && r.escritos.size > 0) {
+      const lista = facturasGlobales.map((f) => { const c = r.escritos.get(String(f.id)); return c ? normalizarFactura({ ...f, ...c }) : f; });
+      const en = revisionCuadre.vista.en;
+      setTimeout(() => revisarCuadreCon(lista, en), 0);
+    }
   };
   /** Facturar: sube los documentos elegidos y los AGREGA a los de la factura (el folio pudo existir). Devuelve los campos para la fila. */
   const subirDocsAlFacturar = async (idFactura: string, folio: string): Promise<Record<string, unknown>> => {
@@ -866,8 +888,10 @@ export const FacturacionClientesDashboard = () => {
     return cli?.nombre || filtroCliente;
   }, [filtroCliente, empresasList]);
 
-  const opIndex = useMemo(() => {
-    const m = new Map<string, { invoice: string; facturaId: string; fecha: string; clienteId: string; moneda: string }>();
+  // ✅ V00529: estable por CONTENIDO (useValorEstable): poner al día una factura (Actualizar) cambia sus importes,
+  //   no sus operaciones; antes este índice se rehacía y con él la revisión de Ref Cliente y el cotejo de CFDI.
+  const opIndex = useValorEstable(useMemo(() => {
+    const m = new Map<string, EntradaOpIndex>();
     facturasGlobales.forEach((f: any) => {
       const ids = Array.isArray(f.operacionesIds) ? f.operacionesIds : [];
       ids.forEach((id: any) => {
@@ -876,7 +900,7 @@ export const FacturacionClientesDashboard = () => {
       });
     });
     return m;
-  }, [facturasGlobales]);
+  }, [facturasGlobales]), mismoOpIndex);
 
   // ✅ V00262: MONEDA CANÓNICA — en el catálogo solo existen DOS monedas:
   //   "Dólares" y "Pesos". USD/DÓLARES/DOLARES → Dólares; MXN/PESOS → Pesos.
@@ -2879,8 +2903,9 @@ export const FacturacionClientesDashboard = () => {
   //   recorre TODAS las facturas que ya están en pantalla (cero lecturas) y no cambia ningún total.
   const [revisionCuadre, setRevisionCuadre] = useState<{ vista: RevisionCuadre; filas: ReadonlyMap<string, Record<string, unknown>> } | null>(null);
   const facturasCargando = cargandoFacturas || !todasListasFac;
-  const revisarCuadre = () => {
-    const filas = agruparFacturas(facturasGlobales, 'clienteId') as Record<string, unknown>[];
+  /** ✅ V00529: con una lista dada (la ya parchada después de Actualizar) y, si se da, la hora de la revisión que se conserva. */
+  const revisarCuadreCon = (lista: readonly Record<string, unknown>[], enPrevio?: string) => {
+    const filas = agruparFacturas(lista, 'clienteId') as Record<string, unknown>[];
     const malas = facturasQueNoCuadran(filas, (f) => ({
       renglones: f.operacionesGuardadas, moneda: monedaFacturaMostrar(f), total: totalDeGrupo(f), status: f.statusFactura, fecha: fechaFacturaISO(f.fecha) || '',
     }));
@@ -2912,9 +2937,10 @@ export const FacturacionClientesDashboard = () => {
         fecha: fechaFacturaISO(d.fecha) || '', moneda: codigoMonedaFactura(d) ?? codigoMonedaFactura(fila), datos: d,
       }));
     }).filter((d) => d.id);
-    const en = new Date().toLocaleString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const en = enPrevio ?? new Date().toLocaleString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
     setRevisionCuadre({ vista: { filas: vista, revisadas: filas.filter((f) => !estaCancelada(f.statusFactura)).length, en, porCompletar }, filas: porClave });
   };
+  const revisarCuadre = () => revisarCuadreCon(facturasGlobales);
   /** Abre la pestaña; la primera vez revisa sola (si las facturas ya llegaron). */
   const abrirCorregir = () => {
     setActiveTab('corregir');
@@ -3298,30 +3324,30 @@ export const FacturacionClientesDashboard = () => {
     moneda: monedaDeFactura(facturaViendo), monedaVista: monedaFichaCodigo, monedaDoc: codigoMonedaFactura, cargando: opsFicha.cargando, dineroPorServidor: !!flags.dineroPorServidor,
   }) : null;
   const desfasadasFicha = new Map((planFicha?.desfasadas ?? []).map((d) => [d.opId, d] as const));
-  const [actualizandoFicha, setActualizandoFicha] = useState(false);
+  // ✅ V00529: el "Actualizando…" lo lleva ActualizarFacturaFicha (presionar no repinta todo el módulo).
   const actualizarDesdeFicha = async (fila: Record<string, unknown>, plan: PlanActualizarFactura) => {
-    if (!hayQueActualizar(plan) || actualizandoFicha) return;
+    if (!hayQueActualizar(plan)) return;
     const folio = String(fila.invoice || '');
-    setActualizandoFicha(true);
     try {
       const r = await aplicarActualizarFactura(fila, plan, folio, auth.currentUser?.email || '');
       aplicarEscritosFactura(r);
       if (r.errorCompletar) throw new ErrorDinero(`Se detuvo: ${r.errorCompletar}`);
       const s = r.sincronizado;
       const dinero2 = (n: number) => n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      avisar({
-        tipo: 'info', titulo: `Factura ${folio} actualizada`,
-        texto: s
-          ? (Math.round(s.totalAntes * 100) === Math.round(s.totalDespues * 100)
-            ? `Cada operación quedó con su total de hoy. El total sigue en ${dinero2(s.totalDespues)}.`
-            : `Cada operación quedó con su total de hoy. El total pasó de ${dinero2(s.totalAntes)} a ${dinero2(s.totalDespues)}.`)
-          : r.escritos.size > 0 ? 'Se guardó lo que cobra hoy cada operación. El total no cambió.' : 'La factura ya estaba al día.',
-      });
+      // ✅ V00529: si en el servidor no había nada que cambiar, el aviso con el porqué ya salió (aplicarEscritosFactura).
+      if (s || r.diferencias.length === 0) {
+        avisar({
+          tipo: 'info', titulo: `Factura ${folio} actualizada`,
+          texto: s
+            ? (Math.round(s.totalAntes * 100) === Math.round(s.totalDespues * 100)
+              ? `Cada operación quedó con su total de hoy. El total sigue en ${dinero2(s.totalDespues)}.`
+              : `Cada operación quedó con su total de hoy. El total pasó de ${dinero2(s.totalAntes)} a ${dinero2(s.totalDespues)}.`)
+            : plan.completar ? 'Se guardó lo que cobra hoy cada operación. El total no cambió.' : 'La factura ya estaba al día.',
+        });
+      }
     } catch (e) {
       console.error('[Facturación] No se pudo actualizar la factura desde la Ficha:', e);
       avisar({ tipo: 'alerta', titulo: `No se pudo actualizar la factura ${folio}`, texto: e instanceof ErrorDinero ? e.message : 'No se guardó nada. Revisa tu conexión e intenta de nuevo.' });
-    } finally {
-      setActualizandoFicha(false);
     }
   };
   // ✅ V00483: pagos aplicados a la factura abierta (todos los documentos de su folio).
@@ -3738,7 +3764,10 @@ export const FacturacionClientesDashboard = () => {
       ) : activeTab === 'corregir' ? (
         <div className="animation-fade-in">
           <CorregirTotalesFacturas revision={revisionCuadre?.vista ?? null} cargando={facturasCargando} onRevisar={revisarCuadre}
-            onVer={(clave) => { const fila = revisionCuadre?.filas.get(clave); if (fila) setFacturaViendo(fila); }}
+            onVer={(clave) => { // ✅ V00529: la factura como está AHORA (la lista de Corregir es una foto de cuando se presionó Revisar)
+              const fila = revisionCuadre?.filas.get(clave);
+              if (fila) setFacturaViendo(grupoDeFactura(facturasGlobales, String(fila.id ?? ''), 'clienteId') ?? fila);
+            }}
             completar={{
               // ✅ V00524: con el dinero en el servidor las reglas no dejan escribir los renglones de la factura desde la web
               impedimento: flags.dineroPorServidor ? 'Con el dinero en el servidor encendido (dineroPorServidor) no se puede completar desde aquí.' : '',
@@ -4290,7 +4319,7 @@ export const FacturacionClientesDashboard = () => {
                   {/* ✅ V00276: documento de la factura (se sube al confirmar) */}
                   <label className="fcd-x146">DOCUMENTO DE LA FACTURA</label>
                   {/* ✅ V00451: varios (hasta 10), con vista previa; se suben al confirmar */}
-                  <AdjuntosArchivos etiqueta="Archivos (opcional)" adjuntos={adjuntosFacturar} onCambiar={setAdjuntosFacturar} max={MAX_DOCS_FACTURA} deshabilitado={guardando} />
+                  <AdjuntosArchivos etiqueta="Archivos (opcional)" tipos="factura" adjuntos={adjuntosFacturar} onCambiar={setAdjuntosFacturar} max={MAX_DOCS_FACTURA} deshabilitado={guardando} />{/* ✅ V00530: también XML */}
                   {/* ✅ V00514: el PDF / XML se revisa contra el formulario (solo avisa) */}
                   <RevisionDocumentosFactura adjuntos={adjuntosFacturar} esperado={esperadoGenerar()} />
                 </div>
@@ -4386,18 +4415,13 @@ export const FacturacionClientesDashboard = () => {
                         ✅ V00528: se pone al día AQUÍ con "Actualizar factura" (antes había que entrar a Editar factura). */}
                     {planFicha && !estaCancelada(facturaViendo.statusFactura) && (desfasadasFicha.size > 0
                       || (importesFicha.length > 0 && importesFicha.every((x) => !x) && totalDeGrupo(facturaViendo) > 0)) && (
-                      <div className="fcd-ficha-sin-importes" role="status">
-                        <p className="fcd-ficha-sin-importes__texto">
-                          {desfasadasFicha.size > 0
-                            ? `${desfasadasFicha.size === 1 ? 'Una operación tiene otro total hoy' : `${desfasadasFicha.size} operaciones tienen otro total hoy`} (por ejemplo, cargos adicionales capturados después de facturar).`
-                            : 'Esta factura no guardó lo que cobró cada operación (por eso salen en $ 0.00).'}
-                          {' '}{opsFicha.cargando ? 'Leyendo sus operaciones…' : textoActualizar(planFicha, monedaFicha)}
-                        </p>
-                        <button type="button" className="fcd-btn-actualizar fcd-btn-actualizar--ficha" disabled={!hayQueActualizar(planFicha) || actualizandoFicha}
-                          onClick={() => { void actualizarDesdeFicha(facturaViendo, planFicha); }}>
-                          {actualizandoFicha ? 'Actualizando…' : 'Actualizar factura'}
-                        </button>
-                      </div>
+                      <ActualizarFacturaFicha
+                        motivo={desfasadasFicha.size > 0
+                          ? `${desfasadasFicha.size === 1 ? 'Una operación tiene otro total hoy' : `${desfasadasFicha.size} operaciones tienen otro total hoy`} (por ejemplo, cargos adicionales capturados después de facturar).`
+                          : 'Esta factura no guardó lo que cobró cada operación (por eso salen en $ 0.00).'}
+                        texto={opsFicha.cargando ? 'Leyendo sus operaciones…' : textoActualizar(planFicha, monedaFicha)}
+                        habilitado={hayQueActualizar(planFicha)}
+                        onActualizar={() => actualizarDesdeFicha(facturaViendo, planFicha)} />
                     )}
 {puedeAgregarOperaciones(facturaViendo.statusFactura) && (/* ✅ V00481: a una factura Facturada no se le agregan */
                     <button className="fcd-x190"
@@ -4625,7 +4649,7 @@ export const FacturacionClientesDashboard = () => {
                 {/* ✅ V00276: documento de la factura desde el editor (se sube al guardar) */}
                 <label className="fcd-x146">DOCUMENTO DE LA FACTURA</label>
                 {/* ✅ V00451: varios (hasta 10), con vista previa; se guardan al guardar */}
-                <AdjuntosArchivos etiqueta="Archivos" adjuntos={adjuntosEdicion} onCambiar={setAdjuntosEdicion} max={MAX_DOCS_FACTURA} deshabilitado={guardandoEdit} />
+                <AdjuntosArchivos etiqueta="Archivos" tipos="factura" adjuntos={adjuntosEdicion} onCambiar={setAdjuntosEdicion} max={MAX_DOCS_FACTURA} deshabilitado={guardandoEdit} />{/* ✅ V00530: también XML */}
               </div>
               <div>
                 <label className="fcd-x146">FECHA DE FACTURACIÓN</label>

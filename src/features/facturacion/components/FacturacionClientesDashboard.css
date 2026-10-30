@@ -589,10 +589,7 @@
 .fcd-reporte-facturar:disabled { opacity: 0.6; cursor: wait; }
 
 /* ✅ V00525: Ficha — la factura no guardó lo que cobró cada operación */
-.fcd-ficha-sin-importes { display: flex; flex-basis: 100%; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 6px 0 0; padding: 8px 10px; border: 1px dashed #9e6a03; border-radius: 6px; background: rgba(187, 128, 9, 0.08); color: #d29922; font-size: 0.8rem; line-height: 1.45; }
-/* ✅ V00528: el texto y, a su lado, "Actualizar factura" (sin entrar a Editar factura) */
-.fcd-ficha-sin-importes__texto { flex: 1 1 320px; margin: 0; }
-.fcd-btn-actualizar--ficha { flex: 0 0 auto; padding: 7px 16px; font-size: 0.82rem; }
+/* ✅ V00529: el aviso de la Ficha con "Actualizar factura" pasó a ActualizarFacturaFicha.css (afi-) */
 /* ✅ V00527: Ficha — lo que guardó la factura (tachado) y el total de hoy de la operación */
 .fcd-op-viejo { color: #8b949e; text-decoration: line-through; margin-right: 6px; }
 .fcd-op-hoy { color: #d29922; font-weight: 700; }

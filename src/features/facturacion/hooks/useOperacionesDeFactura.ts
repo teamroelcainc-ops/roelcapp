@@ -5,7 +5,7 @@
 // app (operacionesBus: el formulario abierto con ✎ avisa al guardar). Con eso Editar factura dice qué
 // operación cambió de costo (opsDesfasadas) y el botón Actualizar pone la factura al día.
 // ---------------------------------------------------------------------------
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { idReal } from '../../../shared/data/coleccionesVivas';
@@ -25,6 +25,8 @@ export interface OperacionesDeFactura {
   actuales: ReadonlyMap<string, Datos>;
   cargando: boolean;
   error: string;
+  /** ✅ V00529: pone estas operaciones como las leyó otra consulta del servidor (p. ej. la transacción de Actualizar factura). */
+  ponerAlDia: (ops: readonly { id: string; datos: Datos }[]) => void;
 }
 
 const SIN_LEER: Leidas = { clave: '', ops: new Map(), error: '' };
@@ -55,6 +57,15 @@ export function useOperacionesDeFactura(fila: Datos | null, moneda: 'USD' | 'MXN
     return () => { vigente = false; baja(); };
   }, [clave]);
 
+  const ponerAlDia = useCallback((ops: readonly { id: string; datos: Datos }[]) => {
+    if (ops.length === 0) return;
+    setLeidas((prev) => {
+      if (prev.clave !== clave) return prev;
+      const nuevas = new Map(prev.ops);
+      ops.forEach((o) => nuevas.set(o.id, { id: o.id, ...o.datos }));
+      return { ...prev, ops: nuevas };
+    });
+  }, [clave]);
   const listas = leidas.clave === clave;
-  return { renglones, actuales: listas ? leidas.ops : new Map(), cargando: !!clave && !listas, error: listas ? leidas.error : '' };
+  return { renglones, actuales: listas ? leidas.ops : new Map(), cargando: !!clave && !listas, error: listas ? leidas.error : '', ponerAlDia };
 }

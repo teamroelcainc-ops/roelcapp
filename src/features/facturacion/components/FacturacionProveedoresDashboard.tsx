@@ -3815,7 +3815,7 @@ export const FacturacionProveedoresDashboard = () => {
                   {/* ✅ V00276: documento de la factura (se sube al confirmar) */}
                   <label className="fpd-x143">DOCUMENTO DE LA FACTURA</label>
                   {/* ✅ V00451: varios (hasta 10), con vista previa; se suben al confirmar */}
-                  <AdjuntosArchivos etiqueta="Archivos (opcional)" adjuntos={adjuntosFacturar} onCambiar={setAdjuntosFacturar} max={MAX_DOCS_FACTURA} deshabilitado={guardando} />
+                  <AdjuntosArchivos etiqueta="Archivos (opcional)" tipos="factura" adjuntos={adjuntosFacturar} onCambiar={setAdjuntosFacturar} max={MAX_DOCS_FACTURA} deshabilitado={guardando} />{/* ✅ V00530: también XML */}
                 </div>
               </div>
               <div className="fpd-x164">
@@ -4128,7 +4128,7 @@ export const FacturacionProveedoresDashboard = () => {
                 {/* ✅ V00276: documento de la factura desde el editor (se sube al guardar) */}
                 <label className="fpd-x143">DOCUMENTO DE LA FACTURA</label>
                 {/* ✅ V00451: varios (hasta 10), con vista previa; se guardan al guardar */}
-                <AdjuntosArchivos etiqueta="Archivos" adjuntos={adjuntosEdicion} onCambiar={setAdjuntosEdicion} max={MAX_DOCS_FACTURA} deshabilitado={guardandoEdit} />
+                <AdjuntosArchivos etiqueta="Archivos" tipos="factura" adjuntos={adjuntosEdicion} onCambiar={setAdjuntosEdicion} max={MAX_DOCS_FACTURA} deshabilitado={guardandoEdit} />{/* ✅ V00530: también XML */}
               </div>
               <div>
                 <label className="fpd-x143">FECHA DE FACTURACIÓN</label>

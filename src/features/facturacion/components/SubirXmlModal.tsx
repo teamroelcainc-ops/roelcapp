@@ -86,11 +86,19 @@ export default function SubirXmlModal({ cotejar, nombreCliente, onRegistrar, onC
   const pdfSueltos = pdfs.filter((p) => pareo.pdfSueltos.includes(p.clave));
   const errores = filas.filter((f) => !f.l.ok);
   const vistosUuid = new Set<string>();
+  // ✅ V00530: si el cotejo de un XML falla (un dato raro), sale como problema de ESE archivo y la ventana sigue.
+  const fallidos: { nombre: string; error: string }[] = [];
   const cotejadas = filas.flatMap(({ a, l }) => {
     if (!l.ok) return [];
     const repetido = !!l.cfdi.uuid && vistosUuid.has(l.cfdi.uuid);
     vistosUuid.add(l.cfdi.uuid);
-    return [{ a, r: cotejar(l.cfdi), repetido, pdf: pdfDe(a.clave) }];
+    try {
+      return [{ a, r: cotejar(l.cfdi), repetido, pdf: pdfDe(a.clave) }];
+    } catch (e) {
+      console.error('[Facturación] No se pudo cotejar el XML:', a.file.name, e);
+      fallidos.push({ nombre: a.file.name, error: 'no se pudo cotejar contra las operaciones por facturar' });
+      return [];
+    }
   }).sort((x, y) => (x.repetido ? 9 : ORDEN[x.r.estado]) - (y.repetido ? 9 : ORDEN[y.r.estado]) || x.r.cfdi.folio.localeCompare(y.r.cfdi.folio));
   const cuenta = (e: EstadoCotejo) => cotejadas.filter((c) => !c.repetido && c.r.estado === e).length;
 
@@ -118,8 +126,11 @@ export default function SubirXmlModal({ cotejar, nombreCliente, onRegistrar, onC
           {pdfSueltos.length > 0 && (
             <ul className="sxm-notas">{pdfSueltos.map((a) => <li key={a.clave}>PDF sin su XML: {a.file.name}</li>)}</ul>
           )}
-          {errores.length > 0 && (
-            <ul className="sxm-problemas">{errores.map(({ a, l }) => <li key={a.clave}>{a.estado === 'nuevo' ? a.file.name : ''}: {l.ok ? '' : l.error}</li>)}</ul>
+          {(errores.length > 0 || fallidos.length > 0) && (
+            <ul className="sxm-problemas">
+              {errores.map(({ a, l }) => <li key={a.clave}>{a.estado === 'nuevo' ? a.file.name : ''}: {l.ok ? '' : l.error}</li>)}
+              {fallidos.map((f) => <li key={`fallo-${f.nombre}`}>{f.nombre}: {f.error}</li>)}
+            </ul>
           )}
           <ul className="sxm-lista">
             {cotejadas.map(({ a, r, repetido, pdf }) => (

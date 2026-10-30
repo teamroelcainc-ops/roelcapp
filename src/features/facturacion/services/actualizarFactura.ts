@@ -12,7 +12,9 @@ import { registrarLog } from '../../../utils/logger';
 import { fechaFacturaISO } from '../selectores';
 import { completarImportes, planCompletarImportes } from './completarImportes';
 import type { DocSinImportes, PlanCompletar } from './completarImportes';
-import { opsDesfasadas, planSincronizarFactura, renglonesConImporte, sincronizarFacturaConOperaciones } from './sincronizarFactura';
+import { opsDeFactura } from './diferenciaEnCargos';
+import { normalizarFacturaDe } from './normalizarFactura';
+import { diferenciasConServidor, opsDesfasadas, planSincronizarFactura, renglonesConImporte, sincronizarFacturaConOperaciones } from './sincronizarFactura';
 import type { OpDesfasada, PlanSincronizar } from './sincronizarFactura';
 
 type Datos = Record<string, unknown>;
@@ -96,8 +98,13 @@ export const planActualizarFactura = (fila: Datos, actuales: ReadonlyMap<string,
 export const hayQueActualizar = (p: PlanActualizarFactura): boolean => (!!p.sincronizar && !p.impedimento) || !!p.completar;
 
 export interface ResultadoActualizar {
-  /** id del documento → lo que se escribió (para mostrar la factura al día sin volver a leer). */
+  /** id del documento → lo que se escribió o (✅ V00529) la factura COMPLETA como está en el servidor, para que la
+   *  pantalla muestre lo que hay de verdad (también cuando no se escribió nada). */
   escritos: Map<string, Datos>;
+  /** ✅ V00529: sus operaciones como están en el servidor (para el "→ hoy" de la Ficha). */
+  opsServidor: { id: string; datos: Datos }[];
+  /** ✅ V00529: se esperaba cambiar algo y en el servidor no había nada que cambiar: por qué (una por operación). */
+  diferencias: string[];
   /** Cómo quedó (null = no se puso al día con sus operaciones: ya estaba o no tocaba). */
   sincronizado: PlanSincronizar | null;
   /** Las que no se completaron (cambiaron desde que se abrió), "folio: motivo". */
@@ -114,11 +121,18 @@ export const aplicarActualizarFactura = async (fila: Datos, plan: PlanActualizar
   const ahora = new Date().toISOString();
   const escritos = new Map<string, Datos>();
   let sincronizado: PlanSincronizar | null = null;
+  let opsServidor: { id: string; datos: Datos }[] = [];
+  let diferencias: string[] = [];
   const ids = idsDocsFactura(fila);
   if (plan.sincronizar && !plan.impedimento && ids[0]) {
-    sincronizado = await sincronizarFacturaConOperaciones(ids[0], ahora, usuario);
+    // ✅ V00529: las operaciones que ya conoce la pantalla se leen junto con la factura (la moneda no cambia los ids).
+    const r = await sincronizarFacturaConOperaciones(ids[0], ahora, usuario, opsDeFactura(fila, 'USD').map((o) => o.opId));
+    sincronizado = r.plan;
+    opsServidor = r.ops;
+    // ✅ V00529: la pantalla toma la factura del servidor (normalizada como la lista), se haya escrito o no.
+    escritos.set(ids[0], normalizarFacturaDe({ ...r.factura, id: ids[0] }, 'cliente'));
+    if (!sincronizado) diferencias = diferenciasConServidor(plan.sincronizar.desfasadas, r);
     if (sincronizado) {
-      escritos.set(ids[0], sincronizado.datosFactura);
       void registrarLog('Facturación Clientes', 'Edición', `Factura ${invoice} al día con sus operaciones (${sincronizado.desfasadas.map((d) => `${d.ref} ${d.antes.toFixed(2)} → ${d.ahora.toFixed(2)}`).join(', ')}): total ${sincronizado.totalAntes.toFixed(2)} → ${sincronizado.totalDespues.toFixed(2)}.`);
     }
   }
@@ -130,7 +144,7 @@ export const aplicarActualizarFactura = async (fila: Datos, plan: PlanActualizar
     omitidas = r.omitidas.map((x) => `${x.invoice}: ${x.motivo}`);
     errorCompletar = r.error;
   }
-  return { escritos, sincronizado, omitidas, errorCompletar };
+  return { escritos, sincronizado, opsServidor, diferencias, omitidas, errorCompletar };
 };
 
 const dinero = (n: number): string => n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });

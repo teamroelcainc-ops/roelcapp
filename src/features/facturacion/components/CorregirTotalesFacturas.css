@@ -15,7 +15,8 @@
 .ctf-chip--activo { border-color: #D84315; background: rgba(216, 67, 21, 0.15); color: #f0f6fc; font-weight: 700; }
 .ctf-chip--activo:hover { border-color: #D84315; }
 .ctf-chip:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
-.ctf-tabla-envoltura { border: 1px solid #30363d; border-radius: 10px; overflow-x: auto; }
+/* ✅ V00530: el desplazamiento horizontal lo lleva ScrollHorizontalFijo (barra siempre a la vista) */
+.ctf-tabla-envoltura { border: 1px solid #30363d; border-radius: 10px; }
 .ctf-tabla { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
 .ctf-tabla th { position: sticky; top: 0; padding: 10px; vertical-align: bottom; background: #161b22; color: #8b949e; font-size: 0.72rem; font-weight: 700; text-align: left; text-transform: uppercase; letter-spacing: 0.4px; white-space: normal; }
 .ctf-tabla td { padding: 8px 10px; border-top: 1px solid #21262d; color: #c9d1d9; white-space: nowrap; }
@@ -48,4 +49,13 @@
 .ctf-ref--mas { color: #8b949e; }
 .ctf-con-hoy { display: block; margin-top: 3px; color: #d29922; font-weight: 600; }
 .ctf-con-hoy--ok { color: #3fb950; }
+/* ✅ V00530: encabezados que ordenan (ascendente → descendente → como estaba) */
+.ctf-orden { display: inline-flex; align-items: flex-end; gap: 4px; padding: 0; border: none; background: none; color: inherit; font: inherit; font-size: inherit; font-weight: inherit; letter-spacing: inherit; text-align: inherit; text-transform: inherit; cursor: pointer; }
+.ctf-num .ctf-orden { flex-direction: row-reverse; }
+.ctf-orden:hover { color: #c9d1d9; }
+.ctf-orden--activa { color: #58a6ff; }
+.ctf-orden--activa:hover { color: #79b8ff; }
+.ctf-orden:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
+.ctf-orden-flecha { flex: 0 0 auto; font-size: 0.7rem; opacity: 0.6; }
+.ctf-orden--activa .ctf-orden-flecha { opacity: 1; }
 .ctf-error { margin: 0; padding: 8px 12px; border-top: 1px solid #21262d; color: #ff7b72; font-size: 0.82rem; }

@@ -1,0 +1,7 @@
+/* ✅ V00528 · V00529 — Aviso de la Ficha con "Actualizar factura". Prefijo afi- */
+.afi-aviso { display: flex; flex-basis: 100%; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 6px 0 0; padding: 8px 10px; border: 1px dashed #9e6a03; border-radius: 6px; background: rgba(187, 128, 9, 0.08); color: #d29922; font-size: 0.8rem; line-height: 1.45; }
+.afi-texto { flex: 1 1 320px; margin: 0; }
+.afi-btn { flex: 0 0 auto; padding: 7px 16px; border: none; border-radius: 6px; background-color: #238636; color: #fff; font: inherit; font-size: 0.82rem; font-weight: 700; cursor: pointer; }
+.afi-btn:hover { background-color: #2ea043; }
+.afi-btn:disabled { background-color: #21262d; color: #6e7681; cursor: not-allowed; }
+.afi-btn:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }

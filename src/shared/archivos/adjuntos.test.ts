@@ -20,6 +20,12 @@ describe('tipos y tamaño', () => {
     expect(validarArchivo({ name: 'a.xlsx', type: 'application/vnd.ms-excel', size: 1 })).toContain('no es PDF ni imagen');
     expect(validarArchivo({ name: 'a.pdf', type: 'application/pdf', size: 1 }, 'imagen')).toContain('no es una imagen');
     expect(validarArchivo({ name: 'a.xlsx', type: '', size: 1 }, 'cualquiera')).toBe('');
+    // ✅ V00530: documentos de factura: también el XML (CFDI)
+    expect(validarArchivo({ name: 'A5745.xml', type: 'text/xml', size: 1 }, 'factura')).toBe('');
+    expect(validarArchivo({ name: 'A5745.XML', type: '', size: 1 }, 'factura')).toBe('');
+    expect(validarArchivo({ name: 'A5745.pdf', type: 'application/pdf', size: 1 }, 'factura')).toBe('');
+    expect(validarArchivo({ name: 'a.xlsx', type: '', size: 1 }, 'factura')).toContain('no es PDF, XML ni imagen');
+    expect(validarArchivo({ name: 'A5745.xml', type: 'text/xml', size: 1 })).toContain('no es PDF ni imagen');
   });
   it('tamaño legible y nombre seguro', () => {
     expect(tamanoLegible(159 * 1024)).toBe('159 KB');

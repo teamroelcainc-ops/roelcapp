@@ -28,8 +28,8 @@ export type Adjunto =
   | { clave: string; estado: 'guardado'; archivo: ArchivoGuardado }
   | { clave: string; estado: 'nuevo'; file: File };
 
-/** Tipos de archivo aceptados por una carga. */
-export type TiposAdjunto = 'pdf-imagen' | 'imagen' | 'cualquiera';
+/** Tipos de archivo aceptados por una carga. ✅ V00530: 'factura' = PDF, imagen o XML (el CFDI). */
+export type TiposAdjunto = 'pdf-imagen' | 'imagen' | 'cualquiera' | 'factura';
 
 export const MAX_MB_ADJUNTO = 20;
 export const MAX_ADJUNTOS = 10;
@@ -40,12 +40,16 @@ export const ACCEPT_TIPOS: Record<TiposAdjunto, string> = {
   'pdf-imagen': 'application/pdf,image/*',
   imagen: 'image/*',
   cualquiera: '',
+  factura: 'application/pdf,image/*,.xml,text/xml,application/xml',
 };
 
 export const esPdf = (nombre: string, tipo = ''): boolean =>
   tipo === 'application/pdf' || /^data:application\/pdf[;,]/i.test(nombre) || /\.pdf($|\?)/i.test(nombre);
 export const esImagen = (nombre: string, tipo = ''): boolean =>
   tipo.startsWith('image/') || /^data:image\//i.test(nombre) || /\.(png|jpe?g|gif|webp|bmp|heic|heif|svg)($|\?)/i.test(nombre);
+
+/** ✅ V00530: el XML de una factura (CFDI). */
+export const esXml = (nombre: string, tipo = ''): boolean => /\.xml($|\?)/i.test(nombre) || /(^|\/)xml$/i.test(tipo);
 
 /** Tipo de un `data:` URL (fotos guardadas en base64); '' si no es uno. */
 export const tipoDeDataUrl = (url: string): string => /^data:([^;,]+)[;,]/i.exec(url)?.[1] ?? '';
@@ -61,6 +65,7 @@ export const tamanoLegible = (bytes: number): string => {
 export const validarArchivo = (f: Pick<File, 'name' | 'type' | 'size'>, tipos: TiposAdjunto = 'pdf-imagen', maxMb = MAX_MB_ADJUNTO): string => {
   if (tipos === 'pdf-imagen' && !esPdf(f.name, f.type) && !esImagen(f.name, f.type)) return `"${f.name}" no es PDF ni imagen.`;
   if (tipos === 'imagen' && !esImagen(f.name, f.type)) return `"${f.name}" no es una imagen.`;
+  if (tipos === 'factura' && !esPdf(f.name, f.type) && !esImagen(f.name, f.type) && !esXml(f.name, f.type)) return `"${f.name}" no es PDF, XML ni imagen.`;
   if (f.size > maxMb * 1024 * 1024) return `"${f.name}" pesa ${tamanoLegible(f.size)}; el máximo es ${maxMb} MB.`;
   return '';
 };

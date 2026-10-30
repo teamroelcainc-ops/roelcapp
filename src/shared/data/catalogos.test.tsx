@@ -207,4 +207,15 @@ describe('catálogos compartidos', () => {
     expect(abiertos.has('remolques')).toBe(true);
     expect(aperturas - antes).toBe(2);
   });
+
+  it('✅ V00529 precalentarCatalogos espera a que el usuario lleve 2 s sin hacer clic ni teclear', async () => {
+    const antes = aperturas;
+    window.dispatchEvent(new Event('pointerdown'));
+    mod.precalentarCatalogos(['catalogo_aduanas']);
+    await act(async () => { vi.advanceTimersByTime(1500); });
+    expect(aperturas - antes).toBe(0);
+    await act(async () => { vi.advanceTimersByTime(1000); });
+    expect(abiertos.has('catalogo_aduanas')).toBe(true);
+    expect(aperturas - antes).toBe(1);
+  });
 });

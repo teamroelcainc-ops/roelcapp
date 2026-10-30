@@ -1,0 +1,9 @@
+/* ✅ V00530 — Barra de desplazamiento horizontal siempre a la vista. Prefijo shf- */
+.shf-caja { overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.shf-caja::-webkit-scrollbar { display: none; }
+.shf-barra { position: sticky; bottom: 0; z-index: 3; overflow-x: scroll; overflow-y: hidden; background: #0d1117; border-top: 1px solid #30363d; scrollbar-width: auto; scrollbar-color: #6e7681 #161b22; }
+.shf-barra::-webkit-scrollbar { height: 14px; }
+.shf-barra::-webkit-scrollbar-track { background: #161b22; }
+.shf-barra::-webkit-scrollbar-thumb { border: 3px solid #161b22; border-radius: 8px; background: #6e7681; }
+.shf-barra::-webkit-scrollbar-thumb:hover { background: #8b949e; }
+.shf-relleno { width: var(--shf-ancho); height: 1px; }

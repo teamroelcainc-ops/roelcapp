@@ -104,19 +104,62 @@ export const planSincronizarFactura = (fac: Datos, ops: readonly { id: string; d
   };
 };
 
-/** Relee la factura y sus operaciones y la pone al día, en UNA transacción (null = ya estaba al día). */
-export const sincronizarFacturaConOperaciones = async (facturaId: string, ahoraISO: string, usuario: string): Promise<PlanSincronizar | null> =>
+/** ✅ V00529: lo que hizo la transacción y cómo estaba TODO en el servidor (para poner la pantalla al día). */
+export interface ResultadoSincronizar {
+  /** null = en el servidor ya estaba al día (no se escribió nada). */
+  plan: PlanSincronizar | null;
+  /** La factura como quedó en el servidor (con lo escrito). */
+  factura: Datos;
+  /** Sus operaciones como están en el servidor. */
+  ops: { id: string; datos: Datos }[];
+  moneda: MonedaFactura;
+}
+
+/**
+ * Relee la factura y sus operaciones y la pone al día, en UNA transacción (plan null = ya estaba al día).
+ * ✅ V00529: `idsEsperados` (las operaciones que la pantalla ya conoce) se leen AL MISMO TIEMPO que la factura
+ *   (una ida y vuelta menos); si en el servidor la factura trae otras, se leen después.
+ */
+export const sincronizarFacturaConOperaciones = async (facturaId: string, ahoraISO: string, usuario: string, idsEsperados: readonly string[] = []): Promise<ResultadoSincronizar> =>
   runTransaction(db, async (tx) => {
     const ref = doc(db, 'facturas_clientes', facturaId);
-    const sf = await tx.get(ref);
+    const leerOp = (id: string) => tx.get(doc(db, 'operaciones', id));
+    const esperados = Array.from(new Set(idsEsperados.filter(Boolean)));
+    const [sf, ...snapsEsperados] = await Promise.all([tx.get(ref), ...esperados.map(leerOp)]);
     if (!sf.exists()) throw new ErrorDinero('La factura ya no existe. No se guardó nada.');
     const fac = sf.data() as Datos;
     const moneda = monedaDeFactura(fac);
     if (moneda !== 'USD' && moneda !== 'MXN') throw new ErrorDinero('La factura no tiene moneda: no se puede poner al día con sus operaciones.');
     const ids = opsDeFactura(fac, moneda).map((o) => o.opId);
-    const snaps = await Promise.all(ids.map((id) => tx.get(doc(db, 'operaciones', id))));
-    const ops = snaps.filter((s) => s.exists()).map((s) => ({ id: s.id, datos: s.data() as Datos }));
+    const leidas = new Map(esperados.map((id, i) => [id, snapsEsperados[i]] as const));
+    const faltan = ids.filter((id) => !leidas.has(id));
+    (await Promise.all(faltan.map(leerOp))).forEach((s, i) => leidas.set(faltan[i], s));
+    const ops = ids.map((id) => leidas.get(id)).filter((s) => !!s && s.exists()).map((s) => ({ id: s!.id, datos: s!.data() as Datos }));
     const plan = planSincronizarFactura(fac, ops, moneda, ahoraISO, usuario);
     if (plan) tx.set(ref, plan.datosFactura, { merge: true });
-    return plan;
+    return { plan, factura: { ...fac, ...(plan?.datosFactura ?? {}) }, ops, moneda };
   });
+
+const dinero = (n: number): string => `$ ${n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/**
+ * ✅ V00529 — La pantalla esperaba poner al día estas operaciones y en el SERVIDOR no había nada que cambiar:
+ * por qué, operación por operación (con los números del servidor).
+ */
+export const diferenciasConServidor = (esperadas: readonly OpDesfasada[], r: ResultadoSincronizar): string[] => {
+  const renglones = renglonesDeFactura(r.factura);
+  const ops = new Map(r.ops.map((o) => [o.id, o.datos] as const));
+  return esperadas.map((d) => {
+    const renglon = renglones.find((x) => txt(x.id) === d.opId);
+    const op = ops.get(d.opId);
+    if (!renglon) return `${d.ref}: en el servidor ya no está en esta factura`;
+    if (!op) return `${d.ref}: no se encontró la operación en el servidor`;
+    const enFactura = importeRenglon(renglon, r.moneda);
+    const hoy = importeRenglon(renglonAlDia(renglon, op), r.moneda);
+    if (aCentavos(hoy) !== aCentavos(d.ahora)) {
+      return `${d.ref}: en el servidor la operación cobra ${dinero(hoy)} (aquí se veía ${dinero(d.ahora)}): su último cambio todavía no está guardado en el servidor`;
+    }
+    if (aCentavos(enFactura) === aCentavos(hoy)) return `${d.ref}: en el servidor la factura ya la tenía en ${dinero(enFactura)}`;
+    return `${d.ref}: en la factura ${dinero(enFactura)}, la operación ${dinero(hoy)}`;
+  });
+};

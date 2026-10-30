@@ -8,16 +8,21 @@
 // factura no lo guardó), lo que cobra HOY la operación. Solo se leen las operaciones de las filas que se
 // ven (useOperacionesPorId); con eso, el motivo dice si con el costo de hoy cuadraría.
 // ✅ V00524: "Completar importes" (CompletarImportes) para las que no guardaron lo que cobró cada operación.
+// ✅ V00530: clic en el nombre de una columna → ascendente; otro → descendente; otro → como estaba
+//   (ordenCorregir.ts). La barra de desplazamiento horizontal queda siempre a la vista (ScrollHorizontalFijo).
 // ---------------------------------------------------------------------------
 import { useState } from 'react';
 import { Search } from 'lucide-react';
 import CargandoDatos from '../../../shared/components/CargandoDatos';
+import ScrollHorizontalFijo from '../../../shared/components/ScrollHorizontalFijo';
 import { aCentavos } from '../../../shared/dominio/numeros';
 import { useOperacionesPorId } from '../hooks/useOperacionesPorId';
 import { importeEn } from '../services/cotejoCfdi';
 import type { DocSinImportes } from '../services/completarImportes';
 import { sumaConHoy, TEXTO_MOTIVO } from '../services/cuadreFactura';
 import type { CuadreFactura, MotivoCuadre } from '../services/cuadreFactura';
+import { ordenarFilasCorregir, siguienteOrden } from '../services/ordenCorregir';
+import type { ColumnaCorregir, OrdenCorregir } from '../services/ordenCorregir';
 import CompletarImportes from './CompletarImportes';
 import './CorregirTotalesFacturas.css';
 
@@ -65,12 +70,20 @@ const MAX_REFS = 6;
 const miles = (n: number): string => n.toLocaleString('es-MX');
 const dinero = (n: number): string => `$ ${n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const conSigno = (n: number): string => `${n > 0 ? '+' : n < 0 ? '−' : ''}${dinero(Math.abs(n))}`;
+const textoMotivo = (m: MotivoCuadre): string => (m === 'cuadra' ? '' : TEXTO_MOTIVO[m]);
+/** Las columnas de la tabla (las de número, a la derecha). */
+const COLUMNAS: readonly { col: ColumnaCorregir; texto: string; numero?: boolean }[] = [
+  { col: 'invoice', texto: 'Invoice' }, { col: 'fecha', texto: 'Fecha' }, { col: 'cliente', texto: 'Cliente' }, { col: 'moneda', texto: 'Moneda' },
+  { col: 'referencias', texto: 'Referencias' }, { col: 'suma', texto: 'Suma de operaciones', numero: true }, { col: 'total', texto: 'Total', numero: true },
+  { col: 'diferencia', texto: 'Diferencia', numero: true }, { col: 'motivo', texto: 'Motivo' },
+];
 
 export default function CorregirTotalesFacturas({ revision, cargando, onRevisar, onVer, completar }: Props) {
   const [filtro, setFiltro] = useState<Filtro>('todas');
   const [ver, setVer] = useState(TOPE);
+  const [orden, setOrden] = useState<OrdenCorregir | null>(null);
   const todas = revision?.filas ?? [];
-  const lista = filtro === 'todas' ? todas : todas.filter((f) => f.cuadre.motivo === filtro);
+  const lista = ordenarFilasCorregir(filtro === 'todas' ? todas : todas.filter((f) => f.cuadre.motivo === filtro), orden, textoMotivo);
   const cuantas = (m: Filtro): number => (m === 'todas' ? todas.length : todas.filter((f) => f.cuadre.motivo === m).length);
   const elegir = (m: Filtro) => { setFiltro(m); setVer(TOPE); };
   const visibles = lista.slice(0, ver);
@@ -121,18 +134,21 @@ export default function CorregirTotalesFacturas({ revision, cargando, onRevisar,
           )}
           {todas.length === 0 ? <p className="ctf-vacio">Todas las facturas cuadran con sus operaciones.</p> : (
             <div className="ctf-tabla-envoltura">
+              <ScrollHorizontalFijo>
               <table className="ctf-tabla">
                 <thead>
                   <tr>
-                    <th scope="col">Invoice</th>
-                    <th scope="col">Fecha</th>
-                    <th scope="col">Cliente</th>
-                    <th scope="col">Moneda</th>
-                    <th scope="col">Referencias</th>
-                    <th scope="col" className="ctf-num">Suma de operaciones</th>
-                    <th scope="col" className="ctf-num">Total</th>
-                    <th scope="col" className="ctf-num">Diferencia</th>
-                    <th scope="col">Motivo</th>
+                    {COLUMNAS.map(({ col, texto, numero }) => {
+                      const activa = orden?.col === col ? orden.dir : null;
+                      return (
+                        <th key={col} scope="col" className={numero ? 'ctf-num' : undefined} aria-sort={activa === 'asc' ? 'ascending' : activa === 'desc' ? 'descending' : 'none'}>
+                          <button type="button" className={`ctf-orden${activa ? ' ctf-orden--activa' : ''}`} onClick={() => setOrden((o) => siguienteOrden(o, col))}
+                            title={activa === 'asc' ? 'Clic: de mayor a menor' : activa === 'desc' ? 'Clic: como estaba' : 'Clic: de menor a mayor'}>
+                            {texto}<span className="ctf-orden-flecha" aria-hidden="true">{activa === 'asc' ? '▲' : activa === 'desc' ? '▼' : '↕'}</span>
+                          </button>
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody>
@@ -181,6 +197,7 @@ export default function CorregirTotalesFacturas({ revision, cargando, onRevisar,
                   })}
                 </tbody>
               </table>
+              </ScrollHorizontalFijo>
               {hoy.error && <p className="ctf-error" role="alert">{hoy.error}</p>}
               {lista.length > ver && (
                 <button type="button" className="ctf-mas" onClick={() => setVer((n) => n + TOPE)}>

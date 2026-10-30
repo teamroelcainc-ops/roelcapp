@@ -29,7 +29,7 @@ interface Props {
   previaCerrada?: boolean;
 }
 
-const describirTipos = (t: TiposAdjunto): string => (t === 'imagen' ? 'Imagen' : t === 'pdf-imagen' ? 'PDF o imagen' : 'Cualquier archivo');
+const describirTipos = (t: TiposAdjunto): string => (t === 'imagen' ? 'Imagen' : t === 'pdf-imagen' ? 'PDF o imagen' : t === 'factura' ? 'PDF, XML o imagen' : 'Cualquier archivo'); // ✅ V00530: factura
 
 export default function AdjuntosArchivos({
   adjuntos, onCambiar, max = MAX_ADJUNTOS, tipos = 'pdf-imagen', maxMb = MAX_MB_ADJUNTO,

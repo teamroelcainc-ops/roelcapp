@@ -1,7 +1,7 @@
 // ✅ V00520 — Poner la factura al día con sus operaciones (Actualizar en Editar factura).
 import { describe, expect, it } from 'vitest';
 import { ID_USD } from '../../../shared/dominio/constantes';
-import { opsDesfasadas, planSincronizarFactura } from './sincronizarFactura';
+import { diferenciasConServidor, opsDesfasadas, planSincronizarFactura } from './sincronizarFactura';
 
 const op = (monto: number, extra: Record<string, unknown> = {}) => ({ montoConvenioCliente: monto, cargosAdicionales: 0, monedaConvenioCliente: ID_USD, facturadoEnCobrar: ID_USD, tipoCambioDia: 18.5, ...extra });
 const factura = (extra: Record<string, unknown> = {}) => ({
@@ -44,6 +44,17 @@ describe('poner la factura al día', () => {
     const fac = { monedaFacturacion: 'USD', subtotalMonedaFactura: 500, operacionesGuardadas: [{ id: 'a', ref: 'TR-1', dol: 140, pes: 0, monto: 2590, subtotalBase: 140 }] };
     const p = planSincronizarFactura(fac, [{ id: 'a', datos: op(140, { cargosAdicionales: 250 }) }], 'USD', 'T', 'yo');
     expect(p).toMatchObject({ modo: 'soloImportes', totalAntes: 500, totalDespues: 500 });
+  });
+  it('✅ V00529: si en el servidor no había nada que cambiar, dice por qué con los números del servidor', () => {
+    const esperadas = [{ opId: 'a', ref: 'TR-1', antes: 100, ahora: 50 }];
+    const fac = (dol: number) => ({ monedaFacturacion: 'USD', subtotalMonedaFactura: 200, operacionesGuardadas: [{ id: 'a', ref: 'TR-1', dol, subtotalBase: dol }] });
+    // La pantalla estaba vieja: el servidor ya la tenía al día
+    expect(diferenciasConServidor(esperadas, { plan: null, moneda: 'USD', factura: fac(50), ops: [{ id: 'a', datos: op(50) }] }))
+      .toEqual(['TR-1: en el servidor la factura ya la tenía en $ 50.00']);
+    // El cambio de la operación no llegó al servidor
+    expect(diferenciasConServidor(esperadas, { plan: null, moneda: 'USD', factura: fac(100), ops: [{ id: 'a', datos: op(100) }] }))
+      .toEqual(['TR-1: en el servidor la operación cobra $ 100.00 (aquí se veía $ 50.00): su último cambio todavía no está guardado en el servidor']);
+    expect(diferenciasConServidor(esperadas, { plan: null, moneda: 'USD', factura: fac(100), ops: [] })).toEqual(['TR-1: no se encontró la operación en el servidor']);
   });
   it('no puede quedar por debajo de lo pagado', () => {
     expect(() => planSincronizarFactura(factura({ montoPagado: 270 }), [{ id: 'a', datos: op(200) }, { id: 'b', datos: op(60) }], 'USD', 'T', 'yo')).toThrow(/por debajo de lo ya pagado/);

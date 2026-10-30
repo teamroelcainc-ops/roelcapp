@@ -207,6 +207,33 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - Modales con `createPortal` a `document.body` (la tarjeta usa `transform` al pasar el mouse) y perezosos desde la tarjeta (`lazyWithRetry`): la carga inicial crece 0.3 KB (sin eso, ~20 KB por FormularioConfigurable).
 - Se quitaron las reglas `.rd-dos*` de App.css (solo las usaba la tarjeta TC · Diesel).
 
+## V00530 (XML en documentos de factura · orden y barra horizontal en Corregir)
+- "No está funcionando el botón para subir los XML".
+  - En el simulador, Subir PDF y XML (Asignar Operaciones) sí funciona.
+  - Lo que no funcionaba: DocumentosFacturaModal y los AdjuntosArchivos de Generar/Editar factura usaban `tipos` por omisión ('pdf-imagen'). El `accept` escondía los .xml y `validarArchivo` los rechazaba, aunque RevisionDocumentosFactura (V00514) ya revisa XML.
+  - Nuevo `TiposAdjunto` 'factura' (PDF, imagen, XML) y `esXml` en adjuntos.ts. Se usa en las 5 cargas (Clientes y Proveedores).
+  - SubirXmlModal: `cotejar` va en try/catch por archivo.
+  - Si el usuario se refería a otra cosa, falta su captura.
+- Corregir:
+  - `ordenCorregir.ts`: `siguienteOrden` (asc → desc → null) y `ordenarFilasCorregir` (Intl.Collator numérico; vacíos al final; empate → orden original). Se ordena `lista` (ya filtrada) antes de `slice(0, ver)`.
+  - Encabezados `<button>` con `aria-sort`.
+- `ScrollHorizontalFijo` (shared/components): la caja de la tabla oculta su barra (sigue desplazable); una barra hermana `position: sticky; bottom: 0` con un relleno del ancho del contenido (`--shf-ancho`, ResizeObserver) se sincroniza en los dos sentidos.
+  - El eco del evento se corta comparando scrollLeft.
+  - En Playwright headless hay que quitar `--hide-scrollbars` para verla.
+
+## V00529 (Actualizar factura: la pantalla toma lo del servidor · más rápido)
+- Reporte (30-oct, I8650): "demora mucho; dice que está lista pero en la tabla no veo el cambio". El aviso fue "La factura ya estaba al día": la transacción no encontró desfasadas en el SERVIDOR y no escribió nada. La Ficha/Corregir no se refrescaban.
+- Causa probable: la Ficha se abrió desde Corregir, cuyo `onVer` hacía `setFacturaViendo(fila)` con la fila de la FOTO de `revisarCuadre`. Otra posible: un cambio de la operación pendiente en la caché local (la pantalla ve 50 y el servidor 100). No se pudo confirmar sin datos de producción; `diferenciasConServidor` lo dice en el aviso.
+- `sincronizarFacturaConOperaciones(id, ahora, usuario, idsEsperados)`: lee la factura y las operaciones esperadas en paralelo (las que falten, después) y devuelve `ResultadoSincronizar { plan, factura (con lo escrito), ops, moneda }`. `aplicarActualizarFactura` pone la factura del servidor NORMALIZADA en `escritos` (se haya escrito o no) y devuelve `opsServidor` y `diferencias`.
+- Tablero:
+  - `aplicarEscritosFactura` también hace `opsFicha.ponerAlDia(opsServidor)` (nuevo en useOperacionesDeFactura), el aviso de diferencias, y `revisarCuadreCon(lista parchada, misma hora)` en un `setTimeout`.
+  - Corregir `onVer` abre `grupoDeFactura(facturasGlobales, id)`.
+  - `facturaViendo` sigue siendo una copia (no se re-deriva de la lista en vivo): cambiarlo tocaría ~100 usos.
+- Rendimiento (perfil en el simulador): al presionar, el tablero se repintaba 2 veces a ~240 ms cada una.
+  - Una sobraba: el "Actualizando…" pasó a `ActualizarFacturaFicha`.
+  - Al terminar, `opIndex` (useMemo de facturasGlobales) cambiaba de identidad con cualquier escritura de factura. Eso rehacía `candidataRevision` → `useRefClienteDuplicados` (~145 ms) y `opsParaCotejo` (~240 ms). Ahora es `useValorEstable(…, mismoOpIndex)`, un hook nuevo genérico como useMapaEstable.
+- `precalentarCatalogos`: el siguiente catálogo espera `QUIETO_MS` = 2 s sin `pointerdown`/`keydown`, con listeners pasivos en captura que se registran una sola vez. Así no compite con un clic justo al abrir el módulo.
+
 ## V00528 (Actualizar factura en la Ficha · el formulario de operación abre más rápido)
 - Pedido (30-oct, I8650): "el botón para actualizar la factura desde acá sin entrar a Editar factura" y "que las operaciones abran más rápido".
 - `services/actualizarFactura.ts`: la decisión de Actualizar (antes en línea en el tablero, V00520/V00525/V00527) sale a `planActualizarFactura(fila, actuales, { moneda, monedaVista, monedaDoc, cargando, dineroPorServidor })`.

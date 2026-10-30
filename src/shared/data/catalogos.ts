@@ -77,12 +77,27 @@ export const obtenerCatalogo = (col: ColeccionCatalogo, opciones: { fresco?: boo
  * que se van a necesitar pronto (los del formulario de operación), para que la primera vez
  * que se abra esa pantalla ya estén listos y no espere "Cargando catálogos…". Quedan abiertos
  * toda la sesión, como cualquier catálogo: son las mismas lecturas que haría abrir la pantalla.
+ * ✅ V00529: y solo cuando el usuario lleva 2 s sin hacer clic ni teclear (QUIETO_MS).
  */
 const enPrecalentado = new Set<ColeccionCatalogo>();
+/** ✅ V00529: el siguiente catálogo espera a que el usuario lleve este tiempo sin hacer clic ni teclear. */
+const QUIETO_MS = 2000;
+let ultimaAccion = 0;
+let escuchandoAcciones = false;
+const anotarAccion = (): void => { ultimaAccion = Date.now(); };
 export const precalentarCatalogos = (cols: readonly ColeccionCatalogo[]): void => {
   const pendientes = Array.from(new Set(cols)).filter((c) => !estadoCatalogo(c).listo && !enPrecalentado.has(c));
   pendientes.forEach((c) => enPrecalentado.add(c));
+  // ✅ V00529: no compite con lo que el usuario está haciendo (p. ej. Actualizar factura en cuanto abre Facturación):
+  //   mientras hace clic o teclea, el siguiente catálogo espera.
+  if (!escuchandoAcciones && typeof window !== 'undefined') {
+    escuchandoAcciones = true;
+    window.addEventListener('pointerdown', anotarAccion, { capture: true, passive: true });
+    window.addEventListener('keydown', anotarAccion, { capture: true, passive: true });
+  }
   const cuandoLibre = (f: () => void) => {
+    const espera = ultimaAccion + QUIETO_MS - Date.now();
+    if (espera > 0) { setTimeout(() => cuandoLibre(f), espera); return; }
     if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') window.requestIdleCallback(() => f(), { timeout: 4000 });
     else setTimeout(f, 200);
   };
