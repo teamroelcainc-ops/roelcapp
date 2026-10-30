@@ -207,6 +207,13 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - Modales con `createPortal` a `document.body` (la tarjeta usa `transform` al pasar el mouse) y perezosos desde la tarjeta (`lazyWithRetry`): la carga inicial crece 0.3 KB (sin eso, ~20 KB por FormularioConfigurable).
 - Se quitaron las reglas `.rd-dos*` de App.css (solo las usaba la tarjeta TC · Diesel).
 
+## V00525 (Actualizar completa los importes de una factura sin desglose)
+- Reporte del usuario (29-oct, factura 35539): la operación sale en $0.00 en la Ficha; editaba la operación y al "actualizar" no cambiaba. Causa: la factura no tiene `operacionesGuardadas` con importes (AppSheet); el formulario de la operación no toca facturas emitidas (V00495) y el Actualizar de la V00520 excluye estas facturas (`renglonesConImporte` = [] para no sumar dos veces).
+- Ahora Editar factura arma `planCompletarImportes` con los documentos de la fila (`__groupDocs`) y las operaciones que ya lee `useOperacionesDeFactura` (sin lecturas nuevas). Si todas se pueden, Actualizar se activa y, después de guardar los demás campos, corre `completarImportes` (la transacción de la V00524: relee y exige el mismo plan). Si alguna no se puede, se muestra el primer motivo y no se escribe nada de importes.
+- La moneda para leer y completar es `codigoMonedaFactura` (la de la factura o la del cliente), como en Corregir; la de la sincronización de la V00520 sigue siendo `monedaDeFactura` (su transacción la exige en la factura).
+- No con `dineroPorServidor` ni si en la misma edición el status queda Cancelado.
+- Ficha: aviso (con enlace a Editar factura) cuando todos sus renglones están en 0 y la factura tiene total.
+
 ## V00524 (Completar importes)
 - Pedido del usuario (29-oct, por escrito: "Hazme en la version 524 la solución"): llenar el desglose de las ~4,290 facturas que "no guardaron lo que cobró cada operación", SIN tocar el total; con prueba → respaldo → APLICAR.
 - `planDeDoc` (puro, por DOCUMENTO; una fila agrupada se completa documento por documento): renglón = `renglonFactura(id, op, 'cliente')` (el de Facturar: monto/subtotalBase/dol/pes/convenio/remolque/refCliente). Total = `totalNativoFacturaLegado` del documento NORMALIZADO (`normalizarFacturaDe`, como la pantalla: su `subtotalFactura` cae a `total` de AppSheet).

@@ -5,9 +5,13 @@
 // cambió de costo lo marca y dice cómo queda la factura al presionar Actualizar.
 // ---------------------------------------------------------------------------
 import CargandoDatos from '../../../shared/components/CargandoDatos';
+import { importeEn } from '../services/cotejoCfdi';
 import type { OperacionesDeFactura } from '../hooks/useOperacionesDeFactura';
 import type { OpDesfasada, PlanSincronizar } from '../services/sincronizarFactura';
 import './OperacionesFacturaEdicion.css';
+
+/** ✅ V00525: Actualizar guarda lo que cobra hoy cada operación (suma vs. total, que no cambia), o por qué no puede. */
+export type CompletarEdicion = { suma: number; total: number; cuadra: boolean } | { motivo: string };
 
 const dinero = (n: number): string => n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -18,12 +22,16 @@ interface Props {
   desfasadas: readonly OpDesfasada[];
   /** La factura no guardó lo que cobró cada operación (no se puede saber si cambió). */
   sinImportes: boolean;
+  /** ✅ V00525: la moneda para mostrar lo que cobra HOY cada operación (cuando la factura no lo guardó). */
+  monedaHoy: 'USD' | 'MXN' | null;
+  /** ✅ V00525: qué hace Actualizar con una factura sin importes (null = nada / todavía leyendo). */
+  completar: CompletarEdicion | null;
   plan: PlanSincronizar | null;
   impedimento: string;
   onEditar: (opId: string) => void;
 }
 
-export default function OperacionesFacturaEdicion({ datos, moneda, desfasadas, sinImportes, plan, impedimento, onEditar }: Props) {
+export default function OperacionesFacturaEdicion({ datos, moneda, desfasadas, sinImportes, monedaHoy, completar, plan, impedimento, onEditar }: Props) {
   const { renglones, actuales, cargando, error } = datos;
   const cambio = new Map(desfasadas.map((d) => [d.opId, d] as const));
   return (
@@ -39,7 +47,9 @@ export default function OperacionesFacturaEdicion({ datos, moneda, desfasadas, s
                 <span className="ofe-ref">{r.ref}</span>
                 <span className="ofe-convenio">{String(op?.convenioNombre ?? '')}</span>
                 <span className="ofe-monto">
-                  {c ? <>En la factura {dinero(c.antes)} → <b>hoy {dinero(c.ahora)} {moneda}</b></> : sinImportes ? null : <>{dinero(r.importe)} {moneda}</>}
+                  {c ? <>En la factura {dinero(c.antes)} → <b>hoy {dinero(c.ahora)} {moneda}</b></> : sinImportes
+                    ? (op && monedaHoy ? <>Sin importe en la factura · <b>hoy {dinero(importeEn(monedaHoy, op))} {moneda}</b></> : null)
+                    : <>{dinero(r.importe)} {moneda}</>}
                 </span>
                 <button type="button" className="ofe-editar" onClick={() => onEditar(r.opId)} title="Abrir el formulario de la operación">✎ Editar</button>
               </li>
@@ -47,9 +57,14 @@ export default function OperacionesFacturaEdicion({ datos, moneda, desfasadas, s
           })}
         </ul>
       )}
-      {sinImportes && renglones.length > 0 && (
-        <p className="ofe-nota">Esta factura no guardó lo que cobró cada operación: si cambias un costo, Actualizar no cambia el total (ponlo al día con Recalcular montos en Pagos).</p>
-      )}
+      {sinImportes && renglones.length > 0 && completar && ('motivo' in completar ? (
+        <p className="ofe-aviso ofe-aviso--error" role="status">Esta factura no guardó lo que cobró cada operación y no se puede guardar desde aquí: {completar.motivo}.</p>
+      ) : (
+        <p className="ofe-aviso" role="status">
+          Esta factura no guardó lo que cobró cada operación. Al presionar <b>Actualizar</b> se guarda lo que cobra hoy cada una: suman <b>{dinero(completar.suma)} {moneda}</b>; el total ({dinero(completar.total)} {moneda}) <b>no cambia</b>.
+          {!completar.cuadra && ' No cuadra con el total: después la verás en Corregir con la diferencia.'}
+        </p>
+      ))}
       {cargando && <CargandoDatos compacto texto="Leyendo las operaciones…" />}
       {error && <p className="ofe-error" role="alert">{error}</p>}
       {desfasadas.length > 0 && (
