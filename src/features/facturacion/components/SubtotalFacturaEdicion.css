@@ -1,0 +1,11 @@
+/* ✅ V00533: el subtotal de Editar factura (Clientes) y sus avisos contra el documento — prefijo sfe- */
+.sfe-input { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #30363d; border-radius: 6px; background-color: #161b22; color: #f0f6fc; font: inherit; font-weight: 700; text-align: right; color-scheme: dark; }
+.sfe-input:focus-visible { outline: 2px solid #58a6ff; outline-offset: 1px; }
+.sfe-input:disabled { opacity: 0.6; }
+.sfe-fijo { display: block; width: 100%; box-sizing: border-box; padding: 10px; border: 1px dashed #30363d; border-radius: 6px; background-color: #010409; color: #f0f6fc; font-weight: 700; text-align: right; }
+.sfe-nota { display: block; margin-top: 4px; color: #8b949e; font-size: 0.74rem; }
+.sfe-avisos { display: grid; gap: 4px; margin-top: 6px; }
+.sfe-aviso { margin: 0; font-size: 0.78rem; line-height: 1.4; }
+.sfe-aviso--ok { color: #3fb950; }
+.sfe-aviso--aviso { color: #e3b341; }
+.sfe-aviso--info { color: #8b949e; }

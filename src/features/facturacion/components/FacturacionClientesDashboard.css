@@ -535,7 +535,6 @@
 /* ✅ V00481: moneda fija del cliente, avisos, cancelación y Editar desde el detalle de la operación */
 .modal-overlay.fcd-detras-editor { z-index: 900; }
 .fcd-moneda-fija { display: block; width: 100%; box-sizing: border-box; padding: 10px; border: 1px dashed #30363d; border-radius: 6px; background-color: #010409; cursor: default; }
-.fcd-total-fijo { color: #f0f6fc; font-weight: 700; text-align: right; } /* ✅ V00519: el total sale de las operaciones */
 .fcd-bloqueo-nota { display: block; margin-top: 4px; color: #8b949e; font-size: 0.74rem; }
 .fcd-edit-aviso:empty { display: none; }
 .fcd-aviso-crear { margin: -12px 0 20px; }

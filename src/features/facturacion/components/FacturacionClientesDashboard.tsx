@@ -115,11 +115,13 @@ import DatosSitModal from './DatosSitModal'; // ✅ V00513
 import { datosParaSit } from '../services/datosParaSit';
 import type { DatosSit } from '../services/datosParaSit';
 import { armarReporte } from '../services/reportePorFacturar'; // ✅ V00526
-import { cotejarCfdi, opParaCotejo } from '../services/cotejoCfdi';
+import { cotejarCfdi, importeEn, opParaCotejo } from '../services/cotejoCfdi';
 import type { ClienteCotejo, ResultadoCotejo } from '../services/cotejoCfdi';
 import { esRefOperacion } from '../services/leerCfdi';
 import type { Cfdi } from '../services/leerCfdi';
 import RevisionDocumentosFactura from './RevisionDocumentosFactura'; // ✅ V00514
+import SubtotalFacturaEdicion from './SubtotalFacturaEdicion'; // ✅ V00533
+import { guardarSubtotalManual } from '../services/subtotalManual'; // ✅ V00533
 import { monedaEsperada, opEsperadaDeOperacion, opsEsperadasDeFactura } from '../services/documentoFactura';
 import type { FacturaEsperada } from '../services/documentoFactura';
 import PagosDeFactura from './PagosDeFactura'; // ✅ V00483
@@ -1819,6 +1821,12 @@ export const FacturacionClientesDashboard = () => {
   }) : null;
   const sincronizarAlActualizar = !!planEdicion?.sincronizar && !planEdicion.impedimento;
   const completarAlActualizar = !!planEdicion?.completar && !estaCancelada(editStatus);
+  // ✅ V00533: el subtotal se escribe a mano (con aviso contra el documento); no en un folio con varios registros.
+  const idsEdicion: string[] = facturaEditando ? (Array.isArray(facturaEditando.__groupIds) && facturaEditando.__groupIds.length ? facturaEditando.__groupIds : [facturaEditando.id]) : [];
+  const bloqueoSubtotal = idsEdicion.length > 1 ? 'Esta factura está en varios registros con el mismo folio: el subtotal no se cambia desde aquí.' : '';
+  const monedaSubtotal = monedaClienteDe(editClienteId);
+  const sumaOpsEdicion = !facturaEditando || opsEdicion.cargando || !monedaSubtotal ? null
+    : r2(Array.from(opsEdicion.actuales.values()).reduce((s, op) => s + aCentavos(importeEn(monedaSubtotal, op)), 0) / 100);
   const cambiosEdicion = !!facturaEditando && (sincronizarAlActualizar || completarAlActualizar || claveEdicion({
     invoice: editInvoice, fecha: editFecha, ccp: editCcp, status: editStatus, cancelacion: editCancelacion, clienteId: editClienteId, total: editTotal, adjuntos: adjuntosEdicion,
   }) !== editInicial);
@@ -1831,6 +1839,14 @@ export const FacturacionClientesDashboard = () => {
     if (!monedaEdit) return alert(editClienteId ? avisoSinMoneda('cliente') : 'Elige el cliente de la factura: la moneda es la del cliente en Empresas.');
     const cancelando = estaCancelada(editStatus);
     if (cancelando) { const falta = validarCancelacion(editCancelacion, editInvoice); if (falta) return alert(falta); }
+    // ✅ V00533: el subtotal capturado a mano, revisado antes de guardar nada (la transacción lo vuelve a revisar).
+    const subtotalCambio = Math.abs((Number(editTotal) || 0) - r2(totalDeGrupo(facturaEditando))) > 0.009;
+    if (subtotalCambio && !flags.dineroPorServidor) {
+      if (bloqueoSubtotal) return alert(bloqueoSubtotal);
+      if (!((Number(editTotal) || 0) > 0)) return alert('El subtotal debe ser mayor que $0.00.');
+      const pagadoAntes = Number(facturaEditando.montoPagado) || 0;
+      if ((Number(editTotal) || 0) < pagadoAntes - 0.009) return alert(`No se puede: el subtotal (${formatoMoneda(Number(editTotal) || 0)}) quedaría por debajo de lo ya pagado (${formatoMoneda(pagadoAntes)}). Elimina primero el pago en Pagos.`);
+    }
     const canc = escrituraCancelacion(facturaEditando, editStatus, cancelando ? editCancelacion : null);
     setGuardandoEdit(true);
     try {
@@ -1869,31 +1885,13 @@ export const FacturacionClientesDashboard = () => {
         const cli: any = empresasList.find((e: any) => e.id === editClienteId);
         if (cli) { baseUpdate.clienteId = editClienteId; baseUpdate.clienteNombre = String(cli.nombre || ''); }
       }
-      // ✅ FIX IMPORTE EDITADO: el total capturado se escribe TAMBIÉN en
-      //   subtotalMonedaFactura (el campo que la tabla, las tarjetas y Pagos
-      //   leen primero) — antes solo se escribía subtotalFactura y por eso
-      //   "seguía arrojando el que tenía". Además se recalcula el saldo
-      //   pendiente respetando lo ya pagado.
-      const pagadoActual = Number(facturaEditando.montoPagado) || 0;
-      const saldoNuevo = Math.max(0, totalNum - pagadoActual);
-      const extraPago: any = { saldoPendiente: saldoNuevo };
-      if (pagadoActual > 0.009) extraPago.statusPago = saldoNuevo <= 0.009 ? 'PAGADA' : 'PARCIAL';
-      // ✅ V00451: el total solo se escribe si se CAMBIÓ; y entonces queda marcado como capturado a
-      //   mano (totalManualCentavos), para que el recálculo del servidor no lo regrese a la suma de
-      //   los renglones y deje saldo pendiente en una factura ya pagada.
-      const totalCambio = Math.abs(totalNum - r2(totalDeGrupo(facturaEditando))) > 0.009;
-
+      // ✅ V00533: el subtotal ya NO va en este lote (escritura de dinero → transacción al final, abajo).
+      //   Antes (V00451) se escribía aquí con lo pagado de la lista en memoria; desde la V00519 ya no se podía cambiar.
       const batch = writeBatch(db);
-      ids.forEach((id, idx) => {
+      ids.forEach((id) => {
         batch.set(doc(db, 'facturas_clientes', id), {
           ...baseUpdate,
           ...canc.firestore, // ✅ V00481
-          ...(totalCambio ? {
-            subtotalFactura: idx === 0 ? totalNum : 0,
-            subtotalMonedaFactura: idx === 0 ? totalNum : 0, // ✅ FIX: el campo que se muestra
-            totalManualCentavos: idx === 0 ? aCentavos(totalNum) : 0,
-            ...(idx === 0 ? extraPago : {}),
-          } : {}),
         }, { merge: true });
       });
       await batch.commit();
@@ -1902,25 +1900,34 @@ export const FacturacionClientesDashboard = () => {
       //   facturación NO es obligatorio; la ⚠ solo avisa). Si Storage rechaza
       //   la subida, se muestra el motivo exacto para diagnosticarlo.
       await guardarDocsDeEdicion(facturaEditando); // ✅ V00451: varios documentos (del grupo, en el primero)
-      setFacturasGlobales(prev => prev.map(f => {
-        if (!ids.includes(f.id)) return f;
-        if (!totalCambio) return normalizarFactura(canc.local({ ...f, ...baseUpdate }));
-        const esPrimero = f.id === ids[0];
-        return normalizarFactura(canc.local({ ...f, ...baseUpdate, subtotalFactura: esPrimero ? totalNum : 0, subtotalMonedaFactura: esPrimero ? totalNum : 0, totalManualCentavos: esPrimero ? aCentavos(totalNum) : 0, ...(esPrimero ? extraPago : {}) }));
-      }));
-      setFacturaViendo((prev: any) => (prev && ids.includes(prev.id)) ? canc.local({ ...prev, ...baseUpdate, ...(totalCambio ? { subtotalFactura: totalNum, subtotalMonedaFactura: totalNum, ...extraPago } : {}) }) : prev);
+      setFacturasGlobales(prev => prev.map(f => (ids.includes(f.id) ? normalizarFactura(canc.local({ ...f, ...baseUpdate })) : f)));
+      setFacturaViendo((prev: any) => (prev && ids.includes(prev.id)) ? canc.local({ ...prev, ...baseUpdate }) : prev);
       if (!canc.vacia) void registrarLog('Facturación Clientes', 'Edición', cancelando ? `Canceló la factura ${editInvoice.trim()}: la reemplaza ${editCancelacion.reemplazo.trim()}. Nota: ${editCancelacion.nota.trim()}` : `La factura ${editInvoice.trim()} dejó de estar Cancelada (${editStatus}).`);
       // ✅ V00520: Actualizar también pone la factura al día con sus operaciones (si alguna cambió de costo).
       // ✅ V00525: no guardó lo que cobró cada operación → se guarda lo que cobra hoy cada una (el total no cambia).
       if (planEdicion && (sincronizarAlActualizar || completarAlActualizar)) {
         const r = await aplicarActualizarFactura(facturaEditando, { ...planEdicion, completar: completarAlActualizar ? planEdicion.completar : null }, editInvoice.trim(), auth.currentUser?.email || '');
         aplicarEscritosFactura(r);
-        if (r.errorCompletar) throw new Error(`Los demás cambios se guardaron, pero no lo que cobra cada operación: ${r.errorCompletar}`);
+        if (r.errorCompletar) throw new ErrorDinero(`Los demás cambios se guardaron, pero no lo que cobra cada operación: ${r.errorCompletar}`); // ✅ V00533: ErrorDinero (antes Error: el aviso no se veía)
+      }
+      // ✅ V00533: el subtotal capturado a mano va AL FINAL (gana sobre lo que haya puesto Actualizar), en UNA
+      //   transacción que relee la factura: lo pagado de ese momento, saldo, status y marca de capturado a mano.
+      if (subtotalCambio) {
+        const antes = r2(totalDeGrupo(facturaEditando));
+        let datos: Record<string, unknown>;
+        try {
+          datos = await guardarSubtotalManual(ids[0], totalNum, new Date().toISOString(), auth.currentUser?.email || '');
+        } catch (e) {
+          throw new ErrorDinero(`Los demás cambios se guardaron, pero no el subtotal: ${e instanceof ErrorDinero ? e.message : 'no se pudo guardar (revisa tu conexión).'}`);
+        }
+        setFacturasGlobales(prev => prev.map(f => (f.id === ids[0] ? normalizarFactura({ ...f, ...datos }) : f)));
+        setFacturaViendo((prev: any) => (prev && prev.id === ids[0]) ? { ...prev, ...datos } : prev);
+        void registrarLog('Facturación Clientes', 'Edición', `Subtotal de la factura ${editInvoice.trim()} capturado a mano: ${antes.toFixed(2)} → ${totalNum.toFixed(2)} ${monedaEdit}.`);
       }
       setFacturaEditando(null);
     } catch (e) {
       console.error('Error guardando edición de factura:', e);
-      alert(mensajeDinero(e, 'No se pudo guardar la edición de la factura.'));
+      alert(e instanceof ErrorDinero ? e.message : mensajeDinero(e, 'No se pudo guardar la edición de la factura.')); // ✅ V00533
     } finally {
       setGuardandoEdit(false);
     }
@@ -4678,10 +4685,10 @@ export const FacturacionClientesDashboard = () => {
                 )}
               </div>
               <div>
-                <label className="fcd-x146">TOTAL FACTURADO</label>
-                {/* ✅ V00519: el monto NO se cambia aquí: sale de las operaciones */}
-                <span className="fcd-moneda-fija fcd-total-fijo" title="El total sale de sus operaciones">{(Number(editTotal) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                <small className="fcd-bloqueo-nota">Sale de sus operaciones: para cambiarlo, corrige el costo con ✎ Editar en la operación (abajo) y presiona Actualizar, o pon la diferencia con Analizar documento.</small>
+                {/* ✅ V00533: el subtotal (sin IVA) se escribe aquí y avisa si coincide con el subtotal del documento (antes, V00519, salía fijo de sus operaciones) */}
+                <label className="fcd-x146" htmlFor="fcd-edit-subtotal">SUBTOTAL FACTURADO (sin IVA)</label>
+                <SubtotalFacturaEdicion id="fcd-edit-subtotal" valor={editTotal} onCambiar={setEditTotal} moneda={monedaSubtotal} adjuntos={adjuntosEdicion}
+                  sumaOps={sumaOpsEdicion} bloqueo={bloqueoSubtotal} deshabilitado={guardandoEdit} />
               </div>
               <div>
                 <label className="fcd-x146">FACTURA CCP (Opcional)</label>

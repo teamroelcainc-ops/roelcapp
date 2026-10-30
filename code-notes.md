@@ -207,6 +207,27 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - Modales con `createPortal` a `document.body` (la tarjeta usa `transform` al pasar el mouse) y perezosos desde la tarjeta (`lazyWithRetry`): la carga inicial crece 0.3 KB (sin eso, ~20 KB por FormularioConfigurable).
 - Se quitaron las reglas `.rd-dos*` de App.css (solo las usaba la tarjeta TC · Diesel).
 
+## V00533 (subtotal editable en Editar factura con aviso contra el documento)
+- Pedido (30-oct, E48 que sustituye a la A5506): "que se pueda editar el subtotal, pero que alerte si coincide con el subtotal de la factura. El subtotal, no el total". La factura guardó 481.40 (TOTAL del CFDI con IVA 16%); sus operaciones suman 415.00 (SUBTOTAL del CFDI).
+- Revierte para Clientes el candado de la V00519 ("el monto sale de las operaciones"). Proveedores sigue fijo (no se pidió). En un folio con varios registros (`__groupIds` > 1) sigue fijo: el total va en el primero y los demás en 0, y releerlos todos en una transacción no vale la pena para ese caso raro.
+- `subtotalManual.ts`:
+  - `documentoParaSubtotal`: el primer documento leído con subtotal, el XML antes que el PDF.
+  - `avisosSubtotal`: ok / aviso / info. Igualdad al centavo. Si lo capturado es el TOTAL del documento lo dice. Avisa si no es lo que suman hoy sus operaciones (`importeEn`), porque saldría en Corregir.
+  - `planSubtotalManual`: > 0 y no por debajo de lo pagado (`avisoTotalBajoPagado` del dominio).
+    - `subtotalFactura` (conversión a pesos): en MXN = el subtotal; en USD se ajusta en proporción (`conv × nuevo / antes`), porque no hay un TC único de la factura.
+    - `totalManualCentavos` para que el servidor no lo regrese.
+    - Saldo y statusPago.
+  - `guardarSubtotalManual`: `runTransaction` que relee la factura.
+- Editar factura (`handleGuardarEdicionFactura`, sin `dineroPorServidor`): el subtotal ya NO va en el `writeBatch` (V00451 lo escribía con el `montoPagado` de la lista en memoria). Orden:
+  1. lote con los demás campos;
+  2. documentos;
+  3. Actualizar con sus operaciones (V00520/V00525);
+  4. al final, la transacción del subtotal (el número que escribió el usuario gana).
+  - Si la transacción falla, el aviso dice que lo demás sí se guardó.
+  - Con `dineroPorServidor` sigue la callable `editarFactura` (manda `total`).
+- El `catch` mostraba siempre el mensaje genérico con un `Error` común: los avisos "Los demás cambios se guardaron, pero…" ahora son `ErrorDinero` y se muestran.
+- `useLecturasDocumentos` lee los PDF/XML al abrir Editar factura. Usa la caché por archivo/URL de `leerDocumentoFactura.ts`; los guardados se descargan (necesita el CORS del bucket, V00516; si falla dice "No se pudo leer el subtotal del documento").
+
 ## V00532 (Corregir desglose: Total, Dólares y Pesos en la moneda de su Facturado en)
 - Reporte (30-oct, TR-221026-023 / E4542): convenio $120 USD, Facturado en Pesos, TC 18.6425. Guardado: subtotalCliente 120, dolaresCliente 120, pesosCliente 0, conversionCliente 2237.10.
   - El campo "Subtotal" del formulario es `subtotalClienteFact.monto` (calculado al momento); "Total" es `subtotalCliente` (guardado).
