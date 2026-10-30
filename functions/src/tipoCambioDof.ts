@@ -1,5 +1,5 @@
 /**
- * ✅ V00492 — T.C. DEL DOF AUTOMÁTICO (Cloud Function programada, 5:00 a. m. hora de Texas)
+ * ✅ V00492 — T.C. DEL DOF AUTOMÁTICO (Cloud Function programada, 12:00 a. m. hora de Texas desde la V00533)
  * ------------------------------------------------------------------------------
  * Pedido del cliente: "todos los días a las 5:00 a. m. (hora de Texas) se coloque el tipo de
  * cambio DOF del día; debe ser el correcto y solo a las 5:00".
@@ -22,9 +22,11 @@
  *   · Una fecha no se repite ni se sobrescribe: si alguien ya capturó el día, no se toca (si el
  *     valor capturado no es el del DOF, queda un aviso en los logs).
  *
- * Cuándo corre: UNA vez al día a las 5:00 (America/Chicago: hora central de Texas, con su horario
- * de verano). Solo si esa corrida falla (Banxico no responde) Cloud Scheduler la reintenta a los
- * pocos minutos, hasta 3 veces; nunca más tarde en el día.
+ * Cuándo corre: UNA vez al día a las 12:00 de la noche (America/Chicago: hora central de Texas,
+ * con su horario de verano). ✅ V00533: antes a las 5:00; el cliente lo pidió a medianoche. A esa
+ * hora el FIX del día hábil anterior ya está publicado (Banxico lo da hacia el mediodía de CDMX) y
+ * `hoy` ya es el día nuevo en Texas. Solo si esa corrida falla (Banxico no responde) Cloud
+ * Scheduler la reintenta a los pocos minutos, hasta 3 veces; nunca más tarde en el día.
  *
  * Campos: los del formulario (dia, fecha, tcDof en texto con 4 decimales, tendencia, tipoTendencia)
  * + origen, fechaFix, creadoPor, createdAt. OJO: ningún campo nuevo puede contener "dof", "valor",
@@ -299,8 +301,8 @@ export async function registrarTipoCambioDof(hoy: string, token: string): Promis
 
 export const tipoCambioDofDiario = onSchedule(
   {
-    schedule: '0 5 * * *', timeZone: ZONA_TEXAS, region: 'us-central1', secrets: [BANXICO_TOKEN], timeoutSeconds: 120,
-    // Solo si la corrida de las 5:00 falla: reintentos a los pocos minutos (≈5:02, 5:06, 5:11), nunca más tarde.
+    schedule: '0 0 * * *', timeZone: ZONA_TEXAS, region: 'us-central1', secrets: [BANXICO_TOKEN], timeoutSeconds: 120,
+    // ✅ V00533: a las 12:00 de la noche. Solo si esa corrida falla: reintentos a los pocos minutos (≈0:02, 0:06, 0:11), nunca más tarde.
     retryCount: 3, minBackoffSeconds: 120, maxBackoffSeconds: 300, maxRetrySeconds: 1200,
   },
   async () => {

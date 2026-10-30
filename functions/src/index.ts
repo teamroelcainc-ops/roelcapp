@@ -374,5 +374,5 @@ export { referenciaDieselEscrita } from './puentesYDiesel';
 //   operacionMontoCambiado ya no existe (va dentro de operacionEscrita): el deploy pedirá borrarla.
 export { propagarEmpleado, propagarStatus, propagarTipoOperacion, propagarUnidad } from './propagacion';
 
-// ✅ V00492: T.C. del DOF automático (5:00 a. m. hora de Texas, desde Banxico SF43718).
+// ✅ V00492: T.C. del DOF automático (12:00 a. m. hora de Texas desde la V00533, desde Banxico SF43718).
 export { tipoCambioDofDiario } from './tipoCambioDof';

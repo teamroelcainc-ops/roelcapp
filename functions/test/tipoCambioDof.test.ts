@@ -24,6 +24,10 @@ describe('fecha de Texas', () => {
     expect(m.fechaEnZona(new Date('2026-11-02T11:00:00Z'))).toBe('2026-11-02'); // 5:00 CST
     expect(m.fechaEnZona(new Date('2026-10-26T04:59:00Z'))).toBe('2026-10-25'); // 23:59 del domingo
   });
+  it('a las 12:00 de la noche de Texas (V00533) la fecha ya es el día nuevo', () => {
+    expect(m.fechaEnZona(new Date('2026-10-26T05:00:00Z'))).toBe('2026-10-26'); // 0:00 CDT
+    expect(m.fechaEnZona(new Date('2026-11-02T06:00:00Z'))).toBe('2026-11-02'); // 0:00 CST
+  });
 });
 
 describe('calendario bancario de México (CNBV)', () => {
