@@ -62,7 +62,7 @@ import { fmtFechaAuditoria, limpiarUndefined } from '../services/formatosOperaci
 import { leerParaDocumento } from '../../../utils/direccionPdf'; // ✅ V00448
 import TagPuenteUnidad from '../../puentes/components/TagPuenteUnidad'; // ✅ V00465
 import { grupoTagDeOperacion } from '../../puentes/services/tagPuente';
-import { TIPO_APERTURA_EDITAR, useAtenderApertura } from '../../../shared/data/aperturas'; // ✅ V00502 · V00538
+import { useAtenderApertura } from '../../../shared/data/aperturas'; // ✅ V00502
 import { abrirOperacionPorId } from '../services/operacionPorId'; // ✅ V00502
 
 // ✅ V00439 (Fase 3.x): catálogos del módulo (alias → colección) desde el
@@ -319,13 +319,6 @@ const OperacionesDashboard = () => {
   // ✅ V00502: el buscador global (u otro módulo) pidió abrir la FICHA de una operación activa.
   useAtenderApertura('operaciones', (p) => {
     abrirOperacionPorId(p.id, (op) => {
-      // ✅ V00538: "Solucionar" de la Revisión de datos abre directo el formulario (tipo 'editar').
-      if (p.tipo === TIPO_APERTURA_EDITAR) {
-        setOperacionViendo(null);
-        setOperacionEditando(op);
-        setEstadoFormulario('abierto');
-        return;
-      }
       setOperacionEditando(null);
       setEstadoFormulario('cerrado');
       setOperacionViendo(op);

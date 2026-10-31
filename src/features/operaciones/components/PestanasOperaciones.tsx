@@ -10,6 +10,8 @@
 //   operaciones de un rango de fechas, de cualquier status).
 // ✅ V00505: + botón "Revisión de datos" (solo lectura: lista los errores de datos por grupo).
 // ✅ V00532: + botón "Corregir desglose" (Total, Dólares y Pesos en la moneda de su Facturado en).
+// ✅ V00540: si se salió de la Revisión de datos con Solucionar de F5 (a Facturación), al volver a
+//   Operaciones la ventana se abre sola donde estaba (services/volverARevision.ts).
 // ---------------------------------------------------------------------------
 import { Suspense, useState } from 'react';
 import { BarChart3, Calculator, CheckCircle2, ClipboardCheck, FileSpreadsheet, Truck, Wand2, XCircle } from 'lucide-react';
@@ -17,6 +19,7 @@ import PestanasModulo from '../../../shared/components/PestanasModulo';
 import type { PestanaModulo } from '../../../shared/components/PestanasModulo';
 import { lazyWithRetry } from '../../../utils/lazyWithRetry';
 import type { ModuloOperaciones } from '../services/modulosOperaciones';
+import { hayQueReabrirRevision } from '../services/volverARevision';
 import './PestanasOperaciones.css';
 
 // ✅ V00487: la ventana (y lo que lee) se carga al presionar el botón.
@@ -41,7 +44,7 @@ interface Props {
 export default function PestanasOperaciones({ activo, puede, onCambiar }: Props) {
   const [corrigiendo, setCorrigiendo] = useState(false);
   const [exportando, setExportando] = useState(false);
-  const [revisando, setRevisando] = useState(false);
+  const [revisando, setRevisando] = useState(hayQueReabrirRevision);
   const [desglose, setDesglose] = useState(false);
   return (
     <>

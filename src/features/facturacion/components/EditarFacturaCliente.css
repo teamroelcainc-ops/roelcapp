@@ -1,0 +1,45 @@
+/* ✅ V00540: Editar factura (clientes) como formulario propio. Mismo aspecto que tenía en Facturación
+   (antes fcd-x239…fcd-x246 en FacturacionClientesDashboard.css); prefijo propio porque se abre también
+   desde la Revisión de datos, donde el CSS de Facturación no está cargado. */
+.modal-overlay.efc-fondo { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box; background-color: rgba(0, 0, 0, 0.85); backdrop-filter: blur(6px); z-index: 1600; }
+/* Detrás del formulario de una operación (✎ Editar), que va con z-index 1000. Sin la transición de .modal-overlay
+   (también animaba el z-index y el formulario aparecía detrás un instante). */
+.modal-overlay.efc-fondo { transition: none; }
+.modal-overlay.efc-fondo.efc-detras { z-index: 900; }
+.efc-ventana { width: 100%; max-width: 1040px; max-height: 92vh; overflow-y: auto; box-sizing: border-box; padding: 24px; border: 1px solid #30363d; border-radius: 12px; background-color: #0d1117; }
+.efc-cabecera { display: flex; justify-content: space-between; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #30363d; }
+.efc-titulo { margin: 0; color: #f0f6fc; font-size: 1.2rem; }
+.efc-cerrar { border: none; background: none; color: #8b949e; font-size: 1.2rem; cursor: pointer; }
+
+.efc-cliente { display: block; margin-bottom: 18px; padding: 12px 14px; border: 1px dashed #30363d; border-radius: 8px; background-color: #010409; color: #8b949e; font-size: 0.82rem; }
+.efc-etiqueta-cliente { display: block; margin-bottom: 4px; color: #8b949e; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }
+.efc-agrupados { color: #f59e0b; }
+.efc-fija { display: block; width: 100%; box-sizing: border-box; padding: 10px; border: 1px dashed #30363d; border-radius: 6px; background-color: #010409; cursor: default; }
+.efc-nota { display: block; margin-top: 4px; color: #8b949e; font-size: 0.74rem; }
+
+.efc-campos { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+.efc-ancho { grid-column: span 2; }
+.efc-etiqueta { display: block; margin-bottom: 4px; color: #8b949e; font-size: 0.75rem; }
+/* El color del status sale del catálogo de status de factura (variable en tiempo de ejecución) */
+.efc-status { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid var(--efc-color-status, #30363d); border-radius: 6px; background-color: #161b22; color: var(--efc-color-status, #c9d1d9); font-weight: bold; }
+.efc-invoice { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #30363d; border-radius: 6px; background-color: #161b22; color: #d84315; font-size: 1.05rem; font-weight: bold; }
+.efc-entrada { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #30363d; border-radius: 6px; background-color: #161b22; color: #fff; }
+.efc-fecha { color-scheme: dark; }
+.efc-aviso:empty { display: none; }
+.efc-status:focus-visible, .efc-invoice:focus-visible, .efc-entrada:focus-visible { outline: 2px solid #58a6ff; outline-offset: 1px; }
+
+.efc-pie { display: flex; justify-content: flex-end; gap: 12px; padding-top: 18px; border-top: 1px solid #30363d; }
+.efc-cancelar { padding: 8px 24px; border: 1px solid #30363d; border-radius: 6px; background: none; color: #8b949e; cursor: pointer; }
+.efc-actualizar { padding: 8px 24px; border: none; border-radius: 6px; background-color: #238636; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.efc-actualizar:hover { background-color: #2ea043; }
+.efc-actualizar:disabled { background-color: #21262d; color: #6e7681; cursor: not-allowed; }
+.efc-actualizar:focus-visible, .efc-cancelar:focus-visible, .efc-cerrar:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
+
+@media (max-width: 640px) {
+  .modal-overlay.efc-fondo { flex-wrap: wrap; }
+  .efc-ventana { padding: 14px 12px; }
+  .efc-cabecera { flex-wrap: wrap; }
+  .efc-campos { grid-template-columns: 1fr; }
+  .efc-ancho { grid-column: auto; }
+  .efc-pie { flex-wrap: wrap; }
+}

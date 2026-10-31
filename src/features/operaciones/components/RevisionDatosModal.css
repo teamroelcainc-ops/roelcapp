@@ -69,6 +69,7 @@
 .rvd-solucionar { display: inline-flex; align-items: center; gap: 4px; padding: 4px 9px; border: 1px solid #238636; border-radius: 6px; background: rgba(35, 134, 54, 0.12); color: #3fb950; font: inherit; font-size: 0.78rem; font-weight: 600; white-space: nowrap; cursor: pointer; }
 .rvd-solucionar:hover { border-color: #3fb950; background: rgba(35, 134, 54, 0.22); }
 .rvd-solucionar:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
+.rvd-solucionar:disabled { opacity: 0.5; cursor: not-allowed; } /* ✅ V00540: con un formulario abierto (minimizado) */
 /* ✅ V00518: ✓ Está bien (confirmar como correcta) y el aviso con Deshacer */
 .rvd-confirmar { display: inline-flex; align-items: center; gap: 4px; padding: 4px 9px; border: 1px solid #238636; border-radius: 6px; background: rgba(35, 134, 54, 0.12); color: #56d364; font: inherit; font-size: 0.78rem; font-weight: 600; white-space: nowrap; cursor: pointer; }
 .rvd-confirmar:hover { border-color: #3fb950; background: rgba(46, 160, 67, 0.22); }
@@ -92,3 +93,7 @@
   .rvd-fila { flex-direction: column; }
   .rvd-fila-acciones { max-width: none; justify-content: flex-start; }
 }
+/* ✅ V00540: con un formulario de Solucionar abierto, la ventana va detrás (el de la operación usa z-index 1000).
+   Sin la transición de .modal-overlay: el z-index también se animaba y el formulario aparecía detrás un instante. */
+.modal-overlay.rvd-fondo { transition: none; }
+.modal-overlay.rvd-fondo.rvd-fondo--detras { z-index: 900; }

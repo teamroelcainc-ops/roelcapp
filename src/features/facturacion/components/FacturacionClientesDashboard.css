@@ -239,19 +239,10 @@
 .fcd-x236 { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #30363d; padding-top: 14px; margin-top: 14px; }
 .fcd-x237 { color: #6e7681; font-size: 0.78rem; }
 .fcd-x238 { padding: 8px 20px; background-color: #D84315; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
-.fcd-x239 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 1600; padding: 20px; backdrop-filter: blur(6px); }
-.fcd-x240 { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; width: 100%; max-width: 1040px; max-height: 92vh; overflow-y: auto; padding: 24px; } /* ✅ V00520: más ancha (antes 640px) */
-/* ✅ V00520: Actualizar en Editar factura (se activa solo con cambios) */
-.fcd-btn-actualizar { padding: 8px 24px; border: none; border-radius: 6px; background-color: #238636; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
-.fcd-btn-actualizar:hover { background-color: #2ea043; }
-.fcd-btn-actualizar:disabled { background-color: #21262d; color: #6e7681; cursor: not-allowed; }
-.fcd-btn-actualizar:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
+/* ✅ V00540: Editar factura (antes fcd-x239…fcd-x243, fcd-btn-actualizar, fcd-moneda-fija) está en EditarFacturaCliente.css */
 /* ✅ V00520: ✎ Editar en cada operación de la Ficha */
 .fcd-op-editar { align-self: flex-start; padding: 2px 8px; border: 1px solid #30363d; border-radius: 4px; color: #58a6ff; font-size: 0.75rem; font-weight: 600; cursor: pointer; }
 .fcd-op-editar:hover { border-color: #58a6ff; background-color: rgba(88, 166, 255, 0.12); }
-.fcd-x241 { background-color: #010409; border: 1px dashed #30363d; border-radius: 8px; padding: 12px 14px; margin-bottom: 18px; font-size: 0.82rem; color: #8b949e; }
-.fcd-x242 { color: #f59e0b; }
-.fcd-x243 { width: 100%; padding: 10px; background-color: #161b22; color: #fff; border: 1px solid #30363d; border-radius: 6px; box-sizing: border-box; color-scheme: dark; }
 .fcd-x245 { width: 100%; padding: 10px; background-color: #161b22; color: #3fb950; border: 1px solid #30363d; border-radius: 6px; font-weight: bold; box-sizing: border-box; }
 .fcd-x246 { display: flex; justify-content: flex-end; gap: 12px; border-top: 1px solid #30363d; padding-top: 18px; }
 .fcd-x247 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.85); z-index: 1800; display: flex; justify-content: center; align-items: center; padding: 20px; backdrop-filter: blur(4px); }
@@ -402,8 +393,6 @@
   .fcd-x230 { padding: 14px 12px; }
   .fcd-x232 { flex-wrap: wrap; }
   .fcd-x236 { flex-wrap: wrap; }
-  .fcd-x239 { flex-wrap: wrap; }
-  .fcd-x240 { padding: 14px 12px; }
   .fcd-x246 { flex-wrap: wrap; }
   .fcd-x247 { flex-wrap: wrap; }
   .fcd-x249 { padding: 14px 12px; }
@@ -534,9 +523,6 @@
 
 /* ✅ V00481: moneda fija del cliente, avisos, cancelación y Editar desde el detalle de la operación */
 .modal-overlay.fcd-detras-editor { z-index: 900; }
-.fcd-moneda-fija { display: block; width: 100%; box-sizing: border-box; padding: 10px; border: 1px dashed #30363d; border-radius: 6px; background-color: #010409; cursor: default; }
-.fcd-bloqueo-nota { display: block; margin-top: 4px; color: #8b949e; font-size: 0.74rem; }
-.fcd-edit-aviso:empty { display: none; }
 .fcd-aviso-crear { margin: -12px 0 20px; }
 .fcd-aviso-moneda { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
 .fcd-aviso-moneda > p { flex: 1 1 260px; }

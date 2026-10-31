@@ -9,13 +9,16 @@
 // y deja de mostrarse.
 // ✅ V00518: en los grupos confirmables (D6) cada fila tiene ✓ Está bien (con Deshacer) y el grupo,
 // "Confirmar todas como correctas" (prueba → respaldo → APLICAR): las confirmadas salen de la lista.
+// ✅ V00540: Solucionar abre el formulario ENCIMA de la ventana (la ventana no se cierra): el de la operación
+// (D1, D2, D4, D5) o Editar factura (F2, F2c). Al cerrarlo sigue en el mismo grupo y lugar, y lo que se tocó
+// se vuelve a revisar. F5 va a Facturación y, al regresar a Operaciones, la ventana se reabre donde estaba.
 // ---------------------------------------------------------------------------
-import { useEffect, useEffectEvent, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ExternalLink, FileSpreadsheet, RefreshCw, Wrench, X } from 'lucide-react';
 import CargandoDatos from '../../../shared/components/CargandoDatos';
 import { auth } from '../../../config/firebase';
-import { abrirRegistro, TIPO_APERTURA_EDITAR, TIPO_APERTURA_FACTURAR } from '../../../shared/data/aperturas';
+import { abrirRegistro, TIPO_APERTURA_FACTURAR } from '../../../shared/data/aperturas';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { descargarExcel } from '../services/excelOperaciones';
 import { camposMarca } from '../services/marcarFacturadasF1';
@@ -35,6 +38,11 @@ import { filasPruebaD2, filasPruebaF3, respaldoD2, respaldoF3 } from '../service
 import { aplicarCorregirF3, aplicarRenumerarD2 } from '../services/correccionesD2F3Datos';
 import { aplicarAlCentavoF2c, filasPruebaF2c, respaldoF2c } from '../services/correccionF2cDatos';
 import type { AvanceRevisionDatos, Refresco, RevisionGuardada, SenalRevision } from '../services/revisionDatosLectura';
+import { olvidarPosicionRevision, posicionRevision, salirDeRevision } from '../services/volverARevision'; // ✅ V00540
+import { EditorOperacionEmbebido } from './EditorOperacionEmbebido'; // ✅ V00540
+import EditarFacturaClienteEmbebida from '../../facturacion/components/EditarFacturaClienteEmbebida'; // ✅ V00540
+import { avisarResultadoActualizar } from '../../facturacion/services/actualizarFactura';
+import type { EscritoEdicionFactura } from '../../facturacion/services/edicionFacturaCliente';
 import './RevisionDatosModal.css';
 
 const POR_PAGINA = 100;
@@ -44,14 +52,19 @@ const soloHora = (d: Date): string => d.toLocaleTimeString('es-MX', { hour: '2-d
 
 // ✅ V00538: "Solucionar" en cada fila de los grupos que se corrigen a mano: abre directo la pantalla
 //   donde se arregla (Editar factura o el formulario de la operación), no su ficha.
+// ✅ V00540: encima de esta ventana (no se cierra); F5 va a Facturación y la ventana espera al volver.
 const SOLUCION_POR_GRUPO: Partial<Record<CodigoRevision, string>> = {
-  F2: 'Abre Editar factura de esta factura: corrige la factura, o abre la operación que está mal',
-  D2: 'Abre el formulario de la operación (para renumerarla a mano)',
-  F5: 'Abre Facturación de Clientes con esta operación seleccionada para Generar Factura',
-  F2c: 'Abre Editar factura de esta factura para dejarla al centavo',
-  D5: 'Abre el formulario de la operación para capturar lo que falta',
-  D1: 'Abre el formulario de la operación (para una facturada que no se puede corregir sola)',
-  D4: 'Abre el formulario de la operación (para una facturada que no se puede corregir sola)',
+  F2: 'Abre Editar factura encima: corrige la factura, o abre la operación que está mal',
+  D2: 'Abre el formulario de la operación encima (para renumerarla a mano)',
+  F5: 'Va a Facturación de Clientes con esta operación seleccionada para Generar Factura; al regresar a Operaciones, esta ventana sigue donde estaba',
+  F2c: 'Abre Editar factura encima para dejarla al centavo',
+  D5: 'Abre el formulario de la operación encima para capturar lo que falta',
+  D1: 'Abre el formulario de la operación encima (para una facturada que no se puede corregir sola)',
+  D4: 'Abre el formulario de la operación encima (para una facturada que no se puede corregir sola)',
+};
+/** ✅ V00540: Editar factura encima de la ventana: sus avisos (lo demás lo ve la ventana al volver a revisar). */
+const avisarEscritoFactura = (e: EscritoEdicionFactura): void => {
+  if (e.tipo === 'actualizar') avisarResultadoActualizar(e.resultado);
 };
 /** ✅ V00538: grupos con el panel "Solucionar" de monedas y montos. */
 const GRUPOS_MONEDAS: readonly CodigoRevision[] = ['D1', 'D4'];
@@ -71,9 +84,11 @@ interface PropsFila {
   /** ✅ V00538: "Solucionar" (abre la pantalla donde se arregla); su ayuda. */
   solucion?: string;
   onSolucionar?: (f: FilaRevision) => void;
+  /** ✅ V00540: ya hay un formulario abierto (p. ej. minimizado): primero se cierra ese. */
+  conFormulario?: boolean;
 }
 
-function Fila({ f, onAbrir, onConfirmar, confirmando = false, solucion, onSolucionar }: PropsFila) {
+function Fila({ f, onAbrir, onConfirmar, confirmando = false, solucion, onSolucionar, conFormulario = false }: PropsFila) {
   return (
     <li className="rvd-fila">
       <div className="rvd-fila-datos">
@@ -88,7 +103,8 @@ function Fila({ f, onAbrir, onConfirmar, confirmando = false, solucion, onSoluci
           </button>
         )}
         {solucion && onSolucionar && (
-          <button type="button" className="rvd-solucionar" onClick={() => onSolucionar(f)} title={solucion}>
+          <button type="button" className="rvd-solucionar" onClick={() => onSolucionar(f)} disabled={conFormulario}
+            title={conFormulario ? 'Cierra primero el formulario que está abierto' : solucion}>
             <Wrench size={13} aria-hidden="true" /> Solucionar
           </button>
         )}
@@ -109,8 +125,10 @@ export default function RevisionDatosModal({ onCerrar }: { onCerrar: () => void 
   const [avance, setAvance] = useState<AvanceRevisionDatos | null>(null);
   const [error, setError] = useState('');
   const [aviso, setAviso] = useState('');
-  const [grupo, setGrupo] = useState<CodigoRevision>('F4');
-  const [mostrar, setMostrar] = useState(POR_PAGINA);
+  // ✅ V00540: si se salió a Facturación con Solucionar (F5), vuelve al mismo grupo, filas y lugar.
+  const [vuelta] = useState(posicionRevision);
+  const [grupo, setGrupo] = useState<CodigoRevision>(() => (GRUPOS_REVISION.find((g) => g.codigo === vuelta?.grupo)?.codigo ?? 'F4'));
+  const [mostrar, setMostrar] = useState(vuelta?.mostrar ?? POR_PAGINA);
   const [exportando, setExportando] = useState(false);
   const [rango, setRango] = useState(() => rangoRevisionDatos());
   const [actualizando, setActualizando] = useState(false);
@@ -122,6 +140,17 @@ export default function RevisionDatosModal({ onCerrar }: { onCerrar: () => void 
   const [ultimaConfirmada, setUltimaConfirmada] = useState<FilaRevision | null>(null);
   const [confirmadasTodas, setConfirmadasTodas] = useState(false);
   const senalRef = useRef<SenalRevision | null>(null);
+  // ✅ V00540: el formulario abierto con Solucionar encima de la ventana (el destino del registro).
+  const [opEditando, setOpEditando] = useState<DestinoRevision | null>(null);
+  const [facturaEditando, setFacturaEditando] = useState<DestinoRevision | null>(null);
+  const cuerpoRef = useRef<HTMLDivElement>(null);
+  const listaRef = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    if (!vuelta) return;
+    if (cuerpoRef.current) cuerpoRef.current.scrollTop = vuelta.scrollCuerpo;
+    if (listaRef.current) listaRef.current.scrollTop = vuelta.scrollLista;
+    olvidarPosicionRevision();
+  }, [vuelta]);
 
   const revisar = async () => {
     const senal: SenalRevision = { cancelada: false };
@@ -188,18 +217,40 @@ export default function RevisionDatosModal({ onCerrar }: { onCerrar: () => void 
   }, []);
   useEffect(() => { void refrescar(); }, [pulso, revisando]);
 
-  const abrir = (d: DestinoRevision, tipo?: string) => {
+  const abrir = (d: DestinoRevision) => {
     marcarParaRevisar(d); // ✅ V00512: al volver, se revisa de nuevo
     onCerrar();
-    abrirRegistro(d.modulo, d.id, tipo);
+    abrirRegistro(d.modulo, d.id);
   };
-  // ✅ V00538 · V00539: F5 va a Facturación (Asignar operaciones, lista para facturar); los demás, a editar.
+  // ✅ V00538 · V00539 · V00540: F2/F2c → Editar factura y los demás → el formulario de la operación, ENCIMA de
+  //   la ventana. F5 va a Facturación (Asignar operaciones, lista para facturar) y la ventana espera al volver.
   const solucionar = (f: FilaRevision) => {
-    if (f.codigo !== 'F5') { abrir(f.destino, TIPO_APERTURA_EDITAR); return; }
+    if (f.codigo === 'F5') { irAFacturar(f); return; }
+    if (f.destino.modulo === 'facturacionClientes') setFacturaEditando(f.destino);
+    else setOpEditando(f.destino);
+  };
+  const irAFacturar = (f: FilaRevision) => {
     marcarParaRevisar(f.destino); // la operación (al volver, se revisa de nuevo)
+    salirDeRevision({ grupo, mostrar, scrollLista: listaRef.current?.scrollTop ?? 0, scrollCuerpo: cuerpoRef.current?.scrollTop ?? 0 });
     onCerrar();
     abrirRegistro('facturacionClientes', f.destino.id, TIPO_APERTURA_FACTURAR);
   };
+  /** ✅ V00540: al cerrar el formulario, lo que se tocó se vuelve a revisar (la ventana sigue donde estaba). */
+  const revisarDeNuevo = (d: DestinoRevision) => {
+    marcarParaRevisar(d);
+    setPulso((n) => n + 1);
+  };
+  const cerrarOperacion = () => {
+    if (opEditando) revisarDeNuevo(opEditando);
+    setOpEditando(null);
+  };
+  const cerrarFactura = () => {
+    if (facturaEditando) revisarDeNuevo(facturaEditando);
+    setFacturaEditando(null);
+  };
+  /** ✎ Editar de una operación dentro de Editar factura (su formulario va encima de los dos). */
+  const editarOperacionDeFactura = (opId: string) => { setOpEditando({ modulo: 'operaciones', id: opId }); };
+  const hayFormulario = !!opEditando || !!facturaEditando;
 
   const cambiarRango = (campo: 'desde' | 'hasta', valor: string) => {
     const nuevo = { ...rango, [campo]: valor };
@@ -294,18 +345,20 @@ export default function RevisionDatosModal({ onCerrar }: { onCerrar: () => void 
     : [];
   const elegir = (codigo: CodigoRevision) => { setGrupo(codigo); setMostrar(POR_PAGINA); };
 
-  return createPortal(
-    <div className="modal-overlay rvd-fondo" role="dialog" aria-modal="true" aria-labelledby="rvd-titulo">
+  return (
+    <>
+    {createPortal(
+    <div className={`modal-overlay rvd-fondo${hayFormulario ? ' rvd-fondo--detras' : ''}`} role="dialog" aria-modal="true" aria-labelledby="rvd-titulo">
       <div className="rvd-ventana">
         <header className="rvd-cabecera">
           <div>
             <h2 id="rvd-titulo" className="rvd-titulo">Revisión de datos</h2>
             <p className="rvd-sub">
-              Revisa todas las operaciones y las facturas de clientes y lista los errores por grupo. Abre cada registro para corregirlo
-              en su módulo, o con Solucionar: al volver, lo corregido ya no aparece. Lo que se cambia desde aquí (F1, D1/D4, D2, D3, F3, ✓ de D6) pide tu confirmación.
+              Revisa todas las operaciones y las facturas de clientes y lista los errores por grupo. Corrige cada registro con Solucionar,
+              que abre su formulario encima de esta ventana: al cerrarlo sigues aquí y lo corregido ya no aparece. Lo que se cambia desde aquí (F1, D1/D4, D2, D3, F3, F2c, ✓ de D6) pide tu confirmación.
             </p>
           </div>
-          <button type="button" className="rvd-cerrar" onClick={onCerrar} disabled={revisando} aria-label="Cerrar">✕</button>
+          <button type="button" className="rvd-cerrar" onClick={onCerrar} disabled={revisando || hayFormulario} aria-label="Cerrar">✕</button>
         </header>
 
         <div className="rvd-barra">
@@ -339,7 +392,7 @@ export default function RevisionDatosModal({ onCerrar }: { onCerrar: () => void 
           )}
         </div>
 
-        <div className="rvd-cuerpo">
+        <div className="rvd-cuerpo" ref={cuerpoRef}>
           {error && <p className="rvd-error" role="alert">{error}</p>}
           {aviso && !revisando && <p className="rvd-aviso" role="status">{aviso}</p>}
           {rangoInvertido && <p className="rvd-error" role="alert">La fecha Desde es posterior a Hasta: no hay nada en ese rango.</p>}
@@ -366,7 +419,7 @@ export default function RevisionDatosModal({ onCerrar }: { onCerrar: () => void 
                   </li>
                 ))}
               </ul>
-              <section className="rvd-detalle-grupo" aria-labelledby="rvd-titulo-grupo">
+              <section className="rvd-detalle-grupo" aria-labelledby="rvd-titulo-grupo" ref={listaRef}>
                 <h3 id="rvd-titulo-grupo" className="rvd-titulo-grupo">
                   {elegido.titulo} <span className={`rvd-prioridad rvd-prioridad--${elegido.prioridad.toLowerCase()}`}>{elegido.prioridad}</span>
                 </h3>
@@ -463,7 +516,7 @@ export default function RevisionDatosModal({ onCerrar }: { onCerrar: () => void 
                     <ul className="rvd-filas">
                       {filas.slice(0, mostrar).map((f) => (
                         <Fila key={f.clave} f={f} onAbrir={abrir} onConfirmar={confirmable ? (x) => { void confirmar(x); } : undefined} confirmando={confirmando === f.clave}
-                          solucion={solucion} onSolucionar={solucionar} />
+                          solucion={solucion} onSolucionar={solucionar} conFormulario={hayFormulario} />
                       ))}
                     </ul>
                     {filas.length > mostrar && (
@@ -480,5 +533,14 @@ export default function RevisionDatosModal({ onCerrar }: { onCerrar: () => void 
       </div>
     </div>,
     document.body,
+    )}
+    {/* ✅ V00540: los formularios de Solucionar, encima de la ventana (cada uno en body, después de ella) */}
+    {facturaEditando && createPortal(
+      <EditarFacturaClienteEmbebida facturaId={facturaEditando.id} onCerrar={cerrarFactura} onEditarOperacion={editarOperacionDeFactura}
+        detras={!!opEditando} onEscrito={avisarEscritoFactura} />,
+      document.body,
+    )}
+    {opEditando && createPortal(<EditorOperacionEmbebido key={opEditando.id} operacionId={opEditando.id} onClose={cerrarOperacion} />, document.body)}
+    </>
   );
 }

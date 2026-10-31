@@ -23,7 +23,6 @@ import { HiloModal } from '../../hilo/HiloModal';
 import { aplicarAvisoEnLista, notificarOperacionGuardada, suscribirOperacionGuardada } from '../../../utils/operacionesBus';
 import { reglaFacturables } from '../services/reglaFacturables'; // ✅ V00536
 import { useFichaViva } from '../../../shared/hooks/useFichaViva'; // ✅ V00536
-import { escribirFolioEnOperaciones } from '../services/folioEnOperaciones'; // ✅ V00536
 import { avisoYaFacturadas, facturaExistenteFresca, operacionesYaFacturadas, planLiberarAlEliminar } from '../services/facturarSeguro'; // ✅ V00451 · V00494
 import type { DecisionLiberar } from '../services/facturarSeguro';
 import {
@@ -38,7 +37,6 @@ import {
   documentId,
   onSnapshot,
 } from 'firebase/firestore';
-import { SelectBuscable } from '../../catalogos/components/SelectBuscable';
 import { auth, db } from '../../../config/firebase';
 import { exportarExcelProfesional } from './exportarExcelProfesional';
 import { generarRemisionPDF } from './generarRemisionPDF';
@@ -46,21 +44,24 @@ import type { EmisorRemision, RemisionData } from './generarRemisionPDF';
 import './FacturacionClientesDashboard.css';
 import { PildoraDocsFactura } from './TarjetaDocumentoFactura';
 import DocumentoFichaCliente from './DocumentoFichaCliente';
-import OperacionesFacturaEdicion from './OperacionesFacturaEdicion'; // ✅ V00520
+import EditarFacturaCliente from './EditarFacturaCliente'; // ✅ V00540: Editar factura en su propio formulario
+import type { EscritoEdicionFactura } from '../services/edicionFacturaCliente';
+import { codigoMonedaFactura as codigoMonedaFacturaDe, monedaFacturaMostrar as monedaFacturaMostrarDe, monedaFacturacionCliente } from '../services/monedaFacturaCliente';
+import { formatearMoneda } from '../../../shared/utils/formatos';
 import { useOperacionesDeFactura } from '../hooks/useOperacionesDeFactura'; // ✅ V00520
-import { aplicarActualizarFactura, hayQueActualizar, planActualizarFactura, textoActualizar } from '../services/actualizarFactura'; // ✅ V00528
+import { aplicarActualizarFactura, avisarResultadoActualizar, hayQueActualizar, planActualizarFactura, textoActualizar } from '../services/actualizarFactura'; // ✅ V00528 · V00540
 import type { PlanActualizarFactura, ResultadoActualizar } from '../services/actualizarFactura';
 import DocumentosFacturaModal from './DocumentosFacturaModal'; // ✅ V00451
 import AdjuntosArchivos from '../../../shared/components/AdjuntosArchivos'; // ✅ V00451
-import { adjuntoNuevo, desdeGuardados } from '../../../shared/archivos/adjuntos';
+import { adjuntoNuevo } from '../../../shared/archivos/adjuntos';
 import type { Adjunto } from '../../../shared/archivos/adjuntos';
 import {
   MAX_DOCS_FACTURA, aplicarEscriturasDocs, camposDocsFactura, detalleError, docsDeFactura, idsDeFila,
 } from '../services/documentosFactura'; // ✅ V00451: varios documentos por factura
 import { agruparFacturas, estadoPagoFila, filaPagada, grupoDeFactura } from '../services/gruposFactura'; // ✅ V00502 · V00504
-import { TIPO_APERTURA_EDITAR, TIPO_APERTURA_FACTURAR, useAtenderApertura } from '../../../shared/data/aperturas'; // ✅ V00502
+import { TIPO_APERTURA_FACTURAR, useAtenderApertura } from '../../../shared/data/aperturas'; // ✅ V00502
 import type { EscrituraDocs } from '../services/documentosFactura';
-import { agregarDocsFactura, guardarDocsFactura, rescatarDocsDeBorradas } from '../services/guardarDocsFactura';
+import { agregarDocsFactura, rescatarDocsDeBorradas } from '../services/guardarDocsFactura';
 import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
 import RevisionRefCliente from '../../operaciones/components/RevisionRefCliente'; // ✅ V00450
 import { idDeLista, useRefClienteDuplicados } from '../../operaciones/hooks/useRefClienteDuplicados'; // ✅ V00450
@@ -71,14 +72,14 @@ import { pestanaAtendida, usePestanaPedida } from '../../../shared/data/avisos';
 import { registrarLog } from '../../../utils/logger'; // ✅ V00262
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
-import { esUSD as esMonedaUSD, monedaCanonica as monedaCanonicaComun, nombreMoneda } from '../../../shared/dominio/moneda';
+import { esUSD as esMonedaUSD, monedaCanonica as monedaCanonicaComun } from '../../../shared/dominio/moneda';
 import { ID_MXN, ID_USD, STATUS_COMPLETADOS, TIPO_EMPRESA } from '../../../shared/dominio/constantes'; // ✅ V00439 (Fase 3.x)
 import { useCatalogo, useCatalogos } from '../../../shared/data/catalogos'; // ✅ V00439 (Fase 3.x)
 import { CATALOGOS_NOMBRES_FACTURACION, construirMapaCatalogos } from '../services/mapaCatalogos';
 import { useMapaEstable } from '../../../shared/hooks/useMapaEstable'; // ✅ V00447
 import { useValorEstable } from '../../../shared/hooks/useValorEstable'; // ✅ V00529
 import type { EmpresaFacturacion } from '../services/mapaCatalogos';
-import { aCentavos, r2, aNumero } from '../../../shared/dominio/numeros';
+import { r2 } from '../../../shared/dominio/numeros';
 import {
   MAX_ESCRITURAS_LOTE,
   avisoFacturaConPagos,
@@ -106,7 +107,6 @@ import { conversionOperacion, ErrorDinero, monedaDeFactura, monedaFacturaOperaci
 import type { Moneda } from '../../../shared/dominio/moneda';
 import Importe, { NombreMoneda } from './Importe'; // ✅ V00481: Pesos en verde, Dólares en azul
 import AvisoMonedaFactura from './AvisoMonedaFactura';
-import CamposCancelacion from './CamposCancelacion';
 import ModalCancelarFactura from './ModalCancelarFactura';
 import CancelacionFicha from './CancelacionFicha';
 import AccionesHistorial from './AccionesHistorial'; // ✅ V00482
@@ -120,13 +120,11 @@ import DatosSitModal from './DatosSitModal'; // ✅ V00513
 import { datosParaSit } from '../services/datosParaSit';
 import type { DatosSit } from '../services/datosParaSit';
 import { armarReporte } from '../services/reportePorFacturar'; // ✅ V00526
-import { cotejarCfdi, importeEn, opParaCotejo } from '../services/cotejoCfdi';
+import { cotejarCfdi, opParaCotejo } from '../services/cotejoCfdi';
 import type { ClienteCotejo, ResultadoCotejo } from '../services/cotejoCfdi';
 import { esRefOperacion } from '../services/leerCfdi';
 import type { Cfdi } from '../services/leerCfdi';
 import RevisionDocumentosFactura from './RevisionDocumentosFactura'; // ✅ V00514
-import SubtotalFacturaEdicion from './SubtotalFacturaEdicion'; // ✅ V00533
-import { guardarSubtotalManual } from '../services/subtotalManual'; // ✅ V00533
 import { monedaEsperada, opEsperadaDeOperacion, opsEsperadasDeFactura } from '../services/documentoFactura';
 import type { FacturaEsperada } from '../services/documentoFactura';
 import PagosDeFactura from './PagosDeFactura'; // ✅ V00483
@@ -135,9 +133,8 @@ import type { PagoDeFactura } from '../services/pagosDeFactura';
 import { abrirPagoEnPagos } from '../../pagos/services/pagoPedido';
 import { puedeClave } from '../../../utils/permisos';
 import {
-  AVISO_AGREGAR_FACTURADA, CANCELACION_VACIA, STATUS_AL_CREAR, avisoMonedaDistinta, avisoSinMoneda,
-  cancelacionDe, estaCancelada, importesDeRenglones, monedaDeEmpresa, puedeAgregarOperaciones, sumaEnTotales,
-  totalSugeridoEn, validarCancelacion,
+  AVISO_AGREGAR_FACTURADA, STATUS_AL_CREAR, avisoMonedaDistinta, avisoSinMoneda,
+  estaCancelada, importesDeRenglones, monedaDeEmpresa, puedeAgregarOperaciones, sumaEnTotales,
 } from '../services/reglasFactura';
 import type { DatosCancelacion } from '../services/reglasFactura';
 import { escribirEnGrupo, escrituraCancelacion } from '../services/statusFacturaDatos';
@@ -209,10 +206,6 @@ const COLUMNAS_FACTURA_BASE = [
 // ✅ V00504: el Excel del Historial lleva además "Estado de pago" (Pagada / Parcial / Sin pagar),
 //   después de "# Pago" (no es columna de la tabla).
 const COL_ESTADO_PAGO = { id: 'estadoPago', label: 'Estado de pago', visible: true };
-/** ✅ V00520: lo que se puede cambiar en Editar factura, en una sola cadena (para saber si algo cambió). */
-const claveEdicion = (e: { invoice: string; fecha: string; ccp: string; status: string; cancelacion: DatosCancelacion; clienteId: string; total: string; adjuntos: readonly Adjunto[] }): string =>
-  JSON.stringify([e.invoice.trim(), e.fecha, e.ccp.trim(), e.status, e.cancelacion.nota, e.cancelacion.reemplazo, e.clienteId, e.total,
-    e.adjuntos.map((a) => (a.estado === 'nuevo' ? `n:${a.clave}` : `g:${a.archivo.url}`))]);
 const columnasParaExportar = (cols: readonly { id: string; label: string; visible: boolean }[]) => {
   const out = cols.map((c) => ({ id: c.id, label: c.label, visible: c.visible }));
   const i = out.findIndex((c) => c.id === 'numeroPago');
@@ -450,9 +443,7 @@ export const FacturacionClientesDashboard = () => {
       return true;
     }
     setActiveTab('historial');
-    // ✅ V00538: "Solucionar" de la Revisión de datos abre directo Editar factura (tipo 'editar').
-    if (p.tipo === TIPO_APERTURA_EDITAR) prepararEdicionFactura(grupo);
-    else setFacturaViendo(grupo);
+    setFacturaViendo(grupo);
     return true;
   }, !facturasVivas.cargando);
   // ✅ V00276: DOCUMENTO DE LA FACTURA (el PDF/imagen de la factura emitida), archivo en
@@ -463,7 +454,6 @@ export const FacturacionClientesDashboard = () => {
   //   Editar usan AdjuntosArchivos (vista previa en el mismo formulario); la píldora de la fila y
   //   la tarjeta de la Ficha abren "Documentos de la factura" (antes: subida inmediata de UNO).
   const [adjuntosFacturar, setAdjuntosFacturar] = useState<Adjunto[]>([]); // Generar Factura: se suben al confirmar
-  const [adjuntosEdicion, setAdjuntosEdicion] = useState<Adjunto[]>([]); // Editar factura: se guardan al guardar
   const [docsFacturaDe, setDocsFacturaDe] = useState<Record<string, unknown> | null>(null); // fila con el modal abierto
   /** La tabla y la Ficha abierta reflejan los documentos guardados al instante. */
   const aplicarDocsLocal = (escrituras: EscrituraDocs[]): void => {
@@ -488,13 +478,10 @@ export const FacturacionClientesDashboard = () => {
         return idsFila.length === 1 ? { ...prev, ...escritos[0] } : { ...prev, operacionesGuardadas: escritos.flatMap((c) => (Array.isArray(c.operacionesGuardadas) ? c.operacionesGuardadas : [])) };
       });
     }
-    if (r.omitidas.length > 0) avisar({ tipo: 'alerta', titulo: 'No se guardó lo que cobra cada operación', texto: r.omitidas.join('; ') });
+    // ✅ V00529 · V00540: lo omitido y, si en el servidor no había nada que cambiar, por qué (avisos compartidos).
+    avisarResultadoActualizar(r, ' La Ficha ya muestra lo que hay en el servidor.');
     // ✅ V00529: la Ficha toma también las operaciones como están en el servidor ("→ hoy" verdadero).
     opsFicha.ponerAlDia(r.opsServidor);
-    // ✅ V00529: se esperaba cambiar algo y en el servidor no había nada que cambiar: se dice por qué, con sus números.
-    if (!r.sincronizado && r.diferencias.length > 0) {
-      avisar({ tipo: 'alerta', titulo: 'No se cambió nada en la factura', texto: `En el servidor no había nada que poner al día. ${r.diferencias.join('; ')}. La Ficha ya muestra lo que hay en el servidor.` });
-    }
     // ✅ V00529: la lista de Corregir (que es una foto de cuando se presionó Revisar) se pone al día con lo escrito.
     //   Después de pintar lo demás (revisa todas las facturas: no se espera por eso).
     if (revisionCuadre && r.escritos.size > 0) {
@@ -514,16 +501,6 @@ export const FacturacionClientesDashboard = () => {
       return {};
     } finally {
       setAdjuntosFacturar([]);
-    }
-  };
-  /** Editar factura: guarda los documentos DESPUÉS de la factura (la factura nunca depende de la subida). */
-  const guardarDocsDeEdicion = async (fila: Record<string, unknown>): Promise<void> => {
-    try {
-      const escrituras = await guardarDocsFactura('clientes', fila, adjuntosEdicion);
-      if (escrituras) aplicarDocsLocal(escrituras);
-    } catch (eDoc: unknown) {
-      console.error(eDoc);
-      alert(`Los cambios de la factura SÍ se guardaron, pero los documentos no.\n\nMotivo: ${detalleError(eDoc)}`);
     }
   };
 
@@ -554,19 +531,9 @@ export const FacturacionClientesDashboard = () => {
 
   const [opInfoMap, setOpInfoMap] = useState<Record<string, any>>({});
 
+  // ✅ V00540: la fila (folio) con Editar factura abierto; el formulario es EditarFacturaCliente.
   const [facturaEditando, setFacturaEditando] = useState<any | null>(null);
-  const [guardandoEdit, setGuardandoEdit] = useState(false);
-  const [editInvoice, setEditInvoice] = useState('');
-  const [editFecha, setEditFecha] = useState('');
-  const [editCcp, setEditCcp] = useState('');
-  const [editStatus, setEditStatus] = useState('Facturado');
-  const [editTotal, setEditTotal] = useState('');
-  const [editClienteId, setEditClienteId] = useState(''); // ✅ NUEVO: reasignar cliente
   type FacturaACancelar = { id?: unknown; invoice?: unknown; clienteId?: unknown; statusFactura?: unknown; __groupIds?: unknown };
-  // ✅ V00481: la moneda ya no se elige (es la del cliente); cancelar pide nota y factura de reemplazo.
-  const [editCancelacion, setEditCancelacion] = useState<DatosCancelacion>(CANCELACION_VACIA);
-  // ✅ V00520: cómo estaba la factura al abrir Editar (Actualizar se activa solo si algo cambió).
-  const [editInicial, setEditInicial] = useState<string>('');
   const [cancelarDe, setCancelarDe] = useState<FacturaACancelar | null>(null);
 
   const [gestionOp, setGestionOp] = useState<any | null>(null);
@@ -584,10 +551,8 @@ export const FacturacionClientesDashboard = () => {
 
   // Formateadores
   // ✅ V00126: sin redondeo — se muestran hasta 6 decimales tal cual resultan del cálculo.
-  const formatoMoneda = (monto: any) => {
-    const num = aNumero(monto); // ✅ V00535: acepta "1,234.50" y "$1,234.50" (parseFloat daba 1)
-    return isNaN(num) ? '$ 0.00' : `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; // ✅ V00274: todos los montos a 2 decimales
-  };
+  // ✅ V00535: acepta "1,234.50" y "$1,234.50". V00274: 2 decimales. V00540: el formato compartido (shared/utils/formatos.ts).
+  const formatoMoneda = (monto: unknown): string => formatearMoneda(monto);
   const formatearFechaSpanish = (fechaString: any) => {
     if (!fechaString) return '-';
     const fmt = (d: Date) => d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -930,44 +895,18 @@ export const FacturacionClientesDashboard = () => {
   //   "Dólares" y "Pesos". USD/DÓLARES/DOLARES → Dólares; MXN/PESOS → Pesos.
   // ✅ V00439 (Fase 3.x): reconoce USD/MXN con el helper compartido (acepta las
   //   mismas formas y algunas más: 'DLS', 'M.N.'…); lo no reconocido sigue igual.
-  const monedaCanonica = (val: unknown): string => {
-    const s = String(val || '').trim();
-    if (!s) return '';
-    const comun = monedaCanonicaComun(s);
-    if (comun) return nombreMoneda(comun);
-    if (s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() === 'n/a') return '';
-    const nombre = mapaCatalogos[s];
-    if (nombre && String(nombre) !== s) return monedaCanonica(nombre);
-    return s;
-  };
+  // ✅ V00262 · V00540: la moneda canónica ("Dólares" / "Pesos") y la del cliente viven en
+  //   services/monedaFacturaCliente.ts (las usa también Editar factura).
 
-  const monedaDeCliente = (clienteId: any): string => {
-    if (!clienteId) return '';
-    const empresa = empresasList.find(e => e.id === clienteId);
-    const idMoneda = empresa?.monedaRef || empresa?.moneda || empresa?.monedaFacturacion;
-    return monedaCanonica(idMoneda); // ✅ V00262: siempre canónica
-  };
-
-  const monedaFacturaMostrar = (f: any): string => {
-    // ✅ V00265 (corrige el V00262): manda la moneda EN QUE SE EMITIÓ la
-    //   factura (monedaFacturacion, o el campo viejo `moneda` de importadas),
-    //   siempre canónica (Dólares/Pesos). La del cliente en Empresas queda de
-    //   RESPALDO para facturas sin moneda. El V00262 priorizaba Empresas y
-    //   eso MEZCLABA monedas: una factura emitida en Pesos de un cliente que
-    //   hoy cotiza en Dólares se sumaba al total USD con su monto en pesos —
-    //   por eso los totales se veían inflados.
-    const emitida = monedaCanonica(f.monedaFacturacion) || monedaCanonica(f.moneda);
-    if (emitida) return emitida;
-    return monedaDeCliente(f.clienteId) || 'N/A';
-  };
+  // ✅ V00265: la moneda EN QUE SE EMITIÓ la factura; la del cliente en Empresas solo de respaldo (services/monedaFacturaCliente.ts).
+  const monedaFacturaMostrar = (f: unknown): string => monedaFacturaMostrarDe(f, empresasList, mapaCatalogos);
   // ✅ V00485: el CÓDIGO (USD / MXN) de esa moneda, para el filtro de moneda del Historial.
   //   monedaFacturaMostrar devuelve el NOMBRE ("Dólares" / "Pesos"); el filtro lo comparaba con
   //   'USD' / 'MXN' y nunca coincidía (los conteos salían en 0 y elegir una moneda vaciaba la lista).
-  const codigoMonedaFactura = (f: unknown): Moneda | null => monedaCanonicaComun(monedaFacturaMostrar(f));
+  const codigoMonedaFactura = (f: unknown): Moneda | null => codigoMonedaFacturaDe(f, empresasList, mapaCatalogos);
 
   // ✅ V00481: la moneda de una factura es SIEMPRE la del cliente en Empresas (null si no tiene).
-  const monedaClienteDe = (clienteId: unknown): Moneda | null =>
-    monedaDeEmpresa(empresasList.find((e) => e.id === clienteId), 'monedaFacturacion', (id) => mapaCatalogos[id]);
+  const monedaClienteDe = (clienteId: unknown): Moneda | null => monedaFacturacionCliente(clienteId, empresasList, mapaCatalogos);
   // ✅ V00513: DATOS PARA EL SIT — descripción e importe (subtotal) por operación seleccionada,
   //   con la misma regla de dinero con que se factura y se coteja el XML.
   const abrirDatosSit = (): void => {
@@ -1023,15 +962,6 @@ export const FacturacionClientesDashboard = () => {
       .filter((x) => String(x.clienteId || '') === String(f?.clienteId || '') && !estaCancelada(x.statusFactura))
       .map((x) => String(x.invoice || '').trim())
       .filter((inv) => inv && inv !== propio))).slice(0, 200);
-  };
-  // Total que se precarga en Editar Factura: el de la factura; si su moneda no es la del cliente,
-  //   la suma de sus operaciones en la moneda del cliente (Dólares (Cliente) o Conversión Final).
-  const totalEditPara = (f: { operacionesGuardadas?: unknown }, clienteId: string): number => {
-    const actual = r2(totalDeGrupo(f));
-    const mon = monedaClienteDe(clienteId);
-    if (!mon || mon === monedaDeFactura(f)) return actual;
-    const sugerido = r2(totalSugeridoEn(mon, f.operacionesGuardadas));
-    return sugerido > 0 ? sugerido : actual;
   };
 
   const esFacturada = (op: any) => opIndex.has(String(op.id)) || !!op.facturaClienteId || !!op.facturado;
@@ -1805,162 +1735,32 @@ export const FacturacionClientesDashboard = () => {
     const id = String(raw.id ?? '');
     prepararEdicionFactura(facturasGlobales.find((f) => String(f.id) === id) ?? normalizarFactura({ ...raw, id }));
   };
-  const prepararEdicionFactura = (f: any) => {
-    setFacturaEditando(f);
-    setEditInvoice(String(f.invoice || ''));
-    setEditFecha(String(f.fecha || '').slice(0, 10));
-    setEditCcp(String(f.facturaCcp || ''));
-    setEditStatus(String(f.statusFactura || 'Facturado'));
-    const cancelada = cancelacionDe(f); // ✅ V00481
-    setEditCancelacion(cancelada ? { nota: cancelada.nota, reemplazo: cancelada.reemplazo } : CANCELACION_VACIA);
-    // ✅ V00441: con la bandera, el total EN LA MONEDA de la factura (el que se ve en la
-    //   tabla y el que guarda el servidor); antes se precargaba la conversión a pesos.
-    // ✅ V00451: el total EN LA MONEDA de la factura también sin la bandera (antes se precargaba
-    //   subtotalFactura = la conversión a pesos; guardar el editor solo para adjuntar el documento
-    //   cambiaba el total de una factura en dólares y en Pagos quedaba saldo pendiente).
-    // ✅ V00481: si la factura no está en la moneda del cliente, el total sugerido ya es el de esa moneda.
-    setEditTotal(String(totalEditPara(f, String(f.clienteId || ''))));
-    setEditClienteId(String(f.clienteId || '')); // ✅ NUEVO
-    const adjuntos = desdeGuardados(docsDeFactura(f));
-    setAdjuntosEdicion(adjuntos); // ✅ V00451: los documentos actuales (de todo el grupo)
-    setEditInicial(claveEdicion({
-      invoice: String(f.invoice || ''), fecha: String(f.fecha || '').slice(0, 10), ccp: String(f.facturaCcp || ''), status: String(f.statusFactura || 'Facturado'),
-      cancelacion: cancelada ? { nota: cancelada.nota, reemplazo: cancelada.reemplazo } : CANCELACION_VACIA, clienteId: String(f.clienteId || ''),
-      total: String(totalEditPara(f, String(f.clienteId || ''))), adjuntos,
-    }));
-  };
-
-  // ✅ V00520 — Editar factura: sus operaciones (con ✎ Editar), si alguna cambió de costo y cómo queda la
-  //   factura al presionar Actualizar (que se activa solo si algo cambió).
-  // ✅ V00525: una factura que no guardó lo que cobró cada operación (las de AppSheet): Actualizar le guarda lo que
-  //   cobra hoy cada una, SIN cambiar el total (la misma regla de Completar importes, para esta factura sola).
-  // ✅ V00528: la regla está en services/actualizarFactura.ts (la usa también el botón Actualizar factura de la Ficha).
-  const monedaEdicion = facturaEditando ? (monedaDeFactura(facturaEditando) ?? '') : '';
-  // ✅ V00525: la moneda con la que se ve (la del cliente si la factura no trae) para leer sus operaciones y completar importes
-  const monedaCompletar = facturaEditando ? codigoMonedaFactura(facturaEditando) : null;
-  const opsEdicion = useOperacionesDeFactura(facturaEditando, monedaEdicion || monedaCompletar || '');
-  const planEdicion: PlanActualizarFactura | null = facturaEditando ? planActualizarFactura(facturaEditando, opsEdicion.actuales, {
-    moneda: monedaEdicion || null, monedaVista: monedaCompletar, monedaDoc: codigoMonedaFactura, cargando: opsEdicion.cargando, dineroPorServidor: !!flags.dineroPorServidor,
-  }) : null;
-  const sincronizarAlActualizar = !!planEdicion?.sincronizar && !planEdicion.impedimento;
-  const completarAlActualizar = !!planEdicion?.completar && !estaCancelada(editStatus);
-  // ✅ V00533: el subtotal se escribe a mano (con aviso contra el documento); no en un folio con varios registros.
-  const idsEdicion: string[] = facturaEditando ? (Array.isArray(facturaEditando.__groupIds) && facturaEditando.__groupIds.length ? facturaEditando.__groupIds : [facturaEditando.id]) : [];
-  const bloqueoSubtotal = idsEdicion.length > 1 ? 'Esta factura está en varios registros con el mismo folio: el subtotal no se cambia desde aquí.' : '';
-  const monedaSubtotal = monedaClienteDe(editClienteId);
-  const sumaOpsEdicion = !facturaEditando || opsEdicion.cargando || !monedaSubtotal ? null
-    : r2(Array.from(opsEdicion.actuales.values()).reduce((s, op) => s + aCentavos(importeEn(monedaSubtotal, op)), 0) / 100);
-  const cambiosEdicion = !!facturaEditando && (sincronizarAlActualizar || completarAlActualizar || claveEdicion({
-    invoice: editInvoice, fecha: editFecha, ccp: editCcp, status: editStatus, cancelacion: editCancelacion, clienteId: editClienteId, total: editTotal, adjuntos: adjuntosEdicion,
-  }) !== editInicial);
-
-  const handleGuardarEdicionFactura = async () => {
-    if (!facturaEditando) return;
-    if (!editInvoice.trim()) return alert('El # de Invoice es obligatorio.');
-    // ✅ V00481: la moneda es la del cliente (Empresas) y es obligatoria; cancelar pide nota y reemplazo.
-    const monedaEdit = monedaClienteDe(editClienteId);
-    if (!monedaEdit) return alert(editClienteId ? avisoSinMoneda('cliente') : 'Elige el cliente de la factura: la moneda es la del cliente en Empresas.');
-    const cancelando = estaCancelada(editStatus);
-    if (cancelando) { const falta = validarCancelacion(editCancelacion, editInvoice); if (falta) return alert(falta); }
-    // ✅ V00533: el subtotal capturado a mano, revisado antes de guardar nada (la transacción lo vuelve a revisar).
-    const subtotalCambio = Math.abs((Number(editTotal) || 0) - r2(totalDeGrupo(facturaEditando))) > 0.009;
-    if (subtotalCambio && !flags.dineroPorServidor) {
-      if (bloqueoSubtotal) return alert(bloqueoSubtotal);
-      if (!((Number(editTotal) || 0) > 0)) return alert('El subtotal debe ser mayor que $0.00.');
-      const pagadoAntes = Number(facturaEditando.montoPagado) || 0;
-      if ((Number(editTotal) || 0) < pagadoAntes - 0.009) return alert(`No se puede: el subtotal (${formatoMoneda(Number(editTotal) || 0)}) quedaría por debajo de lo ya pagado (${formatoMoneda(pagadoAntes)}). Elimina primero el pago en Pagos.`);
-    }
-    const canc = escrituraCancelacion(facturaEditando, editStatus, cancelando ? editCancelacion : null);
-    setGuardandoEdit(true);
-    try {
-      const ids: string[] = Array.isArray(facturaEditando.__groupIds) && facturaEditando.__groupIds.length ? facturaEditando.__groupIds : [facturaEditando.id];
-      const totalNum = Number(editTotal) || 0;
-      // ✅ V00441 (Fase 5.5): con la bandera, el servidor guarda el total como MANUAL.
-      if (flags.dineroPorServidor) {
-        // ✅ V00481: los datos de la cancelación van ANTES (si el servidor falla quedan sin efecto: solo se
-        //   muestran con status Cancelado); al salir de Cancelado se borran DESPUÉS.
-        if (cancelando) await escribirEnGrupo('facturas_clientes', ids, canc.firestore);
-        const r = await llamarDinero('editarFactura', {
-          lado: 'cliente', origen: 'facturacion', facturaIds: ids, invoice: editInvoice.trim(), fecha: editFecha || '', facturaCcp: editCcp.trim(),
-          statusFactura: editStatus, moneda: monedaEdit, total: totalNum, ...(editClienteId ? { empresaId: editClienteId } : {}),
-        });
-        if (!cancelando) await escribirEnGrupo('facturas_clientes', ids, canc.firestore);
-        setFacturasGlobales(prev => aplicarFacturas(prev, r.facturas, normalizarFactura).map((f) => (ids.includes(f.id) ? canc.local(f) : f)));
-        const primera = r.facturas[ids[0]];
-        if (primera) setFacturaViendo((prev: Record<string, unknown> | null) => (prev && ids.includes(String(prev.id))) ? canc.local({ ...prev, ...camposEditadosFactura(primera) }) : prev);
-        if (!canc.vacia) void registrarLog('Facturación Clientes', 'Edición', cancelando ? `Canceló la factura ${editInvoice.trim()}: la reemplaza ${editCancelacion.reemplazo.trim()}. Nota: ${editCancelacion.nota.trim()}` : `La factura ${editInvoice.trim()} dejó de estar Cancelada (${editStatus}).`);
-        await guardarDocsDeEdicion(facturaEditando); // ✅ V00451
-        setFacturaEditando(null);
+  // ✅ V00540: Editar factura es su propio formulario (EditarFacturaCliente): aquí solo se dice cuál fila se edita.
+  const prepararEdicionFactura = (f: any) => { setFacturaEditando(f); };
+  // ✅ V00540: lo que Editar factura acaba de escribir, en la lista y en la Ficha abierta al instante
+  //   (lo mismo que hacía aquí el guardado antes de pasar a su formulario).
+  const aplicarEdicionFactura = (e: EscritoEdicionFactura): void => {
+    switch (e.tipo) {
+      case 'servidor': {
+        setFacturasGlobales(prev => aplicarFacturas(prev, e.facturas, normalizarFactura).map((f) => (e.ids.includes(f.id) ? e.canc.local(f) : f)));
+        const primera = e.facturas[e.ids[0]];
+        if (primera) setFacturaViendo((prev: Record<string, unknown> | null) => (prev && e.ids.includes(String(prev.id))) ? e.canc.local({ ...prev, ...camposEditadosFactura(primera) }) : prev);
         return;
       }
-      const baseUpdate: any = {
-        invoice: editInvoice.trim(),
-        fecha: editFecha || '',
-        facturaCcp: editCcp.trim(),
-        statusFactura: editStatus,
-        monedaFacturacion: monedaEdit, // ✅ V00481: la del cliente
-        updatedAt: new Date().toISOString(),
-      };
-      // ✅ NUEVO — REASIGNAR CLIENTE: corrige facturas que quedaron a nombre
-      //   de otro cliente (el nombre corregido se refleja también en Pagos,
-      //   que lee clienteId/clienteNombre de la factura).
-      if (editClienteId) {
-        const cli: any = empresasList.find((e: any) => e.id === editClienteId);
-        if (cli) { baseUpdate.clienteId = editClienteId; baseUpdate.clienteNombre = String(cli.nombre || ''); }
-      }
-      // ✅ V00533: el subtotal ya NO va en este lote (escritura de dinero → transacción al final, abajo).
-      //   Antes (V00451) se escribía aquí con lo pagado de la lista en memoria; desde la V00519 ya no se podía cambiar.
-      const batch = writeBatch(db);
-      ids.forEach((id) => {
-        batch.set(doc(db, 'facturas_clientes', id), {
-          ...baseUpdate,
-          ...canc.firestore, // ✅ V00481
-        }, { merge: true });
-      });
-      await batch.commit();
-      // ✅ V00536: el # de Invoice también en sus operaciones (antes solo en la factura: el folio viejo seguía
-      //   apareciendo en Completados y Operaciones aun después de recargar).
-      try {
-        await escribirFolioEnOperaciones('cliente', editInvoice.trim(), facturasGlobales.filter((f) => ids.includes(String(f.id))).map((f) => ({ id: String(f.id), datos: f })));
-      } catch (e) {
-        console.error('[Facturación] No se escribió el folio en las operaciones:', e);
-        avisar({ tipo: 'alerta', titulo: 'El folio no llegó a las operaciones', texto: 'La factura se guardó, pero sus operaciones siguen con el folio anterior. Vuelve a guardar la factura para reintentar.' });
-      }
-      // ✅ V00279: el DOCUMENTO se sube DESPUÉS de guardar — el guardado de la
-      //   factura nunca depende de la subida (recuerda: el documento en
-      //   facturación NO es obligatorio; la ⚠ solo avisa). Si Storage rechaza
-      //   la subida, se muestra el motivo exacto para diagnosticarlo.
-      await guardarDocsDeEdicion(facturaEditando); // ✅ V00451: varios documentos (del grupo, en el primero)
-      setFacturasGlobales(prev => prev.map(f => (ids.includes(f.id) ? normalizarFactura(canc.local({ ...f, ...baseUpdate })) : f)));
-      setFacturaViendo((prev: any) => (prev && ids.includes(prev.id)) ? canc.local({ ...prev, ...baseUpdate }) : prev);
-      if (!canc.vacia) void registrarLog('Facturación Clientes', 'Edición', cancelando ? `Canceló la factura ${editInvoice.trim()}: la reemplaza ${editCancelacion.reemplazo.trim()}. Nota: ${editCancelacion.nota.trim()}` : `La factura ${editInvoice.trim()} dejó de estar Cancelada (${editStatus}).`);
-      // ✅ V00520: Actualizar también pone la factura al día con sus operaciones (si alguna cambió de costo).
-      // ✅ V00525: no guardó lo que cobró cada operación → se guarda lo que cobra hoy cada una (el total no cambia).
-      if (planEdicion && (sincronizarAlActualizar || completarAlActualizar)) {
-        const r = await aplicarActualizarFactura(facturaEditando, { ...planEdicion, completar: completarAlActualizar ? planEdicion.completar : null }, editInvoice.trim(), auth.currentUser?.email || '');
-        aplicarEscritosFactura(r);
-        if (r.errorCompletar) throw new ErrorDinero(`Los demás cambios se guardaron, pero no lo que cobra cada operación: ${r.errorCompletar}`); // ✅ V00533: ErrorDinero (antes Error: el aviso no se veía)
-      }
-      // ✅ V00533: el subtotal capturado a mano va AL FINAL (gana sobre lo que haya puesto Actualizar), en UNA
-      //   transacción que relee la factura: lo pagado de ese momento, saldo, status y marca de capturado a mano.
-      if (subtotalCambio) {
-        const antes = r2(totalDeGrupo(facturaEditando));
-        let datos: Record<string, unknown>;
-        try {
-          datos = await guardarSubtotalManual(ids[0], totalNum, new Date().toISOString(), auth.currentUser?.email || '');
-        } catch (e) {
-          throw new ErrorDinero(`Los demás cambios se guardaron, pero no el subtotal: ${e instanceof ErrorDinero ? e.message : 'no se pudo guardar (revisa tu conexión).'}`);
-        }
-        setFacturasGlobales(prev => prev.map(f => (f.id === ids[0] ? normalizarFactura({ ...f, ...datos }) : f)));
-        setFacturaViendo((prev: any) => (prev && prev.id === ids[0]) ? { ...prev, ...datos } : prev);
-        void registrarLog('Facturación Clientes', 'Edición', `Subtotal de la factura ${editInvoice.trim()} capturado a mano: ${antes.toFixed(2)} → ${totalNum.toFixed(2)} ${monedaEdit}.`);
-      }
-      setFacturaEditando(null);
-    } catch (e) {
-      console.error('Error guardando edición de factura:', e);
-      alert(e instanceof ErrorDinero ? e.message : mensajeDinero(e, 'No se pudo guardar la edición de la factura.')); // ✅ V00533
-    } finally {
-      setGuardandoEdit(false);
+      case 'directo':
+        setFacturasGlobales(prev => prev.map(f => (e.ids.includes(f.id) ? normalizarFactura(e.canc.local({ ...f, ...e.campos })) : f)));
+        setFacturaViendo((prev: any) => (prev && e.ids.includes(prev.id)) ? e.canc.local({ ...prev, ...e.campos }) : prev);
+        return;
+      case 'subtotal':
+        setFacturasGlobales(prev => prev.map(f => (f.id === e.id ? normalizarFactura({ ...f, ...e.datos }) : f)));
+        setFacturaViendo((prev: any) => (prev && prev.id === e.id) ? { ...prev, ...e.datos } : prev);
+        return;
+      case 'docs':
+        aplicarDocsLocal(e.escrituras);
+        return;
+      case 'actualizar':
+        aplicarEscritosFactura(e.resultado);
+        return;
     }
   };
 
@@ -4632,118 +4432,10 @@ export const FacturacionClientesDashboard = () => {
       )}
 
       {facturaEditando && (
-        <div className={`modal-overlay fcd-x239${opEditandoId ? ' fcd-detras-editor' : ''}`}>{/* ✅ V00520: detrás del formulario de la operación */}
-          <div className="fcd-x240">
-            <div className="fcd-x142">
-              <h2 className="fcd-x143">Editar Factura</h2>
-              <button className="fcd-x45" onClick={() => setFacturaEditando(null)}>✕</button>
-            </div>
-
-            {/* ✅ NUEVO — el cliente de la factura ahora es EDITABLE (corrige
-                facturas a nombre del cliente equivocado; Pagos lo hereda). */}
-            <div className="fcd-x241" style={{ display: 'block' }}>
-              <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '4px', fontWeight: 600, textTransform: 'uppercase' }}>Cliente de la factura</label>
-              {/* ✅ V00519: el cliente NO se cambia aquí: sale de las operaciones (para cambiarlo, cámbialo en cada
-                  operación de la factura). Solo se elige si la factura todavía no tiene cliente. */}
-              {facturaEditando.clienteId ? (
-                <>
-                  <span className="fcd-moneda-fija" title="Para cambiarlo, cámbialo en cada operación de la factura">{String(facturaEditando.clienteNombre || getNombreCliente(editClienteId) || editClienteId)}</span>
-                  <small className="fcd-bloqueo-nota">Para cambiar el cliente, cámbialo primero en cada operación de la factura.</small>
-                </>
-              ) : (
-                <SelectBuscable
-                  opciones={empresasList
-                    .slice()
-                    .sort((a: any, b: any) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' }))
-                    .map((e: any) => ({ value: e.id, label: String(e.nombre || e.id) }))}
-                  value={editClienteId}
-                  onChange={(id: string) => {
-                    // ✅ V00481: otro cliente con otra moneda → el total sugerido pasa a esa moneda.
-                    if (monedaClienteDe(id) !== monedaClienteDe(editClienteId)) setEditTotal(String(totalEditPara(facturaEditando, id)));
-                    setEditClienteId(id);
-                  }}
-                  placeholder="Buscar cliente..."
-                />
-              )}
-              {Array.isArray(facturaEditando.__groupIds) && facturaEditando.__groupIds.length > 1 && (
-                <span> · <b className="fcd-x242">{facturaEditando.__groupIds.length} documentos agrupados</b> (el total y los archivos se guardan en el primero)</span>
-              )}
-            </div>
-
-            <div className="fcd-x163">
-              <div className="fcd-x164">
-                <label className="fcd-x146">STATUS DE LA FACTURA</label>
-                <select value={editStatus} onChange={e => setEditStatus(e.target.value)}
-                  style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: colorStatusFactura(editStatus), border: `1px solid ${colorStatusFactura(editStatus)}`, borderRadius: '6px', fontWeight: 'bold', boxSizing: 'border-box' }}>
-                  {STATUS_FACTURA_OPCIONES.map(s => <option key={s} value={s}>{s}</option>)}
-                  {!STATUS_FACTURA_OPCIONES.includes(editStatus) && editStatus && <option value={editStatus}>{editStatus}</option>}
-                </select>
-              </div>
-              {estaCancelada(editStatus) && (
-                <div className="fcd-x164">{/* ✅ V00481: cancelar pide nota y la factura que la reemplaza */}
-                  <CamposCancelacion idBase="fcd-edit-canc" valor={editCancelacion} onCambiar={setEditCancelacion}
-                    sugerencias={foliosDelCliente({ ...facturaEditando, clienteId: editClienteId || facturaEditando.clienteId })} deshabilitado={guardandoEdit} />
-                </div>
-              )}
-              <div className="fcd-x164">
-                <label className="fcd-x146">NÚMERO DE INVOICE</label>
-                <input className="fcd-x150" type="text" value={editInvoice} onChange={e => setEditInvoice(e.target.value)} placeholder="Ej. INV-2026-001" />
-              </div>
-              <div className="fcd-x164">
-                {/* ✅ V00276: documento de la factura desde el editor (se sube al guardar) */}
-                <label className="fcd-x146">DOCUMENTO DE LA FACTURA</label>
-                {/* ✅ V00451: varios (hasta 10), con vista previa; se guardan al guardar */}
-                <AdjuntosArchivos etiqueta="Archivos" tipos="factura" adjuntos={adjuntosEdicion} onCambiar={setAdjuntosEdicion} max={MAX_DOCS_FACTURA} deshabilitado={guardandoEdit} />{/* ✅ V00530: también XML */}
-              </div>
-              <div>
-                <label className="fcd-x146">FECHA DE FACTURACIÓN</label>
-                <input className="fcd-x243" type="date" value={editFecha} onChange={e => setEditFecha(e.target.value)} />
-              </div>
-              <div>
-                {/* ✅ V00481: SIEMPRE la del cliente en Empresas; no se elige ni se quita */}
-                <span className="fcd-x146">MONEDA</span>
-                <span className="fcd-moneda-fija" title="Es la moneda del cliente en Empresas"><NombreMoneda moneda={monedaClienteDe(editClienteId)} respaldo="Sin moneda en Empresas" /></span>
-              </div>
-              <div className="fcd-x164 fcd-edit-aviso">{/* ✅ V00481: la moneda es la del cliente */}
-                {!monedaClienteDe(editClienteId) ? (
-                  <AvisoMonedaFactura error texto={editClienteId ? avisoSinMoneda('cliente') : 'Elige el cliente de la factura: la moneda es la del cliente en Empresas.'} />
-                ) : (
-                  <AvisoMonedaFactura texto={(() => {
-                    const aviso = avisoMonedaDistinta(monedaDeFactura(facturaEditando), monedaClienteDe(editClienteId), 'cliente');
-                    if (!aviso) return null;
-                    const pagos = tienePagosAplicados(facturaEditando) ? ' Tiene pagos aplicados: revisa su saldo en Pagos.' : '';
-                    const monNueva = monedaClienteDe(editClienteId);
-                    const recalculado = monNueva ? totalSugeridoEn(monNueva, facturaEditando.operacionesGuardadas) > 0 : false;
-                    return `${aviso} Al guardar queda en ${nombreMoneda(monNueva)}; ${recalculado ? 'el total sugerido es el de sus operaciones en esa moneda' : 'sus operaciones no traen importe en esa moneda: corrige el costo en cada operación'}. Revísalo.${pagos}`;
-                  })()} />
-                )}
-              </div>
-              <div>
-                {/* ✅ V00533: el subtotal (sin IVA) se escribe aquí y avisa si coincide con el subtotal del documento (antes, V00519, salía fijo de sus operaciones) */}
-                <label className="fcd-x146" htmlFor="fcd-edit-subtotal">SUBTOTAL FACTURADO (sin IVA)</label>
-                <SubtotalFacturaEdicion id="fcd-edit-subtotal" valor={editTotal} onCambiar={setEditTotal} moneda={monedaSubtotal} adjuntos={adjuntosEdicion}
-                  sumaOps={sumaOpsEdicion} bloqueo={bloqueoSubtotal} deshabilitado={guardandoEdit} />
-              </div>
-              <div>
-                <label className="fcd-x146">FACTURA CCP (Opcional)</label>
-                <input className="fcd-x151" type="text" value={editCcp} onChange={e => setEditCcp(e.target.value)} placeholder="Referencia CCP..." />
-              </div>
-            </div>
-
-            {/* ✅ V00520: sus operaciones, con ✎ Editar (el formulario de la operación) y si alguna cambió de costo */}
-            <OperacionesFacturaEdicion datos={opsEdicion} moneda={monedaEdicion || monedaCompletar || ''} desfasadas={planEdicion?.desfasadas ?? []} plan={planEdicion?.sincronizar ?? null} impedimento={planEdicion?.impedimento ?? ''}
-              sinImportes={!!planEdicion?.sinImportes} monedaHoy={monedaCompletar} completar={planEdicion?.resumenCompletar ?? null}
-              onEditar={(id) => setOpEditandoId(id)} />
-
-            <div className="fcd-x246">
-              <button className="fcd-x153" onClick={() => setFacturaEditando(null)} disabled={guardandoEdit}>Cancelar</button>
-              {/* ✅ V00520: Actualizar (solo con cambios); nada se guarda hasta presionarlo */}
-              <button type="button" className="fcd-btn-actualizar" onClick={handleGuardarEdicionFactura} disabled={guardandoEdit || !cambiosEdicion}
-                title={cambiosEdicion ? 'Guardar los cambios de la factura' : 'Sin cambios'}>{guardandoEdit ? 'Actualizando…' : 'Actualizar'}</button>
-            </div>
-          </div>
-        </div>
-      )}
+        <EditarFacturaCliente key={String(facturaEditando.id)} factura={facturaEditando} facturas={facturasGlobales}
+          onCerrar={() => setFacturaEditando(null)} onEditarOperacion={(id) => setOpEditandoId(id)}
+          detras={!!opEditandoId} onEscrito={aplicarEdicionFactura} />
+      )}{/* ✅ V00540: su propio formulario (también se abre encima de la Revisión de datos); detrás del de la operación (V00520) */}
 
       {(operacionDetalle || cargandoDetalle) && (
         <div className="modal-overlay fcd-x247">

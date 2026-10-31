@@ -1010,3 +1010,29 @@ El plan operativo (puntos de parada, banderas, orden de despliegue) está en `PL
 - **F3**: ligar SOLO si una factura activa la lista (la misma liga que usa la revisión); un folio "parecido" de su cliente que no la lista queda a mano (ligarla sin que la factura la liste dejaría la factura incompleta; agregarla cambiaría el total de una factura emitida). Liberar = `facturaClienteId: null`, Invoice vacío, `facturado: false` (vuelve a Por facturar): el texto pide revisar que no se haya facturado fuera del sistema.
 - **F2c**: `sincronizarFacturaConOperaciones` (Actualizar factura) en lote; no inventa totales ('soloImportes' y "ya al día" quedan para Solucionar). Usa el id REAL de la factura (`FilaRevision.idDoc`, nuevo en F2/F2c).
 - **F5**: `TIPO_APERTURA_FACTURAR` lo atiende un SEGUNDO `useAtenderApertura` de Facturación Clientes, después de `useOperacionesFacturables` (espera `opsDescargaTerminada`); el primero devuelve false para ese tipo.
+
+## V00540 (Revisión de datos: Solucionar abre el formulario encima)
+- **Editar factura (clientes) es su propio formulario**: `EditarFacturaCliente.tsx` + `hooks/useEdicionFacturaCliente.ts` (estado y guardado) + `services/edicionFacturaCliente.ts` (`claveEdicion`, `camposIniciales`, tipo `EscritoEdicionFactura`). El guardado se movió tal cual desde `FacturacionClientesDashboard` (V00441 · V00451 · V00481 · V00520 · V00525 · V00533 · V00536). Lo que antes parchaba directo `setFacturasGlobales`/`setFacturaViendo` ahora se avisa con `onEscrito` (`servidor`, `directo`, `subtotal`, `docs`, `actualizar`) y el tablero lo aplica con `aplicarEdicionFactura` (mismo código de antes).
+- La fila se congela al abrir (`useState(factura)`), como cuando era estado del tablero. Quien lo abre pone `key` con el id.
+- **Monedas**: `services/monedaFacturaCliente.ts` tiene `nombreMonedaCanonico`, `monedaDeClienteNombre`, `monedaFacturaMostrar`, `codigoMonedaFactura` y `monedaFacturacionCliente`. Son las reglas del tablero (V00262 · V00265 · V00481 · V00485), y el tablero ahora las llama de aquí.
+- El formulario resuelve monedas con un mapa de solo `catalogo_moneda` y `empresas` (`construirMapaCatalogos([monedas], empresas)`), no con los 11 catálogos de Facturación: una moneda guardada como id solo puede ser de esos dos. Así, abrirlo desde la Revisión no abre los demás catálogos.
+- **Avisos de Actualizar**: `avisarResultadoActualizar(r, alFinal)` en `actualizarFactura.ts`.
+  - El tablero lo llama dentro de `aplicarEscritosFactura`, con " La Ficha ya muestra lo que hay en el servidor." (mismo texto de antes).
+  - La Revisión lo llama sin esa frase: no tiene Ficha.
+  - El formulario no avisa por su cuenta: con `onEscrito` lo hace quien lo abrió, para que no salga doble en Facturación.
+- **`EditarFacturaClienteEmbebida`** lo abre por id desde otro módulo. Toma la fila con `grupoDeFactura` sobre `useFacturasEnVivo('cliente')`, el mismo listener `pagos:facturas_clientes` de Facturación, Pagos y la Revisión, así que no lee de más.
+- **Capas (z-index)**:
+  - La Revisión está en 2000 y va a 900 (`rvd-fondo--detras`) mientras hay un formulario de Solucionar abierto.
+  - El formulario de la operación (`FormularioOperacion`, portal en body) está en 1000.
+  - Editar factura está en 1600 y va a 900 (`efc-detras`) con ✎ Editar abierto.
+  - Los dos editores se montan en portales en body DESPUÉS del de la Revisión: con el mismo z-index gana el que va después.
+  - Si el editor de factura se dibujara dentro de la Revisión, `.modal-overlay` tiene `backdrop-filter`, que crea su propio contexto, y quedaría por debajo del formulario de la operación.
+- **Transición**: `.modal-overlay` trae `transition: all .3s`, que también anima el `z-index`, y el formulario aparecía detrás un instante. `rvd-fondo` y `efc-fondo` llevan `transition: none`.
+- **F5** sigue yendo a Facturación (decisión de Omaf: una factura junta varias operaciones del mismo cliente). `volverARevision.ts` guarda grupo, filas mostradas y desplazamiento (lista y cuerpo).
+  - `PestanasOperaciones` se desmonta al salir de Operaciones; al volver, `useState(hayQueReabrirRevision)` abre la ventana, y esta restaura la posición en `useLayoutEffect` y la olvida.
+  - Va en un módulo sin dependencias porque la barra de pestañas se carga con la pantalla.
+- Se quitó `TIPO_APERTURA_EDITAR` (V00538) y sus ramas en Operaciones, Completados, Cancelados y Facturación: solo lo usaba Solucionar.
+- Con un formulario abierto (el de la operación se puede minimizar y deja la ventana clickeable), Solucionar y la ✕ de la ventana se apagan. Si no, cambiar de fila o cerrar la ventana desmontaba el formulario y se perdía lo no guardado.
+- Pendiente:
+  - Facturación de **Proveedores** tiene su propio Editar factura y sus propias reglas de moneda (copias). Se unen con `lado` en el paso 7/8 del refactor.
+  - El formulario usa `alert()` como el tablero; pasarlo a `avisar()` va con ese mismo paso.

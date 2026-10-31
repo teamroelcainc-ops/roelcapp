@@ -24,8 +24,8 @@ export interface PedidoApertura {
 
 export const VIGENCIA_APERTURA_MS = 2 * 60 * 1000;
 
-/** ✅ V00538: `tipo` que pide abrir el registro para EDITARLO (formulario o Editar factura), no su ficha. */
-export const TIPO_APERTURA_EDITAR = 'editar';
+// ✅ V00540: se quitó TIPO_APERTURA_EDITAR ('editar', V00538): Solucionar de la Revisión de datos ya no va al
+//   módulo, abre el formulario encima de la ventana (EditorOperacionEmbebido / EditarFacturaClienteEmbebida).
 /** ✅ V00539: `tipo` que pide dejar una operación lista para facturar (Facturación Clientes, Asignar operaciones). */
 export const TIPO_APERTURA_FACTURAR = 'facturar';
 

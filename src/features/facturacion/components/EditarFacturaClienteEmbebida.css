@@ -1,0 +1,7 @@
+/* ✅ V00540: espera y error de Editar factura abierto desde otro módulo (mismo nivel que el formulario) */
+.modal-overlay.efe-fondo { z-index: 1600; }
+.efe-tarjeta { display: grid; gap: 14px; justify-items: center; max-width: 420px; padding: 24px; border: 1px solid #30363d; border-radius: 12px; background-color: #0d1117; text-align: center; }
+.efe-error { margin: 0; color: #f85149; }
+.efe-cerrar { padding: 8px 20px; border: 1px solid #30363d; border-radius: 6px; background: none; color: #c9d1d9; font: inherit; cursor: pointer; }
+.efe-cerrar:hover { border-color: #8b949e; }
+.efe-cerrar:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }

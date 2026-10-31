@@ -8,6 +8,7 @@
 //   · si no lo guardó (las de AppSheet) → completarImportes: lo que cobra hoy cada una, SIN cambiar el total.
 // No con dineroPorServidor ni con folios en varios registros (sincronizar). Solo Clientes.
 // ---------------------------------------------------------------------------
+import { avisar } from '../../../shared/data/avisos';
 import { registrarLog } from '../../../utils/logger';
 import { fechaFacturaISO } from '../selectores';
 import { completarImportes, planCompletarImportes } from './completarImportes';
@@ -145,6 +146,18 @@ export const aplicarActualizarFactura = async (fila: Datos, plan: PlanActualizar
     errorCompletar = r.error;
   }
   return { escritos, sincronizado, opsServidor, diferencias, omitidas, errorCompletar };
+};
+
+/**
+ * ✅ V00540: los avisos de lo que hizo Actualizar (antes solo en el tablero de Facturación; ahora también al
+ * actualizar desde Editar factura encima de la Revisión de datos). `alFinal` se agrega al segundo aviso.
+ */
+export const avisarResultadoActualizar = (r: ResultadoActualizar, alFinal = ''): void => {
+  if (r.omitidas.length > 0) avisar({ tipo: 'alerta', titulo: 'No se guardó lo que cobra cada operación', texto: r.omitidas.join('; ') });
+  // ✅ V00529: se esperaba cambiar algo y en el servidor no había nada que cambiar: se dice por qué, con sus números.
+  if (!r.sincronizado && r.diferencias.length > 0) {
+    avisar({ tipo: 'alerta', titulo: 'No se cambió nada en la factura', texto: `En el servidor no había nada que poner al día. ${r.diferencias.join('; ')}.${alFinal}` });
+  }
 };
 
 const dinero = (n: number): string => n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
