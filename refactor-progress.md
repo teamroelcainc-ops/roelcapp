@@ -63,5 +63,5 @@ V00536: Operaciones 6/0/1/1 (5 listeners), Completados 4/1/1/1 (7), Facturación
 - V00535: fechas guardadas (Timestamp/Date) que se convierten a su día en UTC; lista en `code-notes.md` (V00535). Decidir si se pasan a hora local.
 
 - `src/features/operaciones/context/FormularioOperacionContext.tsx` no lo importa nadie (código muerto). Se revisa en el paso 8.2.
-- `ConfiguradorStatus.tsx`: el repo de Omaf no tiene el cambio de la V00474 (los movimientos no llevan aduana). No se tocó; hay que decidir si se reaplica.
+- `ConfiguradorStatus.tsx`: el cambio de la V00474 (los movimientos no llevan aduana) se había perdido en el repo de Omaf; se volvió a aplicar en la V00537.
 - `TarjetaCasetas` y `TarjetaSaldoDiesel` siguen estáticos en `App.tsx`: se pintan en el inicio justo después de entrar; pasarlos a `lazy()` ahorra ~7 KB gz del arranque a cambio de que aparezcan un instante después. Se dejaron.

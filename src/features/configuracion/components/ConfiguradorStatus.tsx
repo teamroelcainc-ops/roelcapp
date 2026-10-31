@@ -11,6 +11,10 @@ import type { Moneda } from '../../../shared/dominio/moneda';
 
 /** ✅ V00470: la aduana solo se configura en los flujos de Transfer. */
 const esServicioTransfer = (servicio: unknown): boolean => normPuente(servicio).includes('transfer');
+/** ✅ V00474: los MOVIMIENTOS (tráfico "Movimiento LDO/NLD"…) no cruzan aduana. */
+const esTraficoMovimiento = (trafico: unknown): boolean => normPuente(trafico).includes('movimiento');
+/** ✅ V00474: la aduana se configura solo en Transfer de importación/exportación (no en movimientos). */
+const flujoLlevaAduana = (servicio: unknown, trafico: unknown): boolean => esServicioTransfer(servicio) && !esTraficoMovimiento(trafico);
 
 /** ✅ V00470: costo de una línea del puente ("$144.00 MXN"); sin el tipo de gasto en el catálogo, lo dice. */
 const montoPuenteTexto = (l: LineaPuenteFlujo): string => (l.monto === null
@@ -767,8 +771,8 @@ const EditorFlujoAppSheet = ({
   // ✅ V00405: solo el SERVICIO es obligatorio; sin tráfico o sin carga el flujo
   //   es COMODÍN ("Todos") y aplica a cualquiera que no tenga uno más específico.
   // ✅ V00470: la aduana solo cuenta en Transfer (en otro servicio el selector no se muestra).
-  const esTransferFlujo = esServicioTransfer(tipoServicio);
-  const aduanaFlujo = esTransferFlujo ? aduana : '';
+  const llevaAduana = flujoLlevaAduana(tipoServicio, trafico); // ✅ V00474: sin aduana en movimientos
+  const aduanaFlujo = llevaAduana ? aduana : '';
   const configId = `${tipoServicio}_${trafico || 'Todos'}_${carga || 'Todos'}${aduanaFlujo ? `_${aduanaFlujo}` : ''}`; // ✅ V00469: + aduana
 
   // ✅ V00470: COSTO DEL PUENTE (informativo) para el panel del paso, con el catálogo Tipos de Gastos.
@@ -777,7 +781,7 @@ const EditorFlujoAppSheet = ({
     const tipo = normPuente(tipoServicio);
     const notas: string[] = [];
     if (tipo.includes('logistica')) notas.push('En Logística solo se cobra cuando el proveedor es Roelca.');
-    if (esTransferFlujo && !esAduanaColombia(aduanaFlujo)) {
+    if (llevaAduana && !esAduanaColombia(aduanaFlujo)) {
       const colombia = casetasDeFlujo(tiposGastoMapa, { carga, aduana: 'Colombia' });
       notas.push(`Si la operación es de aduana Colombia: ${colombia.map((l) => `${l.nombre} ${montoPuenteTexto(l)}`).join(' + ')}.`);
     }
@@ -792,7 +796,7 @@ const EditorFlujoAppSheet = ({
       colombia: esAduanaColombia(aduanaFlujo),
       opciones,
     };
-  }, [tipoServicio, trafico, carga, aduanaFlujo, esTransferFlujo, tiposGastoMapa]);
+  }, [tipoServicio, trafico, carga, aduanaFlujo, llevaAduana, tiposGastoMapa]);
   const configValido = !!tipoServicio;
 
   /* ============================================================
@@ -1434,14 +1438,14 @@ const EditorFlujoAppSheet = ({
           <SelectorCampo
             label="Servicio"
             value={tipoServicio}
-            onChange={(v) => { setTipoServicio(v); if (!esServicioTransfer(v)) setAduana(''); }} // ✅ V00470: aduana solo en Transfer
+            onChange={(v) => { setTipoServicio(v); if (!flujoLlevaAduana(v, trafico)) setAduana(''); }} // ✅ V00470 · V00474: aduana solo en Transfer (no movimientos)
             options={tiposOperacion.map(t => t.tipo_operacion)}
             placeholder="Selecciona…"
           />
           <SelectorCampo
             label="Tráfico"
             value={trafico}
-            onChange={setTrafico}
+            onChange={(v) => { setTrafico(v); if (!flujoLlevaAduana(tipoServicio, v)) setAduana(''); }} // ✅ V00474: un movimiento no lleva aduana
             options={traficos}
             placeholder="Todos (opcional)"
           />
@@ -1454,7 +1458,7 @@ const EditorFlujoAppSheet = ({
               options={carga && !opcionesCarga.includes(carga) ? [...opcionesCarga, carga] : opcionesCarga}
               placeholder="Todos (opcional)"
             />
-            {esTransferFlujo && ( // ✅ V00470: la aduana solo se muestra en Transfer
+            {llevaAduana && ( // ✅ V00470 · V00474: la aduana solo se muestra en Transfer de importación/exportación
               <SelectorCampo
                 label="Aduana"
                 value={aduana}
@@ -2341,7 +2345,7 @@ export const ConfiguradorStatus = () => {
   const eliminarFlujo = async (f: FlujoGuardado) => {
     const id = idReal(f);
     const nombre = [f.tipoServicio, f.trafico || 'Todos', f.carga || 'Todos', f.aduana || ''].filter(Boolean).join(' · ');
-    const general = esServicioTransfer(f.tipoServicio) && !f.aduana
+    const general = flujoLlevaAduana(f.tipoServicio, f.trafico) && !f.aduana
       ? '\n\nEs el flujo para TODAS las aduanas: las operaciones que no tengan uno de su aduana se quedarían sin él.'
       : '';
     if (!window.confirm(`¿Eliminar el flujo "${nombre}" (${(f.flujo || []).length} pasos)?${general}\n\nSe puede recuperar desde la Papelera de Reciclaje.`)) return;
@@ -2423,7 +2427,7 @@ export const ConfiguradorStatus = () => {
                   <td className="cs-x112">{f.tipoServicio}</td>
                   <td className="cs-x113">{f.trafico || <span className="cs-comodin">Todos</span>}</td>
                   <td className="cs-x113">{f.carga || <span className="cs-comodin">Todos</span>}</td>
-                  <td className="cs-x113">{f.aduana || <span className="cs-comodin">{esServicioTransfer(f.tipoServicio) ? 'Todas' : '—'}</span>}</td>{/* ✅ V00470: aduana solo en Transfer */}
+                  <td className="cs-x113">{f.aduana || <span className="cs-comodin">{flujoLlevaAduana(f.tipoServicio, f.trafico) ? 'Todas' : '—'}</span>}</td>{/* ✅ V00470 · V00474: aduana solo en Transfer (no en movimientos) */}
                   <td className="cs-x114">
                     <span className="cs-x115">
                       {(f.flujo || []).length} pasos
