@@ -20,7 +20,7 @@ import { aFechaISO, fechaServicioDeOperacion } from '../../../shared/dominio/fec
 import { idMoneda, nombreMoneda } from '../../../shared/dominio/moneda';
 import type { Moneda } from '../../../shared/dominio/moneda';
 import { sumarMontos } from '../../../shared/dominio/numeros';
-import { estadoGrupoDe, esGrupoTerminado, facturadaCliente } from '../../../shared/dominio/operacionCanonica';
+import { estadoGrupoDe, esGrupoTerminado, facturadaCliente, facturadaProveedor } from '../../../shared/dominio/operacionCanonica';
 import { claveGrupoFactura } from '../../facturacion/services/gruposFactura';
 import { estaCancelada } from '../../facturacion/services/reglasFactura';
 import { valorExcelOperacion } from './excelOperaciones';
@@ -115,6 +115,8 @@ export interface FilaRevision {
   destino: DestinoRevision;
   /** Otros registros relacionados (las facturas de una operación, la otra operación con la misma referencia…). */
   enlaces: EnlaceRevision[];
+  /** ✅ V00539: en F2/F2c, el id REAL del documento de la factura (el de `destino` es el de la lista). */
+  idDoc?: string;
 }
 
 export interface EntradaRevision {
@@ -141,7 +143,61 @@ export interface ResultadoRevision {
   statusD3: StatusD3[];
   /** ✅ V00518: cuántas se confirmaron como correctas (✓) y por eso no se muestran, por grupo. */
   confirmadas: Partial<Record<CodigoRevision, number>>;
+  /** ✅ V00539: D2, las que se renumeran (la creada primero de cada referencia se queda). */
+  planesD2: PlanD2[];
+  /** ✅ V00539: F3, ligar a la factura que la lista o liberar. */
+  planesF3: PlanF3[];
 }
+
+/**
+ * ✅ V00539: D2 — una operación que se renumera en su línea (decisión de Omaf, 31-oct: la creada
+ * primero conserva la referencia). `motivo` ≠ '' = no se toca (se corrige a mano).
+ */
+export interface PlanD2 {
+  opId: string;
+  ref: string;
+  cliente: string;
+  fecha: string;
+  /** La que se queda con la referencia (texto para la prueba). */
+  seQueda: string;
+  prefijo: string;
+  ddmmyy: string;
+  motivo: string;
+}
+
+/** ✅ V00539: F3 — 'ligar' a la factura que la lista, 'liberar' (vuelve a Por facturar) o 'manual'. */
+export interface PlanF3 {
+  opId: string;
+  ref: string;
+  cliente: string;
+  invoice: string;
+  accion: 'ligar' | 'liberar' | 'manual';
+  facturaId: string;
+  folio: string;
+  motivo: string;
+  /** Lo que tiene hoy (para el respaldo). */
+  facturaIdAntes: string;
+  facturadoAntes: boolean;
+}
+
+/** Línea y fecha de una referencia LÍNEA-DDMMAA-NNN ('' si no tiene esa forma). */
+export const lineaDeReferencia = (ref: string): { prefijo: string; ddmmyy: string } | null => {
+  const m = /^([A-ZÑ0-9.]{1,6})-(\d{6})-(\d+)$/.exec(ref.trim().toUpperCase());
+  return m ? { prefijo: m[1], ddmmyy: m[2] } : null;
+};
+
+/** Cuándo se creó (ms) por `createdAt`/`creadoEn`/`fechaCreacion` (ISO o Timestamp); null si no se sabe. */
+const creadaEn = (op: Datos): number | null => {
+  for (const v of [op.createdAt, op.creadoEn, op.fechaCreacion]) {
+    if (v && typeof v === 'object' && 'seconds' in (v as Datos)) return Number((v as Datos).seconds) * 1000;
+    const t = Date.parse(txt(v));
+    if (!Number.isNaN(t)) return t;
+  }
+  return null;
+};
+
+/** Folio sin espacios, guiones ni mayúsculas ("I-8368 " = "i8368"). */
+export const folioCompacto = (v: unknown): string => txt(v).toLowerCase().replace(/[^a-z0-9ñ]/g, '');
 
 // ── Utilidades ────────────────────────────────────────────────────────────
 const txt = (v: unknown): string => (v === null || v === undefined ? '' : String(v).trim());
@@ -298,9 +354,27 @@ export const revisarDatos = (e: EntradaRevision): ResultadoRevision => {
 
   // D2 · referencias repetidas
   let referenciasRepetidas = 0;
+  const planesD2: PlanD2[] = [];
   ind.porRef.forEach((ops) => {
     if (ops.length < 2) return;
     referenciasRepetidas++;
+    // ✅ V00539: la creada primero se queda; las demás se renumeran en su línea (si se puede).
+    const conFecha = ops.map((op) => ({ op, en: creadaEn(op) }));
+    const sabeOrden = conFecha.every((x) => x.en !== null);
+    const ordenadas = [...conFecha].sort((a, b) => (a.en ?? 0) - (b.en ?? 0));
+    const queda = ordenadas[0].op;
+    ordenadas.slice(1).forEach(({ op }) => {
+      const linea = lineaDeReferencia(refOp(op));
+      const motivo = !sabeOrden ? 'No se sabe cuál se creó primero (alguna no tiene fecha de creación): renumérala a mano.'
+        : !linea ? 'La referencia no tiene la forma LÍNEA-DDMMAA-NNN: corrígela en el formulario.'
+          : (facturadaCliente(op) || facturadaProveedor(op)) ? 'Está facturada con esa referencia: renumerarla cambiaría lo que dice su factura. Revísala a mano.'
+            : '';
+      planesD2.push({
+        opId: op.idDoc, ref: refOp(op), cliente: String(valorExcelOperacion(op, 'cliente')), fecha: fechaServicioDeOperacion(op),
+        seQueda: `${refOp(queda)} (${fechaServicioDeOperacion(queda) || 'sin fecha'}, ${String(valorExcelOperacion(queda, 'cliente'))})`,
+        prefijo: linea?.prefijo ?? '', ddmmyy: linea?.ddmmyy ?? '', motivo,
+      });
+    });
     ops.forEach((op) => {
       const otras = ops.filter((o) => o !== op);
       const desc = otras.map((o) => `${fechaServicioDeOperacion(o) || 'sin fecha'}, ${String(valorExcelOperacion(o, 'cliente'))}${txt(o.facturaClienteInvoice) ? `, Invoice ${txt(o.facturaClienteInvoice)}` : ''}`);
@@ -311,10 +385,23 @@ export const revisarDatos = (e: EntradaRevision): ResultadoRevision => {
 
   // F3 · Invoice que no existe en Facturas (cualquier status)
   const invoices = new Set(facturas.map((f) => normInvoice(invoiceDe(f))));
+  const planesF3: PlanF3[] = [];
+  const idsFacturas = new Set(facturas.map((f) => txt(f.idDoc) || f.id));
   operaciones.forEach((op) => {
     const inv = txt(op.facturaClienteInvoice);
     if (!inv || invoices.has(normInvoice(inv))) return;
     const fs = facturasDeOp.get(op.idDoc) ?? [];
+    // ✅ V00539: ligar a la factura que la lista; si ninguna la lista, liberar (salvo un folio parecido o un id de factura que existe).
+    const base = { opId: op.idDoc, ref: refOp(op), cliente: String(valorExcelOperacion(op, 'cliente')), invoice: inv, facturaId: '', folio: '', facturaIdAntes: txt(op.facturaClienteId), facturadoAntes: op.facturado === true };
+    const compacto = folioCompacto(inv);
+    const clienteOp = txt(op.clientePaga) || txt(op.clienteId);
+    const parecida = facturas.find((f) => folioCompacto(invoiceDe(f)) === compacto && txt(f.clienteId) === clienteOp);
+    const idFactura = txt(op.facturaClienteId);
+    if (fs.length === 1) planesF3.push({ ...base, accion: 'ligar', facturaId: txt(fs[0].idDoc) || fs[0].id, folio: invoiceDe(fs[0]), motivo: '' });
+    else if (fs.length > 1) planesF3.push({ ...base, accion: 'manual', motivo: `La listan ${fs.length} facturas (grupo F4): decide en Facturación.` });
+    else if (parecida) planesF3.push({ ...base, accion: 'manual', facturaId: txt(parecida.idDoc) || parecida.id, folio: invoiceDe(parecida), motivo: `La factura ${invoiceDe(parecida)} es de su cliente pero no la lista: agrégala desde Facturación o libérala a mano.` });
+    else if (idFactura && idsFacturas.has(idFactura)) planesF3.push({ ...base, accion: 'manual', motivo: 'Su id de factura apunta a una factura que no la lista: revísala en Facturación.' });
+    else planesF3.push({ ...base, accion: 'liberar', motivo: '' });
     const sugerido = fs.length === 1 ? ` · Invoice sugerido: ${invoiceDe(fs[0])} (la factura que la lista)` : '';
     filas.push(filaOp('F3', op, `El Invoice "${inv}" no existe en Facturas${sugerido}`, enlacesFacturas(fs)));
   });
@@ -337,7 +424,7 @@ export const revisarDatos = (e: EntradaRevision): ResultadoRevision => {
     const { ops, sinLigar: faltan } = ligas.get(f) ?? { ops: [], sinLigar: 0 };
     const moneda = monedaDeFactura(f) ?? monedaEmpresa.get(txt(f.clienteId)) ?? null;
     const total = reglaUnica ? totalNativoFactura(f) : totalNativoFacturaLegado(f);
-    const base = { ref: invoiceDe(f), cliente: txt(f.clienteNombre) || '-', fecha: txt(f.fecha), status: statusFactura(f), invoice: invoiceDe(f), destino: destinoFactura(f) };
+    const base = { ref: invoiceDe(f), cliente: txt(f.clienteNombre) || '-', fecha: txt(f.fecha), status: statusFactura(f), invoice: invoiceDe(f), destino: destinoFactura(f), idDoc: txt(f.idDoc) || f.id };
     if (!moneda) {
       filas.push({ ...base, codigo: 'F2', clave: `F2:${f.id}:${i}`, detalle: 'La factura no tiene moneda (ni su cliente en Empresas): no se puede comparar', enlaces: [] });
       return;
@@ -389,7 +476,7 @@ export const revisarDatos = (e: EntradaRevision): ResultadoRevision => {
   filas.sort((a, b) => (orden.get(a.codigo) ?? 0) - (orden.get(b.codigo) ?? 0) || b.fecha.localeCompare(a.fecha) || a.ref.localeCompare(b.ref));
   const conteo = Object.fromEntries(GRUPOS_REVISION.map((g) => [g.codigo, 0])) as Record<CodigoRevision, number>;
   filas.forEach((f) => { conteo[f.codigo]++; });
-  return { filas, conteo, referenciasRepetidas, operaciones: operaciones.length, facturas: facturas.length, sinLigar, marcasF1, statusD3, confirmadas };
+  return { filas, conteo, referenciasRepetidas, operaciones: operaciones.length, facturas: facturas.length, sinLigar, marcasF1, statusD3, confirmadas, planesD2, planesF3 };
 };
 
 // ── ✅ V00512 — Rango de fechas (filtra lo que se ve; la revisión siempre se hace con todo) ──
@@ -400,6 +487,9 @@ export interface VistaRevision {
   marcasF1: MarcaF1[];
   /** ✅ V00517: las de D3 que entran en el rango (para "Corregir status"). */
   statusD3: StatusD3[];
+  /** ✅ V00539: las de D2 y F3 que entran en el rango. */
+  planesD2: PlanD2[];
+  planesF3: PlanF3[];
   /** Con rango: cuántas filas no tienen fecha y por eso no se muestran. */
   sinFecha: number;
 }
@@ -423,7 +513,11 @@ export const filtrarPorFechas = (r: ResultadoRevision, desde: string, hasta: str
   const marcasF1 = conRango ? r.marcasF1.filter((m) => enF1.has(m.opId)) : r.marcasF1;
   const enD3 = new Set(filas.filter((f) => f.codigo === 'D3').map((f) => f.destino.id));
   const statusD3 = conRango ? r.statusD3.filter((d) => enD3.has(d.opId)) : r.statusD3;
-  return { filas, conteo, marcasF1, statusD3, sinFecha };
+  const enD2 = new Set(filas.filter((f) => f.codigo === 'D2').map((f) => f.destino.id));
+  const planesD2 = conRango ? r.planesD2.filter((x) => enD2.has(x.opId)) : r.planesD2;
+  const enF3 = new Set(filas.filter((f) => f.codigo === 'F3').map((f) => f.destino.id));
+  const planesF3 = conRango ? r.planesF3.filter((x) => enF3.has(x.opId)) : r.planesF3;
+  return { filas, conteo, marcasF1, statusD3, planesD2, planesF3, sinFecha };
 };
 
 /** Filas del Excel (todas, con el grupo y dónde se corrige). */

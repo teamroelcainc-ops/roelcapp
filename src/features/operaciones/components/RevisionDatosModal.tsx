@@ -12,10 +12,10 @@
 // ---------------------------------------------------------------------------
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ExternalLink, FileSpreadsheet, RefreshCw, X } from 'lucide-react';
+import { Check, ExternalLink, FileSpreadsheet, RefreshCw, Wrench, X } from 'lucide-react';
 import CargandoDatos from '../../../shared/components/CargandoDatos';
 import { auth } from '../../../config/firebase';
-import { abrirRegistro } from '../../../shared/data/aperturas';
+import { abrirRegistro, TIPO_APERTURA_EDITAR, TIPO_APERTURA_FACTURAR } from '../../../shared/data/aperturas';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { descargarExcel } from '../services/excelOperaciones';
 import { camposMarca } from '../services/marcarFacturadasF1';
@@ -29,6 +29,11 @@ import {
 import MarcarFacturadasF1 from './MarcarFacturadasF1'; // ✅ V00510
 import CorregirStatusD3 from './CorregirStatusD3'; // ✅ V00517
 import ConfirmarCorrectas from './ConfirmarCorrectas'; // ✅ V00518
+import CorregirMonedasRevision from './CorregirMonedasRevision'; // ✅ V00538
+import SolucionarPlanes from './SolucionarPlanes'; // ✅ V00539
+import { filasPruebaD2, filasPruebaF3, respaldoD2, respaldoF3 } from '../services/correccionesD2F3';
+import { aplicarCorregirF3, aplicarRenumerarD2 } from '../services/correccionesD2F3Datos';
+import { aplicarAlCentavoF2c, filasPruebaF2c, respaldoF2c } from '../services/correccionF2cDatos';
 import type { AvanceRevisionDatos, Refresco, RevisionGuardada, SenalRevision } from '../services/revisionDatosLectura';
 import './RevisionDatosModal.css';
 
@@ -36,6 +41,20 @@ const POR_PAGINA = 100;
 const miles = (n: number): string => n.toLocaleString('es-MX');
 const hora = (d: Date): string => d.toLocaleString('es-MX', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 const soloHora = (d: Date): string => d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+
+// ✅ V00538: "Solucionar" en cada fila de los grupos que se corrigen a mano: abre directo la pantalla
+//   donde se arregla (Editar factura o el formulario de la operación), no su ficha.
+const SOLUCION_POR_GRUPO: Partial<Record<CodigoRevision, string>> = {
+  F2: 'Abre Editar factura de esta factura: corrige la factura, o abre la operación que está mal',
+  D2: 'Abre el formulario de la operación (para renumerarla a mano)',
+  F5: 'Abre Facturación de Clientes con esta operación seleccionada para Generar Factura',
+  F2c: 'Abre Editar factura de esta factura para dejarla al centavo',
+  D5: 'Abre el formulario de la operación para capturar lo que falta',
+  D1: 'Abre el formulario de la operación (para una facturada que no se puede corregir sola)',
+  D4: 'Abre el formulario de la operación (para una facturada que no se puede corregir sola)',
+};
+/** ✅ V00538: grupos con el panel "Solucionar" de monedas y montos. */
+const GRUPOS_MONEDAS: readonly CodigoRevision[] = ['D1', 'D4'];
 
 const textoRefresco = (r: Refresco): string => {
   const dif = r.antes - r.despues;
@@ -49,9 +68,12 @@ interface PropsFila {
   /** ✅ V00518: ✓ Está bien (solo en los grupos confirmables). */
   onConfirmar?: (f: FilaRevision) => void;
   confirmando?: boolean;
+  /** ✅ V00538: "Solucionar" (abre la pantalla donde se arregla); su ayuda. */
+  solucion?: string;
+  onSolucionar?: (f: FilaRevision) => void;
 }
 
-function Fila({ f, onAbrir, onConfirmar, confirmando = false }: PropsFila) {
+function Fila({ f, onAbrir, onConfirmar, confirmando = false, solucion, onSolucionar }: PropsFila) {
   return (
     <li className="rvd-fila">
       <div className="rvd-fila-datos">
@@ -63,6 +85,11 @@ function Fila({ f, onAbrir, onConfirmar, confirmando = false }: PropsFila) {
         {onConfirmar && (
           <button type="button" className="rvd-confirmar" onClick={() => onConfirmar(f)} disabled={confirmando} title="Ya la revisé y está bien: sale de esta lista (si cambia su monto, vuelve)">
             <Check size={13} aria-hidden="true" /> {confirmando ? 'Confirmando…' : 'Está bien'}
+          </button>
+        )}
+        {solucion && onSolucionar && (
+          <button type="button" className="rvd-solucionar" onClick={() => onSolucionar(f)} title={solucion}>
+            <Wrench size={13} aria-hidden="true" /> Solucionar
           </button>
         )}
         <button type="button" className="rvd-abrir" onClick={() => onAbrir(f.destino)} title="Abrir su ficha en su módulo">
@@ -161,10 +188,17 @@ export default function RevisionDatosModal({ onCerrar }: { onCerrar: () => void 
   }, []);
   useEffect(() => { void refrescar(); }, [pulso, revisando]);
 
-  const abrir = (d: DestinoRevision) => {
+  const abrir = (d: DestinoRevision, tipo?: string) => {
     marcarParaRevisar(d); // ✅ V00512: al volver, se revisa de nuevo
     onCerrar();
-    abrirRegistro(d.modulo, d.id);
+    abrirRegistro(d.modulo, d.id, tipo);
+  };
+  // ✅ V00538 · V00539: F5 va a Facturación (Asignar operaciones, lista para facturar); los demás, a editar.
+  const solucionar = (f: FilaRevision) => {
+    if (f.codigo !== 'F5') { abrir(f.destino, TIPO_APERTURA_EDITAR); return; }
+    marcarParaRevisar(f.destino); // la operación (al volver, se revisa de nuevo)
+    onCerrar();
+    abrirRegistro('facturacionClientes', f.destino.id, TIPO_APERTURA_FACTURAR);
   };
 
   const cambiarRango = (campo: 'desde' | 'hasta', valor: string) => {
@@ -254,6 +288,10 @@ export default function RevisionDatosModal({ onCerrar }: { onCerrar: () => void 
   const elegido = GRUPOS_REVISION.find((g) => g.codigo === grupo) ?? GRUPOS_REVISION[0];
   const filas = vista ? vista.filas.filter((f) => f.codigo === grupo) : [];
   const confirmable = GRUPOS_CONFIRMABLES.includes(elegido.codigo); // ✅ V00518
+  const solucion = SOLUCION_POR_GRUPO[elegido.codigo]; // ✅ V00538
+  const idsMonedas = GRUPOS_MONEDAS.includes(elegido.codigo) && vista
+    ? Array.from(new Set(vista.filas.filter((f) => GRUPOS_MONEDAS.includes(f.codigo)).map((f) => f.destino.id)))
+    : [];
   const elegir = (codigo: CodigoRevision) => { setGrupo(codigo); setMostrar(POR_PAGINA); };
 
   return createPortal(
@@ -264,7 +302,7 @@ export default function RevisionDatosModal({ onCerrar }: { onCerrar: () => void 
             <h2 id="rvd-titulo" className="rvd-titulo">Revisión de datos</h2>
             <p className="rvd-sub">
               Revisa todas las operaciones y las facturas de clientes y lista los errores por grupo. Abre cada registro para corregirlo
-              en su módulo: al volver, lo corregido ya no aparece. Lo que se cambia desde aquí (F1, D3, ✓ de D6) pide tu confirmación.
+              en su módulo, o con Solucionar: al volver, lo corregido ya no aparece. Lo que se cambia desde aquí (F1, D1/D4, D2, D3, F3, ✓ de D6) pide tu confirmación.
             </p>
           </div>
           <button type="button" className="rvd-cerrar" onClick={onCerrar} disabled={revisando} aria-label="Cerrar">✕</button>
@@ -363,6 +401,56 @@ export default function RevisionDatosModal({ onCerrar }: { onCerrar: () => void 
                   <ConfirmarCorrectas key={`${elegido.codigo}|${revision?.en.getTime()}|${rango.desde}|${rango.hasta}`} codigo={elegido.codigo} filas={filas}
                     onConfirmadas={(m) => alConfirmarTodas(elegido.codigo, m)} />
                 )}
+                {/* ✅ V00538: D1 y D4 → Solucionar: sin facturar con Corregir monedas y montos; facturadas, con lo de su factura */}
+                {idsMonedas.length > 0 && (
+                  <CorregirMonedasRevision key={`${revision?.en.getTime()}|${rango.desde}|${rango.hasta}`} opIds={idsMonedas} />
+                )}
+                {/* ✅ V00539: D2 → renumerar (la creada primero se queda); F3 → ligar a la factura que la lista o liberar */}
+                {elegido.codigo === 'D2' && vista.planesD2.length > 0 && (
+                  <SolucionarPlanes key={`D2|${revision?.en.getTime()}|${rango.desde}|${rango.hasta}`}
+                    explicacion={<>En cada referencia repetida, <b>la creada primero se queda con ella</b>; las demás reciben el siguiente consecutivo de su línea (LÍNEA-DDMMAA). Una facturada no se renumera: cambiaría lo que dice su factura.</>}
+                    resumen={<><b>{vista.planesD2.filter((p) => !p.motivo).length.toLocaleString('es-MX')}</b> se renumeran y {vista.planesD2.filter((p) => !!p.motivo).length.toLocaleString('es-MX')} quedan a mano.</>}
+                    manuales={vista.planesD2.filter((p) => !!p.motivo).map((p) => ({ id: p.opId, ref: p.ref, motivo: p.motivo }))}
+                    pasos={{
+                      nombre: 'Renumerar referencias repetidas', cantidad: vista.planesD2.filter((p) => !p.motivo).length, unidad: ['operación', 'operaciones'],
+                      ayudaPrueba: 'Cada una con la que se queda con la referencia, o por qué no se toca. Revísalo.',
+                      ayudaRespaldo: 'Archivo con la referencia que tiene hoy cada una. Guárdalo.',
+                      armarPrueba: () => ({ filas: filasPruebaD2(vista.planesD2), columnasMoneda: [] }),
+                      armarRespaldo: (cuando) => respaldoD2(vista.planesD2, cuando, auth.currentUser?.email || ''),
+                      aplicar: (cuando, alAvanzar) => aplicarRenumerarD2(vista.planesD2, cuando, alAvanzar),
+                    }} />
+                )}
+                {elegido.codigo === 'F3' && vista.planesF3.length > 0 && (
+                  <SolucionarPlanes key={`F3|${revision?.en.getTime()}|${rango.desde}|${rango.hasta}`}
+                    explicacion={<>Si una factura la lista, se <b>liga</b> a esa factura (toma su Invoice). Si ninguna la lista, se <b>libera</b>: queda sin Invoice y vuelve a Por facturar. Antes de aplicar, revisa en la prueba que las liberadas no se hayan facturado fuera del sistema.</>}
+                    resumen={<><b>{vista.planesF3.filter((p) => p.accion === 'ligar').length.toLocaleString('es-MX')}</b> se ligan, <b>{vista.planesF3.filter((p) => p.accion === 'liberar').length.toLocaleString('es-MX')}</b> se liberan y {vista.planesF3.filter((p) => p.accion === 'manual').length.toLocaleString('es-MX')} quedan a mano.</>}
+                    manuales={vista.planesF3.filter((p) => p.accion === 'manual').map((p) => ({ id: p.opId, ref: p.ref, motivo: p.motivo }))}
+                    pasos={{
+                      nombre: 'Ligar o liberar el Invoice', cantidad: vista.planesF3.filter((p) => p.accion !== 'manual').length, unidad: ['operación', 'operaciones'],
+                      ayudaPrueba: 'Cada una con el Invoice que trae y el nuevo (o liberada), o por qué no se toca.',
+                      ayudaRespaldo: 'Archivo con el Invoice y la factura que tiene hoy cada una. Guárdalo.',
+                      pideFunciones: true,
+                      armarPrueba: () => ({ filas: filasPruebaF3(vista.planesF3), columnasMoneda: [] }),
+                      armarRespaldo: (cuando) => respaldoF3(vista.planesF3, cuando, auth.currentUser?.email || ''),
+                      aplicar: (cuando, alAvanzar) => aplicarCorregirF3(vista.planesF3, cuando, alAvanzar),
+                    }} />
+                )}
+                {/* ✅ V00539: F2c → Actualizar factura en lote (al centavo con sus operaciones) */}
+                {elegido.codigo === 'F2c' && filas.length > 0 && (
+                  <SolucionarPlanes key={`F2c|${revision?.en.getTime()}|${rango.desde}|${rango.hasta}`}
+                    explicacion={<>Cada factura se pone al día con sus operaciones, como el botón <b>Actualizar factura</b> de Editar factura: sus renglones toman lo que cobra hoy cada operación y el total se mueve esos centavos. Si la diferencia viene de la factura misma, queda para Solucionar.</>}
+                    resumen={<><b>{filas.length.toLocaleString('es-MX')}</b> facturas con diferencia de menos de $1.</>}
+                    manuales={[]}
+                    pasos={{
+                      nombre: 'Facturas al centavo', cantidad: filas.length, unidad: ['factura', 'facturas'],
+                      ayudaPrueba: 'Cada factura con su diferencia de hoy.',
+                      ayudaRespaldo: 'Archivo con cada factura y su total y diferencia de hoy. Guárdalo.',
+                      pideFunciones: true,
+                      armarPrueba: () => ({ filas: filasPruebaF2c(filas), columnasMoneda: [] }),
+                      armarRespaldo: (cuando) => respaldoF2c(filas, cuando, auth.currentUser?.email || ''),
+                      aplicar: (cuando, alAvanzar) => aplicarAlCentavoF2c(filas, cuando, auth.currentUser?.email || '', alAvanzar),
+                    }} />
+                )}
                 {(elegido.codigo === 'F2' || elegido.codigo === 'F4' || elegido.codigo === 'F1') && r.sinLigar > 0 && (
                   <p className="rvd-nota">
                     {miles(r.sinLigar)} renglones de facturas no se pudieron ligar a una operación (no existe, es de prueba o su referencia está repetida).
@@ -374,7 +462,8 @@ export default function RevisionDatosModal({ onCerrar }: { onCerrar: () => void 
                   <>
                     <ul className="rvd-filas">
                       {filas.slice(0, mostrar).map((f) => (
-                        <Fila key={f.clave} f={f} onAbrir={abrir} onConfirmar={confirmable ? (x) => { void confirmar(x); } : undefined} confirmando={confirmando === f.clave} />
+                        <Fila key={f.clave} f={f} onAbrir={abrir} onConfirmar={confirmable ? (x) => { void confirmar(x); } : undefined} confirmando={confirmando === f.clave}
+                          solucion={solucion} onSolucionar={solucionar} />
                       ))}
                     </ul>
                     {filas.length > mostrar && (

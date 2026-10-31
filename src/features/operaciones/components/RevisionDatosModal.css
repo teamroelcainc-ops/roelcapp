@@ -65,6 +65,10 @@
 .rvd-fila-acciones { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: 45%; }
 .rvd-abrir, .rvd-enlace { display: inline-flex; align-items: center; gap: 4px; padding: 4px 9px; border: 1px solid #30363d; border-radius: 6px; background: #161b22; color: #58a6ff; font: inherit; font-size: 0.78rem; font-weight: 600; white-space: nowrap; cursor: pointer; }
 .rvd-abrir:hover, .rvd-enlace:hover { border-color: #58a6ff; }
+/* ✅ V00538: Solucionar (abre la pantalla donde se arregla) */
+.rvd-solucionar { display: inline-flex; align-items: center; gap: 4px; padding: 4px 9px; border: 1px solid #238636; border-radius: 6px; background: rgba(35, 134, 54, 0.12); color: #3fb950; font: inherit; font-size: 0.78rem; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.rvd-solucionar:hover { border-color: #3fb950; background: rgba(35, 134, 54, 0.22); }
+.rvd-solucionar:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
 /* ✅ V00518: ✓ Está bien (confirmar como correcta) y el aviso con Deshacer */
 .rvd-confirmar { display: inline-flex; align-items: center; gap: 4px; padding: 4px 9px; border: 1px solid #238636; border-radius: 6px; background: rgba(35, 134, 54, 0.12); color: #56d364; font: inherit; font-size: 0.78rem; font-weight: 600; white-space: nowrap; cursor: pointer; }
 .rvd-confirmar:hover { border-color: #3fb950; background: rgba(46, 160, 67, 0.22); }

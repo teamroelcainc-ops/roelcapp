@@ -24,6 +24,11 @@ export interface PedidoApertura {
 
 export const VIGENCIA_APERTURA_MS = 2 * 60 * 1000;
 
+/** ✅ V00538: `tipo` que pide abrir el registro para EDITARLO (formulario o Editar factura), no su ficha. */
+export const TIPO_APERTURA_EDITAR = 'editar';
+/** ✅ V00539: `tipo` que pide dejar una operación lista para facturar (Facturación Clientes, Asignar operaciones). */
+export const TIPO_APERTURA_FACTURAR = 'facturar';
+
 let pedido: PedidoApertura | null = null;
 let seq = 0;
 const oyentes = new Set<() => void>();

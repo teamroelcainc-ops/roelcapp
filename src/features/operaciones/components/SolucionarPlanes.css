@@ -1,0 +1,7 @@
+/* ✅ V00539 — Panel "Solucionar" de D2 y F3 en la Revisión de datos (prefijo spl-). */
+.spl-panel { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid #1f6feb; border-radius: 8px; background: rgba(31, 111, 235, 0.06); }
+.spl-titulo { display: inline-flex; align-items: center; gap: 6px; margin: 0; color: #f0f6fc; font-size: 0.9rem; font-weight: 700; }
+.spl-texto { margin: 0; color: #c9d1d9; font-size: 0.83rem; line-height: 1.45; }
+.spl-texto b { color: #f0f6fc; }
+.spl-mano { display: grid; gap: 3px; max-height: 180px; margin: 0; padding-left: 18px; overflow-y: auto; color: #8b949e; font-size: 0.79rem; line-height: 1.4; overflow-wrap: anywhere; }
+.spl-mano b { color: #c9d1d9; font-weight: 600; }

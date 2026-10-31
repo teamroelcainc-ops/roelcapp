@@ -137,3 +137,37 @@ describe('✅ V00512 — rango de fechas', () => {
     expect(filtrarPorFechas(sinFecha, '2026-01-01', '2026-12-31')).toMatchObject({ filas: [], sinFecha: sinFecha.filas.length });
   });
 });
+
+// ✅ V00539 — Planes de D2 (renumerar) y F3 (ligar o liberar).
+describe('planes de Solucionar: D2 y F3', () => {
+  const base = { status: 'c2d57403', statusNombre: 'Servicio Completado', clientePaga: 'C1', fechaServicio: '2026-04-27' };
+  const op = (idDoc: string, extra: Record<string, unknown>) => ({ idDoc, ...base, ...extra });
+  const revisar = (operaciones: Record<string, unknown>[], facturas: Record<string, unknown>[] = []) =>
+    revisarDatos({ operaciones: operaciones as never, facturas: facturas as never, monedaEmpresa: new Map(), reglaUnica: false });
+  it('D2: la creada primero se queda; la otra se renumera en su línea; sin fecha de creación o facturada, a mano', () => {
+    const r = revisar([
+      op('a', { ref: 'TR-270426-022', createdAt: '2026-04-27T10:00:00Z' }),
+      op('b', { ref: 'TR-270426-022', createdAt: '2026-04-27T12:00:00Z' }),
+      op('c', { ref: 'LO-010526-001' }), op('d', { ref: 'LO-010526-001', createdAt: '2026-05-01T00:00:00Z' }),
+      op('e', { ref: 'X-1', createdAt: '2026-05-01T00:00:00Z' }), op('f', { ref: 'X-1', createdAt: '2026-05-02T00:00:00Z' }),
+      op('g', { ref: 'FL-020526-003', createdAt: '2026-05-02T00:00:00Z' }), op('h', { ref: 'FL-020526-003', createdAt: '2026-05-03T00:00:00Z', facturaClienteInvoice: 'I1' }),
+    ]);
+    const porId = new Map(r.planesD2.map((p) => [p.opId, p]));
+    expect(porId.get('b')).toMatchObject({ prefijo: 'TR', ddmmyy: '270426', motivo: '', seQueda: expect.stringContaining('TR-270426-022') });
+    expect(porId.has('a')).toBe(false);
+    expect(porId.get('d')?.motivo ?? porId.get('c')?.motivo).toMatch(/No se sabe cuál se creó primero/);
+    expect(porId.get('f')?.motivo).toMatch(/LÍNEA-DDMMAA-NNN/);
+    expect(porId.get('h')?.motivo).toMatch(/Está facturada/);
+  });
+  it('F3: ligar si una factura la lista; liberar si ninguna; a mano si hay una del cliente con el folio escrito distinto', () => {
+    const r = revisar(
+      [op('o1', { ref: 'TR-1', facturaClienteInvoice: 'I-8368 ' }), op('o2', { ref: 'TR-2', facturaClienteInvoice: 'ZZZ' }), op('o3', { ref: 'TR-3', facturaClienteInvoice: 'i 9000' })],
+      [{ id: 'F1', invoice: 'I8399', clienteId: 'C1', operacionesIds: ['o1'] }, { id: 'F2', invoice: 'I9000', clienteId: 'C1', operacionesIds: [] }],
+    );
+    const porId = new Map(r.planesF3.map((p) => [p.opId, p]));
+    expect(porId.get('o1')).toMatchObject({ accion: 'ligar', facturaId: 'F1', folio: 'I8399' });
+    expect(porId.get('o2')).toMatchObject({ accion: 'liberar' });
+    expect(porId.get('o3')).toMatchObject({ accion: 'manual', folio: 'I9000' });
+    expect(filtrarPorFechas(r, '2030-01-01', '').planesF3).toEqual([]);
+  });
+});

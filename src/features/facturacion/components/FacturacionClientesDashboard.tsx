@@ -58,7 +58,7 @@ import {
   MAX_DOCS_FACTURA, aplicarEscriturasDocs, camposDocsFactura, detalleError, docsDeFactura, idsDeFila,
 } from '../services/documentosFactura'; // ✅ V00451: varios documentos por factura
 import { agruparFacturas, estadoPagoFila, filaPagada, grupoDeFactura } from '../services/gruposFactura'; // ✅ V00502 · V00504
-import { useAtenderApertura } from '../../../shared/data/aperturas'; // ✅ V00502
+import { TIPO_APERTURA_EDITAR, TIPO_APERTURA_FACTURAR, useAtenderApertura } from '../../../shared/data/aperturas'; // ✅ V00502
 import type { EscrituraDocs } from '../services/documentosFactura';
 import { agregarDocsFactura, guardarDocsFactura, rescatarDocsDeBorradas } from '../services/guardarDocsFactura';
 import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
@@ -443,13 +443,16 @@ export const FacturacionClientesDashboard = () => {
   const [facturaViendo, setFacturaViendo] = useFichaViva<any>(buscarFacturaViendo); // eslint-disable-line @typescript-eslint/no-explicit-any -- la ficha sin tipo canónico (antes useState<any>)
   // ✅ V00502: el buscador global pidió abrir la ficha de una factura: la misma fila (grupo) del Historial.
   useAtenderApertura('facturacionClientes', (p) => {
+    if (p.tipo === TIPO_APERTURA_FACTURAR) return false; // ✅ V00539: lo atiende el de abajo (espera las operaciones)
     const grupo = grupoDeFactura(facturasGlobales, p.id, 'clienteId');
     if (!grupo) {
       avisar({ titulo: 'Factura no encontrada', texto: 'La factura ya no existe (pudo eliminarse).', tipo: 'alerta' });
       return true;
     }
     setActiveTab('historial');
-    setFacturaViendo(grupo);
+    // ✅ V00538: "Solucionar" de la Revisión de datos abre directo Editar factura (tipo 'editar').
+    if (p.tipo === TIPO_APERTURA_EDITAR) prepararEdicionFactura(grupo);
+    else setFacturaViendo(grupo);
     return true;
   }, !facturasVivas.cargando);
   // ✅ V00276: DOCUMENTO DE LA FACTURA (el PDF/imagen de la factura emitida), archivo en
@@ -805,6 +808,23 @@ export const FacturacionClientesDashboard = () => {
     topeAlcanzado: topeOpsAlcanzado, facturadasCargadas, descargar: descargarOpsCompletadas,
     descargaTerminada: opsDescargaTerminada,
   } = useOperacionesFacturables<any>('cliente', STATUS_FACTURABLES, vistaOps); // eslint-disable-line @typescript-eslint/no-explicit-any -- operaciones sin tipo canónico en el tablero (antes useState<any[]>).
+  // ✅ V00539: "Solucionar" de F5 (terminada sin facturar) en la Revisión de datos: Asignar operaciones con
+  //   su cliente, sin otros filtros, y esa operación ya seleccionada para Generar Factura.
+  useAtenderApertura('facturacionClientes', (p) => {
+    if (p.tipo !== TIPO_APERTURA_FACTURAR) return false;
+    const op = operacionesGlobales.find((o) => String(o._docId ?? o.id) === p.id || String(o.id) === p.id);
+    if (!op) {
+      avisar({ titulo: 'Operación no encontrada', texto: 'No está en las operaciones por facturar: pudo facturarse o cambiar de status.', tipo: 'alerta' });
+      return true;
+    }
+    setActiveTab('operaciones');
+    setFechaDesdeOps(''); setFechaHastaOps(''); setTextoBuscarRemolqueOps(''); setFiltroTipoOp('');
+    setFiltroCliente(String(op.clientePaga || op.clienteId || '')); setTextoBuscarCliente('');
+    setVistaOps('pendientes'); setMonedaVistaOps('todas');
+    setBusquedaOpsHecha(true);
+    setSeleccionadas([String(op.id)]);
+    return true;
+  }, opsDescargaTerminada);
 
   const cargarOperacionesAlEntrar = useEffectEvent(() => {
     if (activeTab !== 'operaciones' && activeTab !== 'revision') return; // ✅ V00450: Revisión usa la misma lista

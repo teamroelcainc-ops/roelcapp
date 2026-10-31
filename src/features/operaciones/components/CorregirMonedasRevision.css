@@ -1,0 +1,13 @@
+/* ✅ V00538 — "Solucionar" de D1 y D4 en la Revisión de datos (prefijo cmr-). */
+.cmr-panel { display: grid; gap: 10px; padding: 10px 12px; border: 1px solid #1f6feb; border-radius: 8px; background: rgba(31, 111, 235, 0.06); }
+.cmr-titulo { display: inline-flex; align-items: center; gap: 6px; margin: 0; color: #f0f6fc; font-size: 0.9rem; font-weight: 700; }
+.cmr-opcion { display: grid; gap: 8px; padding: 8px 10px; border: 1px solid #21262d; border-radius: 6px; background: #0d1117; }
+.cmr-texto { margin: 0; color: #c9d1d9; font-size: 0.83rem; line-height: 1.45; }
+.cmr-texto b { color: #f0f6fc; }
+.cmr-error { margin: 0; color: #ff7b72; font-size: 0.84rem; font-weight: 600; }
+.cmr-mano { display: grid; gap: 3px; max-height: 180px; margin: 0; padding-left: 18px; overflow-y: auto; color: #8b949e; font-size: 0.79rem; line-height: 1.4; overflow-wrap: anywhere; }
+.cmr-mano b { color: #c9d1d9; font-weight: 600; }
+.cmr-btn { justify-self: start; display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border: 1px solid #1f6feb; border-radius: 6px; background: #161b22; color: #58a6ff; font: inherit; font-size: 0.83rem; font-weight: 600; cursor: pointer; }
+.cmr-btn:hover { border-color: #58a6ff; }
+.cmr-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.cmr-btn:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }

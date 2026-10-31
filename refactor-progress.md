@@ -57,6 +57,8 @@ V00536: Operaciones 6/0/1/1 (5 listeners), Completados 4/1/1/1 (7), Facturación
 
 ## Pendiente o anotado
 
+- Fuera del plan del refactor (pedido de Omaf, 31-oct): botones Solucionar en la Revisión de datos. V00538: D1/D4 (Corregir monedas / Tomar lo de la factura), D5/F2/F2c (abren la pantalla exacta). V00539: D2, F3, F2c y F5. Todos los grupos tienen botón.
+
 - V00536: correr `npm run folios` (desde functions/) en simulación y revisar `cambios.csv` antes de aplicar (punto P2). Desplegar `editarFactura` para que el camino con `dineroPorServidor` escriba el folio en las operaciones.
 - V00536: Operaciones Activas, Completados y Facturación siguen leyendo una vez (sin listener): el bus cubre lo que se guarda en esta pestaña; lo de otros usuarios u otras pestañas llega en el paso 4.
 
