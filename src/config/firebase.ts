@@ -12,7 +12,6 @@ import type { Firestore } from "firebase/firestore";
 import type { DocumentData, DocumentReference, UpdateData } from "firebase/firestore";
 import type { ColeccionTipada, Esquema } from "../types/firestore";
 import { getAuth } from "firebase/auth";
-import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -130,7 +129,20 @@ try {
 
 export const auth = getAuth(app);
 // ✅ Storage ligado explícitamente a la app principal (mismo proyecto/bucket que db/auth)
-export const storage = getStorage(app);
+// ✅ V00534: Storage (~20 KB gz) se carga al SUBIR o BORRAR un archivo, no en el arranque. Antes
+//   getStorage(app) corría al iniciar y manualChunks lo metía en el chunk de arranque.
+type ModuloStorage = typeof import('firebase/storage');
+let storageEnCurso: Promise<ModuloStorage & { storage: ReturnType<ModuloStorage['getStorage']> }> | null = null;
+/** `const { storage, ref, uploadBytes, getDownloadURL } = await cargarStorage();` dentro del handler. */
+export const cargarStorage = () => {
+  storageEnCurso ??= import('firebase/storage')
+    .then((modulo) => ({ ...modulo, storage: modulo.getStorage(app) }))
+    .catch((error: unknown) => {
+      storageEnCurso = null;
+      throw error;
+    });
+  return storageEnCurso;
+};
 
 // --- ESTAS SON LAS FUNCIONES CRUD ---
 // ✅ Sin `any` en las firmas: aceptan cualquier registro tipado del proyecto.

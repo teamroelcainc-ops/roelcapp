@@ -4,7 +4,7 @@ import { BarChart3, Pencil, RefreshCw } from 'lucide-react'; // ✅ V00484 · V0
 import { AuditoriaCadenaEmpresa } from './AuditoriaCadenaEmpresa'; // ✅ V00333
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { propagarMonedaEmpresa } from '../services/propagarMoneda';
-import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
+import { notificarOperacionGuardada, notificarOperacionesGuardadas } from '../../../utils/operacionesBus';
 import { collection, onSnapshot, getDocs, query, where, limit, orderBy, writeBatch, doc, deleteDoc, getCountFromServer } from 'firebase/firestore'; // ✅ V00269
 import { db, eliminarRegistro, actualizarRegistro } from '../../../config/firebase';
 import { FormularioEmpresa, TIPOS_DOCUMENTO_EMPRESA } from './FormularioEmpresa';
@@ -13,7 +13,7 @@ import { CargaMasivaDocumentosModal } from '../../documentos/CargaMasivaDocument
 import { exportarEstructuraCarpetas } from '../../documentos/exportarEstructuraCarpetas';
 import { DocumentosLista } from '../../documentos/DocumentosLista';
 import { registrarLog } from '../../../utils/logger';
-import * as XLSX from 'xlsx';
+import { cargarXlsx } from '../../../shared/utils/excel'; // ✅ V00534: xlsx se carga al exportar, no con la pantalla
 import './EmpresasDashboard.css';
 import CargandoDatos from '../../../shared/components/CargandoDatos';
 import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
@@ -746,7 +746,8 @@ const EmpresasDashboard = () => {
   const montoFactura = (f: any): number => Number(f?.subtotalFactura) || Number(f?.total) || Number(f?.montoFactura) || 0;
   // ✅ V00317: EXCEL de la empresa — operaciones, facturación y pagos JUNTOS
   //   (un archivo con tres hojas), con las mismas columnas de la pestaña.
-  const descargarExcelReferencias = () => {
+  const descargarExcelReferencias = async () => {
+    const XLSX = await cargarXlsx();
     if (!empresaViendo) return;
     if (!refsCliente || !refsFacturas || !refsPagos) { alert('Espera a que terminen de cargar las referencias.'); return; }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docs sin tipo canónico (mismo criterio del módulo).
@@ -851,12 +852,11 @@ const EmpresasDashboard = () => {
           for (let i = 0; i < snap.docs.length; i += 400) {
             const lote = snap.docs.slice(i, i + 400);
             const batch = writeBatch(db);
-            lote.forEach((d) => {
-              const cambios: any = { [campo]: conservarId };
-              if (campoNombre && nombreKept) cambios[campoNombre] = nombreKept;
-              batch.update(d.ref, cambios);
-            });
+            const cambiosLote: Record<string, unknown> = { [campo]: conservarId };
+            if (campoNombre && nombreKept) cambiosLote[campoNombre] = nombreKept;
+            lote.forEach((d) => batch.update(d.ref, cambiosLote));
             await batch.commit();
+            if (col === 'operaciones') notificarOperacionesGuardadas(lote.map((d) => [d.id, cambiosLote] as const), 'empresas-fusionar'); // ✅ V00536
             totalReapuntados += lote.length;
           }
         }
@@ -884,6 +884,7 @@ const EmpresasDashboard = () => {
               const batch = writeBatch(db);
               lote.forEach((d) => batch.update(d.ref, cambiosN));
               await batch.commit();
+              if (col === 'operaciones') notificarOperacionesGuardadas(lote.map((d) => [d.id, cambiosN as Record<string, unknown>] as const), 'empresas-fusionar'); // ✅ V00536
               totalReapuntados += lote.length;
             }
           }
@@ -1250,7 +1251,7 @@ const EmpresasDashboard = () => {
 
   const toggleColumnaVisible = (index: number) => {
     const nuevas = [...columnasTabla];
-    nuevas[index].visible = !nuevas[index].visible;
+    nuevas[index] = { ...nuevas[index], visible: !nuevas[index].visible }; // ✅ V00535: sin mutar el objeto que React ya tiene
     setColumnasTabla(nuevas);
   };
 
@@ -1318,7 +1319,8 @@ const EmpresasDashboard = () => {
     }
   };
 
-  const ejecutarExportacionExcel = () => {
+  const ejecutarExportacionExcel = async () => {
+    const XLSX = await cargarXlsx();
     if (excelColumnasSeleccionadas.length === 0) return alert("Selecciona al menos una columna para exportar.");
 
     let datosAExportar = [...registrosListos];

@@ -6,7 +6,7 @@ import { db } from '../../../config/firebase';
 import { idReal, useCatalogo } from '../../../shared/data/catalogos';
 import type { DireccionRecord } from '../../../types/direccion';
 import { FormularioDireccion } from './FormularioDireccion';
-import * as XLSX from 'xlsx';
+import { cargarXlsx } from '../../../shared/utils/excel'; // ✅ V00534: xlsx se carga al exportar, no con la pantalla
 import './DireccionesDashboard.css';
 
 // ✅ TODAS LAS COLUMNAS BASE DE LA TABLA DIRECCIONES
@@ -183,7 +183,7 @@ export const DireccionesDashboard = () => {
 
   const toggleColumnaVisible = (index: number) => {
     const nuevas = [...columnasTabla];
-    nuevas[index].visible = !nuevas[index].visible;
+    nuevas[index] = { ...nuevas[index], visible: !nuevas[index].visible }; // ✅ V00535: sin mutar el objeto que React ya tiene
     setColumnasTabla(nuevas);
   };
 
@@ -216,7 +216,8 @@ export const DireccionesDashboard = () => {
   };
 
   // ✅ EXPORTAR EXCEL CON LAS COLUMNAS VISIBLES ACTUALMENTE
-  const exportarExcel = () => {
+  const exportarExcel = async () => {
+    const XLSX = await cargarXlsx();
     if (registrosFiltrados.length === 0) return alert("No hay datos para exportar.");
     
     const columnasVisibles = columnasTabla.filter(c => c.visible);

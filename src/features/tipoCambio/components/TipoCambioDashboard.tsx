@@ -4,7 +4,7 @@ import { doc, deleteDoc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger';
 import { FormularioTipoCambio } from './FormularioTipoCambio';
-import * as XLSX from 'xlsx';
+import { cargarXlsx } from '../../../shared/utils/excel'; // ✅ V00534: xlsx se carga al exportar, no con la pantalla
 import './TipoCambioDashboard.css';
 import { useCatalogo } from '../../../shared/data/catalogos';
 import type { DocCatalogo } from '../../../shared/data/catalogos';
@@ -193,7 +193,7 @@ export const TipoCambioDashboard = () => {
 
   const toggleColumnaVisible = (index: number) => {
     const nuevas = [...columnasTabla];
-    nuevas[index].visible = !nuevas[index].visible;
+    nuevas[index] = { ...nuevas[index], visible: !nuevas[index].visible }; // ✅ V00535: sin mutar el objeto que React ya tiene
     setColumnasTabla(nuevas);
   };
 
@@ -209,7 +209,8 @@ export const TipoCambioDashboard = () => {
   };
 
   // ✅ EXPORTAR EXCEL CON LAS COLUMNAS VISIBLES ACTUALMENTE
-  const exportarExcel = () => {
+  const exportarExcel = async () => {
+    const XLSX = await cargarXlsx();
     if (registrosFiltrados.length === 0) return alert("No hay datos para exportar.");
     
     const columnasVisibles = columnasTabla.filter(c => c.visible);

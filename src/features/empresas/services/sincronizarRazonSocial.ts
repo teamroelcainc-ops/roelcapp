@@ -4,6 +4,7 @@
 //   nombre actual y no el ID ni un nombre viejo.
 import { collection, getDocs, writeBatch, doc } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { notificarOperacionesGuardadas } from '../../../utils/operacionesBus'; // ✅ V00536
 
 export const sincronizarRazonSocial = async (): Promise<string> => {
   const empSnap = await getDocs(collection(db, 'empresas'));
@@ -55,6 +56,7 @@ export const sincronizarRazonSocial = async (): Promise<string> => {
     const batch = writeBatch(db);
     lote.forEach((p) => batch.update(doc(db, p.col, p.id), p.data));
     await batch.commit();
+    notificarOperacionesGuardadas(lote.filter((p) => p.col === 'operaciones').map((p) => [p.id, p.data] as const), 'razon-social'); // ✅ V00536
   }
   return `Razón social sincronizada: ${total} registro(s) actualizados (operaciones, facturación y pagos) de ${nombreDe.size} empresas.`;
 };

@@ -17,6 +17,7 @@ import { db } from '../../../config/firebase';
 import { idReal, obtenerCatalogo, useCatalogo } from '../../../shared/data/catalogos';
 import { registrarLog } from '../../../utils/logger';
 import './EditorTarifaOrigenDestino.css';
+import { notificarOperacionesGuardadas } from '../../../utils/operacionesBus'; // ✅ V00536
 
 type Municipio = { id: string; nombre: string };
 type LadoTarifa = { tarifaId: string; descripcion: string; origen: string; destino: string } | null;
@@ -187,11 +188,13 @@ export function EditorTarifaOrigenDestino({ refOperacion, detalleClienteId, deta
             const snapOps = await getDocs(query(collection(db, 'operaciones'), where(campo, 'in', trozo)));
             if (snapOps.empty) continue;
             const lote = writeBatch(db);
+            const cambiosNombre = campo === 'convenio' ? { convenioNombre: nuevaDesc } : { convenioProveedorNombre: nuevaDesc };
             snapOps.docs.forEach((d) => {
-              lote.update(d.ref, campo === 'convenio' ? { convenioNombre: nuevaDesc } : { convenioProveedorNombre: nuevaDesc });
+              lote.update(d.ref, cambiosNombre);
               opsTocadas += 1;
             });
             await lote.commit();
+            notificarOperacionesGuardadas(snapOps.docs.map((d) => [d.id, cambiosNombre] as const), 'editor-tarifa'); // ✅ V00536
           }
         }
       }

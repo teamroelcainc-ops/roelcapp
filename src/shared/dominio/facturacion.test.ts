@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { ID_USD } from './constantes';
 import { ErrorDinero } from './dinero';
 import {
-  aplicarPlanEnMemoria, destinoAlEliminar, idFacturaDeterminista, lista, planAgregarOperacion, planEditarFactura, planEditarPago, planEliminarFacturas,
+  aplicarPlanEnMemoria, copiasDeFolio, destinoAlEliminar, idFacturaDeterminista, idsOperacionesDeGrupo, lista, MAX_ESCRITURAS, planAgregarOperacion, planEditarFactura, planEditarPago, planEliminarFacturas,
   planEliminarPago, planFacturar, planMoverOperacion, planQuitarOperacion, planRecalcularFactura, planRegistrarPago, renglonesDeFactura,
 } from './facturacion';
 import type { DocLeido, PlanDinero } from './facturacion';
@@ -68,6 +68,40 @@ describe('editar factura (total manual)', () => {
   });
   it('desde Pagos no se baja de lo pagado', () => {
     expect(() => planEditarFactura({ lado: 'cliente', origen: 'pagos', invoice: 'A-1', fecha: '', facturaCcp: '', statusFactura: '', moneda: 'USD', total: 200, ahoraISO: AHORA, usuario: 'u' }, [grupo[0]])).toThrow(/MENOR a lo ya pagado/);
+  });
+});
+
+// ✅ V00536: el folio editado llega a las operaciones de la factura.
+describe('copia del folio en las operaciones', () => {
+  const grupoFolio: DocLeido[] = [{ id: 'F1', datos: { invoice: 'A-1', operacionesIds: ['o1', 'o2'] } }, { id: 'F2', datos: { invoice: 'A-1', operacionesIds: 'o2, o3' } }];
+  const ligada = (id: string, facturaId: string, folio: string): DocLeido => ({ id, datos: { facturaClienteId: facturaId, facturaClienteInvoice: folio } });
+  it('ids de las operaciones del grupo sin repetir (también texto con comas)', () => {
+    expect(idsOperacionesDeGrupo(grupoFolio)).toEqual(['o1', 'o2', 'o3']);
+  });
+  it('solo las ligadas a un documento del grupo y con otro folio', () => {
+    const ops = [ligada('o1', 'F1', 'A-0'), ligada('o2', 'F2', 'A-0'), ligada('o3', 'F1', 'A-1'), ligada('o4', 'OTRA', 'A-0'), { id: 'o5', datos: { facturaClienteInvoice: 'A-0' } }];
+    expect(copiasDeFolio('cliente', ' A-1 ', ['F1', 'F2'], ops)).toEqual([
+      { id: 'o1', datos: { facturaClienteInvoice: 'A-1' } },
+      { id: 'o2', datos: { facturaClienteInvoice: 'A-1' } },
+    ]);
+  });
+  it('proveedor usa facturaProveedorId / facturaProveedorFolio; sin folio no escribe nada', () => {
+    const op1: DocLeido = { id: 'o1', datos: { facturaProveedorId: 'P1', facturaProveedorFolio: 'X' } };
+    expect(copiasDeFolio('proveedor', 'Y', ['P1'], [op1])).toEqual([{ id: 'o1', datos: { facturaProveedorFolio: 'Y' } }]);
+    expect(copiasDeFolio('proveedor', '  ', ['P1'], [op1])).toEqual([]);
+  });
+  it('Editar factura escribe el folio en sus operaciones (y las devuelve en el plan)', () => {
+    const plan = planEditarFactura({ lado: 'cliente', origen: 'facturacion', invoice: 'A-2', fecha: '', facturaCcp: '', statusFactura: 'Facturado', moneda: 'USD', total: 0, ahoraISO: AHORA, usuario: 'u' },
+      grupoFolio, [ligada('o1', 'F1', 'A-1'), ligada('o4', 'OTRA', 'A-1')]);
+    expect(escrituraDe(plan, 'operaciones', 'o1')).toEqual({ tipo: 'actualizar', coleccion: 'operaciones', id: 'o1', datos: { facturaClienteInvoice: 'A-2' } });
+    expect(escrituraDe(plan, 'operaciones', 'o4')).toBeUndefined();
+    expect(plan.operaciones).toEqual({ o1: { facturaClienteInvoice: 'A-2' } });
+  });
+  it('sin operaciones leídas no escribe operaciones; con demasiadas, pide dividir', () => {
+    const plan = planEditarFactura({ lado: 'cliente', origen: 'facturacion', invoice: 'A-2', fecha: '', facturaCcp: '', statusFactura: 'Facturado', moneda: 'USD', total: 0, ahoraISO: AHORA, usuario: 'u' }, grupoFolio);
+    expect(plan.escrituras.every((e) => e.coleccion === 'facturas_clientes')).toBe(true);
+    const muchas = Array.from({ length: MAX_ESCRITURAS }, (_, i) => ligada(`x${i}`, 'F1', 'A-1'));
+    expect(() => planEditarFactura({ lado: 'cliente', origen: 'facturacion', invoice: 'A-2', fecha: '', facturaCcp: '', statusFactura: 'Facturado', moneda: 'USD', total: 0, ahoraISO: AHORA, usuario: 'u' }, grupoFolio, muchas)).toThrow(/Quita primero algunas operaciones/);
   });
 });
 

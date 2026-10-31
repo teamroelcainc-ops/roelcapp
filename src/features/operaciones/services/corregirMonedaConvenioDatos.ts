@@ -18,6 +18,7 @@ import type { Lado } from '../../../shared/dominio/dinero';
 import { CAMPO_MONEDA_EMPRESA, indexarMonedasEmpresas, nombreDeMonedaId } from './monedasEmpresas'; // ✅ V00503
 import { indexarConvenios, revisarOperacion } from './corregirMonedaConvenio';
 import type { CatalogoConvenios, RevisionOperacion } from './corregirMonedaConvenio';
+import { notificarCambiosOperacion } from '../../../utils/operacionesBus'; // ✅ V00536
 
 const PAGINA = 500;
 
@@ -72,7 +73,13 @@ export type ResultadoCorreccion =
   | { tipo: 'saltada'; motivo: string };
 
 /** Corrige una operación con sus datos de este momento (si alguien ya la cambió, se vuelve a revisar). */
-export const corregirOperacion = (id: string, cat: CatalogoConvenios, lados?: readonly Lado[]): Promise<ResultadoCorreccion> =>
+export const corregirOperacion = async (id: string, cat: CatalogoConvenios, lados?: readonly Lado[]): Promise<ResultadoCorreccion> => {
+  const r = await corregirEnTransaccion(id, cat, lados);
+  if (r.tipo === 'corregida') notificarCambiosOperacion(id, r.datos, 'corregir-moneda-convenio'); // ✅ V00536
+  return r;
+};
+
+const corregirEnTransaccion = (id: string, cat: CatalogoConvenios, lados?: readonly Lado[]): Promise<ResultadoCorreccion> =>
   runTransaction(db, async (tx): Promise<ResultadoCorreccion> => {
     const ref = doc(db, 'operaciones', id);
     const snap = await tx.get(ref);

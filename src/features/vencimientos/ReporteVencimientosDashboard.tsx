@@ -12,7 +12,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { obtenerUsuarioAut, cargarConfigModulo, evaluarAutorizacion, crearSolicitudAutorizacion } from '../autorizaciones/autorizaciones'; // ✅ V00325
 import type { ConfigModuloAut } from '../autorizaciones/autorizaciones'; // ✅ V00325
-import * as XLSX from 'xlsx';
+import { cargarXlsx } from '../../shared/utils/excel'; // ✅ V00534: xlsx se carga al exportar, no con la pantalla
 import { db } from '../../config/firebase';
 import { EditorEncabezados } from '../../components/EditorEncabezados';
 import { useEtiquetas } from '../../contexts/EtiquetasContext';
@@ -299,7 +299,8 @@ export const ReporteVencimientosDashboard = () => {
   };
 
 
-  const exportarExcel = () => {
+  const exportarExcel = async () => {
+    const XLSX = await cargarXlsx();
     const wb = XLSX.utils.book_new();
     const filas = filasVencimientos.todas.map((d) => [
       ETQ_ORIGEN[d.coleccionOrigen] || d.coleccionOrigen, nombreRegistro(d), d.tipoDocumento,

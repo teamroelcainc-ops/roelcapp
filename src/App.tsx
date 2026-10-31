@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, Suspense, useRef, useCallback, memo, useTransition } from 'react';
 import { TarjetaCasetas } from './features/operaciones/components/TarjetaCasetas'; // ✅ V00349
 import { TarjetaSaldoDiesel } from './features/operaciones/components/TarjetaSaldoDiesel'; // ✅ V00411
-import { DocumentosLista } from './features/documentos/DocumentosLista';
 import { APP_VERSION, APP_AUTOR } from './config/version';
 import BuscadorTopbar from './components/layout/BuscadorTopbar'; // ✅ V00263 · V00438: estado propio
 import CargandoModulo from './components/layout/CargandoModulo'; // ✅ V00438
@@ -24,11 +23,12 @@ import { iniciarFlags, detenerFlags } from './shared/data/flags'; // ✅ V00437
 import { idReal, useCatalogo, reiniciarCatalogos, obtenerCatalogo } from './shared/data/catalogos'; // ✅ V00439
 import { EtiquetasProvider, useEtiquetas } from './contexts/EtiquetasContext'; 
 import { lazyWithRetry } from './utils/lazyWithRetry';
+import CargandoDatos from './shared/components/CargandoDatos'; // ✅ V00534
+import { usePrecargarAlPintar } from './shared/hooks/usePrecargarAlPintar';
+import { precargarLogosRoelca } from './shared/utils/logo';
 
 // ── Estáticos: críticos o siempre presentes (login, marca y modales). ──
 import { Login } from './features/auth/components/Login';
-import { MiPerfil } from './usuarios/components/MiPerfil';
-import { RelojChecadorModal } from './features/relojChecador/components/RelojChecadorModal';
 import { EmpresaBrand } from './features/configuracion/EmpresaBrand';
 
 // ============================================================================
@@ -40,6 +40,10 @@ import { EmpresaBrand } from './features/configuracion/EmpresaBrand';
 //   • export default  → lazy(() => import('...'))
 //   • export const X  → lazy(() => import('...').then(m => ({ default: m.X })))
 // ============================================================================
+// ✅ V00534: modales del menú de usuario, fuera de la carga de arranque (se bajan al abrirlos).
+const DocumentosLista = lazyWithRetry(() => import('./features/documentos/DocumentosLista').then(m => ({ default: m.DocumentosLista })), 'DocumentosLista');
+const MiPerfil = lazyWithRetry(() => import('./usuarios/components/MiPerfil').then(m => ({ default: m.MiPerfil })), 'MiPerfil');
+const RelojChecadorModal = lazyWithRetry(() => import('./features/relojChecador/components/RelojChecadorModal').then(m => ({ default: m.RelojChecadorModal })), 'RelojChecadorModal');
 const OperacionesDashboard = lazyWithRetry(() => import('./features/operaciones/components/OperacionesDashboard'), 'OperacionesDashboard');
 const MisOperacionesDashboard = lazyWithRetry(() => import('./features/misOperaciones/components/MisOperacionesDashboard'), 'MisOperacionesDashboard');
 const PagosDashboard = lazyWithRetry(() => import('./features/pagos/components/PagosDashboard'), 'PagosDashboard');
@@ -762,6 +766,7 @@ const ResumenDelDia = memo(function ResumenDelDia() {
 
 
 function AppContenido() {
+  usePrecargarAlPintar(precargarLogosRoelca); // ✅ V00534: el logo (archivo) se convierte para los PDF después de pintar
   const [estaAutenticado, setEstaAutenticado] = useState(false);
   const [cargandoAuth, setCargandoAuth] = useState(true); 
   // ✅ V00303: detector de arranque lento (>12 s en el splash) + reparación
@@ -1578,7 +1583,11 @@ function AppContenido() {
           </div>
         </div>
       )}
-      <RelojChecadorModal isOpen={modalChecadorAbierto} onClose={() => setModalChecadorAbierto(false)} usuario={usuarioActualDB} />
+      {modalChecadorAbierto && ( // ✅ V00534: se monta (y se baja su código) al abrirlo; con isOpen=false no pintaba nada
+        <Suspense fallback={null}>
+          <RelojChecadorModal isOpen={modalChecadorAbierto} onClose={() => setModalChecadorAbierto(false)} usuario={usuarioActualDB} />
+        </Suspense>
+      )}
 
       {/* BANNER DE VISTA PREVIA: siempre visible mientras se está "viendo como" */}
       {vistaComoAplicada && (
@@ -1658,7 +1667,9 @@ function AppContenido() {
               <>
                 <span className="app-x6">Documentos registrados de <b className="app-x17">{usuarioActualDB?.nombre || 'tu colaborador'}</b>. Vista de solo consulta: aquí puedes verlos y descargarlos, pero no editarlos, reemplazarlos ni eliminarlos.</span>
                 <div className="app-misdocs-lista">
-                  <DocumentosLista coleccionOrigen="empleados" registroId={String(usuarioActualDB.colaboradorId)} permitirEliminar={false} />
+                  <Suspense fallback={<CargandoDatos texto="Cargando documentos…" />}>
+                    <DocumentosLista coleccionOrigen="empleados" registroId={String(usuarioActualDB.colaboradorId)} permitirEliminar={false} />
+                  </Suspense>
                 </div>
               </>
             ) : (
@@ -1669,11 +1680,13 @@ function AppContenido() {
       )}
 
       {miPerfilAbierto && usuarioActualDB && (
-        <MiPerfil
-          usuario={usuarioActualDB}
-          onClose={() => setMiPerfilAbierto(false)}
-          onActualizado={(u) => setUsuarioActualDB(u)}
-        />
+        <Suspense fallback={null}>
+          <MiPerfil
+            usuario={usuarioActualDB}
+            onClose={() => setMiPerfilAbierto(false)}
+            onActualizado={(u) => setUsuarioActualDB(u)}
+          />
+        </Suspense>
       )}
 
       <div className={`sidebar ${!menuAbierto ? 'collapsed' : ''}`}>

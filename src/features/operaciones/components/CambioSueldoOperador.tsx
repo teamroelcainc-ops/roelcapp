@@ -23,6 +23,7 @@ import { useUsuarioStore } from '../../../stores/useUsuarioStore';
 import { registrarLog } from '../../../utils/logger';
 import { esStatusFalso } from '../../../utils/sueldoFalso';
 import './CambioSueldoOperador.css';
+import { notificarCambiosOperacion } from '../../../utils/operacionesBus'; // ✅ V00536
 
 export interface CambioSueldo {
   fecha: string;
@@ -98,6 +99,7 @@ export const CambioSueldoOperador: React.FC<{
         registrarLog(modulo, 'Edición', `Cambió el sueldo del operador de la operación ${String(op.ref || idDoc)}: ${fmt(actual)} → ${fmt(nuevo)}. Motivo: ${cambio.motivo}`).catch(() => {});
       }
       const previos = Array.isArray(op.cambiosSueldo) ? (op.cambiosSueldo as CambioSueldo[]) : [];
+      if (idDoc) notificarCambiosOperacion(idDoc, { ...campos, cambiosSueldo: [...previos, cambio] }, 'cambio-sueldo'); // ✅ V00536
       onGuardado({ ...campos, cambiosSueldo: [...previos, cambio] });
       setAbierto(false);
       if (modo === 'directo' || idDoc) alert(`Sueldo del operador actualizado a ${fmt(nuevo)}. ✅\nEl motivo quedó en el detalle de la operación.`);

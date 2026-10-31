@@ -5,6 +5,7 @@
 import { collection, doc, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { idReal, obtenerCatalogo } from '../../shared/data/catalogos';
+import { notificarOperacionesGuardadas } from '../../utils/operacionesBus'; // ✅ V00536
 
 const limpiar = (v: unknown): string => String(v ?? '').replace(/^\s*CONV[-\s]+/i, '').trimStart();
 const tienePrefijo = (v: unknown): boolean => /^\s*CONV[-\s]+/i.test(String(v ?? ''));
@@ -72,6 +73,7 @@ export const quitarPrefijoConv = async (): Promise<string> => {
     const batch = writeBatch(db);
     lote.forEach((p) => batch.update(doc(db, p.col, p.id), p.data));
     await batch.commit();
+    notificarOperacionesGuardadas(lote.filter((p) => p.col === 'operaciones').map((p) => [p.id, p.data] as const), 'quitar-prefijo-conv'); // ✅ V00536
   }
   return `Prefijos eliminados en ${total} registro(s): consecutivos sin CONV- y nombres sin número inicial (detalles de convenios, convenios maestros y operaciones).`;
 };

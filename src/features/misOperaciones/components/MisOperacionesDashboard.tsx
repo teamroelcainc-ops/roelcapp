@@ -31,6 +31,7 @@ import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00
 import { ajusteOperadorPorStatus } from '../../../utils/sueldoFalso'; // ✅ V00511: sueldo y diesel de Falso
 import { ajusteConvenioAlCambiarStatus } from '../../operaciones/services/convenioFalsoDatos'; // ✅ V00509
 import { esStatusVerde, registrarVerdeAutomatico } from '../../../utils/historialCalculadoPuentes';
+import { notificarOperacionGuardada } from '../../../utils/operacionesBus'; // ✅ V00536
 
 // Status que ya no son "activos" (mismos IDs que usa Operaciones Activas).
 // ✅ V00439 (Fase 3.x): IDs desde las constantes compartidas (Cancelado + Completados).
@@ -240,12 +241,15 @@ export function MisOperacionesDashboard() {
     const convFalso = enLinea ? await ajusteConvenioAlCambiarStatus(String(opAbierta._docId || opAbierta.id), siguiente.nombre) : { cambios: {} };
     const batch = writeBatch(db);
     batch.set(horarioRef, datosHorario);
-    batch.update(doc(db, 'operaciones', String(opAbierta._docId || opAbierta.id)), {
+    const cambiosOp = {
       status: siguiente.id,
       statusNombre: siguiente.nombre,
       ...ajusteOperadorPorStatus(opAbierta as Record<string, unknown>, siguiente.nombre), // ✅ V00387 · V00511: Falso = sueldo fijo y 3 galones
       ...convFalso.cambios,
-    });
+    };
+    batch.update(doc(db, 'operaciones', String(opAbierta._docId || opAbierta.id)), cambiosOp);
+    // ✅ V00536: aviso al bus con la operación completa (Operaciones, Completados y Facturación la ven al instante).
+    const avisarOp = () => notificarOperacionGuardada(String(opAbierta._docId || opAbierta.id), { ...(opAbierta as Record<string, unknown>), ...cambiosOp }, 'mis-operaciones', Object.keys(cambiosOp));
 
     const marca: UltimaMarca = {
       horarioId: horarioRef.id,
@@ -260,11 +264,13 @@ export function MisOperacionesDashboard() {
       if (!enLinea) {
         // Sin internet: la escritura queda encolada y sincroniza sola.
         batch.commit().catch((e) => console.error('Marca offline no sincronizada:', e));
+        avisarOp();
         setHorariosOp((prev) => [...prev, { id: horarioRef.id, ...datosHorario }]);
         setUltimaMarca(marca);
         mostrarAviso(`${siguiente.nombre} — guardado en el dispositivo (sin conexión)`);
       } else {
         await batch.commit();
+        avisarOp();
         if (esStatusVerde(siguiente.nombre)) registrarVerdeAutomatico({ ...(opAbierta as Record<string, unknown>), status: siguiente.id, statusNombre: siguiente.nombre }, siguiente.nombre, datosHorario.fechaHora); // ✅ V00402
         setHorariosOp((prev) => [...prev, { id: horarioRef.id, ...datosHorario }]);
         setUltimaMarca(marca);
@@ -296,12 +302,14 @@ export function MisOperacionesDashboard() {
     try {
       await deleteDoc(doc(db, 'horarios', ultimaMarca.horarioId));
       const convFalso = await ajusteConvenioAlCambiarStatus(String(opAbierta._docId || opAbierta.id), ultimaMarca.statusAnteriorNombre); // ✅ V00509
-      await updateDoc(doc(db, 'operaciones', String(opAbierta._docId || opAbierta.id)), {
+      const cambiosOp = {
         status: ultimaMarca.statusAnteriorId,
         statusNombre: ultimaMarca.statusAnteriorNombre,
         ...ajusteOperadorPorStatus(opAbierta as Record<string, unknown>, ultimaMarca.statusAnteriorNombre), // ✅ V00387
         ...convFalso.cambios,
-      });
+      };
+      await updateDoc(doc(db, 'operaciones', String(opAbierta._docId || opAbierta.id)), cambiosOp);
+      notificarOperacionGuardada(String(opAbierta._docId || opAbierta.id), { ...(opAbierta as Record<string, unknown>), ...cambiosOp }, 'mis-operaciones', Object.keys(cambiosOp)); // ✅ V00536
       setHorariosOp((prev) => prev.filter((h) => h.id !== ultimaMarca.horarioId));
       registrarLog('Mis Operaciones', 'Horario', `${usuario?.nombre} DESHIZO "${ultimaMarca.statusMarcadoNombre}" en ${opAbierta.ref || opAbierta.id}`).catch(() => {});
       setUltimaMarca(null);

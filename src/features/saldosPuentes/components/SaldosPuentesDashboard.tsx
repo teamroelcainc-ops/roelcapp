@@ -6,7 +6,7 @@
 //   Recargas en la colección saldos_puentes (varias por día permitidas).
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { addDoc, collection, deleteDoc, doc, getDocs, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
-import * as XLSX from 'xlsx';
+import { cargarXlsx } from '../../../shared/utils/excel'; // ✅ V00534: xlsx se carga al exportar, no con la pantalla
 import { db } from '../../../config/firebase';
 import './SaldosPuentesDashboard.css';
 import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
@@ -18,6 +18,7 @@ import { idReal, useCatalogo } from '../../../shared/data/catalogos';
 import { STATUS_COMPLETADOS } from '../../../shared/dominio/constantes';
 import { puenteYaCobrado } from '../../../shared/dominio/cobroPuente'; // ✅ V00469
 import { monedaCanonica, nombreMoneda as nombreMonedaCanonica } from '../../../shared/dominio/moneda';
+import { notificarOperacionesGuardadas } from '../../../utils/operacionesBus'; // ✅ V00536
 
 const norm = (s: unknown): string => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 // ✅ V00439 (Fase 3.6): regla compartida de moneda; un valor no reconocido se muestra tal cual.
@@ -25,7 +26,7 @@ const nombreMoneda = (v: unknown): string => {
   const m = monedaCanonica(v);
   return m ? nombreMonedaCanonica(m) : (String(v ?? '') || '—');
 };
-const hoyISO = () => new Date().toISOString().slice(0, 10);
+const hoyISO = (): string => hoyLocalISO(); // ✅ V00535: hoy local (antes UTC; se guarda como fecha de la recarga)
 const fmtMonto = (v: unknown): string => {
   const n = Number(v);
   return Number.isFinite(n) ? `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—';
@@ -238,7 +239,8 @@ export const SaldosPuentesDashboard: React.FC = () => {
   };
   const repMostrarCarga = repCargando || repEsperando; // ✅ V00449
   const repVisibles = repFilas.filter((f) => (!repDe || f.fecha >= repDe) && (!repHasta || f.fecha <= repHasta));
-  const repExcel = () => {
+  const repExcel = async () => {
+    const XLSX = await cargarXlsx();
     const hoja = repVisibles.map((f) => ({
       'Fecha de Servicio': f.fecha, '# Referencia': f.ref, 'Tipo de Operación': f.tipo,
       'Tráfico': f.trafico, 'Puente': f.puente,
@@ -290,6 +292,7 @@ export const SaldosPuentesDashboard: React.FC = () => {
         const batch = writeBatch(db);
         lote.forEach((c) => batch.update(doc(db, 'operaciones', c.id), c.data));
         await batch.commit();
+        notificarOperacionesGuardadas(lote.map((c) => [c.id, c.data] as const), 'saldos-puentes'); // ✅ V00536
       }
       alert(`Listo: ${total} operación(es) actualizadas (tarifas colocadas y fechas de cruce corregidas).`);
     } catch (e) { alert(`No se pudo completar: ${(e as Error)?.message || e}`); }
@@ -369,7 +372,8 @@ export const SaldosPuentesDashboard: React.FC = () => {
   const alcanzaPara = (p: Puente, c: Cuenta): string =>
     p.tarifa > 0 && c.saldoActual > 0 ? `${Math.floor(c.saldoActual / p.tarifa).toLocaleString('es-MX')} cruces` : '—';
   const idLibro = libroPuenteId || puentes[0]?.id || '';
-  const exportarLibro = (p: Puente, filas: ReturnType<typeof movimientosDe>) => {
+  const exportarLibro = async (p: Puente, filas: ReturnType<typeof movimientosDe>) => {
+    const XLSX = await cargarXlsx();
     const hoja = filas.map((m) => ({
       Fecha: fmtDia(m.fecha),
       Tipo: m.tipo === 'recarga' ? 'Recarga' : 'Cruce',

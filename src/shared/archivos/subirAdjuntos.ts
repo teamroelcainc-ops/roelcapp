@@ -2,14 +2,14 @@
 // ✅ V00451: sube los adjuntos NUEVOS a una carpeta de Storage y devuelve la lista final (en el
 //   mismo orden; los ya guardados se conservan). Cada archivo con un nombre único (no pisa al
 //   anterior) y caché larga (CLAUDE.md: "si el archivo cambia, súbelo con un nombre nuevo").
-import { getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage';
-import { auth, storage } from '../../config/firebase';
+import { auth, cargarStorage } from '../../config/firebase'; // ✅ V00534: Storage se carga al subir
 import { hoyLocalISO } from '../../utils/fechaHoraLocal';
 import { nombreSeguro } from './adjuntos';
 import type { Adjunto, ArchivoGuardado } from './adjuntos';
 
 export async function subirArchivo(carpeta: string, file: File, indice = 0): Promise<ArchivoGuardado> {
   const path = `${carpeta.replace(/\/+$/, '')}/${Date.now()}_${indice}_${nombreSeguro(file.name)}`;
+  const { storage, ref: storageRef, uploadBytes, getDownloadURL } = await cargarStorage();
   const destino = storageRef(storage, path);
   await uploadBytes(destino, file, {
     ...(file.type ? { contentType: file.type } : {}),

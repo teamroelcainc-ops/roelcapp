@@ -123,7 +123,7 @@ export const ContactosDashboard = () => {
 
   const toggleColumnaVisible = (index: number) => {
     const nuevas = [...columnasTabla];
-    nuevas[index].visible = !nuevas[index].visible;
+    nuevas[index] = { ...nuevas[index], visible: !nuevas[index].visible }; // ✅ V00535: sin mutar el objeto que React ya tiene
     setColumnasTabla(nuevas);
   };
 

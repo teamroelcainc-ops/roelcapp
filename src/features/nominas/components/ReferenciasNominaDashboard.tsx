@@ -1,5 +1,7 @@
 // src/features/nominas/components/ReferenciasNominaDashboard.tsx
 import React, { useState, useEffect, useMemo } from 'react';
+import { escaparHTML } from '../../../shared/utils/html'; // ✅ V00535
+import { aNumero } from '../../../shared/dominio/numeros'; // ✅ V00535
 import { 
   collection, 
   onSnapshot, 
@@ -20,12 +22,14 @@ import { ErrorNomina, huellaSaldos, numeroDeFolio, prefijoFolioNomina, formatear
 import type { DocNomina } from '../services/reglasNomina';
 import { guardarNomina, nuevoIdNomina, obtenerHistorialOperador } from '../services/nominasService';
 import { useHistorialNominasOperador, useNominasPaginadas } from '../services/useNominas';
-import * as XLSX from 'xlsx';
-import html2pdf from 'html2pdf.js';
+import { cargarXlsx } from '../../../shared/utils/excel'; // ✅ V00534: xlsx se carga al exportar, no con la pantalla
+import { cargarHtml2pdf } from '../../../shared/utils/pdf'; // ✅ V00534: html2pdf se carga al generar el PDF
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
 // ✅ Para abrir el DETALLE editable de una operación desde la nómina.
-import { FormularioOperacion } from '../../operaciones/components/FormularioOperacion';
-import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
+import FormularioOperacionDiferido from '../../operaciones/components/FormularioOperacionDiferido';
+import { precargarFormularioOperacion } from '../../operaciones/services/cargarFormularioOperacion'; // ✅ V00534: el formulario se carga aparte
+import { usePrecargarAlPintar } from '../../../shared/hooks/usePrecargarAlPintar';
+import { logoComoDataUrl, logoListo, RUTA_LOGO_ROELCA } from '../../../shared/utils/logo'; // ✅ V00534
 import './ReferenciasNominaDashboard.css';
 import CargandoDatos from '../../../shared/components/CargandoDatos';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
@@ -35,6 +39,7 @@ import { idReal, obtenerCatalogo, useCatalogos } from '../../../shared/data/cata
 import { STATUS_COMPLETADOS } from '../../../shared/dominio/constantes';
 import { esGrupoTerminado, estadoGrupoDe } from '../../../shared/dominio/operacionCanonica';
 import { aFechaServicioISO } from '../../../shared/dominio/fechas';
+import { notificarCambiosOperacion, notificarOperacionesGuardadas } from '../../../utils/operacionesBus'; // ✅ V00536
 
 const ID_CARGO_OPERADOR = 'edda3a2b';
 // ✅ IDs de status "completada" en el catálogo (los mismos que usa Facturación
@@ -110,6 +115,7 @@ const fusionarColumnasNominaGuardadas = (guardadas: any[]) => {
 };
 
 export const ReferenciasNominaDashboard = () => {
+  usePrecargarAlPintar(precargarFormularioOperacion); // ✅ V00534: lo baja después de pintar
   const { config: empresaConfig } = useEmpresaConfig();
 
   const [activeTab, setActiveTab] = useState<'operaciones' | 'historial' | 'prestamos' | 'ahorro'>('historial');
@@ -214,7 +220,7 @@ export const ReferenciasNominaDashboard = () => {
   const [mapaLugares, setMapaLugares] = useState<Record<string, string>>({});
 
   const formatoMoneda = (monto: any) => {
-    const num = parseFloat(monto || 0);
+    const num = aNumero(monto); // ✅ V00535: acepta "1,234.50" (parseFloat daba 1)
     return isNaN(num) ? '$ 0.00' : `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
@@ -890,11 +896,12 @@ export const ReferenciasNominaDashboard = () => {
 
   const toggleColumnaVisibleOps = (index: number) => {
     const nuevas = [...columnasOps];
-    nuevas[index].visible = !nuevas[index].visible;
+    nuevas[index] = { ...nuevas[index], visible: !nuevas[index].visible }; // ✅ V00535: sin mutar el objeto que React ya tiene
     setColumnasOps(nuevas);
   };
 
-  const exportarExcelOps = () => {
+  const exportarExcelOps = async () => {
+    const XLSX = await cargarXlsx();
     if (operacionesMostradas.length === 0) return alert('No hay operaciones para exportar con los filtros actuales.');
     const cols = columnasOps.filter(c => c.visible);
     if (cols.length === 0) return alert('Selecciona al menos una columna para exportar.');
@@ -944,6 +951,7 @@ export const ReferenciasNominaDashboard = () => {
     setOpsFicha(prev => prev.map(o => o.id === opId ? { ...o, sueldoExtra: 0, sueldoOperador: base, sueldoTotal: base } : o));
     try {
       await updateDoc(doc(db, 'operaciones', opId), { sueldoExtra: 0, sueldoOperador: base, sueldoTotal: base });
+      notificarCambiosOperacion(opId, { sueldoExtra: 0, sueldoOperador: base, sueldoTotal: base }, 'nomina'); // ✅ V00536
     } catch (error) {
       console.error('Error al eliminar el sueldo extra:', error);
       setOperacionesGlobales(prev => prev.map(o => o.id === opId ? { ...o, sueldoExtra: previoExtra, sueldoTotal: previoTotal } : o));
@@ -983,6 +991,7 @@ export const ReferenciasNominaDashboard = () => {
     setGuardandoExtra(true);
     try {
       await updateDoc(doc(db, 'operaciones', opId), { sueldoExtra: nuevoValor, sueldoOperador: base, sueldoTotal: totalNuevo });
+      notificarCambiosOperacion(opId, { sueldoExtra: nuevoValor, sueldoOperador: base, sueldoTotal: totalNuevo }, 'nomina'); // ✅ V00536
     } catch (error) {
       console.error('Error al guardar el sueldo extra:', error);
       setOperacionesGlobales(prev => prev.map(o => o.id === opId ? { ...o, sueldoExtra: previoExtra, sueldoTotal: previoTotal } : o));
@@ -1028,6 +1037,7 @@ export const ReferenciasNominaDashboard = () => {
     setGuardandoSueldo(true);
     try {
       await updateDoc(doc(db, 'operaciones', opId), { sueldoOperador: nuevoValor, sueldoTotal: totalNuevo });
+      notificarCambiosOperacion(opId, { sueldoOperador: nuevoValor, sueldoTotal: totalNuevo }, 'nomina'); // ✅ V00536
     } catch (error) {
       console.error('Error al guardar el sueldo:', error);
       setOperacionesGlobales(prev => prev.map(o => o.id === opId ? { ...o, sueldoOperador: previoBase, sueldoTotal: previoTotal } : o));
@@ -1488,6 +1498,7 @@ export const ReferenciasNominaDashboard = () => {
         await batch.commit();
         nominasPaginadas.quitarNomina(nomData.id); // ✅ Fase 1.8b: páginas de "Cargar más" (sin listener)
         const idsLiberadas: string[] = Array.isArray(nomData.operacionesIds) ? nomData.operacionesIds : [];
+        notificarOperacionesGuardadas(idsLiberadas.map((id) => [id, { referenciaNominaId: null, referenciaNominaConsecutivo: null }] as const), 'nomina-eliminar'); // ✅ V00536
         setOperacionesGlobales(prev => prev.map(op =>
           idsLiberadas.includes(op.id) ? { ...op, referenciaNominaId: null, referenciaNominaConsecutivo: null } : op
         ));
@@ -1560,7 +1571,7 @@ export const ReferenciasNominaDashboard = () => {
 
   const generarReciboNomina = async (nom: any) => {
     const m = (v: any) => '$' + (Number(v) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const esc = (s: any) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const esc = escaparHTML; // ✅ V00535: también comillas
 
     let trips: any[] = [];
     try {
@@ -1607,7 +1618,7 @@ export const ReferenciasNominaDashboard = () => {
 
     const logoSrc = (empresaConfig?.logoBase64 && empresaConfig.logoBase64.startsWith('data:'))
       ? empresaConfig.logoBase64
-      : LOGO_DEFAULT;
+      : ((await logoComoDataUrl(RUTA_LOGO_ROELCA)) ?? logoListo(RUTA_LOGO_ROELCA)); // ✅ V00534: el archivo como dataURL al generar
 
     const htmlTemplate = `
 <style>
@@ -1740,6 +1751,7 @@ export const ReferenciasNominaDashboard = () => {
           // Un frame para que el navegador re-acomode con el nuevo tamaño.
           await new Promise(resolve => requestAnimationFrame(() => resolve(null)));
         }
+        const html2pdf = await cargarHtml2pdf();
         await html2pdf().set(opt).from(elementoTemporal).save();
       } finally {
         if (elementoTemporal.parentNode) document.body.removeChild(elementoTemporal);
@@ -1863,7 +1875,8 @@ export const ReferenciasNominaDashboard = () => {
     }
   };
 
-  const exportarCSV = () => {
+  const exportarCSV = async () => {
+    const XLSX = await cargarXlsx();
     if (historialFiltrado.length === 0) return alert("No hay datos para exportar.");
     const datosExcel = historialFiltrado.map(n => ({
       'Consecutivo': getConsecutivoNomina(n),
@@ -1960,7 +1973,8 @@ export const ReferenciasNominaDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   ), [historialPrestamos, dAhorroInicial]);
 
-  const exportarPrestamosCSV = () => {
+  const exportarPrestamosCSV = async () => {
+    const XLSX = await cargarXlsx();
     if (datosPrestamo.filas.length === 0) return alert("No hay movimientos de préstamo para este operador.");
     const datos = [
       ...[...datosPrestamo.filas].reverse().map(f => ({
@@ -1979,7 +1993,8 @@ export const ReferenciasNominaDashboard = () => {
     XLSX.writeFile(wb, `Prestamos_${ope}_${hoyLocalISO()}.xlsx`);
   };
 
-  const exportarAhorroCSV = () => {
+  const exportarAhorroCSV = async () => {
+    const XLSX = await cargarXlsx();
     if (datosAhorro.filas.length === 0) return alert("No hay movimientos de ahorro para este operador.");
     const datos = [
       ...[...datosAhorro.filas].reverse().map(f => ({
@@ -2517,7 +2532,7 @@ export const ReferenciasNominaDashboard = () => {
           formulario parecía "congelado". Montado directo, igual que en
           Servicios Cancelados/Completados, donde siempre ha funcionado. */}
       {opDetalle && (
-        <FormularioOperacion
+        <FormularioOperacionDiferido
           estado="abierto"
           initialData={opDetalle}
           catalogosCacheados={catalogosFormulario}

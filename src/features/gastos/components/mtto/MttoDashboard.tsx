@@ -1,13 +1,15 @@
 // src/features/gastos/components/mtto/MttoDashboard.tsx
 import React, { useState, useEffect, useMemo } from 'react';
+import { aNumero } from '../../../../shared/dominio/numeros'; // ✅ V00535
 import { hoyLocalISO } from '../../../../utils/fechaHoraLocal';
 import { FormularioMtto } from './FormularioMtto';
 import { collection, query, getDocs, limit, orderBy, where, doc, deleteDoc, writeBatch } from 'firebase/firestore'; 
 import { db } from '../../../../config/firebase'; 
 import MttoAgrupadosInvoice from './MttoAgrupadosInvoice';
-import * as XLSX from 'xlsx';
+import { cargarXlsx } from '../../../../shared/utils/excel'; // ✅ V00534: xlsx se carga al exportar, no con la pantalla
 // ✅ Logo de los PDF (mismas exportaciones que ya usa el historial de Invoice).
-import { escaparHTML, getLogoPdf, LOGO_DEFAULT } from '../../../../utils/pdfGenerator';
+import { escaparHTML } from '../../../../shared/utils/html';
+import { logoPdfPorDefecto } from '../../../../shared/utils/logo'; // ✅ V00534: sin importar pdfGenerator
 import './MttoDashboard.css';
 import CargandoDatos from '../../../../shared/components/CargandoDatos';
 import { useCatalogos } from '../../../../shared/data/catalogos';
@@ -270,7 +272,7 @@ const MttoDashboard = () => {
     const proveedorNum = m.proveedorId || 'N/A';
     const rfc = m.estatus || 'No facturado';
     const fechaActual = formatearFechaEspanolDoc(new Date());
-    const logoBase64 = getLogoPdf() || LOGO_DEFAULT;
+    const logoBase64 = logoPdfPorDefecto(); // ✅ V00534
 
     const filasHTML = `
         <tr>
@@ -446,7 +448,7 @@ const MttoDashboard = () => {
 
   const formatoMoneda = (monto: any) => {
     if (monto === undefined || monto === null || monto === '') return '-';
-    return `$ ${parseFloat(monto).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return `$ ${aNumero(monto).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
   
   const handleGuardado = () => {
@@ -650,7 +652,7 @@ const MttoDashboard = () => {
 
   const toggleColumnaVisible = (index: number) => {
     const nuevas = [...columnasTabla];
-    nuevas[index].visible = !nuevas[index].visible;
+    nuevas[index] = { ...nuevas[index], visible: !nuevas[index].visible }; // ✅ V00535: sin mutar el objeto que React ya tiene
     setColumnasTabla(nuevas);
   };
 
@@ -687,7 +689,8 @@ const MttoDashboard = () => {
   };
 
   // ✅ EXPORTACIÓN EN EXCEL (XLSX) RESPALDADA EN COLUMNAS VISIBLES
-  const exportarExcel = () => {
+  const exportarExcel = async () => {
+    const XLSX = await cargarXlsx();
     if (registrosFiltrados.length === 0) return alert("No hay datos para exportar.");
     
     const columnasVisibles = columnasTabla.filter(c => c.visible);

@@ -7,7 +7,7 @@
 //   unidad…). Es el espejo exacto de la Carga Masiva: llenas las carpetas en
 //   tu PC y luego subes la carpeta completa con el botón 📁.
 // ---------------------------------------------------------------------------
-import JSZip from 'jszip';
+import { cargarJSZip } from '../../shared/utils/zip'; // ✅ V00534: jszip se carga al exportar
 import { estadoCatalogo, obtenerCatalogo } from '../../shared/data/catalogos';
 
 const sanitizar = (s: string) => String(s || '').trim().replace(/[/\\:*?"<>|#]+/g, '').replace(/\s+/g, ' ').trim();
@@ -35,6 +35,7 @@ export const exportarEstructuraCarpetas = async (p: {
 
   if (tipos.length === 0) throw new Error('El catálogo de Tipos de Archivo no tiene tipos para esta categoría.');
 
+  const JSZip = await cargarJSZip();
   const zip = new JSZip();
   const raiz = sanitizar(p.registroNombre) || 'Registro';
   tipos.forEach((t, i) => {

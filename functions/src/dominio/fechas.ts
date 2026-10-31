@@ -141,3 +141,38 @@ export const partesDeFecha = (iso: string): PartesFecha | null => {
   const [y, mes, d] = p;
   return { anio: y, mes: NOMBRES_MES[mes - 1], semana: semanaDelAnio(iso), dia: NOMBRES_DIA[new Date(Date.UTC(y, mes - 1, d)).getUTCDay()] };
 };
+
+// ── ✅ V00535: fecha corta para mostrar y "hoy" en la zona de las operaciones ──
+
+/**
+ * Fecha corta en español para MOSTRAR ("31 oct 2026"), de cualquier representación que entienda
+ * aFechaISO. Nunca con `new Date('AAAA-MM-DD')`: esa la lee en UTC y en México muestra el día anterior.
+ * '' si no se reconoce.
+ */
+export const fechaCortaEs = (v: unknown): string => {
+  const iso = aFechaISO(v);
+  const p = iso ? partesISO(iso) : null;
+  if (!p) return '';
+  const [y, mes, d] = p;
+  return new Date(y, mes - 1, d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
+/**
+ * Zona horaria de las operaciones de Roelca (Nuevo Laredo, Tamaulipas: la franja fronteriza sigue el
+ * horario de verano de EE. UU., como Laredo, Texas). La usa el "hoy" del DOMINIO, que corre igual en
+ * la web y en las Cloud Functions (que están en UTC): así los dos dan el mismo día. El "hoy" de las
+ * pantallas sigue en `src/utils/fechaHoraLocal.ts` (ZONA_HORARIA_OPERACIONES, hoy null = el dispositivo).
+ */
+export const ZONA_HORARIA_DOMINIO = 'America/Matamoros';
+
+/** 'AAAA-MM-DD' de `ahora` en una zona horaria (Intl). Con una zona inválida, la fecha UTC. */
+export const hoyEnZona = (zona: string, ahora: Date = new Date()): string => {
+  try {
+    const partes = Object.fromEntries(
+      new Intl.DateTimeFormat('en-CA', { timeZone: zona, year: 'numeric', month: '2-digit', day: '2-digit' })
+        .formatToParts(ahora).map((parte) => [parte.type, parte.value]),
+    );
+    if (partes.year && partes.month && partes.day) return `${partes.year}-${partes.month}-${partes.day}`;
+  } catch { /* zona inválida: abajo */ }
+  return ahora.toISOString().slice(0, 10);
+};

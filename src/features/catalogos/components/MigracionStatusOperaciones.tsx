@@ -35,6 +35,7 @@ import { collection, getDocs, doc, writeBatch } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { idReal, obtenerCatalogo, useCatalogo } from '../../../shared/data/catalogos';
 import './MigracionStatusOperaciones.css';
+import { notificarOperacionesGuardadas } from '../../../utils/operacionesBus'; // ✅ V00536
 
 type LogTipo = 'info' | 'ok' | 'warn' | 'err';
 interface LogLinea { tipo: LogTipo; texto: string; }
@@ -339,6 +340,7 @@ export const MigracionStatusOperaciones = () => {
         if (n >= BATCH_MAX) { await batch.commit(); pushB('info', `   …${escritas}/${updates.length}`); batch = writeBatch(db); n = 0; }
       }
       if (n > 0) await batch.commit();
+      notificarOperacionesGuardadas(updates.map((u) => [u.id, { status: u.status, statusNombre: u.statusNombre }] as const), 'migracion-status'); // ✅ V00536
       pushB('ok', `Migración B aplicada. ${updates.length} operación(es). Recarga Operaciones con Ctrl+Shift+R.`);
     } catch (e: any) { pushB('err', `${e?.message || e}`); console.error(e); }
     finally { setCorriendoB(false); }

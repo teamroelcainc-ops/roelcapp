@@ -1,5 +1,6 @@
 // src/features/operaciones/components/ServiciosCancelados.tsx
 import { useState, useEffect, useMemo, useRef, useCallback, useEffectEvent } from 'react';
+import { aNumero } from '../../../shared/dominio/numeros'; // ✅ V00535
 import { useHandlerEstable } from '../hooks/useHandlerEstable';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
@@ -7,16 +8,20 @@ import { collection, query, getDocs, orderBy, limit, where, doc, writeBatch, sta
 import { db, auth } from '../../../config/firebase';
 import { direccionCompletaDeEmpresa } from '../../../utils/direccionEmpresa'; // ✅ V00281
 import { obtenerCacheMemoria, guardarCacheMemoria, limpiarCacheMemoria } from '../../../utils/cacheMemoria';
-import * as XLSX from 'xlsx';
+import { cargarXlsx } from '../../../shared/utils/excel'; // ✅ V00534: xlsx se carga al exportar, no con la pantalla
 // ✅ NUEVO: historial de actividad (colección historial_actividad)
 import { registrarLog } from '../../../utils/logger';
 import { urlVerEnPestana, filtrosDeUrl } from '../../../utils/verEnPestana'; // ✅ V00312
 import { sincronizarNombresOperaciones } from '../../../utils/sincronizarNombresOperaciones';
-import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF, setLogoPdf } from '../../../utils/pdfGenerator';
+import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF } from '../../../utils/pdfOperacionDiferido'; // ✅ V00534: pdfGenerator se carga al generar
+import { setLogoPdf } from '../../../shared/utils/logo';
 // ✅ NUEVO: reglas de status (botones dinámicos + cascada) — igual que Operaciones Activas
 import { obtenerBotonesHorarioDinamicos, resolverCascadaStatus } from '../config/statusRules';
 // ✅ NUEVO: visor y subida de documentos ligados a la operación
-import { TIPOS_DOCUMENTO_OPERACION, FormularioOperacion } from './FormularioOperacion';
+import FormularioOperacionDiferido from './FormularioOperacionDiferido';
+import { precargarFormularioOperacion } from '../services/cargarFormularioOperacion'; // ✅ V00534: el formulario se carga aparte
+import { usePrecargarAlPintar } from '../../../shared/hooks/usePrecargarAlPintar';
+import { TIPOS_DOCUMENTO_OPERACION } from './formulario/documentosOperacion';
 import { DocumentosLista } from '../../documentos/DocumentosLista';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 // ✅ logo + nombre de la empresa removidos de esta vista (se quitó EmpresaBrand)
@@ -149,6 +154,7 @@ const normalizarFechaISO = (valor: any): string => {
 };
 
 const ServiciosCancelados = () => {
+  usePrecargarAlPintar(precargarFormularioOperacion); // ✅ V00534: lo baja después de pintar
   const flags = useFlags(); // ✅ V00442 (Fase 6.2)
   // ✅ NUEVO: logo de la empresa para los PDFs generados desde este módulo
   const { config: empresaConfig } = useEmpresaConfig();
@@ -625,7 +631,7 @@ const ServiciosCancelados = () => {
 
   const formatoMoneda = (monto: any) => {
     if (!monto) return '$ 0.00';
-    return `$ ${parseFloat(monto).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return `$ ${aNumero(monto).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
   const verHistorial = async () => {
@@ -1174,6 +1180,7 @@ const ServiciosCancelados = () => {
 
   // ✅ NUEVO: exportación a Excel de las canceladas con el orden elegido.
   const exportarExcel = async () => {
+    const XLSX = await cargarXlsx();
     if (operacionesOrdenadas.length === 0) return alert('No hay datos para exportar.');
     const columnasVisibles = columnasExport.filter(c => c.visible);
     if (columnasVisibles.length === 0) return alert('Selecciona al menos una columna para exportar.');
@@ -1278,7 +1285,7 @@ const ServiciosCancelados = () => {
 
       {/* NUEVO: FormularioOperacion COMPLETO para editar (igual que Activos/Completados) */}
       {estadoFormulario !== 'cerrado' && (
-        <FormularioOperacion
+        <FormularioOperacionDiferido
           estado={estadoFormulario}
           initialData={operacionEditando}
           onClose={onCerrarFormulario}

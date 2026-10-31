@@ -22,7 +22,7 @@ import { db } from '../../../config/firebase';
 import { monedaDeFactura, monedaFacturaOperacion } from '../../../shared/dominio/dinero';
 import type { Moneda } from '../../../shared/dominio/moneda';
 import Importe from './Importe';
-import * as XLSX from 'xlsx';
+import { cargarXlsx } from '../../../shared/utils/excel'; // ✅ V00534: xlsx se carga al exportar, no con la pantalla
 import { EditorOperacionEmbebido } from '../../operaciones/components/EditorOperacionEmbebido';
 import './AuditoriaCadenaCliente.css';
 import { sinPruebas } from '../../../utils/operacionPrueba';
@@ -476,7 +476,8 @@ export const AuditoriaCadenaCliente = ({ onCerrar, montoOperacion, totalNativo, 
     finally { setGuardandoEdit(false); }
   };
 
-  const descargarExcel = () => {
+  const descargarExcel = async () => {
+    const XLSX = await cargarXlsx();
     if (!resultado) return;
     const wb = XLSX.utils.book_new();
     const hojaOps = resultado.ops.map((x) => ({

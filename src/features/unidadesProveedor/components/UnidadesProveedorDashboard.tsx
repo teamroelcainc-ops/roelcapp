@@ -4,7 +4,7 @@ import { eliminarRegistro } from '../../../config/firebase';
 import { useCatalogo } from '../../../shared/data/catalogos';
 import { FormularioUnidadProveedor } from './FormularioUnidadProveedor';
 import type { UnidadProveedorRecord } from '../../../types/unidadProveedor';
-import * as XLSX from 'xlsx';
+import { cargarXlsx } from '../../../shared/utils/excel'; // ✅ V00534: xlsx se carga al exportar, no con la pantalla
 import './UnidadesProveedorDashboard.css';
 import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 import { avisarNoEncontrado, useAtenderApertura } from '../../../shared/data/aperturas'; // ✅ V00502
@@ -123,7 +123,7 @@ export const UnidadesProveedorDashboard: React.FC = () => {
 
   const toggleColumnaVisible = (index: number) => {
     const nuevas = [...columnasTabla];
-    nuevas[index].visible = !nuevas[index].visible;
+    nuevas[index] = { ...nuevas[index], visible: !nuevas[index].visible }; // ✅ V00535: sin mutar el objeto que React ya tiene
     setColumnasTabla(nuevas);
   };
 
@@ -141,7 +141,8 @@ export const UnidadesProveedorDashboard: React.FC = () => {
   };
 
   // ✅ EXPORTAR EXCEL CON LAS COLUMNAS VISIBLES ACTUALMENTE
-  const exportarExcel = () => {
+  const exportarExcel = async () => {
+    const XLSX = await cargarXlsx();
     if (registrosFiltrados.length === 0) return alert("No hay datos para exportar.");
     
     const columnasVisibles = columnasTabla.filter(c => c.visible);

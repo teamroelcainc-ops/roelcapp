@@ -236,6 +236,27 @@ export const planFacturar = (d: DatosFacturar, ops: readonly DocLeido[], existen
   return plan;
 };
 
+// ── Copia del folio en las operaciones ───────────────────────────────────
+/** Ids de las operaciones de un grupo de facturas (`operacionesIds` de cada documento, sin repetir). */
+export const idsOperacionesDeGrupo = (grupo: readonly DocLeido[]): string[] =>
+  Array.from(new Set(grupo.flatMap((f) => lista(f.datos.operacionesIds))));
+
+/**
+ * ✅ V00536: la copia del folio en cada operación de la factura (`facturaClienteInvoice` /
+ * `facturaProveedorFolio`). Antes, editar el # de Invoice solo cambiaba la factura y la operación seguía
+ * mostrando el folio viejo. Solo las ligadas a ESTA factura (su id de factura es uno de los documentos
+ * del grupo) y con otro folio; las demás (de otra factura, o sin id de factura) no se tocan.
+ */
+export const copiasDeFolio = (lado: Lado, folio: string, grupoIds: readonly string[], ops: readonly DocLeido[]): { id: string; datos: Datos }[] => {
+  const c = LADOS[lado];
+  const f = folio.trim();
+  if (!f) return [];
+  const ids = new Set(grupoIds);
+  return ops
+    .filter((o) => ids.has(txt(o.datos[c.opFacturaId])) && txt(o.datos[c.opFolio]) !== f)
+    .map((o) => ({ id: o.id, datos: { [c.opFolio]: f } }));
+};
+
 // ── Editar factura (total capturado a mano) ──────────────────────────────
 export interface DatosEditarFactura {
   lado: Lado;
@@ -258,7 +279,7 @@ export interface DatosEditarFactura {
  * capturado queda en el PRIMER documento (los demás en 0, como hoy) y se marca
  * como manual. Desde Pagos no se permite bajar el total por debajo de lo pagado.
  */
-export const planEditarFactura = (d: DatosEditarFactura, grupo: readonly DocLeido[]): PlanDinero => {
+export const planEditarFactura = (d: DatosEditarFactura, grupo: readonly DocLeido[], ops: readonly DocLeido[] = []): PlanDinero => {
   const c = LADOS[d.lado];
   if (grupo.length === 0) throw new ErrorDinero('La factura ya no existe (otro usuario la eliminó).');
   if (!d.invoice.trim()) throw new ErrorDinero('El # de Invoice es obligatorio.');
@@ -300,6 +321,12 @@ export const planEditarFactura = (d: DatosEditarFactura, grupo: readonly DocLeid
     plan.escrituras.push({ tipo: 'combinar', coleccion: c.coleccion, id: f.id, datos });
     plan.facturas[f.id] = { ...f.datos, ...datos };
   });
+  // ✅ V00536: el folio también en sus operaciones (`ops` = las operaciones de la factura que existen).
+  copiasDeFolio(d.lado, d.invoice, grupo.map((f) => f.id), ops).forEach(({ id, datos }) => {
+    plan.escrituras.push({ tipo: 'actualizar', coleccion: 'operaciones', id, datos });
+    plan.operaciones[id] = datos;
+  });
+  if (plan.escrituras.length > MAX_ESCRITURAS) throw new ErrorDinero(avisoLote(plan.escrituras.length).replace('Divide la selección en partes más pequeñas', 'Quita primero algunas operaciones de la factura'));
   return plan;
 };
 

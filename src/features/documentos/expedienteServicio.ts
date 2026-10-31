@@ -7,8 +7,7 @@
 // Borrar en Storage es "si se puede" (best-effort): el registro manda.
 // ---------------------------------------------------------------------------
 import { collection, deleteDoc, doc, getDocs, limit, query, runTransaction, setDoc, updateDoc, where } from 'firebase/firestore';
-import { deleteObject, ref as storageRef } from 'firebase/storage';
-import { db, storage } from '../../config/firebase';
+import { cargarStorage, db } from '../../config/firebase'; // ✅ V00534: Storage se carga al borrar
 import { subirArchivo } from '../../shared/archivos/subirAdjuntos';
 import type { ArchivoGuardado } from '../../shared/archivos/adjuntos';
 import {
@@ -41,7 +40,7 @@ async function borrarArchivoSeguro(path: string): Promise<void> {
     console.warn('[Documentos] No se pudo revisar si otro documento usa el archivo; no se borra:', path, e);
     return;
   }
-  try { await deleteObject(storageRef(storage, path)); }
+  try { const { storage, ref: storageRef, deleteObject } = await cargarStorage(); await deleteObject(storageRef(storage, path)); }
   catch (e) { console.warn('[Documentos] No se pudo borrar el archivo de Storage:', path, e); }
 }
 

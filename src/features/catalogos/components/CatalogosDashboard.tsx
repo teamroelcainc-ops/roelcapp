@@ -19,6 +19,7 @@ import { esAduanaColombia, esGastoPisoColombia } from '../../../utils/puenteColo
 import { COLECCIONES_CATALOGO, idReal, obtenerCatalogo, useCatalogos } from '../../../shared/data/catalogos';
 import { armarDoc } from '../../../shared/data/coleccionesVivas';
 import type { ColeccionCatalogo, DocCatalogo } from '../../../shared/data/catalogos';
+import { notificarOperacionesGuardadas } from '../../../utils/operacionesBus'; // ✅ V00536
 
 // ✅ Helper compartido: resuelve la etiqueta a mostrar de una opción dinámica
 //    (misma cadena de respaldos que usaban los <select> nativos)
@@ -950,18 +951,21 @@ const CatalogosDashboard = () => {
         const snapOps = await getDocs(collection(db, 'operaciones'));
         let lote = writeBatch(db);
         let enLote = 0;
+        const avisos: (readonly [string, Record<string, unknown>])[] = []; // ✅ V00536: aviso al bus
         for (const d of snapOps.docs) {
           const o = d.data() as Record<string, unknown>;
           const tid = detalleATarifa[String(o.convenio || '')];
           const desc = tid ? mapaDesc[tid] : '';
           if (desc && String(o.convenioNombre || '') !== desc) {
             lote.update(d.ref, { convenioNombre: desc });
+            avisos.push([d.id, { convenioNombre: desc }]);
             nOps += 1;
             enLote += 1;
             if (enLote >= 400) { await lote.commit(); lote = writeBatch(db); enLote = 0; }
           }
         }
         if (enLote > 0) await lote.commit();
+        notificarOperacionesGuardadas(avisos, 'catalogos'); // ✅ V00536
       } catch (e) { console.error('No se pudo propagar a operaciones:', e); }
 
       await registrarLog('Catálogos', 'Edición', `Rearmó las descripciones de Tarifas de Referencia (${catalogoActualizados}) y las propagó: ${nDetC} detalle(s) de clientes, ${nDetP} de proveedores, ${nTarifarios} tarifario(s) de clientes, ${nTarifariosProv} de proveedores, ${nOps} operación(es).`);
@@ -1060,6 +1064,7 @@ const CatalogosDashboard = () => {
       let lote = writeBatch(db);
       let enLote = 0;
       let nOps = 0, nCarga = 0, nAduana = 0, nTrafico = 0;
+      const avisosOps: (readonly [string, Record<string, unknown>])[] = []; // ✅ V00536: aviso al bus
       for (const d of snapOps.docs) {
         const x = d.data() as Record<string, unknown>;
         const cambios: Record<string, string> = {};
@@ -1111,12 +1116,14 @@ const CatalogosDashboard = () => {
 
         if (Object.keys(cambios).length > 0) {
           lote.update(d.ref, cambios);
+          avisosOps.push([d.id, cambios]);
           nOps += 1;
           enLote += 1;
           if (enLote >= 400) { await lote.commit(); lote = writeBatch(db); enLote = 0; }
         }
       }
       if (enLote > 0) await lote.commit();
+      notificarOperacionesGuardadas(avisosOps, 'catalogos'); // ✅ V00536
 
       // ✅ V00259: los módulos de operaciones guardan cachés en memoria y en
       //   sesión (Servicios Completados, Cancelados, etc.) — si no se
@@ -1213,6 +1220,7 @@ const CatalogosDashboard = () => {
               const batch = writeBatch(db);
               lote.forEach((d) => batch.update(d.ref, { [campoNombre]: nuevoValor }));
               await batch.commit();
+              if (colRef === 'operaciones') notificarOperacionesGuardadas(lote.map((d) => [d.id, { [campoNombre]: nuevoValor }] as const), 'catalogos'); // ✅ V00536
               propagados += lote.length;
             }
           }
@@ -1233,6 +1241,7 @@ const CatalogosDashboard = () => {
                 const batch = writeBatch(db);
                 lote.forEach((d) => batch.update(d.ref, { [campoTxt]: nombreNuevo }));
                 await batch.commit();
+                if (colTxt === 'operaciones') notificarOperacionesGuardadas(lote.map((d) => [d.id, { [campoTxt]: nombreNuevo }] as const), 'catalogos'); // ✅ V00536
                 reemplazados += lote.length;
               }
             }
@@ -1506,6 +1515,7 @@ const CatalogosDashboard = () => {
             const batch = writeBatch(db);
             lote.forEach((d) => batch.update(d.ref, { [campoNombre as string]: valorActual }));
             await batch.commit();
+            if (colRef === 'operaciones') notificarOperacionesGuardadas(lote.map((d) => [d.id, { [campoNombre as string]: valorActual }] as const), 'catalogos'); // ✅ V00536
             corregidos += lote.length;
           }
         }

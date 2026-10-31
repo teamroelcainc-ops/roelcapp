@@ -8,7 +8,7 @@
 import { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
-import * as XLSX from 'xlsx';
+import { cargarXlsx } from '../../../shared/utils/excel'; // ✅ V00534: xlsx se carga al exportar, no con la pantalla
 import { Download } from 'lucide-react';
 import './HistorialChequeosDashboard.css';
 import CargandoDatos from '../../../shared/components/CargandoDatos';
@@ -85,7 +85,8 @@ export function HistorialChequeosDashboard({ usuarioActual, puedeVerTodos }: Pro
     );
   });
 
-  const exportarExcel = () => {
+  const exportarExcel = async () => {
+    const XLSX = await cargarXlsx();
     if (registrosFiltrados.length === 0) return;
 
     const datosExcel = registrosFiltrados.map(reg => ({

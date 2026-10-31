@@ -34,7 +34,7 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db, auth } from '../../../config/firebase';
 import { idReal, obtenerCatalogo } from '../../../shared/data/catalogos';
 // Mismo logo base64 que usan los demás PDF del proyecto.
-import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
+import { logoListo, RUTA_LOGO_ROELCA } from '../../../shared/utils/logo'; // ✅ V00534
 import './ResumenDiarioOperaciones.css';
 import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
 import { docsSinPruebas, sinPruebas } from '../../../utils/operacionPrueba';
@@ -416,7 +416,7 @@ export const ResumenDiarioOperaciones = () => {
   const cabecera = (titulo: string, etiquetaRealizo: string): string => `
     <table class="header-table" style="width: 100%;">
       <tbody><tr>
-        <td style="width: 150px;">${LOGO_DEFAULT ? `<img alt="Logo" class="logo-img" src="${LOGO_DEFAULT}" />` : `<h2>LOGO</h2>`}</td>
+        <td style="width: 150px;"><img alt="Logo" class="logo-img" src="${logoListo(RUTA_LOGO_ROELCA)}" /></td>
         <td class="main-title">${titulo}</td>
       </tr></tbody>
     </table>

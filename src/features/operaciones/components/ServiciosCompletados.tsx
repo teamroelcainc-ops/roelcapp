@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback, useEffectEvent } from 'react';
+import { aNumero } from '../../../shared/dominio/numeros'; // ✅ V00535
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { useHandlerEstable } from '../hooks/useHandlerEstable';
-import { datosAAplicar, suscribirOperacionGuardada } from '../../../utils/operacionesBus';
+import { aplicarAvisoEnLista, avisoDeEliminada, avisoTraeCampo, datosAAplicar, esDeLosIds, idsDelAviso, notificarOperacionEliminada, notificarOperacionGuardada, notificarOperacionesGuardadas, sinIds, suscribirOperacionGuardada } from '../../../utils/operacionesBus';
+import type { OperacionGuardadaDetalle, ReglaLista } from '../../../utils/operacionesBus';
 import { CAMPOS_AJENOS_AL_FORMULARIO } from '../services/camposAjenos'; // ✅ V00451
 import { sinPruebas, esOperacionPrueba } from '../../../utils/operacionPrueba';
 import { collection, query, getDocs, getDoc, orderBy, limit, where, startAfter, documentId, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
@@ -14,12 +16,15 @@ import { obtenerCacheMemoria, guardarCacheMemoria, limpiarCacheMemoria, limpiarC
 import { registrarLog } from '../../../utils/logger';
 import { CambioSueldoOperador, HistorialCambiosSueldo } from './CambioSueldoOperador'; // ✅ V00433
 import { sincronizarNombresOperaciones } from '../../../utils/sincronizarNombresOperaciones';
-import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF } from '../../../utils/pdfGenerator'; 
+import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF } from '../../../utils/pdfOperacionDiferido'; // ✅ V00534: pdfGenerator se carga al generar 
 // ✅ NUEVO: reglas de status (botones dinámicos + cascada) — igual que Operaciones Activas
 // ✅ NUEVO: visor y subida de documentos ligados a la operación
 import { DocumentosLista } from '../../documentos/DocumentosLista';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
-import { FormularioOperacion, TIPOS_DOCUMENTO_OPERACION } from './FormularioOperacion';
+import FormularioOperacionDiferido from './FormularioOperacionDiferido';
+import { precargarFormularioOperacion } from '../services/cargarFormularioOperacion'; // ✅ V00534: el formulario se carga aparte
+import { usePrecargarAlPintar } from '../../../shared/hooks/usePrecargarAlPintar';
+import { TIPOS_DOCUMENTO_OPERACION } from './formulario/documentosOperacion';
 import './ServiciosCompletados.css';
 import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
 import ModalExportarExcel from './exportar/ModalExportarExcel'; // ✅ V00498
@@ -37,7 +42,7 @@ import type { DocLibre } from '../../../utils/docPorId';
 import { idReal, obtenerCatalogo, useCatalogos } from '../../../shared/data/catalogos';
 import type { ColeccionCatalogo } from '../../../shared/data/catalogos';
 import { ID_MXN, ID_USD, STATUS_COMPLETADOS, TIPO_EMPRESA } from '../../../shared/dominio/constantes';
-import { estadoGrupoDe } from '../../../shared/dominio/operacionCanonica';
+import { esGrupoTerminado, estadoGrupoDe } from '../../../shared/dominio/operacionCanonica';
 // ✅ V00444 (Fase 8.3): piezas sin estado del módulo, en archivos propios.
 import { describirCambiosLog, truncarValorLog } from '../services/auditoriaLog';
 import { COLUMNAS_STORAGE_KEY, cargarColumnasGuardadas } from './completados/columnas';
@@ -114,6 +119,7 @@ interface ServiciosCompletadosProps {
 }
 
 const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar }) => {
+  usePrecargarAlPintar(precargarFormularioOperacion); // ✅ V00534: lo baja después de pintar
   // ✅ V00442 (Fase 6.2): el servidor mantiene nombres (propagacionEnServidor) y fechas
   //   (consultasCanonicas, tras la migración): se ocultan "Sincronizar nombres" y ⚡.
   const flags = useFlags();
@@ -160,12 +166,33 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const aplicarConexiones = useEffectEvent((ids: readonly string[], datos: Record<string, unknown>) => {
     const cambios = conexionesDe(datos);
     if (Object.keys(cambios).length === 0) return;
-    const es = (o: { id?: unknown; _docId?: unknown } | null | undefined) => !!o && (ids.includes(String(o.id)) || ids.includes(String(o._docId ?? '')));
-    setOperacionesGlobales((prev) => (prev.some(es) ? prev.map((o) => (es(o) ? { ...o, ...cambios } : o)) : prev));
-    setOperacionViendo((prev: Record<string, unknown> | null) => (es(prev) ? { ...prev, ...cambios } : prev));
+    setOperacionesGlobales((prev) => (prev.some((o) => esDeLosIds(o, ids)) ? prev.map((o) => (esDeLosIds(o, ids) ? { ...o, ...cambios } : o)) : prev));
+    setOperacionViendo((prev: Record<string, unknown> | null) => (esDeLosIds(prev, ids) ? { ...prev, ...cambios } : prev));
   });
-  // Solo los campos que cambiaron, si el aviso los dice (la copia del que avisa puede ser más vieja).
-  useEffect(() => suscribirOperacionGuardada((aviso) => aplicarConexiones([String(aviso.id), String(aviso.data._docId ?? '')].filter(Boolean), datosAAplicar(aviso))), []);
+  // ✅ V00536: el aviso COMPLETO (antes solo las conexiones: con ✎ desde Facturación no cambiaban montos,
+  //   convenio ni fechas). Solo los campos que cambiaron, si el aviso los dice; sale la que deja de estar
+  //   terminada (completada o Falso) y entra una terminada de las fechas que se buscaron.
+  const aplicarAviso = useEffectEvent((aviso: OperacionGuardadaDetalle) => {
+    const conFecha = avisoTraeCampo(aviso, 'fechaServicio') || avisoTraeCampo(aviso, 'fechaServicioISO')
+      ? { ...aviso, data: { ...aviso.data, _fechaISO: String(aviso.data.fechaServicioISO || '') || normalizarFechaServicioISO(aviso.data.fechaServicio) }, ...(aviso.campos ? { campos: [...aviso.campos, '_fechaISO'] } : {}) }
+      : aviso;
+    const rango = filtrosAplicados;
+    const regla: ReglaLista = {
+      campos: ['status', 'statusNombre'],
+      pertenece: (op) => esGrupoTerminado(estadoGrupoDe(op)),
+      agregar: (op) => {
+        const f = String(op._fechaISO || '');
+        return !!rango && !!f && (!rango.fechaInicio || f >= rango.fechaInicio) && (!rango.fechaFin || f <= rango.fechaFin);
+      },
+    };
+    setOperacionesGlobales((prev) => aplicarAvisoEnLista(prev, conFecha, regla));
+    setOperacionViendo((prev: Record<string, unknown> | null) => {
+      if (!esDeLosIds(prev, idsDelAviso(aviso))) return prev;
+      if (avisoDeEliminada(aviso)) return null;
+      return { ...prev, ...sinIds(datosAAplicar(conFecha)) };
+    });
+  });
+  useEffect(() => suscribirOperacionGuardada((aviso) => aplicarAviso(aviso)), []);
   const idDocViendo = operacionViendo ? String(operacionViendo._docId || operacionViendo.id || '') : '';
   useEffect(() => {
     if (!idDocViendo) return undefined;
@@ -491,7 +518,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       try {
         const r = await todasLasPaginas((c) => paginaOperaciones({ estados: ['completada', 'falso'], desde: fechaInicio, hasta: fechaFin }, 1000, c), 30000);
         if (r.truncado) alert('El rango tiene más de 30,000 operaciones: se muestran las más recientes. Acorta el rango.');
-        const lista = r.docs.map((d) => ({ ...d, _fechaISO: String(d.fechaServicioISO || '') })).sort((a, b) => {
+        const lista = r.docs.map((d) => ({ ...d, _docId: idReal(d), _fechaISO: String(d.fechaServicioISO || '') })).sort((a, b) => { // ✅ V00536: el spread perdía _docId (no enumerable)
           if (a._fechaISO !== b._fechaISO) return b._fechaISO.localeCompare(a._fechaISO);
           return obtenerConsecutivoRef(b) - obtenerConsecutivoRef(a);
         });
@@ -572,7 +599,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
           if (porId.has(d.id)) return;
           const data = d.data();
           if (!STATUS_COMPLETADOS_VALORES.includes(String(data.status || '').trim())) return;
-          porId.set(d.id, { id: d.id, ...data, _fechaISO: normalizarFechaServicioISO(data.fechaServicio) });
+          porId.set(d.id, { id: d.id, ...data, _docId: d.id, _fechaISO: normalizarFechaServicioISO(data.fechaServicio) }); // ✅ V00536: con _docId
         });
         const lista = Array.from(porId.values()).sort((a, b) => {
           const fa = a._fechaISO || '', fb = b._fechaISO || '';
@@ -620,7 +647,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
           snap.docs.forEach((d: any) => {
             const id = d.id;
-            if (!vistos.has(id)) { vistos.add(id); const data = d.data(); todas.push({ id, ...data, _fechaISO: normalizarFechaServicioISO(data.fechaServicio) }); }
+            if (!vistos.has(id)) { vistos.add(id); const data = d.data(); todas.push({ id, ...data, _docId: id, _fechaISO: normalizarFechaServicioISO(data.fechaServicio) }); }
           });
 
           if (snap.docs.length < TAMANIO_BLOQUE_STATUS) break;     // ya no hay más
@@ -635,7 +662,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
           ));
           snapSimple.docs.forEach((d: any) => {
             const id = d.id;
-            if (!vistos.has(id)) { vistos.add(id); const data = d.data(); todas.push({ id, ...data, _fechaISO: normalizarFechaServicioISO(data.fechaServicio) }); }
+            if (!vistos.has(id)) { vistos.add(id); const data = d.data(); todas.push({ id, ...data, _docId: id, _fechaISO: normalizarFechaServicioISO(data.fechaServicio) }); }
           });
         }
       }
@@ -859,15 +886,18 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     try {
       const snap = await getDocs(collection(db, 'operaciones'));
       let lote = writeBatch(db); let enLote = 0; let escritas = 0;
+      const indexadas: (readonly [string, Record<string, unknown>])[] = []; // ✅ V00536: aviso al bus
       for (const d of snap.docs) {
         const data = d.data() as Record<string, unknown>;
         const iso = normalizarFechaServicioISO(data.fechaServicio);
         if (!iso || String(data.fechaServicioISO || '') === iso) continue;
         lote.update(d.ref, { fechaServicioISO: iso });
+        indexadas.push([d.id, { fechaServicioISO: iso }]);
         escritas += 1; enLote += 1;
         if (enLote >= 400) { await lote.commit(); lote = writeBatch(db); enLote = 0; }
       }
       if (enLote > 0) await lote.commit();
+      notificarOperacionesGuardadas(indexadas, 'completados-indexar-fechas');
       try { localStorage.setItem(CLAVE_FECHAS_INDEXADAS, '1'); } catch { /* sin localStorage */ }
       setFechasIndexadas(true);
       limpiarCachesPorPrefijo(CACHE_PREFIX);
@@ -954,7 +984,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
   const formatoMoneda = (monto: any) => {
     if (!monto) return '$ 0.00';
-    return `$ ${parseFloat(monto).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return `$ ${aNumero(monto).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
   
   const verHistorial = async () => {
@@ -1236,7 +1266,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         if (formEdicion[c] !== undefined) payload[c] = formEdicion[c];
       });
 
-      await updateDoc(doc(db, 'operaciones', operacionEditando.id), payload);
+      const idDocEditando = String(operacionEditando._docId ?? operacionEditando.id); // ✅ V00536: el documento real
+      await updateDoc(doc(db, 'operaciones', idDocEditando), payload);
+      notificarOperacionGuardada(idDocEditando, { ...operacionEditando, ...payload }, 'completados-editar', Object.keys(payload)); // ✅ V00536
 
       // ✅ HISTORIAL: qué campos cambió, valores anterior → nuevo.
       const refLog = operacionEditando.ref || operacionEditando.id?.substring(0, 6) || operacionEditando.id;
@@ -1271,7 +1303,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     if (!confirmar) return;
 
     try {
-      await deleteDoc(doc(db, 'operaciones', op.id));
+      const idDocBorrar = String(op._docId ?? op.id); // ✅ V00536: el documento real (un `id` guardado es otro)
+      await deleteDoc(doc(db, 'operaciones', idDocBorrar));
+      notificarOperacionEliminada(idDocBorrar, 'completados-eliminar'); // ✅ V00536: sale también de Facturación y Operaciones
 
       // ✅ HISTORIAL: constancia de la eliminación con los datos clave del registro.
       registrarLog('Servicios Completados', 'Eliminación', `Eliminó la operación ${refTxt} (Fecha servicio: ${truncarValorLog(op.fechaServicio)}, Cliente: ${truncarValorLog(op.clienteNombre || op.nombreCliente || op.clientePaga)}, Status: ${truncarValorLog(op.statusNombre || op.status)})`).catch(() => {});
@@ -1737,7 +1771,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
   const toggleColumnaVisible = (index: number) => {
     const nuevas = [...columnasTabla];
-    nuevas[index].visible = !nuevas[index].visible;
+    nuevas[index] = { ...nuevas[index], visible: !nuevas[index].visible }; // ✅ V00535: sin mutar el objeto que React ya tiene
     setColumnasTabla(nuevas);
   };
 
@@ -1870,7 +1904,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     <div className="module-container sc-x14">
 
       {estadoFormulario !== 'cerrado' && (
-        <FormularioOperacion
+        <FormularioOperacionDiferido
           estado={estadoFormulario}
           initialData={operacionEditando}
           onClose={onCerrarFormulario}

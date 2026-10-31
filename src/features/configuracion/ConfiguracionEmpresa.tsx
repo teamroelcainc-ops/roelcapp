@@ -11,8 +11,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { doc, setDoc } from 'firebase/firestore';
-import { ref as storageRef, deleteObject } from 'firebase/storage';
-import { db, storage } from '../../config/firebase';
+import { cargarStorage, db } from '../../config/firebase'; // ✅ V00534: Storage se carga al borrar
 import { useEmpresaConfig, CONFIG_EMPRESA_COL, CONFIG_EMPRESA_DOC } from './useEmpresaConfig';
 import type { EmpresaConfig } from './useEmpresaConfig';
 import AdjuntosArchivos from '../../shared/components/AdjuntosArchivos'; // ✅ V00451
@@ -134,7 +133,7 @@ const ConfiguracionEmpresa = () => {
       // Borra el logo anterior (si existía y es distinto). ✅ V00451: después de guardar, para no
       //   dejar la configuración apuntando a un archivo borrado si el guardado falla.
       if (logoAnterior && logoAnterior !== logoPath) {
-        try { await deleteObject(storageRef(storage, logoAnterior)); } catch (e) { console.warn('No se pudo borrar el logo anterior:', e); }
+        try { const { storage, ref: storageRef, deleteObject } = await cargarStorage(); await deleteObject(storageRef(storage, logoAnterior)); } catch (e) { console.warn('No se pudo borrar el logo anterior:', e); }
       }
 
       setLogoElegido(null);

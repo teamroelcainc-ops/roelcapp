@@ -1,10 +1,11 @@
 // src/features/gastos/components/mtto/MttoAgrupadosInvoice.tsx
 import { useState, useEffect, useMemo } from 'react';
+import { aNumero } from '../../../../shared/dominio/numeros'; // ✅ V00535
 import { collection, query, getDocs, limit, orderBy } from 'firebase/firestore'; 
 import { db } from '../../../../config/firebase';
 // ✅ Logo incrustado (base64) usado en TODOS los PDF de la app: prioridad al logo
 //    dinámico registrado con setLogoPdf() y respaldo al logo por defecto.
-import { getLogoPdf, LOGO_DEFAULT } from '../../../../utils/pdfGenerator';
+import { logoPdfPorDefecto } from '../../../../shared/utils/logo'; // ✅ V00534: sin importar pdfGenerator
 import './MttoAgrupadosInvoice.css';
 import CargandoDatos from '../../../../shared/components/CargandoDatos';
 import { useCatalogo } from '../../../../shared/data/catalogos';
@@ -205,7 +206,7 @@ const MttoAgrupadosInvoice = () => {
   };
 
   const formatoMoneda = (monto: number | string) => {
-    const num = Number(monto) || 0;
+    const num = aNumero(monto); // ✅ V00535: acepta "1,234.50"
     return `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
@@ -258,7 +259,7 @@ const MttoAgrupadosInvoice = () => {
 
     // ✅ Logo: primero el registrado dinámicamente (setLogoPdf), si no, el logo
     //    por defecto incrustado en base64 — así el logo aparece SIEMPRE.
-    const logoBase64 = getLogoPdf() || LOGO_DEFAULT;
+    const logoBase64 = logoPdfPorDefecto(); // ✅ V00534: el registrado o el archivo de Roelca
 
     const htmlDocument = `
       <!DOCTYPE html>

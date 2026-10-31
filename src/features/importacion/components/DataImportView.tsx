@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import * as XLSX from 'xlsx';
+import { fechaLocalISO } from '../../../utils/fechaHoraLocal'; // ✅ V00535
+import { cargarXlsx } from '../../../shared/utils/excel'; // ✅ V00534: xlsx se carga al exportar, no con la pantalla
 import { db } from '../../../config/firebase';
 import { collection, doc, writeBatch, getDocs, query, limit, getDoc, setDoc, arrayUnion } from 'firebase/firestore';
 import './DataImportView.css';
@@ -278,6 +279,7 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
   //    existen de verdad en esa colección (unión de llaves de todos los documentos
   //    muestreados). Así la plantilla siempre refleja el esquema real.
   const handleDownloadTemplate = async () => {
+    const XLSX = await cargarXlsx();
     const colId = exportCollectionId();
     if (!colId) {
       alert('Selecciona (o escribe) una colección para descargar su plantilla.');
@@ -466,10 +468,14 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
         return isNaN(num) ? 0 : num;
       case 'boolean':
         return ['true', 'yes', '1', 'sí', 'si'].includes(str.toLowerCase());
-      case 'date':
+      case 'date': {
+        // ✅ V00535: 'AAAA-MM-DD' se guarda tal cual; otro formato se lee y se toma su día LOCAL
+        //   (toISOString daba el día UTC: en zonas al este de UTC, el día anterior).
+        if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.slice(0, 10);
         const date = new Date(str);
         if (isNaN(date.getTime())) return str;
-        return date.toISOString().split('T')[0];
+        return fechaLocalISO(date);
+      }
       case 'array':
         return str.split(',').map(s => s.trim()).filter(s => s.length > 0);
       default:
@@ -499,8 +505,9 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
     setCsvFile(file);
 
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       try {
+        const XLSX = await cargarXlsx(); // ✅ V00534
         const text = String(ev.target?.result || '');
         const wb = XLSX.read(text, { type: 'string' });
         const ws = wb.Sheets[wb.SheetNames[0]];

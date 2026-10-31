@@ -11,7 +11,7 @@
 //   para enviarla al Acumulado), otras por asignar, las que ya están en el Acumulado (con su
 //   referencia AVI-…/PT3-…/PTC-…), las aún sin completar… Se filtra con los chips de arriba.
 import { useEffect, useState } from 'react';
-import * as XLSX from 'xlsx';
+import { cargarXlsx } from '../../../shared/utils/excel'; // ✅ V00534: xlsx se carga al exportar, no con la pantalla
 import CargandoDatos from '../../../shared/components/CargandoDatos';
 import { claveUnidadDia, ETIQUETA_REF_DEL_DIA, ETIQUETA_TAG_REPORTE, NOMBRE_REPORTE, resumenCruces, type CruceAvi, type EstadoCruce, type GrupoReporte, type OpParaCruce, type RefDelDia, type ResultadoCruce } from '../services/reporteAvi';
 import './PanelReporteAvi.css';
@@ -94,7 +94,8 @@ export default function PanelReporteAvi({ grupo, nombreArchivo, filas, opsSinCru
   });
   const alternarTodas = () => setDesmarcadas(todas ? new Set(coinciden.map((f) => f.op.id)) : new Set());
 
-  const exportar = () => {
+  const exportar = async () => {
+    const XLSX = await cargarXlsx();
     const datos = ordenadas.map((f) => ({
       Fecha: f.cruce.fecha, Hora: f.cruce.hora, 'Tag #': f.cruce.tagOriginal, Unidad: f.unidad?.nombre ?? '',
       Monto: f.cruce.monto, ...(f.cruce.cobros.length > 1 ? { Cobros: textoCobros(f.cruce) } : {}),

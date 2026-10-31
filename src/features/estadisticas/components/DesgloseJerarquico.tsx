@@ -16,7 +16,7 @@
 //   Aduana cuenta solo los CRUCES de importación y exportación (sin movimientos).
 // ---------------------------------------------------------------------------
 import { Fragment, useMemo, useState, type CSSProperties } from 'react';
-import * as XLSX from 'xlsx';
+import { cargarXlsx } from '../../../shared/utils/excel'; // ✅ V00534: xlsx se carga al exportar, no con la pantalla
 import { ChevronDown, ChevronRight, Download, CalendarDays, Layers } from 'lucide-react';
 import './DesgloseJerarquico.css';
 
@@ -105,7 +105,8 @@ export function DesgloseJerarquico({ ops, modo, montoDe, costoDe, monedaDe, etiq
   const toggle = (k: string) => setAbiertas((p) => ({ ...p, [k]: !p[k] }));
   const ver = (t: string, l: Op[]) => { if (onVerOps && l.length) onVerOps(t, l); };
 
-  const exportar = () => {
+  const exportar = async () => {
+    const XLSX = await cargarXlsx();
     const wb = XLSX.utils.book_new();
     const mesesEnc = verMeses ? mesesActivos.map((i) => MESES[i].toUpperCase()) : [];
     const enc = esFact

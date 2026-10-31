@@ -12,8 +12,7 @@
 // ---------------------------------------------------------------------------
 import React, { useMemo, useState } from 'react';
 import { doc, setDoc } from 'firebase/firestore';
-import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../../config/firebase';
+import { cargarStorage, db } from '../../config/firebase'; // ✅ V00534: Storage se carga al subir
 import { obtenerCatalogo } from '../../shared/data/catalogos';
 import './CargaMasivaDocumentosModal.css';
 
@@ -145,6 +144,7 @@ export const CargaMasivaDocumentosModal: React.FC<Props> = ({ isOpen, onClose, c
           const esPorClasificar = it.tipoLabel === 'Por clasificar';
           const nombreFinal = (a === 0 && !esPorClasificar) ? `${subcarpeta}${extension}` : `${sanitizarRuta(base) || `archivo ${a + 1}`}${extension}`;
           const ruta = `${sanitizarRuta(coleccionOrigen)}/${carpeta}/${subcarpeta}/${nombreFinal}`;
+          const { storage, ref: storageRef, uploadBytes, getDownloadURL } = await cargarStorage();
           const r = storageRef(storage, ruta);
           await uploadBytes(r, archivo, archivo.type ? { contentType: archivo.type } : undefined);
           const url = await getDownloadURL(r);

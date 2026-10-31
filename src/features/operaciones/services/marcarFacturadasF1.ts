@@ -20,6 +20,7 @@ import { registrarLog } from '../../../utils/logger';
 import { estaCancelada } from '../../facturacion/services/reglasFactura';
 import type { CeldaExcel } from './excelOperaciones';
 import type { MarcaF1 } from './revisionDatos';
+import { notificarOperacionesGuardadas } from '../../../utils/operacionesBus'; // ✅ V00536
 
 type Datos = Record<string, unknown>;
 
@@ -121,15 +122,18 @@ export const aplicarMarcasF1 = async (plan: PlanF1, cuando: string, alAvanzar: (
       const facPorId = new Map<string, DocumentSnapshot>(idsFac.map((id, k) => [id, sFac[k]]));
       const fuera: OmitidaF1[] = [];
       const ids: string[] = [];
+      const escritos: (readonly [string, Datos])[] = []; // ✅ V00536: aviso al bus
       tanda.forEach((m, k) => {
         const so = sOps[k];
         const sf = facPorId.get(m.facturaId);
         const motivo = motivoAlMarcar(so.exists() ? (so.data() as Datos) : null, sf?.exists() ? (sf.data() as Datos) : null, m);
         if (motivo) { fuera.push({ marca: m, motivo }); return; }
-        tx.update(refsOps[k], camposMarca(m, cuando));
+        const campos = camposMarca(m, cuando);
+        tx.update(refsOps[k], campos);
         ids.push(m.opId);
+        escritos.push([m.opId, campos]);
       });
-      return { fuera, ids };
+      return { fuera, ids, escritos };
     }).catch((e: unknown) => {
       console.error('[F1] No se pudo escribir una tanda de operaciones:', e);
       error = String((e as { message?: string })?.message || e);
@@ -137,6 +141,7 @@ export const aplicarMarcasF1 = async (plan: PlanF1, cuando: string, alAvanzar: (
     });
     if (!r) break;
     marcadas += r.ids.length;
+    notificarOperacionesGuardadas(r.escritos, 'revision-f1'); // ✅ V00536
     marcadasIds.push(...r.ids);
     omitidas.push(...r.fuera);
     alAvanzar(Math.min(i + TANDA, total), total);

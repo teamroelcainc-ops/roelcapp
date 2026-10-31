@@ -13,6 +13,7 @@ import { collection, doc, getDocs, query, runTransaction, where } from 'firebase
 import type { DocumentReference, DocumentSnapshot, Transaction } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger';
+import { notificarOperacionesGuardadas } from '../../../utils/operacionesBus'; // ✅ V00536
 import {
   cambiosDeFactura, cambiosDeOperacion, cambiosDePago, etiquetaPapel, facturaEsDe, facturaPaseDe, facturadaEn, folio, pagaA,
   pagoEsDe, pagoPaseDe, papelesDeEmpresa, PAPELES_EMPRESA,
@@ -101,8 +102,13 @@ const motivoAlEscribir = (snap: DocumentSnapshot, o: OpPase, s: PaseSolicitado):
 const leer = (tx: Transaction, refs: DocumentReference[]): Promise<DocumentSnapshot[]> => Promise.all(refs.map((r) => tx.get(r)));
 
 /** Una tanda de operaciones sin factura: se pasan las que siguen igual; las demás se omiten. */
-const pasarTanda = (ops: OpPase[], s: PaseSolicitado): Promise<{ pasadas: string[]; omitidas: Omitida[] }> =>
-  runTransaction(db, async (tx) => {
+// ✅ V00536: lo escrito en cada operación (para avisar al bus cuando la transacción termina).
+type Escritos = (readonly [string, Datos])[];
+
+const pasarTanda = async (ops: OpPase[], s: PaseSolicitado): Promise<{ pasadas: string[]; omitidas: Omitida[] }> => {
+  let escritos: Escritos = [];
+  const r = await runTransaction(db, async (tx) => {
+    escritos = [];
     const refs = ops.map((o) => doc(db, 'operaciones', o.id));
     const snaps = await leer(tx, refs);
     const pasadas: string[] = [];
@@ -110,15 +116,22 @@ const pasarTanda = (ops: OpPase[], s: PaseSolicitado): Promise<{ pasadas: string
     ops.forEach((o, i) => {
       const motivo = motivoAlEscribir(snaps[i], o, s);
       if (motivo) { omitidas.push({ id: o.id, ref: o.ref, motivo }); return; }
-      tx.update(refs[i], cambiosDeOperacion(snaps[i].data() as Datos, o.papeles, s.idsOrigen, s.idDestino, s.destino));
+      const cambios = cambiosDeOperacion(snaps[i].data() as Datos, o.papeles, s.idsOrigen, s.idDestino, s.destino);
+      tx.update(refs[i], cambios);
+      escritos.push([o.id, cambios]);
       pasadas.push(o.ref);
     });
     return { pasadas, omitidas };
   });
+  notificarOperacionesGuardadas(escritos, 'pasar-operaciones');
+  return r;
+};
 
 /** Un grupo con factura: todo o nada. */
-const pasarGrupo = (g: Grupo, s: PaseSolicitado): Promise<string> =>
-  runTransaction(db, async (tx) => {
+const pasarGrupo = async (g: Grupo, s: PaseSolicitado): Promise<string> => {
+  let escritos: Escritos = [];
+  const motivoFinal = await runTransaction(db, async (tx) => {
+    escritos = [];
     const refsOps = g.ops.map((o) => doc(db, 'operaciones', o.id));
     const refsFac = g.facturas.map((f) => doc(db, FACTURAS[f.lado].coleccion, f.id));
     const refsPag = g.pagos.map((p) => doc(db, 'pagos', p.id));
@@ -127,11 +140,18 @@ const pasarGrupo = (g: Grupo, s: PaseSolicitado): Promise<string> =>
       || (g.facturas.some((f, i) => !sFac[i].exists() || !facturaEsDe(sFac[i].data() as Datos, f.lado, s.idsOrigen)) ? 'Su factura cambió mientras tanto' : '')
       || (g.pagos.some((_p, i) => !sPag[i].exists() || !pagoEsDe(sPag[i].data() as Datos, s.idsOrigen)) ? 'Un pago de su factura cambió mientras tanto' : '');
     if (motivo) return motivo;
-    g.ops.forEach((o, i) => tx.update(refsOps[i], cambiosDeOperacion(sOps[i].data() as Datos, o.papeles, s.idsOrigen, s.idDestino, s.destino)));
+    g.ops.forEach((o, i) => {
+      const cambios = cambiosDeOperacion(sOps[i].data() as Datos, o.papeles, s.idsOrigen, s.idDestino, s.destino);
+      tx.update(refsOps[i], cambios);
+      escritos.push([o.id, cambios]);
+    });
     g.facturas.forEach((f, i) => tx.update(refsFac[i], cambiosDeFactura(sFac[i].data() as Datos, f.lado, s.idDestino, s.destino)));
     g.pagos.forEach((_p, i) => tx.update(refsPag[i], cambiosDePago(sPag[i].data() as Datos, s.idsOrigen, s.idDestino, s.destino)));
     return '';
   });
+  if (!motivoFinal) notificarOperacionesGuardadas(escritos, 'pasar-operaciones');
+  return motivoFinal;
+};
 
 const MODO_TEXTO: Record<ModoFacturadas, string> = {
   dejar: 'las facturadas no se pasaron',

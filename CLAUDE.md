@@ -6,7 +6,8 @@ Reglas para Claude Code en este repositorio (React + TypeScript + Vite + Firebas
 
 - Cambios pequeños y verificables, un área a la vez. Un refactor no cambia lo que el usuario ve ni lo que la app hace.
 - Pregunta antes de: instalar o quitar dependencias, cambiar Security Rules o índices, desplegar, mover carpetas en bloque o fusionar dos funcionalidades que ambas funcionan.
-- Registra en `code-notes.md` las decisiones no obvias y lo que quede pendiente.
+- Registra en `code-notes.md` las decisiones no obvias y lo que quede pendiente. Es muy grande (más de 200 KB): **nunca lo leas completo**. Para agregar, lee solo las últimas ~30 líneas y escribe al final; para buscar una decisión, usa `grep` con una palabra clave.
+- Si existe `refactor-progress.md`, léelo antes de tocar un módulo: dice qué módulos ya están refactorizados y qué quedó pendiente.
 
 ## Estructura
 
@@ -25,19 +26,80 @@ En un proyecto existente no reorganices todo de golpe: aplica esta estructura al
 
 ## Componentes
 
-- Solo componentes funcionales: `export default function Nombre(props: Props)`. Sin `React.FC` ni clases (excepción: un Error Boundary).
+- Componentes funcionales con **función flecha**. La interfaz de props se llama `<Nombre>Props` y va justo arriba del componente, en el mismo archivo. Sin `React.FC` ni clases (excepción: un Error Boundary).
+  ```tsx
+  interface ChipStatusProps {
+    texto: string;
+    color: string;
+  }
+
+  const ChipStatus = ({ texto, color }: ChipStatusProps) => { … };
+
+  export default ChipStatus;
+  ```
+  Los componentes que todavía usan `function` se convierten cuando se refactoriza su módulo, no en un commit masivo aparte.
 - Una responsabilidad por componente. Si pasa de ~150 líneas o mezcla varias tareas (datos + formulario + tabla), divídelo en subcomponentes, un custom hook o un util.
+- **Todo lo que se repite se vuelve reutilizable.** El mismo bloque de UI en 2 o más lugares es un componente; la misma lógica con estado o efectos es un hook; sin estado es un util. Si lo usan varios dominios va en `src/shared/`; si lo usa uno, en `features/<dominio>/`.
+  - Antes de crear, busca si ya existe (`src/shared/`, `src/shared/dominio/`, `src/utils/` y `grep`). Si hay dos versiones parecidas, unifícalas en una y compara su comportamiento punto por punto (ver "Código limpio").
+  - Límite: si unificar dos bloques exige más de 2 props booleanas que cambian el comportamiento, usa composición (`children`, props que reciben elementos) o déjalos separados y anótalo en `code-notes.md`. Un componente reutilizable no es uno con un `if` por cada pantalla.
+  - Los pares de módulos casi iguales (Facturación, Tarifarios y Convenios de Clientes/Proveedores; Completados/Cancelados) se unen con una prop `lado` y espacios para lo propio de cada lado, no copiando el archivo.
+- Una función que devuelve JSX (`chipStatusFactura()`, `BuscadorCliente()`) es un componente: se declara como tal y se usa como `<ChipStatusFactura />`.
+- Un tablero se lee como composición: arma la pantalla, conecta datos y pasa handlers. Las tablas, filas, filtros, fichas y modales viven en componentes con nombre, aunque solo los use esa pantalla.
+- El JSX solo describe la UI:
+  - Un evento que hace más que una llamada va en una función con nombre declarada en el componente; las flechas en línea solo para una llamada simple (`onClick={() => setAbierto(true)}`).
+  - Filtros, ordenamientos, formatos y condiciones largas se calculan en constantes con nombre antes del `return`.
+  - Nada de ternarios anidados en el JSX: usa una constante, un return temprano o un subcomponente.
 - Evita el prop drilling con composición (`children`, props que reciben elementos) antes de crear un Context; Context antes que una librería de estado global.
 - Íconos desde la librería del proyecto (p. ej. `lucide-react`), no SVG a mano salvo que el ícono no exista.
 - JSX semántico: listas de `.map()` en `<ul>/<li>`; pares etiqueta/valor en `<dl>/<dt>/<dd>`; acciones en `<button>`, nunca `<div onClick>`.
 - `key` estable tomada del dato (`id`, `url`); el índice solo si la lista es estática y no tiene identificador.
 - Los handlers que actúan sobre un ítem lo reciben como parámetro (`onClick={() => remove(item)}`), no leen un "ítem seleccionado" del estado que pudo cambiar antes de confirmar.
 
+## Nombres
+
+El código está en **español** y en camelCase. Los nombres de colecciones y campos de Firestore no se renombran: los comparten las Cloud Functions y Roelca Móvil.
+
+- **Variables:** un sustantivo que dice qué contienen (`facturasPendientes`, no `data`, `lista`, `aux`, `res`, `temp`). Los arreglos van en plural y los mapas por id terminan en `PorId` (`empresasPorId`).
+- **Funciones:** verbo + objeto (`calcularSaldoFactura`, `formatearMoneda`, `leerOperacionParaEditar`).
+- **Booleanos:** empiezan con `es`, `esta`, `tiene`, `puede` o `debe` (`esUSD`, `estaGuardando`, `tieneSaldo`, `puedeEditar`).
+- **Handlers:** se nombran por lo que hacen, no por el evento (`guardarFactura`, `abrirFicha`; no `handleClick`). La prop que los recibe es `on` + verbo en español (`onGuardar`, `onCerrar`).
+- **Otros:** hooks `use<Qué>`; componentes en PascalCase por lo que muestran; constantes fijas de módulo en UPPER_SNAKE_CASE (`ID_USD`).
+- **Abreviaturas:** solo las del negocio (RFC, TC, CONV, TARI, TARP, ref). Nombres de una letra solo como índice de un bucle corto.
+
+```ts
+// Mal
+const normSC = (s: string) => …;
+const fv = facturas.find(…);
+const nEmp = empresa?.moneda;
+
+// Bien
+const normalizarTexto = (texto: string) => …;
+const facturaViendo = facturas.find(…);
+const monedaEmpresa = empresa?.moneda;
+```
+
+## JavaScript moderno (ES2017 o posterior)
+
+El proyecto compila con `target: ES2022`, así que todo esto es válido y es lo que se escribe:
+
+- `async`/`await` con `try/catch` en vez de cadenas `.then().catch()`. La función de un `useEffect` no puede ser `async` (debe devolver el cleanup): declara una función async adentro y llámala.
+- `const`/`let`, nunca `var`. Spread `{ ...objeto, campo }` en vez de `Object.assign`.
+- `Object.entries`/`Object.values` para recorrer objetos, en vez de `Object.keys` + `objeto[clave]`.
+- `array.includes(x)` en vez de `indexOf(x) !== -1`.
+- `a?.b` en vez de cadenas de `&&`. `??` en vez de `||` **solo** cuando `0`, `''` o `false` son valores válidos que no deben reemplazarse: `||` también reemplaza esos valores. No hagas reemplazos masivos de `||` por `??`.
+
 ## Estado y efectos
 
 - Estado lo más cerca posible de donde se usa; súbelo solo cuando dos componentes lo necesitan.
 - Lo que se puede calcular desde props o estado se calcula en el render; no lo guardes en otro `useState` sincronizado con `useEffect`.
+- **Nunca mutes el estado:** `lista[i].visible = !lista[i].visible` cambia el objeto que React ya tiene. Crea uno nuevo: `lista.map((columna) => (columna.id === id ? { ...columna, visible: !columna.visible } : columna))`.
 - `useEffect` solo para sincronizar con algo externo (listeners de Firestore, DOM, timers), siempre con cleanup. La lógica que responde a una acción del usuario va en el handler, no en un efecto.
+- Cada `useEffect` sincroniza UNA cosa. Si hace dos (un timer y un listener del teclado), se divide en dos efectos, cada uno con su cleanup.
+- Un efecto que actualiza estado compara antes y devuelve el valor anterior si no cambió nada (`setFormData((prev) => (igual ? prev : nuevo))`). Así no dispara una cascada de redibujos.
+- React 19:
+  - `<Contexto value={…}>` en vez de `<Contexto.Provider>`.
+  - `ref` llega como prop normal, sin `forwardRef`.
+  - `useDeferredValue` o `useTransition` para filtros y búsquedas sobre listas grandes, para que escribir no se trabe.
 - Lógica con estado o efectos que se repite → custom hook (`useAlgo`) dentro del dominio o en `shared/hooks`.
 - Contexts pequeños por dominio; no pongas en un Context valores que cambian a cada tecla.
 - Memoización: si el proyecto tiene React Compiler activo, no agregues `useMemo`/`useCallback`/`memo` manuales. Si no lo tiene, úsalos solo ante un problema medido (React DevTools Profiler) o para estabilizar dependencias de un efecto o props de un hijo memoizado.
@@ -49,6 +111,7 @@ En un proyecto existente no reorganices todo de golpe: aplica esta estructura al
 - Una sola fuente de tipos compartidos (`src/types`). Si un archivo necesita campos extra, evalúa si pertenecen al tipo canónico; si son locales, usa un tipo extendido con nombre y un comentario que explique por qué.
 - Todo `as any` que sobreviva lleva un comentario con la razón. Excepción aceptable: datos genuinamente dinámicos (p. ej. un formulario cuya estructura depende de configuración) como `Record<string, unknown>`, documentado donde ocurre.
 - `import type` para imports que solo son tipos.
+- `satisfies` para comprobar un objeto de configuración sin perder su tipo literal, y `as const` para listas fijas de claves.
 
 ## Firebase — acceso a datos
 
@@ -69,6 +132,19 @@ En un proyecto existente no reorganices todo de golpe: aplica esta estructura al
 - Cada `onSnapshot` devuelve su `unsubscribe` en el cleanup del efecto.
 - Un solo listener por consulta compartida, en un provider o hook de nivel superior que entrega los datos a las vistas. Antes de crear un listener o un `getDocs`, revisa si esos datos ya llegan por props o context: un fetch propio de una colección que ya se escucha congela los datos en el momento de la carga y duplica lecturas.
 - El listener usa la consulta más acotada posible (`where`, `limit`), no la colección completa.
+
+### Cambios al momento en todas las vistas
+- Un modal o ficha abierta guarda el **id** del registro, no una copia. En cada render toma la versión vigente del listener, o escucha ese documento. Una copia en `useState` se queda congelada en el momento de abrir.
+- Quien escribe un dato que otra vista lee una sola vez invalida esa lectura en el mismo handler: `invalidateQueries` o borrar la clave de su caché.
+- Un dato copiado en varios documentos (nombres, folios, montos) se actualiza en todas sus copias en el mismo batch, transacción o trigger. Nunca se deja para un botón de "reparar".
+- Después de guardar no se parchea la lista con una copia local. El listener refleja la escritura local al instante, y un parche con la lista del render pisa datos más nuevos.
+
+### Formularios de edición: abren al instante
+- Arrancan con los datos del registro desde el primer render: `useState(() => estadoInicialDesde(registro))`, y quien los abre los monta con `key` igual al id del registro. Nunca se dibujan vacíos para llenarse después en un `useEffect`.
+- Si ya reciben el registro, no hacen `getDoc` antes de pintar. Si hace falta la versión del servidor, la releen en segundo plano.
+- No bloquean todo el formulario esperando catálogos. Solo la sección que los necesita muestra su indicador de carga, y un select muestra el nombre guardado (`*Nombre`) mientras llega su catálogo.
+- La vista que abre el formulario precalienta sus catálogos al montarse, y precarga el código del formulario con `import()` cuando el usuario pasa el mouse o enfoca el botón de editar.
+- Las lecturas independientes van en paralelo con `Promise.all`, nunca un `await` tras otro.
 
 ### Escrituras
 - `updateDoc` solo con los campos que cambian; no reescribas el documento completo con `setDoc`.
@@ -146,11 +222,13 @@ export function invalidate(prefix: string): void {
 
 ## Velocidad de carga
 
-- Rutas, vistas y modales pesados con `React.lazy` + `Suspense`.
-- Librerías pesadas (mapas, PDF, gráficas, Excel) con `import()` dinámico en el momento en que se usan, no en el arranque.
+- Rutas, vistas y modales pesados con `React.lazy` + `Suspense`. Un formulario o modal grande que se abre desde un tablero también va con `lazy()`, y se precarga en segundo plano después de pintar para que abra al instante.
+- Librerías pesadas (`xlsx`, `exceljs`, `html2pdf.js`, `pdfjs-dist`, `jszip`, mapas, gráficas) **nunca** con import estático en un componente o service que se carga con una pantalla. Siempre `import()` dentro del handler que exporta o genera, a través de un solo helper por tipo de archivo. Un import estático en cualquier archivo mete la librería entera en el chunk de esa pantalla.
+- Nada de imágenes en base64 dentro del código. Van como archivo en `public/` (o importadas como asset); si un PDF necesita la imagen como dataURL, se convierte al generar el PDF.
+- No metas al precache del Service Worker (`globPatterns` de `vite.config.ts`) archivos que solo se usan al presionar un botón. Las librerías al usar están en `LIBRERIAS_AL_USAR` (fuera del precache) y se sirven con CacheFirst al usarse (V00534): generar un PDF o un Excel sin conexión requiere haberlo hecho antes con conexión.
 - Importa Firebase por submódulo; `firebase/storage`, `firebase/functions`, etc. solo en los módulos que los usan.
 - Búsquedas y filtros que consultan datos, con debounce (~300 ms). Listas de cientos de filas: paginación o virtualización.
-- Compara el tamaño de los chunks de `npm run build` antes y después de cualquier cambio que afecte la carga.
+- Compara el tamaño de los chunks de `npx vite build` antes y después de cualquier cambio que afecte la carga, por pantalla: el chunk de la pantalla más todo lo que importa de forma estática. `node scripts/medir-pantallas.mjs --json medida.json` lo calcula; `--comparar anterior.json` muestra la diferencia (V00534).
 
 ## Estilos (CSS)
 
@@ -172,7 +250,8 @@ Ningún CSS dentro del código React/TypeScript. Los estilos viven en un archivo
 
 ## Código limpio
 
-- Antes de escribir un helper, busca en `shared/utils` (o `src/utils`) si ya existe.
+- Antes de escribir un helper, busca en `src/shared/dominio`, `src/shared/utils` y `src/utils` si ya existe.
+- Formatos y cálculos (fechas, texto, números, dinero) nunca se escriben dentro de un componente: van en `src/shared/dominio` (lógica pura compartida con el servidor) o en `src/shared/utils`. Lista de los que ya existen en "Formatos y utilidades" (sección del proyecto).
 - Si unificas dos versiones de la misma lógica, compara su comportamiento punto por punto (mayúsculas, eventos, debounce) y quédate con lo más robusto de cada una; anótalo en `code-notes.md`.
 - Elimina: imports, variables, funciones, exports y archivos sin uso; código comentado; `console.log` de depuración (los `console.error` dentro de un `catch` se quedan); dependencias que ya no se importan.
 - Código que parece inalcanzable: confírmalo con `grep` (¿alguien abre ese modal, llama esa función, importa ese archivo?). Si nadie lo usa, elimínalo. Si se usa por un flujo no obvio, entiéndelo antes de tocarlo.
@@ -222,6 +301,20 @@ Utilidades existentes, listeners globales, excepciones documentadas y decisiones
 - **Dinero**: montos a 2 decimales, tipo de cambio hasta 4 (regla V00274). Sumas en centavos (`sumarMontos`). La regla de conversión (convenio USD + factura MXN → × TC; MXN + USD → ÷ TC; misma moneda → igual) vive en `src/shared/dominio/dinero.ts` y es la MISMA en web y servidor.
 - **Relaciones**: guarda siempre el ID (`clientePaga`, `proveedorUnidad`, `convenio`, `status`, `unidad`…) y su copia `*Nombre` para pintar tablas. Nunca busques por nombre. Las copias `*Nombre` las mantiene el servidor (triggers de `relacional.ts`); no agregues botones de "reparar nombres".
 - **Escrituras de dinero** (aplicar pagos, facturar, nómina): transacción (`runTransaction`) o callable. Nunca leer-modificar-escribir con datos de una lista ya cargada.
+- **Operaciones entre módulos (`src/utils/operacionesBus.ts`)**: mientras las listas de operaciones lean una sola vez, toda escritura de la web en `operaciones` avisa con `notificarOperacionGuardada(id, datosCompletos, origen, camposCambiados)`. Eso incluye las respuestas de las callables de dinero, el costo adicional, la confirmación de tarifa y "Rectificar". Quien escucha aplica todos los campos del aviso, sin quedarse con un subconjunto. El bus solo llega a la pestaña actual: lo que cambia otra pestaña, otro usuario, Roelca Móvil o un trigger solo se ve con un listener.
+
+### Formatos y utilidades (úsalas; no escribas otra copia)
+- **Fechas** (`src/shared/dominio/fechas.ts`): `aFechaISO`, `aFechaServicioISO`, `isoADma`, `fechaServicioDeOperacion`. **Hoy** (`src/utils/fechaHoraLocal.ts`): `hoyLocalISO`, `fechaLocalISO`, `ahoraLocalISOCorto`.
+  - Nunca `toISOString().slice(0, 10)` ni `.split('T')[0]` para "hoy": es la fecha UTC y después de las 6 p. m. da la de mañana.
+  - Nunca `new Date('AAAA-MM-DD')` para mostrar una fecha: la interpreta en UTC y muestra el día anterior.
+- **Texto** (`texto.ts`): `normalizarTexto`. No escribas otra copia de `normalize('NFD')`.
+- **Números y dinero** (`numeros.ts`): `aNumero` (acepta `"$1,234.50"`), `r2`, `r4`, `aCentavos`/`deCentavos`, `sumarMontos`. Nunca `parseFloat` de un monto (`parseFloat("1,234.50")` da 1), ni `Math.round(x * 100) / 100`, ni sumas de montos en flotante.
+- **Monedas** (`moneda.ts`): `monedaCanonica`, `esUSD`, `esMXN`, `nombreMoneda`. **Empresas** (`nombres.ts`): `razonSocialEmpresa`, `nombreMostrarEmpresa`.
+- **HTML para PDF** (`src/shared/utils/html.ts`, V00534): `escaparHTML`, `escaparTextos`. `src/utils/pdfGenerator.ts` los reexporta, pero no lo importes desde una pantalla solo para escapar texto: tiene todas las plantillas de PDF.
+- **Logo** (`src/shared/utils/logo.ts`, V00534): el logo es un archivo (`public/logo-roelca.png`, y `public/logo-roelca-chico.png` para Excel, Remisión y documentos de proveedor). En pantalla, `RUTA_LOGO_ROELCA`. En un PDF o Excel, `logoComoDataUrl(ruta)` al generar (o `logoListo(ruta)` en una plantilla síncrona). El logo registrado de la empresa: `setLogoPdf`/`getLogoPdf`/`logoPdfPorDefecto`.
+- **Librerías pesadas, un cargador por tipo** (V00534): `cargarXlsx`/`cargarExcelJS` (`src/shared/utils/excel.ts`), `cargarHtml2pdf`/`cargarPdfjs` (`src/shared/utils/pdf.ts`), `cargarJSZip` (`src/shared/utils/zip.ts`) y `cargarStorage` (`src/config/firebase.ts`). Se llaman dentro del handler; nunca un import estático de esas librerías.
+- **Precarga** (`src/shared/hooks/usePrecargarAlPintar.ts`, V00534): una pantalla que abre un formulario o modal con `lazy()` lo precarga con `usePrecargarAlPintar(precargar…)`. El formulario de operación se usa como `FormularioOperacionDiferido` y se precarga con `precargarFormularioOperacion` (`features/operaciones/services/cargarFormularioOperacion.ts`). Los PDF de una operación salen de `src/utils/pdfOperacionDiferido.ts`.
+- Lo que falte se crea en esos archivos la primera vez que se necesite, no dentro del componente: formatear moneda para mostrar, fecha corta en español, capitalizar, descargar un archivo.
 
 ### Capas de la refactorización (V00436–V00444): úsalas, no las reimplementes
 - **Ids**: `idReal(doc)` (`src/shared/data/coleccionesVivas.ts`) = id REAL del documento (`_docId`, no enumerable; un campo `id` guardado gana en `doc.id`). Para escribir o abrir un documento usa `idReal`/`_docId`, nunca `doc.id` a ciegas. `{...doc}` pierde `_docId`: léelo antes.
@@ -237,14 +330,14 @@ Utilidades existentes, listeners globales, excepciones documentadas y decisiones
 - Las reglas (`firestore.rules`, `storage.rules`) y los índices (`firestore.indexes.json`) ya están en el repo y declarados en `firebase.json`. **Nunca corras `firebase deploy` sin `--only`**: publicaría reglas e índices. Las funciones se despliegan con `firebase deploy --only functions`. Las reglas se prueban con `npm run test:rules` (emulador) antes de publicarlas.
 - Roles efectivos en custom claims (`personal`, `admin`, `cliente`) que pone la callable `asignarAcceso`; las reglas y `exigirPersonal`/`exigirAdmin` (functions/src/acceso.ts) los leen. Un usuario sin documento en `usuarios` NO tiene acceso (nunca "admin por omisión").
 - Callables nuevas: validan el payload con zod y llaman `exigirPersonal`/`exigirAdmin` primero. Una callable que da poder sobre cuentas o permisos va detrás de su bandera (`gestionarUsuario` responde "apagada" sin `usuariosPorServidor`, V00448).
-- HTML generado para PDF o impresión (innerHTML, `document.write`): todo texto capturado pasa por `escaparHTML`/`escaparTextos` de `src/utils/pdfGenerator.ts` (V00448).
+- HTML generado para PDF o impresión (innerHTML, `document.write`): todo texto capturado pasa por `escaparHTML`/`escaparTextos` de `src/shared/utils/html.ts` (V00448 · V00534).
 
 ### Versiones y entregas (la gerencia sigue el trabajo por versión)
 - Cada entrega sube la versión: `npm run version:bump` (actualiza `src/config/version.ts` y `public/version.json`), agrega su entrada al inicio de `CAMBIOS_APP` en `src/config/historialCambios.ts` (resumen en lenguaje cotidiano) y un `CAMBIOS-Vxxxxx.md` con el detalle técnico y los pasos manuales. Los comentarios de código llevan `✅ Vxxxxx` cuando explican un cambio.
 - Registrar un módulo nuevo toca: `lazy()`, el tipo de `moduloActivo`, el mapa de permisos, `ICON`, el ítem del sidebar con `puede()`, el render con `MantenerVivo` si es pesado (todo en `App.tsx`), `GRUPOS_MODULOS` de `RolesDashboard.tsx` y `src/components/modulosNavMovil.ts`.
 
 ### ESLint, estilos y verificación en este repo
-- El repo arrastra ~3,000 problemas de ESLint (casi todos `any`) y ~1,100 `style={{` heredados. Regla: **no pueden crecer**. `node scripts/verificar-lint.mjs` (trinquete contra `scripts/lint-baseline.json`) falla si un archivo empeora o sube el total de `any`; cuando un archivo mejora, `--actualizar` baja su línea base. En lugar del paso 1 general, comprueba que `grep -c "style={{"` de cada archivo tocado no suba y que lo nuevo no agregue ninguno.
+- El repo arrastra ~2,400 problemas de ESLint (2,200 son `any`) y ~1,050 `style={{` heredados (medido en V00533). Regla: **no pueden crecer**. `node scripts/verificar-lint.mjs` (trinquete contra `scripts/lint-baseline.json`) falla si un archivo empeora o sube el total de `any`; cuando un archivo mejora, `--actualizar` baja su línea base. En lugar del paso 1 general, comprueba que `grep -c "style={{"` de cada archivo tocado no suba y que lo nuevo no agregue ninguno.
 - `npm run verificar` = `tsc -b` + trinquete de ESLint + trinquete de consultas (`scripts/verificar-consultas.mjs`: ninguna lectura nueva de `operaciones` completa) + clases de CSS repetidas (`scripts/verificar-css.mjs`) + `vitest run`. Las Cloud Functions: `npm --prefix functions run build` y `npm --prefix functions test`.
 - **Clases de CSS**: cada `.css` usa su PROPIO prefijo (`scc-x12`, no el de otro archivo): el CSS de un módulo se queda cargado al navegar y dos archivos con la misma clase se desacomodan entre sí según el orden en que se abran (V00447).
 - **Esperas**: mientras una lista, tabla o tarjeta espera datos de un filtro, una búsqueda o un listener, se muestra `<CargandoDatos texto="…" />` (`src/shared/components/CargandoDatos.tsx`; `compacto` en espacios chicos, `enLinea` para el número de una tarjeta), nunca el estado vacío ("No hay…", 0) ni nada. La bandera de carga se enciende en el MISMO handler que aplica el filtro; un listener nuevo lleva su bandera de "primera respuesta" (también en el callback de error) (V00449).

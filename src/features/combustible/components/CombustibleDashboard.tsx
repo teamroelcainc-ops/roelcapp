@@ -4,7 +4,7 @@ import type { CombustibleRecord } from '../../../types/combustible';
 import { getCombustibles } from '../services/combustibleService';
 import { FormularioCombustible } from './FormularioCombustible';
 import { eliminarRegistro } from '../../../config/firebase'; 
-import * as XLSX from 'xlsx';
+import { cargarXlsx } from '../../../shared/utils/excel'; // ✅ V00534: xlsx se carga al exportar, no con la pantalla
 import './CombustibleDashboard.css';
 import { evaluarBorrado } from '../../autorizaciones/autorizaciones';
 
@@ -153,7 +153,7 @@ export const CombustibleDashboard: React.FC = () => {
 
   const toggleColumnaVisible = (index: number) => {
     const nuevas = [...columnasTabla];
-    nuevas[index].visible = !nuevas[index].visible;
+    nuevas[index] = { ...nuevas[index], visible: !nuevas[index].visible }; // ✅ V00535: sin mutar el objeto que React ya tiene
     setColumnasTabla(nuevas);
   };
 
@@ -173,7 +173,8 @@ export const CombustibleDashboard: React.FC = () => {
   };
 
   // ✅ EXPORTAR EXCEL CON LAS COLUMNAS VISIBLES ACTUALMENTE
-  const exportarExcel = () => {
+  const exportarExcel = async () => {
+    const XLSX = await cargarXlsx();
     if (registrosFiltrados.length === 0) return alert("No hay datos para exportar.");
     
     const columnasVisibles = columnasTabla.filter(c => c.visible);

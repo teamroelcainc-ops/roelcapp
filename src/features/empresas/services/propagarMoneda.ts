@@ -31,6 +31,7 @@ import { corregirOperacion, leerConvenios } from '../../operaciones/services/cor
 import { valorCongelado } from '../../../shared/dominio/cascadaFacturas'; // ✅ V00495
 import { porIds } from '../../../shared/data/consultas';
 import { coleccionFacturasDePago, facturaEnOtraMoneda, facturasDelPago, facturaTomaMoneda, monedaFinalDeFactura, pagoTomaMoneda } from './monedaPagos'; // ✅ V00496
+import { notificarOperacionesGuardadas } from '../../../utils/operacionesBus'; // ✅ V00536
 
 export interface ReporteMoneda {
   monedaNombre: string;
@@ -88,7 +89,11 @@ export const propagarMonedaEmpresa = async (empresaId: string): Promise<ReporteM
   let batch = writeBatch(db);
   let enBatch = 0;
   const flush = async () => { if (enBatch > 0) { await batch.commit(); batch = writeBatch(db); enBatch = 0; } };
-  const marcar = (ref: any, cambios: Record<string, any>) => { batch.set(ref, cambios, { merge: true }); enBatch++; };
+  const avisos: (readonly [string, Record<string, unknown>])[] = []; // ✅ V00536: operaciones tocadas, para el bus
+  const marcar = (ref: any, cambios: Record<string, any>) => {
+    batch.set(ref, cambios, { merge: true }); enBatch++;
+    if (ref?.parent?.id === 'operaciones') avisos.push([String(ref.id), cambios]);
+  };
 
   // 2) Convenios maestros de la empresa.
   const pasos: Array<{ col: string; campo: string; cambios: Record<string, any>; distinto: (x: any) => boolean; cuenta: keyof ReporteMoneda }> = [
@@ -122,6 +127,7 @@ export const propagarMonedaEmpresa = async (empresaId: string): Promise<ReporteM
   }
   if (canon) await propagarAPagos(empresaId, canon, monedaFinal, async (ref, cambios) => { marcar(ref, cambios); if (enBatch >= 400) await flush(); }, rep);
   await flush();
+  notificarOperacionesGuardadas(avisos, 'propagar-moneda');
   if (canon) await corregirOperacionesDeEmpresa(empresaId, canon, rep);
   return rep;
 };

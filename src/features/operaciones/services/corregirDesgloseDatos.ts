@@ -16,6 +16,7 @@ import { esOperacionPrueba } from '../../../utils/operacionPrueba';
 import { registrarLog } from '../../../utils/logger';
 import { motivoAlAplicar, revisarDesglose } from './corregirDesglose';
 import type { RevisionDesglose } from './corregirDesglose';
+import { notificarOperacionesGuardadas } from '../../../utils/operacionesBus'; // ✅ V00536
 
 type Datos = Record<string, unknown>;
 const PAGINA = 500;
@@ -66,13 +67,16 @@ export const aplicarDesglose = async (revisiones: readonly RevisionDesglose[], c
       const snaps = await Promise.all(refs.map((ref) => tx.get(ref)));
       const fuera: OmitidaDesglose[] = [];
       let escritas = 0;
+      const escritos: (readonly [string, Record<string, unknown>])[] = []; // ✅ V00536: aviso al bus
       tanda.forEach((plan, k) => {
         const motivo = motivoAlAplicar(snaps[k].exists() ? (snaps[k].data() as Datos) : null, plan);
         if (motivo) { fuera.push({ id: plan.id, ref: plan.ref, motivo }); return; }
-        tx.update(refs[k], { ...plan.datos, desgloseCorregido: cuando });
+        const campos = { ...plan.datos, desgloseCorregido: cuando };
+        tx.update(refs[k], campos);
         escritas += 1;
+        escritos.push([plan.id, campos]);
       });
-      return { fuera, escritas };
+      return { fuera, escritas, escritos };
     }).catch((e: unknown) => {
       console.error('[Corregir desglose] No se pudo escribir una tanda de operaciones:', e);
       error = String((e as { message?: string })?.message || e).split('\n')[0];
@@ -80,6 +84,7 @@ export const aplicarDesglose = async (revisiones: readonly RevisionDesglose[], c
     });
     if (!r) break;
     corregidas += r.escritas;
+    notificarOperacionesGuardadas(r.escritos, 'corregir-desglose'); // ✅ V00536
     omitidas.push(...r.fuera);
     alAvanzar(Math.min(i + TANDA, total), total);
   }

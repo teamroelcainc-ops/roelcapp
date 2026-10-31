@@ -8,6 +8,7 @@
 // por el camino de siempre.
 // ---------------------------------------------------------------------------
 import { ErrorCallable, llamarCallable } from '../../../shared/data/callables';
+import { notificarOperacionesGuardadas } from '../../../utils/operacionesBus';
 
 type Datos = Record<string, unknown>;
 
@@ -29,8 +30,15 @@ export type CallableDinero =
   | 'facturarOperaciones' | 'editarFactura' | 'quitarOperacionFactura' | 'moverOperacionFactura' | 'agregarOperacionFactura'
   | 'eliminarFactura' | 'recalcularFactura' | 'registrarPago' | 'editarPago' | 'eliminarPago';
 
-export const llamarDinero = (nombre: CallableDinero, datos: Datos): Promise<RespuestaDinero> =>
-  llamarCallable<RespuestaDinero, Datos>(nombre, datos);
+/**
+ * ✅ V00536: cada respuesta avisa al bus con las operaciones que tocó el servidor (sus ids son los del
+ * documento), así Completados, Operaciones y la otra Facturación las ven sin recargar.
+ */
+export const llamarDinero = async (nombre: CallableDinero, datos: Datos): Promise<RespuestaDinero> => {
+  const r = await llamarCallable<RespuestaDinero, Datos>(nombre, datos);
+  notificarOperacionesGuardadas(Object.entries(r?.operaciones ?? {}), `dinero:${nombre}`);
+  return r;
+};
 
 /** Mensaje para el usuario: el del servidor (ya viene en español) o uno genérico. */
 export const mensajeDinero = (e: unknown, generico: string): string =>
@@ -56,11 +64,15 @@ export const aplicarFacturas = <F extends { id?: unknown }>(prev: F[], facturas:
   return [...nuevas, ...salida];
 };
 
-/** Aplica los cambios de operaciones de la respuesta a una lista en memoria. */
-export const aplicarOperaciones = <O extends { id?: unknown }>(prev: O[], operaciones: RespuestaDinero['operaciones']): O[] => {
+/**
+ * Aplica los cambios de operaciones de la respuesta a una lista en memoria.
+ * ✅ V00536: el servidor responde con el id del DOCUMENTO; la fila se busca por su `_docId` (antes por
+ * `id`, que en las operaciones importadas es otro y el cambio no se veía).
+ */
+export const aplicarOperaciones = <O extends { id?: unknown; _docId?: unknown }>(prev: O[], operaciones: RespuestaDinero['operaciones']): O[] => {
   if (Object.keys(operaciones).length === 0) return prev;
   return prev.map((o) => {
-    const c = operaciones[String(o.id ?? '')];
+    const c = operaciones[String(o._docId ?? o.id ?? '')] ?? operaciones[String(o.id ?? '')];
     return c ? { ...o, ...c } : o;
   });
 };

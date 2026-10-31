@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore';
 import type { DocumentData, Query, QueryDocumentSnapshot, QuerySnapshot } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { notificarOperacionesGuardadas } from '../../../utils/operacionesBus'; // ✅ V00536
 import { COL } from '../../../shared/dominio/constantes';
 import {
   ErrorNomina, MAX_OPS_POR_GUARDADO, formatearFolioNomina, huellaSaldos, idContadorFolioNomina,
@@ -216,7 +217,7 @@ export async function guardarNomina(p: GuardarNominaParams): Promise<ResultadoGu
 
   // ── Transacción: TODAS las lecturas antes de cualquier escritura y ningún
   //    efecto fuera de `tx` (Firestore puede reintentarla). ──
-  return runTransaction(db, async (tx) => {
+  const resultado = await runTransaction(db, async (tx) => {
     const refNomina = doc(db, COL.referenciasNomina, p.nominaId);
     const refContador = p.esEdicion ? null : doc(db, COL.contadores, idContadorFolioNomina(prefijo));
     const refDeduccion = p.deduccion ? doc(db, 'deducciones', p.deduccion.id) : null;
@@ -297,4 +298,10 @@ export async function guardarNomina(p: GuardarNominaParams): Promise<ResultadoGu
 
     return { folio, vinculadas: aVincular.map(r => r.id), desvinculadas: aDesvincular.map(r => r.id) };
   });
+  // ✅ V00536: Completados y Operaciones ven la nómina de cada operación sin recargar.
+  notificarOperacionesGuardadas([
+    ...resultado.vinculadas.map((id) => [id, { referenciaNominaId: p.nominaId, referenciaNominaConsecutivo: resultado.folio }] as const),
+    ...resultado.desvinculadas.map((id) => [id, { referenciaNominaId: null, referenciaNominaConsecutivo: null }] as const),
+  ], 'nomina');
+  return resultado;
 }

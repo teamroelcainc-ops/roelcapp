@@ -3,6 +3,11 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import { fileURLToPath } from 'node:url'
 
+// ✅ V00534: chunks de librerías pesadas que solo se usan al presionar un botón (los nombra Rollup por
+//   su archivo de entrada: html2pdf → manualChunks "pdf", pdfjs-dist → pdf.mjs, exceljs.min, xlsx, jszip.min).
+const LIBRERIAS_AL_USAR = ['**/assets/pdf-*.js', '**/assets/pdf.worker*', '**/assets/exceljs.min-*.js', '**/assets/xlsx-*.js', '**/assets/jszip.min-*.js'];
+const URL_LIBRERIA_AL_USAR = /\/assets\/(pdf|pdf\.worker\.min|exceljs\.min|xlsx|jszip\.min)-[\w-]+\.m?js$/;
+
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => ({
   // ✅ V00436 (Fase 0): `npm run dev:medir` (modo "medir") cambia firebase/firestore
@@ -25,7 +30,8 @@ export default defineConfig(({ mode }) => ({
       output: {
         manualChunks: {
           react: ['react', 'react-dom'],
-          firebase: ['firebase/app', 'firebase/firestore', 'firebase/auth', 'firebase/storage'],
+          // ✅ V00534: sin firebase/storage — se carga al subir o borrar un archivo (cargarStorage).
+          firebase: ['firebase/app', 'firebase/firestore', 'firebase/auth'],
           // ✅ Fluidez: vendors pesados fuera del bundle principal (mejor
           //   caché entre versiones y carga inicial más ligera).
           pdf: ['html2pdf.js'],
@@ -62,8 +68,20 @@ export default defineConfig(({ mode }) => ({
         // Precachea todo el build (app shell). Los datos NO se cachean aquí:
         // de eso se encarga el caché persistente de Firestore (IndexedDB).
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+        // ✅ V00534: las librerías que solo se usan al presionar un botón (generar PDF, exportar o leer
+        //   Excel, armar un .zip, leer un PDF) NO van al precache (~2.8 MB): se bajan la primera vez que
+        //   se usan y desde ahí las sirve la caché de abajo (CacheFirst). Por eso generar un PDF o un
+        //   Excel SIN CONEXIÓN requiere haberlo hecho antes una vez con conexión en ese navegador.
+        globIgnores: LIBRERIAS_AL_USAR,
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         runtimeCaching: [
+          {
+            // ✅ V00534: html2pdf, pdf.js (y su worker), ExcelJS, xlsx y jszip, al usarse. El nombre lleva
+            //   hash: un archivo nunca cambia, así que se sirve de la caché sin preguntar a la red.
+            urlPattern: URL_LIBRERIA_AL_USAR, // RegExp (una función perdería las variables al copiarse al sw.js)
+            handler: 'CacheFirst',
+            options: { cacheName: 'librerias-al-usar', expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 } },
+          },
           {
             // Fuentes/estáticos de terceros: cache-first (no cambian).
             urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/i,

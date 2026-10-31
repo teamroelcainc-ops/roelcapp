@@ -1,5 +1,6 @@
 // src/features/puentes/components/ReferenciasPuentesDashboard.tsx
 import React, { useState, useEffect, useMemo } from 'react';
+import { aNumero } from '../../../shared/dominio/numeros'; // ✅ V00535
 import {
   collection,
   onSnapshot,
@@ -13,7 +14,7 @@ import {
   where
 } from 'firebase/firestore';
 import { db, auth } from '../../../config/firebase';
-import * as XLSX from 'xlsx';
+import { cargarXlsx } from '../../../shared/utils/excel'; // ✅ V00534: xlsx se carga al exportar, no con la pantalla
 import './ReferenciasPuentesDashboard.css';
 import CargandoDatos from '../../../shared/components/CargandoDatos';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
@@ -22,13 +23,16 @@ import { esOperacionPrueba } from '../../../utils/operacionPrueba';
 import { cargarCtxCobroPuente, cobroPuenteDeOperacion } from '../../../utils/puenteColombia';
 import { COL_REF_AUTO, filaDeOperacion, grupoDeFila, grupoDeNombresPuente, quitarOperacionDeReferenciaAuto, upsertReferenciaAuto } from '../../../utils/historialCalculadoPuentes';
 import { fechaServicioDeOperacion } from '../../../shared/dominio/fechas'; // ✅ V00469
-import { FormularioOperacion } from '../../operaciones/components/FormularioOperacion';
+import FormularioOperacionDiferido from '../../operaciones/components/FormularioOperacionDiferido';
+import { precargarFormularioOperacion } from '../../operaciones/services/cargarFormularioOperacion'; // ✅ V00534: el formulario se carga aparte
+import { usePrecargarAlPintar } from '../../../shared/hooks/usePrecargarAlPintar';
 import { idReal, obtenerCatalogo, useCatalogos } from '../../../shared/data/catalogos';
 import ModalAgregarSaldoPuente from './ModalAgregarSaldoPuente';
 import { casetaAviOtrosCruces, monedaDePuente, nombrePuenteCatalogo, puentesDelCatalogo } from '../services/puentesCatalogo';
 import { estadoGrupoDe, esGrupoTerminado } from '../../../shared/dominio/operacionCanonica';
 import PanelReporteAvi from './PanelReporteAvi'; // ✅ V00464
 import { claveUnidadDia, coincidirCruces, leerReportePuente, NOMBRE_REPORTE, unirCruces, type CruceAvi, type GrupoReporte, type OpParaCruce, type RefDelDia, type UnidadConTag } from '../services/reporteAvi';
+import { notificarCambiosOperacion, notificarOperacionesGuardadas } from '../../../utils/operacionesBus'; // ✅ V00536
 
 // ⚠ Si tu colección de convenios de clientes tiene otro nombre, cámbialo aquí.
 const COLECCION_CONVENIOS = 'convenios_clientes';
@@ -67,6 +71,7 @@ const COLUMNAS_OPS_PUENTES_BASE = [
 ];
 
 export const ReferenciasPuentesDashboard = () => {
+  usePrecargarAlPintar(precargarFormularioOperacion); // ✅ V00534: lo baja después de pintar
   // ✅ V00457: sin la pestaña "Historial manual (anterior)"; 'calculado' es el Acumulado
   const [activeTab, setActiveTab] = useState<'operaciones' | 'otros' | 'saldos' | 'calculado'>('calculado');
 
@@ -125,6 +130,7 @@ export const ReferenciasPuentesDashboard = () => {
       const b = writeBatch(db);
       b.update(doc(db, 'operaciones', String(op._docId || op.id)), campos);
       await b.commit();
+      notificarCambiosOperacion(String(op._docId || op.id), campos, 'puentes'); // ✅ V00536
       setOperacionesGlobales(prev => prev.map(o => o.id === op.id ? { ...o, ...campos } : o));
     } catch (e) { alert(`No se pudo cambiar el puente: ${(e as Error)?.message || e}`); }
     finally { setCambiandoPuente(''); }
@@ -317,7 +323,7 @@ export const ReferenciasPuentesDashboard = () => {
   const [referenciaViendo, setReferenciaViendo] = useState<any | null>(null);
 
   const formatoMoneda = (monto: any) => {
-    const num = parseFloat(monto || 0);
+    const num = aNumero(monto); // ✅ V00535: acepta "1,234.50" (parseFloat daba 1)
     return isNaN(num) ? '$ 0.00' : `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
@@ -751,11 +757,12 @@ export const ReferenciasPuentesDashboard = () => {
   };
   const toggleColumnaVisibleOps = (index: number) => {
     const nuevas = [...columnasOps];
-    nuevas[index].visible = !nuevas[index].visible;
+    nuevas[index] = { ...nuevas[index], visible: !nuevas[index].visible }; // ✅ V00535: sin mutar el objeto que React ya tiene
     setColumnasOps(nuevas);
   };
 
-  const exportarExcelOps = () => {
+  const exportarExcelOps = async () => {
+    const XLSX = await cargarXlsx();
     if (operacionesMostradas.length === 0) return alert('No hay operaciones para exportar con los filtros actuales.');
     const cols = columnasOps.filter(c => c.visible);
     if (cols.length === 0) return alert('Selecciona al menos una columna para exportar.');
@@ -824,6 +831,7 @@ export const ReferenciasPuentesDashboard = () => {
         await batch.commit();
       }
       const mapa = new Map(cambios.map(x => [x.op.id, x.campos]));
+      notificarOperacionesGuardadas(mapa, 'puentes'); // ✅ V00536
       setOperacionesGlobales(prev => prev.map(op => mapa.has(op.id) ? { ...op, ...mapa.get(op.id) } : op));
       alert(`Listo: ${cambios.length} operación(es) con su monto de puente.`);
     } catch (e) {
@@ -876,6 +884,7 @@ export const ReferenciasPuentesDashboard = () => {
   // ✅ V00467: también PUENTE 3 y PUENTE COLOMBIA. El formato se reconoce por el encabezado y se
   //   leen todas las hojas de ese puente (el de Puente 3 repite días en dos hojas: no se duplican).
   const cargarReporteAvi = async (archivo: File) => {
+    const XLSX = await cargarXlsx();
     setLeyendoReporte(true);
     try {
       const libro = XLSX.read(await archivo.arrayBuffer(), { type: 'array' });
@@ -1172,6 +1181,7 @@ export const ReferenciasPuentesDashboard = () => {
         }
         await batch.commit();
         const idsLiberadas: string[] = Array.isArray(refData.operacionesIds) ? refData.operacionesIds : [];
+        notificarOperacionesGuardadas(idsLiberadas.map((id) => [id, { referenciaPuentesId: null, referenciaPuentesConsecutivo: null }] as const), 'puentes-eliminar'); // ✅ V00536
         setOperacionesGlobales(prev => prev.map(op =>
           idsLiberadas.includes(op.id) ? { ...op, referenciaPuentesId: null, referenciaPuentesConsecutivo: null } : op
         ));
@@ -1816,7 +1826,7 @@ export const ReferenciasPuentesDashboard = () => {
       {/* MODAL FICHA / DETALLE */}
       {/* ✅ V00412: detalle de la operación al hacer clic en su fila (mismo formulario de Operaciones) */}
       {opDetalle && (
-        <FormularioOperacion
+        <FormularioOperacionDiferido
           estado="abierto"
           initialData={opDetalle}
           catalogosCacheados={catalogosFormulario}

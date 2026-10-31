@@ -20,6 +20,7 @@ import { doc, writeBatch } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { idReal, obtenerCatalogo } from '../shared/data/catalogos';
 import { registrarLog } from './logger';
+import { notificarOperacionesGuardadas } from './operacionesBus'; // ✅ V00536
 
 // Campos de operación que apuntan a EMPRESAS por id → su campo de nombre.
 const PARES_EMPRESA: Array<[string, string]> = [
@@ -112,6 +113,7 @@ export async function sincronizarNombresOperaciones(
     const batch = writeBatch(db);
     lote.forEach((id) => batch.update(doc(db, 'operaciones', id), cambiosPorId[id]));
     await batch.commit();
+    notificarOperacionesGuardadas(lote.map((id) => [id, cambiosPorId[id]] as const), origenLog); // ✅ V00536
   }
 
   if (ids.length > 0) {

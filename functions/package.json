@@ -18,6 +18,7 @@
     "nombres": "npm run build:scripts && node lib-scripts/scripts/propagarNombres.js",
     "revisar:tc": "npm run build:scripts && node lib-scripts/scripts/revisarTipoCambio.js",
     "facturas:texto": "npm run build:scripts && node lib-scripts/scripts/facturasTexto.js",
+    "folios": "npm run build:scripts && node lib-scripts/scripts/folioEnOperaciones.js",
     "prebuild": "node ../scripts/sincronizar-dominio.mjs"
   },
   "engines": {

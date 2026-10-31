@@ -3,6 +3,7 @@
 //   botón para COPIAR el informe en lenguaje cotidiano y pegarlo en WhatsApp.
 //   Todos los usuarios con el módulo lo VEN; solo Admin agrega/edita/borra.
 import React, { useEffect, useMemo, useState } from 'react';
+import { hoyLocalISO } from '../../utils/fechaHoraLocal'; // ✅ V00535
 import { addDoc, collection, deleteDoc, doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { obtenerUsuarioAut } from '../autorizaciones/autorizaciones';
@@ -21,7 +22,7 @@ interface CambioHist {
   origen: 'app' | 'manual'; // ✅ V00330: 'app' = registrado automáticamente por la versión
 }
 
-const hoyISO = () => new Date().toISOString().slice(0, 10);
+const hoyISO = (): string => hoyLocalISO(); // ✅ V00535: hoy local (antes UTC; se guarda en el cambio)
 const ahoraHM = () => new Date().toTimeString().slice(0, 5);
 const ddmm = (iso: string) => (/^\d{4}-\d{2}-\d{2}/.test(iso) ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : iso);
 

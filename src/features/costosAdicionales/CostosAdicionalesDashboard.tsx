@@ -16,6 +16,7 @@
 // de la operación seleccionada.
 
 import { useState, useEffect, useMemo } from 'react';
+import { aNumero } from '../../shared/dominio/numeros'; // ✅ V00535
 import { useAutorizacionesCampos } from '../autorizaciones/useAutorizacionesCampos';
 import {
   collection, getDocs, query, orderBy, limit, startAfter,
@@ -27,6 +28,7 @@ import CargandoDatos from '../../shared/components/CargandoDatos'; // ✅ V00449
 import { FormularioConfigurable } from '../formularios/FormularioConfigurable';
 import { useCatalogos } from '../../shared/data/catalogos';
 import { esMXN, esUSD } from '../../shared/dominio/moneda';
+import { notificarCambiosOperacion } from '../../utils/operacionesBus'; // ✅ V00536
 
 const TAMANO_PAGINA = 50;
 
@@ -42,7 +44,7 @@ const CATS = {
 } as const;
 
 const formatoMoneda = (m: any) => {
-  const n = parseFloat(m || 0);
+  const n = aNumero(m); // ✅ V00535: acepta "1,234.50" (parseFloat daba 1)
   return isNaN(n) ? '$ 0.00' : `$ ${n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 const formatearFecha = (f: string) => {
@@ -236,6 +238,7 @@ export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosAc
     const tProv = listaCostos.filter(c => c.tipo === 'proveedor').reduce((s, c) => s + Number(c.monto || 0), 0);
     const cambios = recalcularOperacion(op, tCliente, tProv);
     await updateDoc(doc(db, 'operaciones', op.id), cambios);
+    notificarCambiosOperacion(String(op.id), cambios, 'costos-adicionales'); // ✅ V00536: Facturación, Completados y Operaciones lo ven
     const opActualizada = { ...op, ...cambios };
     setOpSeleccionada(opActualizada);
     setOperaciones(prev => prev.map(o => o.id === op.id ? opActualizada : o));

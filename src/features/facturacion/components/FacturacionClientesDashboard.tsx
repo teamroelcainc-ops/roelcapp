@@ -10,15 +10,20 @@
 //    (✅ V00482: se quitó el botón "⚙ Encabezado Remisión"; el encabezado guardado se sigue usando).
 // ═══════════════════════════════════════════════════════════════════════
 
-import React, { useState, useEffect, useMemo, useRef, useCallback, useDeferredValue, useEffectEvent } from 'react';
-import { AuditoriaCadenaCliente } from './AuditoriaCadenaCliente'; // ✅ V00318
+import React, { Suspense, useState, useEffect, useMemo, useRef, useCallback, useDeferredValue, useEffectEvent } from 'react';
+import { lazyWithRetry } from '../../../utils/lazyWithRetry';
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { useModuloEscuchando } from '../../../utils/moduloVivoContexto'; // ✅ V00438 (Fase 2.7)
 import { EditorOperacionEmbebido } from '../../operaciones/components/EditorOperacionEmbebido';
+import { precargarFormularioOperacion } from '../../operaciones/services/cargarFormularioOperacion'; // ✅ V00534
+import { usePrecargarAlPintar } from '../../../shared/hooks/usePrecargarAlPintar';
 import { precargarOperacion } from '../../operaciones/services/lecturaOperacion'; // ✅ V00528
 import { precalentarCatalogosFormulario } from '../../operaciones/services/catalogosFormulario'; // ✅ V00528
 import { HiloModal } from '../../hilo/HiloModal';
-import { datosAAplicar, notificarOperacionGuardada, suscribirOperacionGuardada } from '../../../utils/operacionesBus';
+import { aplicarAvisoEnLista, notificarOperacionGuardada, suscribirOperacionGuardada } from '../../../utils/operacionesBus';
+import { reglaFacturables } from '../services/reglaFacturables'; // ✅ V00536
+import { useFichaViva } from '../../../shared/hooks/useFichaViva'; // ✅ V00536
+import { escribirFolioEnOperaciones } from '../services/folioEnOperaciones'; // ✅ V00536
 import { avisoYaFacturadas, facturaExistenteFresca, operacionesYaFacturadas, planLiberarAlEliminar } from '../services/facturarSeguro'; // ✅ V00451 · V00494
 import type { DecisionLiberar } from '../services/facturarSeguro';
 import {
@@ -73,7 +78,7 @@ import { CATALOGOS_NOMBRES_FACTURACION, construirMapaCatalogos } from '../servic
 import { useMapaEstable } from '../../../shared/hooks/useMapaEstable'; // ✅ V00447
 import { useValorEstable } from '../../../shared/hooks/useValorEstable'; // ✅ V00529
 import type { EmpresaFacturacion } from '../services/mapaCatalogos';
-import { aCentavos, r2 } from '../../../shared/dominio/numeros';
+import { aCentavos, r2, aNumero } from '../../../shared/dominio/numeros';
 import {
   MAX_ESCRITURAS_LOTE,
   avisoFacturaConPagos,
@@ -138,6 +143,9 @@ import type { DatosCancelacion } from '../services/reglasFactura';
 import { escribirEnGrupo, escrituraCancelacion } from '../services/statusFacturaDatos';
 import TagPuenteUnidad from '../../puentes/components/TagPuenteUnidad'; // ✅ V00465
 import { grupoTagDeOperacion } from '../../puentes/services/tagPuente';
+// ✅ V00534: la Auditoría (modal grande, ~48 KB) se carga al abrirla; antes iba en la carga de la pantalla.
+const cargarAuditoriaCadena = () => import('./AuditoriaCadenaCliente');
+const AuditoriaCadenaCliente = lazyWithRetry(() => cargarAuditoriaCadena().then((m) => ({ default: m.AuditoriaCadenaCliente })), 'AuditoriaCadenaCliente'); // ✅ V00318
 
 // ──────────────────────────────────────────────────────────────────────
 // Constantes
@@ -316,6 +324,7 @@ const obtenerMontoOperacion = (op: any) => montoOperacion(op, 'cliente'); // ✅
 
 
 export const FacturacionClientesDashboard = () => {
+  usePrecargarAlPintar(precargarFormularioOperacion, () => { cargarAuditoriaCadena().catch(() => undefined); }); // ✅ V00534: formulario y auditoría se bajan después de pintar
   const flags = useFlags(); // ✅ V00441 (Fase 5): dinero por servidor
   // ✅ V00448: el total que se MUESTRA (tabla, tarjetas, Excel) usa la misma regla que Pagos
   //   mientras el dinero no lo lleve el servidor (como la V00434). La regla única cambiaba el
@@ -428,7 +437,10 @@ export const FacturacionClientesDashboard = () => {
   const [datosSit, setDatosSit] = useState<DatosSit | null>(null); // ✅ V00513
   const [generandoReporte, setGenerandoReporte] = useState(false); // ✅ V00526
   const [guardando, setGuardando] = useState(false);
-  const [facturaViendo, setFacturaViendo] = useState<any | null>(null);
+  // ✅ V00536: la ficha sigue a la lista viva de facturas: es la misma fila (grupo) del Historial; un cambio
+  //   que llega por el listener se ve sin cerrarla (useFichaViva).
+  const buscarFacturaViendo = useCallback((f: { id?: unknown }) => (f.id ? grupoDeFactura(facturasGlobales, String(f.id), 'clienteId') : null), [facturasGlobales]);
+  const [facturaViendo, setFacturaViendo] = useFichaViva<any>(buscarFacturaViendo); // eslint-disable-line @typescript-eslint/no-explicit-any -- la ficha sin tipo canónico (antes useState<any>)
   // ✅ V00502: el buscador global pidió abrir la ficha de una factura: la misma fila (grupo) del Historial.
   useAtenderApertura('facturacionClientes', (p) => {
     const grupo = grupoDeFactura(facturasGlobales, p.id, 'clienteId');
@@ -570,7 +582,7 @@ export const FacturacionClientesDashboard = () => {
   // Formateadores
   // ✅ V00126: sin redondeo — se muestran hasta 6 decimales tal cual resultan del cálculo.
   const formatoMoneda = (monto: any) => {
-    const num = parseFloat(monto || 0);
+    const num = aNumero(monto); // ✅ V00535: acepta "1,234.50" y "$1,234.50" (parseFloat daba 1)
     return isNaN(num) ? '$ 0.00' : `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; // ✅ V00274: todos los montos a 2 decimales
   };
   const formatearFechaSpanish = (fechaString: any) => {
@@ -811,20 +823,10 @@ export const FacturacionClientesDashboard = () => {
   // ✅ V00126: cualquier guardado en la colección `operaciones` (formulario,
   //   cambio de status, etc.) se refleja aquí al instante sin recargar.
   useEffect(() => {
-    return suscribirOperacionGuardada((aviso) => {
-      const { id, data } = aviso;
-      setOperacionesGlobales(prev => {
-        const idx = prev.findIndex(o => String(o.id) === String(id));
-        const facturable = STATUS_FACTURABLES.includes(String((data as any).status || '').trim());
-        if (idx >= 0) {
-          if (!facturable) return prev.filter((_, k) => k !== idx);
-          // ✅ V00451: solo los campos que cambiaron, si el aviso los dice (no pisa datos más nuevos).
-          const next = [...prev]; next[idx] = { ...prev[idx], ...datosAAplicar(aviso), id: String(id) }; return next;
-        }
-        if (!facturable) return prev;
-        return [{ id: String(id), ...data }, ...prev];
-      });
-    });
+    // ✅ V00536: la fila sale o entra SOLO si el aviso trae el status ("Diferencia en cargos" y "Sincronizar
+    //   monedas" no lo mandan y antes sacaban la fila); se busca por _docId o id (aplicarAvisoEnLista).
+    const regla = reglaFacturables(STATUS_FACTURABLES);
+    return suscribirOperacionGuardada((aviso) => setOperacionesGlobales(prev => aplicarAvisoEnLista(prev, aviso, regla)));
   }, [STATUS_FACTURABLES]);
 
   const recargarOperaciones = () => {
@@ -1392,7 +1394,7 @@ export const FacturacionClientesDashboard = () => {
   };
   const toggleColumnaVisibleOps = (index: number) => {
     const nuevas = [...columnasOps];
-    nuevas[index].visible = !nuevas[index].visible;
+    nuevas[index] = { ...nuevas[index], visible: !nuevas[index].visible }; // ✅ V00535: sin mutar el objeto que React ya tiene
     setColumnasOps(nuevas);
   };
 
@@ -1503,6 +1505,7 @@ export const FacturacionClientesDashboard = () => {
       }
       await setDoc(doc(db, 'operaciones', idRealOp(op.id)), updates, { merge: true }); // ✅ V00451: id real
       setOperacionesGlobales(prev => prev.map(o => o.id === op.id ? { ...o, ...updates } : o));
+      avisarOpsFacturacion([op.id], updates); // ✅ V00536: Completados y Operaciones también lo ven
       setModalCostoAdic(false);
     } catch (e) {
       console.error('Error guardando costo adicional:', e);
@@ -1895,6 +1898,14 @@ export const FacturacionClientesDashboard = () => {
         }, { merge: true });
       });
       await batch.commit();
+      // ✅ V00536: el # de Invoice también en sus operaciones (antes solo en la factura: el folio viejo seguía
+      //   apareciendo en Completados y Operaciones aun después de recargar).
+      try {
+        await escribirFolioEnOperaciones('cliente', editInvoice.trim(), facturasGlobales.filter((f) => ids.includes(String(f.id))).map((f) => ({ id: String(f.id), datos: f })));
+      } catch (e) {
+        console.error('[Facturación] No se escribió el folio en las operaciones:', e);
+        avisar({ tipo: 'alerta', titulo: 'El folio no llegó a las operaciones', texto: 'La factura se guardó, pero sus operaciones siguen con el folio anterior. Vuelve a guardar la factura para reintentar.' });
+      }
       // ✅ V00279: el DOCUMENTO se sube DESPUÉS de guardar — el guardado de la
       //   factura nunca depende de la subida (recuerda: el documento en
       //   facturación NO es obligatorio; la ⚠ solo avisa). Si Storage rechaza
@@ -1956,7 +1967,8 @@ export const FacturacionClientesDashboard = () => {
   const avisarOpsFacturacion = (ids: readonly string[], cambios: Record<string, unknown>) => {
     ids.forEach((id) => {
       const op = operacionesGlobales.find((o) => String(o.id) === String(id));
-      if (op) notificarOperacionGuardada(String(id), { ...op, ...cambios }, 'facturacion-clientes', Object.keys(cambios));
+      // ✅ V00536: con el id del DOCUMENTO (en la lista canónica `_docId` no se copia con el spread).
+      if (op) notificarOperacionGuardada(String(op._docId ?? op.id), { ...op, ...cambios }, 'facturacion-clientes', Object.keys(cambios));
     });
   };
 
@@ -3296,7 +3308,7 @@ export const FacturacionClientesDashboard = () => {
   };
   const toggleColumnaVisible = (index: number) => {
     const nuevas = [...columnasFactura];
-    nuevas[index].visible = !nuevas[index].visible;
+    nuevas[index] = { ...nuevas[index], visible: !nuevas[index].visible }; // ✅ V00535: sin mutar el objeto que React ya tiene
     setColumnasFactura(nuevas);
   };
 
@@ -3518,9 +3530,11 @@ export const FacturacionClientesDashboard = () => {
         )}
       </div>
       {mostrarAuditoria && (
-        <AuditoriaCadenaCliente onCerrar={() => setMostrarAuditoria(false)} montoOperacion={(op) => obtenerMontoOperacion(op)} totalNativo={totalFactura}
-          onEditarFactura={editarFacturaDesdeAuditoria} detras={!!facturaEditando || !!cancelarDe} />
-      )}{/* ✅ V00318 */}
+        <Suspense fallback={<CargandoDatos texto="Abriendo la auditoría…" />}>
+          <AuditoriaCadenaCliente onCerrar={() => setMostrarAuditoria(false)} montoOperacion={(op) => obtenerMontoOperacion(op)} totalNativo={totalFactura}
+            onEditarFactura={editarFacturaDesdeAuditoria} detras={!!facturaEditando || !!cancelarDe} />
+        </Suspense>
+      )}{/* ✅ V00318 · V00534: se carga al abrirla */}
 
       <div className="fcd-x32">
         <button onClick={() => setActiveTab('operaciones')} style={tabStyle(activeTab === 'operaciones')}>Asignar Operaciones</button>

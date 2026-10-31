@@ -6,7 +6,7 @@ import { auth, db } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger';
 import { evaluarPerfil, MENSAJE_ACCESO } from '../services/acceso'; // ✅ V00437
 // ✅ NUEVO: logo de la empresa (mismo base64 que usan los PDF) para mostrarlo en el login.
-import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
+import { RUTA_LOGO_ROELCA } from '../../../shared/utils/logo'; // ✅ V00534: el logo es un archivo (antes metía pdfGenerator en el arranque)
 import './Login.css';
 
 // Clave de localStorage para recordar el último correo que inició sesión en ESTA computadora.
@@ -131,7 +131,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess, aviso = '' }) => {
         <div className="log-x3">
           {/* NUEVO: Logo de la empresa */}
           <img className="log-x4"
-            src={LOGO_DEFAULT}
+            src={RUTA_LOGO_ROELCA}
             alt="Roelca Inc."
           />
           <p className="log-x5">Ingresa tus credenciales para acceder al sistema</p>

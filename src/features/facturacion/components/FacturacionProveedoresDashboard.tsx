@@ -19,8 +19,13 @@ import React, { useState, useEffect, useMemo, useRef, useCallback, useDeferredVa
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { useModuloEscuchando } from '../../../utils/moduloVivoContexto'; // ✅ V00438 (Fase 2.7)
 import { EditorOperacionEmbebido } from '../../operaciones/components/EditorOperacionEmbebido';
+import { precargarFormularioOperacion } from '../../operaciones/services/cargarFormularioOperacion'; // ✅ V00534
+import { usePrecargarAlPintar } from '../../../shared/hooks/usePrecargarAlPintar';
 import { HiloModal } from '../../hilo/HiloModal';
-import { datosAAplicar, notificarOperacionGuardada, suscribirOperacionGuardada } from '../../../utils/operacionesBus';
+import { aplicarAvisoEnLista, notificarOperacionGuardada, suscribirOperacionGuardada } from '../../../utils/operacionesBus';
+import { reglaFacturables } from '../services/reglaFacturables'; // ✅ V00536
+import { useFichaViva } from '../../../shared/hooks/useFichaViva'; // ✅ V00536
+import { escribirFolioEnOperaciones } from '../services/folioEnOperaciones'; // ✅ V00536
 import { avisoYaFacturadas, facturaExistenteFresca, operacionesYaFacturadas, planLiberarAlEliminar } from '../services/facturarSeguro'; // ✅ V00451 · V00494
 import type { DecisionLiberar } from '../services/facturarSeguro';
 import {
@@ -39,7 +44,7 @@ import {
 } from 'firebase/firestore';
 import { SelectBuscable } from '../../catalogos/components/SelectBuscable';
 import { db } from '../../../config/firebase';
-import * as XLSX from 'xlsx';
+import { cargarXlsx } from '../../../shared/utils/excel'; // ✅ V00534: xlsx se carga al exportar, no con la pantalla
 import { exportarExcelProfesional } from './exportarExcelProfesional';
 import { generarRemisionPDF } from './generarRemisionPDF';
 import type { EmisorRemision, RemisionData } from './generarRemisionPDF';
@@ -69,7 +74,7 @@ import type { DocCatalogo } from '../../../shared/data/catalogos'; // ✅ V00439
 import { CATALOGOS_NOMBRES_FACTURACION, construirMapaCatalogos } from '../services/mapaCatalogos';
 import { useMapaEstable } from '../../../shared/hooks/useMapaEstable'; // ✅ V00447
 import type { EmpresaFacturacion } from '../services/mapaCatalogos';
-import { aCentavos, r2 } from '../../../shared/dominio/numeros';
+import { aCentavos, r2, aNumero } from '../../../shared/dominio/numeros';
 import {
   MAX_ESCRITURAS_LOTE,
   avisoFacturaConPagos,
@@ -285,6 +290,7 @@ const provDeOp = (op: any) => op?.[CAMPO_PROVEEDOR_OP] || op?.proveedorUnidadId;
 
 
 export const FacturacionProveedoresDashboard = () => {
+  usePrecargarAlPintar(precargarFormularioOperacion); // ✅ V00534: el formulario de operación se baja después de pintar
   const flags = useFlags(); // ✅ V00441 (Fase 5): dinero por servidor
   // ✅ V00448: el total que se MUESTRA (tabla, tarjetas, Excel) usa la misma regla que Pagos
   //   mientras el dinero no lo lleve el servidor (como la V00434). La regla única cambiaba el
@@ -384,7 +390,10 @@ export const FacturacionProveedoresDashboard = () => {
 
   const [modalAbierto, setModalAbierto] = useState(false);
   const [guardando, setGuardando] = useState(false);
-  const [facturaViendo, setFacturaViendo] = useState<any | null>(null);
+  // ✅ V00536: la ficha sigue a la lista viva de facturas: es la misma fila (grupo) del Historial; un cambio
+  //   que llega por el listener se ve sin cerrarla (useFichaViva).
+  const buscarFacturaViendo = useCallback((f: { id?: unknown }) => (f.id ? grupoDeFactura(facturasGlobales, String(f.id), 'proveedorId') : null), [facturasGlobales]);
+  const [facturaViendo, setFacturaViendo] = useFichaViva<any>(buscarFacturaViendo); // eslint-disable-line @typescript-eslint/no-explicit-any -- la ficha sin tipo canónico (antes useState<any>)
   // ✅ V00502: el buscador global pidió abrir la ficha de una factura: la misma fila (grupo) del Historial.
   useAtenderApertura('facturacionProveedores', (p) => {
     const grupo = grupoDeFactura(facturasGlobales, p.id, 'proveedorId');
@@ -492,7 +501,7 @@ export const FacturacionProveedoresDashboard = () => {
 
   // ✅ V00126: sin redondeo — hasta 6 decimales tal cual resultan del cálculo.
   const formatoMoneda = (monto: any) => {
-    const num = parseFloat(monto || 0);
+    const num = aNumero(monto); // ✅ V00535: acepta "1,234.50" y "$1,234.50" (parseFloat daba 1)
     return isNaN(num) ? '$ 0.00' : `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; // ✅ V00274: todos los montos a 2 decimales
   };
   const formatearFechaSpanish = (fechaString: any) => {
@@ -731,16 +740,11 @@ export const FacturacionProveedoresDashboard = () => {
 
   // ✅ V00126: cualquier guardado en `operaciones` se refleja aquí al instante.
   useEffect(() => {
-    return suscribirOperacionGuardada((aviso) => {
-      const { id, data } = aviso;
-      setOperacionesGlobales(prev => {
-        const idx = prev.findIndex(o => String(o.id) === String(id));
-        // ✅ V00451: solo los campos que cambiaron, si el aviso los dice (no pisa datos más nuevos).
-        if (idx >= 0) { const next = [...prev]; next[idx] = { ...prev[idx], ...datosAAplicar(aviso), id: String(id) }; return next; }
-        return [{ id: String(id), ...data }, ...prev];
-      });
-    });
-  }, []);
+    // ✅ V00536: la misma regla que Clientes: entra o sale solo si el aviso trae el status (antes entraba
+    //   cualquier aviso, aunque la operación no fuera facturable).
+    const regla = reglaFacturables(STATUS_FACTURABLES);
+    return suscribirOperacionGuardada((aviso) => setOperacionesGlobales(prev => aplicarAvisoEnLista(prev, aviso, regla)));
+  }, [STATUS_FACTURABLES]);
 
   const recargarOperaciones = () => {
     setSeleccionadas([]);
@@ -1117,7 +1121,7 @@ export const FacturacionProveedoresDashboard = () => {
   };
   const toggleColumnaVisibleOps = (index: number) => {
     const nuevas = [...columnasOps];
-    nuevas[index].visible = !nuevas[index].visible;
+    nuevas[index] = { ...nuevas[index], visible: !nuevas[index].visible }; // ✅ V00535: sin mutar el objeto que React ya tiene
     setColumnasOps(nuevas);
   };
 
@@ -1480,8 +1484,9 @@ export const FacturacionProveedoresDashboard = () => {
       return false;
     }
     try {
-      await updateDoc(doc(db, 'operaciones', String(opId)), { confirmacionTarifa: campos });
+      await updateDoc(doc(db, 'operaciones', idRealOp(opId)), { confirmacionTarifa: campos }); // ✅ V00536: id real (antes el `id` de la lista)
       setOperacionesGlobales(prev => prev.map((o: any) => (String(o.id) === String(opId) ? { ...o, confirmacionTarifa: campos } : o)));
+      avisarOpsFacturacion([String(opId)], { confirmacionTarifa: campos }); // ✅ V00536
       registrarLog('Facturación Proveedores', 'Edición', `Guardó la Confirmación de Tarifa de ${campos.referencia || opId} (moneda de pago: ${campos.monedaPago || '-'}, total: ${campos.totalAFacturar || '0'})`).catch(() => {});
       if (avisar) alert('Confirmación de tarifa guardada. Los demás usuarios verán estos datos al abrirla.');
       return true;
@@ -1506,10 +1511,12 @@ export const FacturacionProveedoresDashboard = () => {
       usuario: nombreCoordinadorActual() || 'Desconocido',
     };
     try {
-      await updateDoc(doc(db, 'operaciones', opId), { confirmacionTarifaLog: arrayUnion(entrada) });
+      await updateDoc(doc(db, 'operaciones', idRealOp(opId)), { confirmacionTarifaLog: arrayUnion(entrada) }); // ✅ V00536: id real
       setOperacionesGlobales(prev => prev.map((o: any) => (String(o.id) === opId
         ? { ...o, confirmacionTarifaLog: [...(Array.isArray(o.confirmacionTarifaLog) ? o.confirmacionTarifaLog : []), entrada] }
         : o)));
+      const opLog = operacionesGlobales.find((o) => String(o.id) === opId); // ✅ V00536: aviso con el registro completo
+      if (opLog) avisarOpsFacturacion([opId], { confirmacionTarifaLog: [...(Array.isArray(opLog.confirmacionTarifaLog) ? opLog.confirmacionTarifaLog : []), entrada] });
       registrarLog('Facturación Proveedores', 'PDF', `Generó el PDF de la Confirmación de Tarifa de ${confirmacionPreview?.referencia || opId}`).catch(() => {});
     } catch (e) {
       console.error('No se pudo registrar el log de generación del PDF:', e);
@@ -1912,6 +1919,7 @@ export const FacturacionProveedoresDashboard = () => {
       }
       await setDoc(doc(db, 'operaciones', idRealOp(op.id)), updates, { merge: true }); // ✅ V00451: id real
       setOperacionesGlobales(prev => prev.map(o => o.id === op.id ? { ...o, ...updates } : o));
+      avisarOpsFacturacion([op.id], updates); // ✅ V00536: Completados y Operaciones también lo ven
       setModalCostoAdic(false);
     } catch (e) {
       console.error('Error guardando costo adicional:', e);
@@ -2265,6 +2273,14 @@ export const FacturacionProveedoresDashboard = () => {
         }, { merge: true });
       });
       await batch.commit();
+      // ✅ V00536: el # de Invoice también en sus operaciones (antes solo en la factura: el folio viejo seguía
+      //   apareciendo en Completados y Operaciones aun después de recargar).
+      try {
+        await escribirFolioEnOperaciones('proveedor', editInvoice.trim(), facturasGlobales.filter((f) => ids.includes(String(f.id))).map((f) => ({ id: String(f.id), datos: f })));
+      } catch (e) {
+        console.error('[Facturación] No se escribió el folio en las operaciones:', e);
+        avisar({ tipo: 'alerta', titulo: 'El folio no llegó a las operaciones', texto: 'La factura se guardó, pero sus operaciones siguen con el folio anterior. Vuelve a guardar la factura para reintentar.' });
+      }
       // ✅ V00279: el DOCUMENTO se sube DESPUÉS de guardar — el guardado de la
       //   factura nunca depende de la subida (recuerda: el documento en
       //   facturación NO es obligatorio; la ⚠ solo avisa). Si Storage rechaza
@@ -2308,7 +2324,8 @@ export const FacturacionProveedoresDashboard = () => {
   const avisarOpsFacturacion = (ids: readonly string[], cambios: Record<string, unknown>) => {
     ids.forEach((id) => {
       const op = operacionesGlobales.find((o) => String(o.id) === String(id));
-      if (op) notificarOperacionGuardada(String(id), { ...op, ...cambios }, 'facturacion-proveedores', Object.keys(cambios));
+      // ✅ V00536: con el id del DOCUMENTO (en la lista canónica `_docId` no se copia con el spread).
+      if (op) notificarOperacionGuardada(String(op._docId ?? op.id), { ...op, ...cambios }, 'facturacion-proveedores', Object.keys(cambios));
     });
   };
 
@@ -2997,6 +3014,7 @@ export const FacturacionProveedoresDashboard = () => {
 
   const [exportandoExcelHist, setExportandoExcelHist] = useState(false); // ✅ V00261
   const exportarCSV = async () => {
+    const XLSX = await cargarXlsx();
     if (exportandoExcelHist) return;
     if (historialOrdenado.length === 0) return alert('No hay datos para exportar.');
     const columnasVisibles = columnasFactura.filter(c => c.visible);
@@ -3033,7 +3051,7 @@ export const FacturacionProveedoresDashboard = () => {
   };
   const toggleColumnaVisible = (index: number) => {
     const nuevas = [...columnasFactura];
-    nuevas[index].visible = !nuevas[index].visible;
+    nuevas[index] = { ...nuevas[index], visible: !nuevas[index].visible }; // ✅ V00535: sin mutar el objeto que React ya tiene
     setColumnasFactura(nuevas);
   };
 

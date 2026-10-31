@@ -33,7 +33,8 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { collection, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 // ✅ Logo de la empresa (mismo base64 que usan los PDF) para ambos exports
-import { escaparHTML, LOGO_DEFAULT } from '../../../utils/pdfGenerator';
+import { escaparHTML } from '../../../shared/utils/html';
+import { logoComoDataUrl, logoListo, RUTA_LOGO_ROELCA } from '../../../shared/utils/logo'; // ✅ V00534: el logo es un archivo
 // ✅ NUEVO: Resúmenes Diarios (Transfer / Logística / Fletes) en PDF.
 import { ResumenDiarioOperaciones } from './ResumenDiarioOperaciones';
 import './ReportesDashboard.css';
@@ -1072,7 +1073,8 @@ export const ReportesDashboard = () => {
 
       // Logo (col A, filas superiores)
       try {
-        const b64 = LOGO_DEFAULT.includes(',') ? LOGO_DEFAULT.split(',')[1] : LOGO_DEFAULT;
+        const logo = (await logoComoDataUrl(RUTA_LOGO_ROELCA)) ?? ''; // ✅ V00534: el archivo como dataURL al generar
+        const b64 = logo.includes(',') ? logo.split(',')[1] : logo;
         const imgId = wb.addImage({ base64: b64, extension: 'png' });
         ws.addImage(imgId, { tl: { col: 0.15, row: 0.2 }, ext: { width: 86, height: 86 } });
       } catch (imgErr) { console.warn('No se pudo insertar el logo en Excel:', imgErr); }
@@ -1179,7 +1181,7 @@ export const ReportesDashboard = () => {
 </style></head>
 <body style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#1f2328;padding:16px">
   <div style="display:flex;align-items:center;gap:16px;border-bottom:3px solid #c2410c;padding-bottom:12px;margin-bottom:14px">
-    <img src="${LOGO_DEFAULT}" alt="Roelca Inc." style="height:60px;width:auto" />
+    <img src="${logoListo(RUTA_LOGO_ROELCA)}" alt="Roelca Inc." style="height:60px;width:auto" />
     <div style="flex:1">
       <div style="font-size:13px;font-weight:700;letter-spacing:.5px;color:#c2410c">ROELCA INC.</div>
       <div style="font-size:22px;font-weight:800;margin:2px 0 2px;color:#1f2328">${escaparHTML(vista.titulo)}</div>
@@ -1335,7 +1337,7 @@ export const ReportesDashboard = () => {
         <div className="rd-x12">
           <div className="rd-x13">
             <div className="rd-x14">
-              <img className="rd-x15" src={LOGO_DEFAULT} alt="Roelca Inc." />
+              <img className="rd-x15" src={RUTA_LOGO_ROELCA} alt="Roelca Inc." />
               <div>
                 <div className="rd-x16">{vista.titulo}</div>
                 <div className="rd-x17">Del {fmtFechaCorta(desde)} al {fmtFechaCorta(hasta)}</div>

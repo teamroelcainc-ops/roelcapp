@@ -16,6 +16,7 @@
 //   ISR como número a 4 decimales SIN signo de pesos.
 // ═══════════════════════════════════════════════════════════════════════
 import React, { useState, useEffect, useMemo } from 'react';
+import { aNumero } from '../../../shared/dominio/numeros'; // ✅ V00535
 import { 
   collection, 
   onSnapshot, 
@@ -25,7 +26,7 @@ import {
   deleteDoc
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
-import * as XLSX from 'xlsx';
+import { cargarXlsx } from '../../../shared/utils/excel'; // ✅ V00534: xlsx se carga al exportar, no con la pantalla
 import './DeduccionesDashboard.css';
 import CargandoDatos from '../../../shared/components/CargandoDatos';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
@@ -94,14 +95,14 @@ export const DeduccionesDashboard = () => {
 
   // $ con 2 decimales (Gastos, Infonavit, IMSS, Descuento, Nómina Fiscal).
   const formatoMoneda = (monto: any) => {
-    const num = parseFloat(monto || 0);
+    const num = aNumero(monto); // ✅ V00535: acepta "1,234.50" (parseFloat daba 1)
     return isNaN(num) ? '$ 0.00' : `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
   // ✅ V00274: regla nueva — TODOS los montos a 2 decimales (antes Fonacot/
   //   préstamos/ahorros iban a 4 como en AppSheet); solo el tipo de cambio
   //   puede llevar hasta 4.
   const formatoMoneda4 = (monto: any) => {
-    const num = parseFloat(monto || 0);
+    const num = aNumero(monto); // ✅ V00535: acepta "1,234.50" (parseFloat daba 1)
     return isNaN(num) ? '$ 0.00' : `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
   // ✅ (ISR = 7.5%) El ISR es un PORCENTAJE, no un monto ni un factor.
@@ -283,7 +284,7 @@ export const DeduccionesDashboard = () => {
 
   const toggleColumnaVisible = (index: number) => {
     const nuevas = [...columnasTabla];
-    nuevas[index].visible = !nuevas[index].visible;
+    nuevas[index] = { ...nuevas[index], visible: !nuevas[index].visible }; // ✅ V00535: sin mutar el objeto que React ya tiene
     setColumnasTabla(nuevas);
   };
 
@@ -310,7 +311,8 @@ export const DeduccionesDashboard = () => {
     }
   };
 
-  const exportarExcel = () => {
+  const exportarExcel = async () => {
+    const XLSX = await cargarXlsx();
     if (registrosFiltrados.length === 0) return alert("No hay datos para exportar.");
     const columnasVisibles = columnasTabla.filter(c => c.visible);
     const datosExcel = registrosFiltrados.map(d => {

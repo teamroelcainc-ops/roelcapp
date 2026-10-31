@@ -35,6 +35,7 @@
 //   múltiple, edición en modal, Sin cotización) aplican también a proveedores.
 
 import React, { useState, useEffect, useMemo, useCallback, useEffectEvent } from 'react';
+import { hoyLocalISO } from '../../../utils/fechaHoraLocal'; // ✅ V00535
 import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { createPortal } from 'react-dom'; // ✅ V00237
 import { collection, getDocs, getDoc, doc, updateDoc, writeBatch, setDoc, query, where } from 'firebase/firestore';
@@ -48,7 +49,9 @@ import { idReal, obtenerCatalogo, useCatalogo } from '../../../shared/data/catal
 import type { ColeccionCatalogo, DocCatalogo } from '../../../shared/data/catalogos';
 import { esUSD } from '../../../shared/dominio/moneda';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos'; // ✅ V00198
-import { FormularioOperacion } from '../../operaciones/components/FormularioOperacion'; // ✅ V00236
+import FormularioOperacionDiferido from '../../operaciones/components/FormularioOperacionDiferido';
+import { precargarFormularioOperacion } from '../../operaciones/services/cargarFormularioOperacion'; // ✅ V00534: el formulario se carga aparte
+import { usePrecargarAlPintar } from '../../../shared/hooks/usePrecargarAlPintar';
 import './DetallesConvenioDashboard.css';
 import { mismoConsecutivo } from '../../../utils/claveConsecutivo';
 import { asegurarIntegridad, contarIncompletos, huboCambios, resumenReporte } from '../../conveniosCompartido/integridadConvenios'; // ✅ V00429
@@ -59,6 +62,7 @@ import { sinPruebas } from '../../../utils/operacionPrueba';
 import { paginaOperacionesDeConvenio, usosPorTipo } from '../../../shared/data/consultas';
 import CargandoDatos from '../../../shared/components/CargandoDatos';
 import { avisarNoEncontrado, useAtenderApertura } from '../../../shared/data/aperturas'; // ✅ V00502
+import { notificarOperacionesGuardadas } from '../../../utils/operacionesBus'; // ✅ V00536
 
 /** Una operación en la lista de uso de un detalle de convenio. */
 interface UsoOp { ref: string; fecha: string; status: string; tipo: string; entidad: string; monto: string; docId: string }
@@ -187,6 +191,7 @@ const TTL_MS = 5 * 60 * 1000; // 5 min: suficiente para navegar sin re-leer
 type ColOrden = 'consecutivo' | 'entidad' | 'tarifa' | 'origen' | 'destino' | 'moneda' | 'status' | 'usos' | 'costo';
 
 const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
+  usePrecargarAlPintar(precargarFormularioOperacion); // ✅ V00534: lo baja después de pintar
   const esClientes = tipo === 'clientes';
   const COL_CONVENIOS = esClientes ? 'convenios_clientes' : 'convenios_proveedores';
   const COL_DETALLES = esClientes ? 'convenios_clientes_detalles' : 'convenios_proveedores_detalles';
@@ -210,7 +215,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     [catDetalles.listo, catDetalles.datos]);
   const conveniosMap = useMemo(() => {
     if (!catConvenios.listo) return null;
-    const hoyISO = new Date().toISOString().slice(0, 10);
+    const hoyISO = hoyLocalISO(); // ✅ V00535: hoy local (antes UTC: un convenio salía vencido un día antes por la tarde)
     const m: Record<string, { numero: string; entidad: string; moneda: string; status: string; vencido: boolean }> = {};
     catConvenios.datos.forEach((x) => {
       const venc = String(x.fechaVencimiento || '');
@@ -654,15 +659,18 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       const campoNombre = esClientes ? 'convenioNombre' : 'convenioProveedorNombre';
       const snapOps = await getDocs(collection(db, 'operaciones'));
       let lote2 = writeBatch(db); let enLote2 = 0; let nOps = 0;
+      const avisos2: (readonly [string, Record<string, unknown>])[] = []; // ✅ V00536: aviso al bus
       for (const d of snapOps.docs) {
         const o = d.data() as Record<string, unknown>;
         const desc = descPorDetalle[String(o[campoOp] || '')];
         if (!desc || String(o[campoNombre] || '') === desc) continue;
         lote2.update(d.ref, { [campoNombre]: desc });
+        avisos2.push([d.id, { [campoNombre]: desc }]);
         nOps += 1; enLote2 += 1;
         if (enLote2 >= 400) { await lote2.commit(); lote2 = writeBatch(db); enLote2 = 0; }
       }
       if (enLote2 > 0) await lote2.commit();
+      notificarOperacionesGuardadas(avisos2, 'detalles-convenio');
 
       alert(`Nombres rearmados y LIMPIOS del # de convenio. ✅\n\n· Convenios actualizados: ${nDet}\n· Tarifarios con líneas limpiadas: ${nTar}\n· Operaciones actualizadas: ${nOps}`);
       await cargar(true);
@@ -711,17 +719,20 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       let lote = writeBatch(db);
       let enLote = 0;
       let reapuntadas = 0;
+      const avisos: (readonly [string, Record<string, unknown>])[] = []; // ✅ V00536: aviso al bus
       for (const d of snapsOps.flatMap((x) => x.docs)) {
         const o = d.data() as Record<string, unknown>;
         if (!descartados.includes(String(o[campoOp] || ''))) continue;
         const cambios: Record<string, unknown> = { [campoOp]: conservarId };
         if (filaConservada?.tarifa) cambios[campoNombre] = filaConservada.tarifa;
         lote.update(d.ref, cambios);
+        avisos.push([d.id, cambios]);
         reapuntadas += 1;
         enLote += 1;
         if (enLote >= 400) { await lote.commit(); lote = writeBatch(db); enLote = 0; }
       }
       if (enLote > 0) await lote.commit();
+      notificarOperacionesGuardadas(avisos, 'detalles-convenio');
 
       // ✅ V00304: UN convenio con varios montos — ANTES de borrar (el snapshot
       //   los quita), el conservado absorbe TODOS los costos del grupo.
@@ -1729,7 +1740,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
           ✅ V00237: en portal y por encima de los modales de este módulo. */}
       {opEditando && createPortal((
         <div className="dcv-form-op">
-          <FormularioOperacion
+          <FormularioOperacionDiferido
             estado="abierto"
             initialData={opEditando}
             catalogosCacheados={catalogosOp}

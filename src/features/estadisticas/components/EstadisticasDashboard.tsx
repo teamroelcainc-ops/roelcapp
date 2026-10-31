@@ -17,12 +17,14 @@
 // Exportación: Excel (XLSX) y PDF horizontal con el logo de la empresa.
 // ---------------------------------------------------------------------------
 import { useRef, useState, useMemo, useEffect, useDeferredValue } from 'react';
+import { hoyLocalISO } from '../../../utils/fechaHoraLocal'; // ✅ V00535
+import { escaparHTML } from '../../../shared/utils/html'; // ✅ V00535
 import { addDoc, collection, deleteDoc, doc, getDocs, onSnapshot, query, updateDoc, where } from 'firebase/firestore'; // ✅ V00340: configuraciones del Excel
 import { EditorOperacionEmbebido } from '../../operaciones/components/EditorOperacionEmbebido'; // ✅ V00340: auditar/editar desde Estadísticas // ✅ V00339: EN VIVO (documentId ya no se usa: el join se suscribe completo)
 import { db } from '../../../config/firebase';
-import * as XLSX from 'xlsx';
-import html2pdf from 'html2pdf.js';
-import { cargarLogoDataUrl } from '../../../utils/pdfGenerator';
+import { cargarXlsx } from '../../../shared/utils/excel'; // ✅ V00534: xlsx se carga al exportar, no con la pantalla
+import { cargarHtml2pdf } from '../../../shared/utils/pdf'; // ✅ V00534: html2pdf se carga al generar el PDF
+import { cargarLogoDataUrl } from '../../../shared/utils/logo'; // ✅ V00534: sin importar pdfGenerator
 import { idReal, useCatalogo, useCatalogos } from '../../../shared/data/catalogos';
 import type { DocCatalogo } from '../../../shared/data/catalogos';
 import { useEsAdmin } from '../../../shared/data/sesion';
@@ -43,7 +45,9 @@ import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
 import { Download, RefreshCw, X, Settings2, Truck, Wallet } from 'lucide-react';
 import { useEstadoPersistente } from '../../../hooks/useEstadoPersistente';
 import { useEtiquetas } from '../../../contexts/EtiquetasContext';
-import { FormularioOperacion } from '../../operaciones/components/FormularioOperacion';
+import FormularioOperacionDiferido from '../../operaciones/components/FormularioOperacionDiferido';
+import { precargarFormularioOperacion } from '../../operaciones/services/cargarFormularioOperacion'; // ✅ V00534: el formulario se carga aparte
+import { usePrecargarAlPintar } from '../../../shared/hooks/usePrecargarAlPintar';
 import { EstadisticasOperativas } from './EstadisticasOperativas';
 import { DesgloseJerarquico, capitalizar, type Dimension } from './DesgloseJerarquico';
 // ✅ V00191: facturas del cliente con su moneda (clic en el monto del desglose).
@@ -264,6 +268,7 @@ const fechaISODe = (op: Op): string => {
 const DIAS_SEMANA_TXT = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
 
 export function EstadisticasDashboard() {
+  usePrecargarAlPintar(precargarFormularioOperacion); // ✅ V00534: lo baja después de pintar
   const { config } = useEmpresaConfig();
   // ✅ V00255: catálogo Cargada/Vacía para DERIVAR el C/V desde el nombre del
   //   convenio cuando la operación no trae el campo (igual que Operativas).
@@ -350,7 +355,7 @@ export function EstadisticasDashboard() {
   // ✅ RANGO DE FECHAS con búsqueda diferida (patrón estándar de la app):
   //   los registros se consultan y muestran SOLO al presionar Buscar.
   const [fechaDesde, setFechaDesde] = useState(`${anioActual}-01-01`);
-  const [fechaHasta, setFechaHasta] = useState(new Date().toISOString().slice(0, 10));
+  const [fechaHasta, setFechaHasta] = useState(hoyLocalISO); // ✅ V00535: hoy local (antes UTC)
   const [busquedaHecha, setBusquedaHecha] = useState(false);
   // ✅ V00493: el rango que se BUSCÓ (las facturas se toman por su fecha dentro de este rango).
   const [rangoBuscado, setRangoBuscado] = useState({ desde: '', hasta: '' });
@@ -1205,7 +1210,8 @@ export function EstadisticasDashboard() {
     catch (e) { alert(`No se pudo borrar: ${(e as Error)?.message || e}`); }
   };
 
-  const exportarRefsExcel = () => {
+  const exportarRefsExcel = async () => {
+    const XLSX = await cargarXlsx();
     if (!refsFiltro) return;
     const wb = XLSX.utils.book_new();
     const cols = (columnasFormatoTabla || columnasActivas).filter(c => camposSel[c.campo] !== false); // ✅ V00340: respeta el selector
@@ -1236,7 +1242,8 @@ export function EstadisticasDashboard() {
   const columnasFormatoDet = formatoDet ? COLUMNAS_POR_FORMATO[formatoDet] : null;
   const tituloDetalleTab = () => !detalleSel ? '' : (tabLineaDet === 'Todas' ? detalleSel.titulo : `${detalleSel.titulo} · ${tabLineaDet}`);
 
-  const exportarDetalleExcel = () => {
+  const exportarDetalleExcel = async () => {
+    const XLSX = await cargarXlsx();
     if (!detalleSel || !detalle) return;
     const wb = XLSX.utils.book_new();
 
@@ -1294,7 +1301,7 @@ export function EstadisticasDashboard() {
     setExportando(true);
     try {
       const logo = await cargarLogoDataUrl(config?.logoUrl).catch(() => null);
-      const esc = (s: string) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const esc = escaparHTML; // ✅ V00535: también comillas
       const cols = columnasFormatoDet || columnasActivas;
       const valor = esTransferDet ? valorTransfer : valorColumna;
       const html = `
@@ -1322,7 +1329,7 @@ export function EstadisticasDashboard() {
       cont.innerHTML = html;
       document.body.appendChild(cont);
       try {
-        const html2pdf = (await import('html2pdf.js')).default;
+        const html2pdf = await cargarHtml2pdf();
         await html2pdf().set({
           margin: 8,
           filename: `Desglose_${tituloDetalleTab().replace(/[^\w]+/g, '_')}_${fechaDesde}_a_${fechaHasta}.pdf`,
@@ -1343,7 +1350,7 @@ export function EstadisticasDashboard() {
     setExportando(true);
     try {
       const logo = await cargarLogoDataUrl(config?.logoUrl).catch(() => null);
-      const esc = (s: string) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const esc = escaparHTML; // ✅ V00535: también comillas
       const html = `
         <div style="font-family: Arial, Helvetica, sans-serif; color: #111; padding: 8px;">
           <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #D84315; padding-bottom:8px; margin-bottom:12px;">
@@ -1374,6 +1381,7 @@ export function EstadisticasDashboard() {
       cont.innerHTML = html;
       document.body.appendChild(cont);
       try {
+        const html2pdf = await cargarHtml2pdf();
         await html2pdf().set({
           margin: 8,
           filename: `Reporte_${refsFiltro.etiqueta.replace(/[^\w]+/g, '_')}_${fechaDesde}_a_${fechaHasta}.pdf`,
@@ -1393,7 +1401,8 @@ export function EstadisticasDashboard() {
   const etiquetaRango = `${fechaDesde} a ${fechaHasta}`;
   const nombreArchivo = (base: string, ext: string) => `${base}_${fechaDesde}_a_${fechaHasta}.${ext}`;
 
-  const exportarExcel = () => {
+  const exportarExcel = async () => {
+    const XLSX = await cargarXlsx();
     if (pestana === 'operativa' || pestana === 'desgloseOps' || pestana === 'desgloseFact') { alert('Esta vista tiene su propio botón Excel (exporta la vista activa).'); return; }
     const wb = XLSX.utils.book_new();
     if (pestana === 'tendencia') {
@@ -1451,7 +1460,7 @@ export function EstadisticasDashboard() {
     setExportando(true);
     try {
       const logo = await cargarLogoDataUrl(config?.logoUrl).catch(() => null);
-      const esc = (s: string | number) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const esc = escaparHTML; // ✅ V00535: también comillas
       let titulo = '';
       let encabezados: string[] = [];
       let filas: (string | number)[][] = [];
@@ -1515,6 +1524,7 @@ export function EstadisticasDashboard() {
       cont.innerHTML = html;
       document.body.appendChild(cont);
       try {
+        const html2pdf = await cargarHtml2pdf();
         await html2pdf().set({
           margin: 8,
           filename: nombreArchivo(`Estadisticas_${pestana}`, 'pdf'),
@@ -2344,7 +2354,7 @@ export function EstadisticasDashboard() {
         //   Estadísticas 2000 — el wrapper crea un stacking context por encima
         //   para que el formulario de edición se abra DELANTE, no detrás.
         <div style={{ position: 'relative', zIndex: 3000 }}>
-        <FormularioOperacion
+        <FormularioOperacionDiferido
           estado="abierto"
           initialData={editandoOp}
           onClose={() => setEditandoOp(null)}

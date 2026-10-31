@@ -1,15 +1,18 @@
 // src/features/operaciones/components/OperacionesDashboard.tsx
-import React, { useState, useEffect, useMemo, useCallback, useEffectEvent, useRef } from 'react';
+import React, { Suspense, useState, useEffect, useMemo, useCallback, useEffectEvent, useRef } from 'react';
+import { aNumero } from '../../../shared/dominio/numeros'; // ✅ V00535
 import { BookOpen, ChevronLeft, ChevronRight, CircleCheck, Coins, Columns3, Download, FileText, Funnel, ListChecks, ListOrdered, Pencil, Plus, RefreshCw, Search, SlidersHorizontal, Trash2, X } from 'lucide-react'; // ✅ V00456
-import { datosAAplicar, notificarOperacionGuardada, suscribirOperacionGuardada } from '../../../utils/operacionesBus';
+import { aplicarAvisoEnLista, datosAAplicar, notificarOperacionGuardada, notificarOperacionesGuardadas, suscribirOperacionGuardada } from '../../../utils/operacionesBus';
 import type { OperacionGuardadaDetalle } from '../../../utils/operacionesBus';
 import { ORIGEN_REGRESO_STATUS } from '../services/regresoStatus'; // ✅ V00476
 import { useModuloEscuchando } from '../../../utils/moduloVivoContexto';
 import { useHandlerEstable } from '../hooks/useHandlerEstable';
 import { esOperacionPrueba, sinPruebas } from '../../../utils/operacionPrueba';
-import { FormularioOperacion } from './FormularioOperacion';
+import FormularioOperacionDiferido from './FormularioOperacionDiferido';
+import { precargarFormularioOperacion } from '../services/cargarFormularioOperacion'; // ✅ V00534: el formulario se carga aparte
+import { usePrecargarAlPintar } from '../../../shared/hooks/usePrecargarAlPintar';
 // ✅ NUEVO: Resúmenes Diarios (Transfer / Logística / Fletes) en PDF.
-import { ResumenDiarioOperaciones } from '../../reportes/components/ResumenDiarioOperaciones';
+import { lazyWithRetry } from '../../../utils/lazyWithRetry';
 import { collection, doc, writeBatch, query, getDocs, limit, where, startAfter, orderBy, onSnapshot, setDoc } from 'firebase/firestore';
 import { DocumentosLista } from '../../documentos/DocumentosLista'; // ✅ V00344
 import { db, eliminarRegistro } from '../../../config/firebase';
@@ -18,13 +21,15 @@ import { CambioSueldoOperador, HistorialCambiosSueldo } from './CambioSueldoOper
 import { registrarLog } from '../../../utils/logger';
 import { sincronizarNombresOperaciones as sincronizarNombresUtil } from '../../../utils/sincronizarNombresOperaciones';
 import { obtenerBotonesHorarioDinamicos, resolverCascadaStatus, obtenerNombresStatusDelFlujo } from '../config/statusRules';
-import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF, setLogoPdf } from '../../../utils/pdfGenerator'; 
-import * as XLSX from 'xlsx';
+import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF } from '../../../utils/pdfOperacionDiferido'; // ✅ V00534: pdfGenerator se carga al generar
+import { setLogoPdf } from '../../../shared/utils/logo'; 
+import { cargarXlsx } from '../../../shared/utils/excel'; // ✅ V00534: xlsx se carga al exportar, no con la pantalla
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
 import './OperacionesDashboard.css';
 import CargandoDatos from '../../../shared/components/CargandoDatos'; // ✅ V00449
 import RevisionRefCliente from './RevisionRefCliente'; // ✅ V00450
 import { idDeLista, useRefClienteDuplicados } from '../hooks/useRefClienteDuplicados'; // ✅ V00450
+import { useFichaViva } from '../../../shared/hooks/useFichaViva'; // ✅ V00536
 import { pestanaAtendida, usePestanaPedida } from '../../../shared/data/avisos'; // ✅ V00450
 import { claveRefCliente } from '../services/refClienteDuplicado'; // ✅ V00450
 import type { OpRefResumen } from '../services/refClienteDuplicado';
@@ -85,6 +90,8 @@ const COLECCIONES_CATALOGOS = {
   //   dirección (calle, colonia, C.P., ciudad) viven en esta colección.
   direcciones:               'direcciones',
 } as const satisfies Record<string, ColeccionCatalogo>;
+// ✅ V00534: los Resúmenes Diarios (modal) se cargan al abrirlos.
+const ResumenDiarioOperaciones = lazyWithRetry(() => import('../../reportes/components/ResumenDiarioOperaciones'), 'ResumenDiarioOperaciones');
 type AliasCatalogoOD = keyof typeof COLECCIONES_CATALOGOS;
 
 const COLUMNAS_BASE = [
@@ -151,6 +158,7 @@ const COLUMNAS_BASE = [
 ];
 
 const OperacionesDashboard = () => {
+  usePrecargarAlPintar(precargarFormularioOperacion); // ✅ V00534: lo baja después de pintar
   const { config: empresaConfig } = useEmpresaConfig();
   const flags = useFlags(); // ✅ V00442 (Fase 6.2): con propagacionEnServidor se oculta "Sincronizar nombres"
 
@@ -199,7 +207,14 @@ const OperacionesDashboard = () => {
     const t = setTimeout(precalentarCatalogosFormulario, 3000);
     return () => clearTimeout(t);
   }, [cargandoOperaciones]);
-  const [operacionViendo, setOperacionViendo] = useState<any | null>(null);
+  const [completadasHoy, setCompletadasHoy] = useState<DocResumen[]>([]);
+  // ✅ V00536: la ficha sigue a la lista (y a la pestaña Completadas de hoy): un cambio que llega por el bus
+  //   (✎ desde Facturación, costos, sueldo…) se ve sin cerrarla. Se busca por el id del documento.
+  const buscarOperacionViendo = useCallback((op: Record<string, unknown>) => {
+    const id = idDeLista(op);
+    return operacionesGlobales.find((o: Record<string, unknown>) => idDeLista(o) === id) ?? completadasHoy.find((o) => idDeLista(o) === id);
+  }, [operacionesGlobales, completadasHoy]);
+  const [operacionViendo, setOperacionViendo] = useFichaViva<any>(buscarOperacionViendo); // eslint-disable-line @typescript-eslint/no-explicit-any -- operaciones sin tipo canónico en el tablero (antes useState<any>)
   // ✅ V00421: cuándo se muestra la Carta de Instrucciones (configurable)
   const cfgCarta = useConfigCarta();
   const [cfgCartaAbierto, setCfgCartaAbierto] = useState(false);
@@ -394,7 +409,9 @@ const OperacionesDashboard = () => {
   // ✅ V00476: una operación que regresó desde Servicios Completados ("Regresar estatus") entra a
   //   la lista sin "Actualizar" (la lista se lee por páginas, sin listener).
   const recibirRegreso = useEffectEvent((d: OperacionGuardadaDetalle) => {
-    if (d.origen !== ORIGEN_REGRESO_STATUS) return;
+    // ✅ V00536: lo que se guarda en otra pantalla (✎ desde Facturación, costos, sueldo, nómina…) se ve en la
+    //   fila sin "Actualizar". Solo actualiza las que ya están (las nuevas y las que terminan siguen su camino).
+    if (d.origen !== ORIGEN_REGRESO_STATUS) { setOperacionesGlobales((prev) => aplicarAvisoEnLista(prev, d)); return; }
     const op: Record<string, unknown> = { id: d.id, ...d.data, _docId: d.id };
     if (!esOperacionActiva(op)) return;
     setOperacionesGlobales((prev) => {
@@ -448,6 +465,7 @@ const OperacionesDashboard = () => {
 
       const resumen: string[] = [];
       let totalCambios = 0;
+      const renumeradas: (readonly [string, Record<string, unknown>])[] = []; // ✅ V00536: aviso al bus
       let batch = writeBatch(db);
       let enBatch = 0;
       const flush = async () => { if (enBatch > 0) { await batch.commit(); batch = writeBatch(db); enBatch = 0; } };
@@ -461,6 +479,7 @@ const OperacionesDashboard = () => {
           const nuevoRef = `${prefijo}-${ddmmyy}-${String(asignado).padStart(3, '0')}`;
           if (op.ref !== nuevoRef) {
             batch.update(doc(db, 'operaciones', op.id), { ref: nuevoRef, refPrefijo: `${prefijo}-${ddmmyy}`, refConsecutivo: asignado });
+            renumeradas.push([op.id, { ref: nuevoRef, refPrefijo: `${prefijo}-${ddmmyy}`, refConsecutivo: asignado }]);
             enBatch++; totalCambios++;
             cambios.push(`${op.ref || '(sin ref)'} → ${nuevoRef}`);
           }
@@ -474,7 +493,7 @@ const OperacionesDashboard = () => {
       const seguir = window.confirm(`Reparación de consecutivos — ${f}:\n\n${resumen.join('\n')}\n\n${totalCambios === 0 ? 'Todo está en orden; solo se re-sincronizan los contadores.' : `Se renumerarán ${totalCambios} operación(es) y se re-sincronizan los contadores.`}\n\n¿Aplicar?`);
       if (!seguir) { setReparandoConsec(false); return; }
       await flush();
-      notificarOperacionGuardada('reparar-consecutivos', {}, 'reparar-consecutivos');
+      notificarOperacionesGuardadas(renumeradas, 'reparar-consecutivos'); // ✅ V00536: cada operación con su Ref nueva (antes un aviso sin operación)
       await registrarLog('Operaciones', 'Edición', `Reparó los consecutivos del ${f}: ${totalCambios} operación(es) renumeradas (${Array.from(porPrefijo.keys()).join(', ')}).`);
       alert(`Consecutivos del ${f} reparados. ✅\n\n${totalCambios} operación(es) renumeradas; contadores re-sincronizados.\nNota: los PDF/remisiones ya emitidos conservan el folio anterior en su texto.`);
     } catch (e: any) {
@@ -559,10 +578,10 @@ const OperacionesDashboard = () => {
       await flush();
 
       if (opsEscritas > 0) {
-        setOperacionesGlobales((prev) => prev.map((o: any) => cambiosLocales[String(o.id)] ? { ...o, ...cambiosLocales[String(o.id)] } : o));
-        // Un solo aviso al bus: invalida las cachés de Facturación/Pagos.
-        const primero = Object.keys(cambiosLocales)[0];
-        notificarOperacionGuardada(primero, cambiosLocales[primero], 'sincronizar-monedas');
+        // ✅ V00536: por el id del documento (las importadas tienen otro `id`) y un aviso por operación con lo
+        //   que cambió (antes uno solo, sin status: Facturación Clientes sacaba esa fila de su lista).
+        setOperacionesGlobales((prev) => prev.map((o: any) => { const c = cambiosLocales[String(o._docId ?? o.id)]; return c ? { ...o, ...c } : o; }));
+        notificarOperacionesGuardadas(Object.entries(cambiosLocales), 'sincronizar-monedas');
       }
       alert(
         `Sincronización de monedas completada. ✅\n\n` +
@@ -820,7 +839,7 @@ const OperacionesDashboard = () => {
 
   const formatoMoneda = (monto: any) => {
     if (!monto) return '$ 0.00';
-    return `$ ${parseFloat(monto).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return `$ ${aNumero(monto).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
   const resolverRemolqueParaPDF = (cats: CatalogosPdf): { nombre: string; placa: string } => {
@@ -1575,7 +1594,7 @@ const OperacionesDashboard = () => {
   type TabTipoOp = 'todos' | 'transfer' | 'cruces' | 'fletes' | 'rentas' | 'otros' | 'revision' | 'completadas';
   const [tabTipoOp, setTabTipoOp] = useState<TabTipoOp>('todos');
   const [verCompletadas, setVerCompletadas] = useState(false);
-  const [completadasHoy, setCompletadasHoy] = useState<DocResumen[]>([]);
+  // ✅ V00536: `completadasHoy` se declara arriba (la ficha también la busca ahí).
   const [cargandoCompletadas, setCargandoCompletadas] = useState(false);
   const [errorCompletadas, setErrorCompletadas] = useState(false);
   const tabsRef = useRef<HTMLDivElement>(null);
@@ -1781,7 +1800,7 @@ const OperacionesDashboard = () => {
 
   const toggleColumnaVisible = (index: number) => {
     const nuevas = [...columnasTabla];
-    nuevas[index].visible = !nuevas[index].visible;
+    nuevas[index] = { ...nuevas[index], visible: !nuevas[index].visible }; // ✅ V00535: sin mutar el objeto que React ya tiene
     setColumnasTabla(nuevas);
   };
 
@@ -1881,6 +1900,7 @@ const OperacionesDashboard = () => {
   };
 
   const exportarExcel = async () => {
+    const XLSX = await cargarXlsx();
     if (operacionesOrdenadas.length === 0) return alert("No hay datos para exportar.");
     const columnasVisibles = columnasTabla.filter(c => c.visible);
     // La exportación usa los nombres ya guardados en cada operación (sin lecturas).
@@ -1995,7 +2015,7 @@ const OperacionesDashboard = () => {
     <div className="module-container od-x13">
       
       {estadoFormulario !== 'cerrado' && (
-        <FormularioOperacion
+        <FormularioOperacionDiferido
           estado={estadoFormulario} initialData={operacionEditando}
           onClose={onCerrarFormulario}
           onMinimize={onMinimizarFormulario} onRestore={onRestaurarFormulario}
@@ -2291,7 +2311,7 @@ const OperacionesDashboard = () => {
               </button>
             </div>
             <div className="od-x63">
-              <ResumenDiarioOperaciones />
+              <Suspense fallback={<CargandoDatos texto="Abriendo los resúmenes…" />}><ResumenDiarioOperaciones /></Suspense>
             </div>
           </div>
         </div>

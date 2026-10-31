@@ -86,8 +86,8 @@ import { useModuloEscuchando } from '../../../utils/moduloVivoContexto';
 import { db, auth } from '../../../config/firebase'; // ✅ V00451: el tarifario firmado lo sube services/docsFirmados
 import { registrarLog } from '../../../utils/logger';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
-import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
-import html2pdf from 'html2pdf.js'; // ✅ V00250: descarga directa (como Operaciones)
+import { logoComoDataUrl, logoListo, RUTA_LOGO_ROELCA } from '../../../shared/utils/logo'; // ✅ V00534
+import { cargarHtml2pdf } from '../../../shared/utils/pdf'; // ✅ V00534: html2pdf se carga al generar el PDF
 import { LOGO_CTPAT_SRC } from '../../../utils/logoCtpat'; // ✅ V00250/V00251
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import { valoresEquivalentesAut } from '../../autorizaciones/autorizaciones';
@@ -1530,7 +1530,7 @@ export function TarifarioProveedoresDashboard() {
     return `<div id="tarifario-pdf-hoja">
       <style type="text/css">${css}</style>
       <div class="encabezado">
-        <div class="logo"><img src="${LOGO_DEFAULT}" alt="Roelca" /></div>
+        <div class="logo"><img src="${logoListo(RUTA_LOGO_ROELCA)}" alt="Roelca" /></div>
         <div class="datos">
           <div class="razon">ROELCAINC S.A. DE C.V.</div>
           <div>Mar de las Antillas #947, Col. La Paz, C.P. 88290</div>
@@ -1572,6 +1572,7 @@ export function TarifarioProveedoresDashboard() {
   //   impresora), la MISMA técnica de Operaciones (pdfGenerator/html2pdf):
   //   div temporal fuera de pantalla + espera de imágenes + .save().
   const exportarPDF = async (r: Doc) => {
+    await logoComoDataUrl(RUTA_LOGO_ROELCA); // ✅ V00534: el logo (archivo) como dataURL al generar
     const cont = document.createElement('div');
     cont.style.position = 'fixed';
     cont.style.left = '-10000px';
@@ -1586,6 +1587,7 @@ export function TarifarioProveedoresDashboard() {
         ? Promise.resolve()
         : new Promise<void>((res) => { im.onload = () => res(); im.onerror = () => res(); })));
       const filename = `TARIFAS_${String(r.proveedorNombre || 'PROVEEDOR').toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_${String(r.fecha || '').slice(0, 4)}.pdf`;
+      const html2pdf = await cargarHtml2pdf();
       await html2pdf().set({
         margin: 0,
         filename,

@@ -11,6 +11,7 @@ import { db } from '../../config/firebase';
 import { idReal, useCatalogo } from '../../shared/data/catalogos';
 import './TableroOperacionesDashboard.css';
 import CargandoDatos from '../../shared/components/CargandoDatos';
+import { notificarOperacionGuardada } from '../../utils/operacionesBus'; // ✅ V00536
 
 const norm = (s: string) => String(s || '').trim();
 // ✅ V00171: paleta de prueba por status (se asigna por orden de columna)
@@ -63,7 +64,7 @@ export const TableroOperacionesDashboard = () => {
     const op = ops.find((o) => o.id === id);
     if (!op || norm(op.status) === status) return;
     setGuardandoId(id);
-    try { await updateDoc(doc(db, 'operaciones', id), { status }); }
+    try { await updateDoc(doc(db, 'operaciones', id), { status }); notificarOperacionGuardada(id, { ...op, status }, 'tablero', ['status']); } // ✅ V00536: aviso al bus
     catch (err: any) { alert(`No se pudo cambiar el status: ${err?.message || err}`); }
     finally { setGuardandoId(''); }
   };

@@ -108,7 +108,7 @@ export default function DiferenciaEnCargos({ fila, folio, moneda, diferencia, di
     setError('');
     try {
       const plan = await aplicarDiferenciaEnCargos(ids[0], datos());
-      plan.ops.forEach((o) => notificarOperacionGuardada(o.id, o.datos, 'facturacion-diferencia'));
+      plan.ops.forEach((o) => notificarOperacionGuardada(o.id, o.datos, 'facturacion-diferencia', Object.keys(o.datos))); // ✅ V00536: solo lo que cambió (sin status: la fila no sale)
       void registrarLog('Facturación Clientes', 'Edición',
         `Factura ${folio}: diferencia con el documento puesta en costos adicionales — ${plan.ops.map((o) => `${o.ref} ${conSigno(r2(o.cobroDespues - o.cobroAntes))} ${moneda}`).join(', ')}; total ${dinero(plan.totalAntes)} → ${dinero(plan.totalDespues)} ${moneda}.`);
       setVista(null);

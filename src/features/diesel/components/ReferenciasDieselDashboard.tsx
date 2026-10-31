@@ -1,5 +1,6 @@
 // src/features/diesel/components/ReferenciasDieselDashboard.tsx
 import React, { useState, useEffect, useMemo } from 'react';
+import { aNumero } from '../../../shared/dominio/numeros'; // ✅ V00535
 import { 
   collection, 
   onSnapshot, 
@@ -15,7 +16,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { useEstadoPersistente } from '../../../hooks/useEstadoPersistente';
-import * as XLSX from 'xlsx';
+import { cargarXlsx } from '../../../shared/utils/excel'; // ✅ V00534: xlsx se carga al exportar, no con la pantalla
 import { generarInstruccionesDieselPDF } from '../../../utils/pdfInstruccionesDiesel';
 import AdjuntosArchivos from '../../../shared/components/AdjuntosArchivos'; // ✅ V00451
 import { archivosDeDocumento, cambioAdjuntos, desdeGuardados } from '../../../shared/archivos/adjuntos';
@@ -33,6 +34,7 @@ import ModalAgregarSaldoDiesel from './ModalAgregarSaldoDiesel';
 import ModalConfirmarCobroDiesel from './ModalConfirmarCobroDiesel';
 import { cobroDiesel, cobroEstimado, cobroPorConfirmar } from '../../../shared/dominio/cobroDiesel';
 import { cargadoDiesel } from '../../../shared/dominio/saldosCorrientes';
+import { notificarCambiosOperacion, notificarOperacionesGuardadas } from '../../../utils/operacionesBus'; // ✅ V00536
 
 // ✅ V00451: fotos de una referencia (`fotos`: {url, path, nombre}[]), hasta 10 por referencia.
 const MAX_FOTOS_REFERENCIA = 10;
@@ -257,7 +259,7 @@ export const ReferenciasDieselDashboard = () => {
   };
 
   const formatoMoneda = (monto: any) => {
-    const num = parseFloat(monto || 0);
+    const num = aNumero(monto); // ✅ V00535: acepta "1,234.50" (parseFloat daba 1)
     return isNaN(num) ? '$ 0.00' : `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
@@ -723,11 +725,12 @@ export const ReferenciasDieselDashboard = () => {
   };
   const toggleColumnaVisibleOps = (index: number) => {
     const nuevas = [...columnasOps];
-    nuevas[index].visible = !nuevas[index].visible;
+    nuevas[index] = { ...nuevas[index], visible: !nuevas[index].visible }; // ✅ V00535: sin mutar el objeto que React ya tiene
     setColumnasOps(nuevas);
   };
 
-  const exportarExcelOps = () => {
+  const exportarExcelOps = async () => {
+    const XLSX = await cargarXlsx();
     if (operacionesMostradas.length === 0) return alert('No hay operaciones para exportar con los filtros actuales.');
     const cols = columnasOps.filter(c => c.visible);
     if (cols.length === 0) return alert('Selecciona al menos una columna para exportar.');
@@ -989,6 +992,7 @@ export const ReferenciasDieselDashboard = () => {
       });
 
       await batch.commit();
+      notificarOperacionesGuardadas(seleccionadas.map((id) => [id, { referenciaDieselId: nuevoRefId, referenciaDieselConsecutivo: consecutivoFinal }] as const), 'diesel'); // ✅ V00536
       setOperacionesGlobales(prev => prev.map(op =>
         seleccionadas.includes(op.id) ? { ...op, referenciaDieselId: nuevoRefId, referenciaDieselConsecutivo: consecutivoFinal } : op
       ));
@@ -1026,6 +1030,7 @@ export const ReferenciasDieselDashboard = () => {
         }
         await batch.commit();
         const idsLiberadas: string[] = Array.isArray(refData.operacionesIds) ? refData.operacionesIds : [];
+        notificarOperacionesGuardadas(idsLiberadas.map((id) => [id, { referenciaDieselId: null, referenciaDieselConsecutivo: null }] as const), 'diesel-eliminar'); // ✅ V00536
         setOperacionesGlobales(prev => prev.map(op =>
           idsLiberadas.includes(op.id) ? { ...op, referenciaDieselId: null, referenciaDieselConsecutivo: null } : op
         ));
@@ -1064,6 +1069,7 @@ export const ReferenciasDieselDashboard = () => {
       });
 
       await batch.commit();
+      notificarCambiosOperacion(String(operacionAEditar.id), { combustibleTotal: combustibleNuevo }, 'diesel'); // ✅ V00536
 
       setOperacionesGlobales(prev => prev.map(o =>
         o.id === operacionAEditar.id ? { ...o, combustibleTotal: combustibleNuevo } : o
@@ -1174,6 +1180,7 @@ export const ReferenciasDieselDashboard = () => {
         });
       }
       await batch.commit();
+      if (cambioConsecutivo && Array.isArray(editandoRef.operacionesIds)) notificarOperacionesGuardadas(editandoRef.operacionesIds.map((id: string) => [id, { referenciaDieselConsecutivo: nuevoConsecutivo }] as const), 'diesel'); // ✅ V00536
 
       setReferenciasGlobales((prev: any[]) => prev.map((r: any) => r.id === editandoRef.id ? { ...r, ...updates } : r));
       setReferenciaViendo((prev: any) => (prev && prev.id === editandoRef.id) ? { ...prev, ...updates } : prev);
@@ -1253,7 +1260,8 @@ export const ReferenciasDieselDashboard = () => {
   const irPaginaSiguiente = () => setPaginaActual(p => Math.min(p + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(p => Math.max(p - 1, 1));
 
-  const exportarCSV = () => {
+  const exportarCSV = async () => {
+    const XLSX = await cargarXlsx();
     if (referenciasFiltradas.length === 0) return alert("No hay datos para exportar.");
     const datosExcel = referenciasFiltradas.map(ref => ({
       'Consecutivo': ref.consecutivo,

@@ -14,6 +14,7 @@ import { registrarLog } from '../../../utils/logger';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 import './FormularioEmpresa.css';
 import { FormularioConfigurable } from '../../formularios/FormularioConfigurable';
+import { notificarOperacionesGuardadas } from '../../../utils/operacionesBus'; // ✅ V00536
 
 // Tipos de documento que se manejan para EMPRESAS / CLIENTES (edítalos a tu gusto)
 export const TIPOS_DOCUMENTO_EMPRESA = [
@@ -816,6 +817,7 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                 const batch = writeBatch(db);
                 lote.forEach((d) => batch.update(d.ref, { [campoNombre]: formData.nombre }));
                 await batch.commit();
+                notificarOperacionesGuardadas(lote.map((d) => [d.id, { [campoNombre]: formData.nombre }] as const), 'empresas'); // ✅ V00536
                 propagados += lote.length;
               }
             }

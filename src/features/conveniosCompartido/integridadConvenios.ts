@@ -22,6 +22,7 @@
 //   Lo que no se pueda resolver con certeza se REPORTA.
 // ---------------------------------------------------------------------------
 import { collection, doc, setDoc, writeBatch } from 'firebase/firestore';
+import { hoyLocalISO } from '../../utils/fechaHoraLocal'; // ✅ V00535
 import { db } from '../../config/firebase';
 import { idReal, obtenerCatalogo } from '../../shared/data/catalogos';
 import type { ColeccionCatalogo, DocCatalogo } from '../../shared/data/catalogos';
@@ -197,7 +198,7 @@ export const asegurarIntegridad = async (tipo: TipoRel, opciones?: { soloIds?: s
         [cfg.campoNombre]: s(t.data[cfg.campoNombre]),
         monedaId: esUSD(t.data.moneda) ? ID_USD : ID_MXN,
         monedaNombre: esUSD(t.data.moneda) ? 'Dólares' : 'Pesos',
-        fechaConvenio: s(t.data.fecha) || new Date().toISOString().slice(0, 10),
+        fechaConvenio: s(t.data.fecha) || hoyLocalISO(), // ✅ V00535: hoy local (antes UTC)
         fechaVencimiento: s(t.data.fechaVencimiento) || `${new Date().getFullYear()}-12-31`,
         creadoDesdeTarifario: t.id,
         creadoPorIntegridad: true,
@@ -232,7 +233,7 @@ export const asegurarIntegridad = async (tipo: TipoRel, opciones?: { soloIds?: s
     const maestro = maestros.get(convenioId);
     const data: D = {
       consecutivo: cons,
-      fecha: new Date().toISOString().slice(0, 10),
+      fecha: hoyLocalISO(), // ✅ V00535: hoy local (antes UTC)
       fechaVencimiento: `${new Date().getFullYear()}-12-31`,
       [cfg.campoId]: e,
       [cfg.campoNombre]: nombreEnt || s(maestro?.[cfg.campoNombre]),

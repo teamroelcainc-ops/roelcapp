@@ -14,7 +14,7 @@
 //   La parte MONETARIA vive en las demás pestañas de EstadisticasDashboard.
 // ---------------------------------------------------------------------------
 import { Fragment, useMemo, useState } from 'react';
-import * as XLSX from 'xlsx';
+import { cargarXlsx } from '../../../shared/utils/excel'; // ✅ V00534: xlsx se carga al exportar, no con la pantalla
 import { Download } from 'lucide-react';
 import { useCatalogos } from '../../../shared/data/catalogos';
 import { NOMBRES_DIA, NOMBRES_MES, semanaDelAnio } from '../../../shared/dominio/fechas';
@@ -265,7 +265,8 @@ export function EstadisticasOperativas({ ops, fechaDesde, fechaHasta, lineaDeOp,
   }, [opsFiltradas, opcionesCV]);
 
   // ── EXPORTAR (sub-pestaña activa) ──
-  const exportarExcel = () => {
+  const exportarExcel = async () => {
+    const XLSX = await cargarXlsx();
     const wb = XLSX.utils.book_new();
     const hoja = (nombre: string, aoa: (string | number)[][]) => XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), nombre.slice(0, 31));
     if (sub === 'diario') hoja('Diario', [['MES', 'SEMANA', 'DÍA', 'FECHA', 'TRANSFER', 'CRUCES', 'FLETES', 'SERVICIOS'], ...diario.filas.map((f) => [f.mes, `SEMANA ${f.semana}`, f.dia, fmtFecha(f.iso), f.transfer, f.cruces, f.fletes, f.servicios]), ['ACUMULADO', '', '', '', diario.total.transfer, diario.total.cruces, diario.total.fletes, diario.total.servicios]]);

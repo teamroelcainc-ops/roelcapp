@@ -10,8 +10,10 @@
 //     statusPago (PAGADA / PARCIAL), sin tocar su statusFactura.
 //   · Eliminar un pago REVIERTE la aplicación en sus facturas.
 // ---------------------------------------------------------------------------
-import { Suspense, useState, useEffect, useEffectEvent, useMemo, useRef } from 'react';
-import { suscribirOperacionGuardada } from '../../../utils/operacionesBus';
+import { Suspense, useState, useEffect, useEffectEvent, useMemo, useRef, useCallback } from 'react';
+import { escaparHTML } from '../../../shared/utils/html'; // ✅ V00535
+import { notificarOperacionGuardada, suscribirOperacionGuardada } from '../../../utils/operacionesBus';
+import { useFichaViva } from '../../../shared/hooks/useFichaViva'; // ✅ V00536
 import { lazyWithRetry } from '../../../utils/lazyWithRetry';
 import { useCatalogo } from '../../../shared/data/catalogos'; // ✅ V00439 (Fase 3.x)
 import { ID_MXN, ID_USD } from '../../../shared/dominio/constantes';
@@ -183,7 +185,7 @@ export function PagosDashboard() {
   // ✅ NUEVO — DETALLE Y EDICIÓN DE FACTURA desde el modal de pago.
   //   Permite revisar la factura (con sus OPERACIONES relacionadas) y corregir
   //   # de invoice, fecha, CCP, status y total sin salir del flujo de pago.
-  const [facturaViendo, setFacturaViendo] = useState<FacturaPagable | null>(null);
+  // ✅ V00536: `facturaViendo` (la ficha) se declara abajo, junto a la lista viva de facturas (useFichaViva).
   // ✅ V00126: hilo Operaciones → Facturación → Pagos y edición completa de operaciones
   const [hiloPago, setHiloPago] = useState<PagoDoc | null>(null);
   const [opEditandoId, setOpEditandoId] = useState<string | null>(null);
@@ -218,8 +220,6 @@ export function PagosDashboard() {
     if (ids.includes(String(id))) abrirDetalleFactura(abierta);
   });
   useEffect(() => suscribirOperacionGuardada(({ id }) => alGuardarOperacion(id)), []);
-  const facturaViendoRef = useRef<FacturaPagable | null>(null);
-  useEffect(() => { facturaViendoRef.current = facturaViendo; }, [facturaViendo]);
 
   const abrirDetalleFactura = async (fac: FacturaPagable) => {
     // ✅ MTTO: el detalle son los GASTOS que componen el invoice.
@@ -394,7 +394,7 @@ export function PagosDashboard() {
     setEditandoOp(false);
     try {
       const snap = await getDocs(query(collection(db, 'operaciones'), where(documentId(), '==', String(opId)), limit(1)));
-      const data = snap.empty ? null : { id: snap.docs[0].id, ...(snap.docs[0].data() as any) };
+      const data = snap.empty ? null : { id: snap.docs[0].id, ...(snap.docs[0].data() as any), _docId: snap.docs[0].id }; // ✅ V00536: con el id real
       const op = data || (respaldo ? { id: opId, ...respaldo, __soloResumen: true } : null);
       if (!op) { alert('No se encontró la operación.'); return; }
       setOpViendo(op);
@@ -422,9 +422,11 @@ export function PagosDashboard() {
         editadoEn: new Date().toISOString(),
         editadoPor: usuario?.nombre || usuario?.email || usuario?.id || '',
       };
+      const idDoc = String(opViendo._docId ?? opViendo.id); // ✅ V00536: el documento real (un `id` guardado es otro)
       const batch = writeBatch(db);
-      batch.set(doc(db, 'operaciones', opViendo.id), cambios, { merge: true });
+      batch.set(doc(db, 'operaciones', idDoc), cambios, { merge: true });
       await batch.commit();
+      notificarOperacionGuardada(idDoc, { ...opViendo, ...cambios }, 'pagos-rectificar', Object.keys(cambios)); // ✅ V00536: Completados, Operaciones y Facturación lo ven
       registrarLog('Pagos', 'Edición', `Rectificó la operación ${opViendo.ref || opViendo.id} desde Pagos.`).catch(() => {});
       setOpViendo((prev: any) => prev ? { ...prev, ...cambios } : prev);
       // Refresco del renglón en la tabla de operaciones de la factura abierta.
@@ -789,6 +791,12 @@ export function PagosDashboard() {
     activo: flagsCargadas && (!cargandoPagos || modalAbierto || pagoEditando !== null),
   });
   const facturasPendientes: FacturaPagable[] = facturasVivas.facturas;
+  // ✅ V00536: la ficha sigue a la lista viva de facturas por pagar: un pago o una edición de otro usuario se
+  //   ve sin cerrarla. La de MTTO y una que ya no está en la lista (pagada) se quedan como se abrieron.
+  const buscarFacturaViendo = useCallback((f: FacturaPagable) => facturasPendientes.find((x) => x.id === f.id), [facturasPendientes]);
+  const [facturaViendo, setFacturaViendo] = useFichaViva<FacturaPagable>(buscarFacturaViendo);
+  const facturaViendoRef = useRef<FacturaPagable | null>(null);
+  useEffect(() => { facturaViendoRef.current = facturaViendo; }, [facturaViendo]);
   const cargandoFacturas = !facturasVivas.listo;
   /** Saldos confirmados por el servidor (mientras no, lo que había en la caché del navegador). En MTTO
    *  el saldo sale de los pagos: también deben estar confirmados. */
@@ -980,7 +988,7 @@ export function PagosDashboard() {
   };
 
   const generarPDFDeTabla = async (titulo: string, encabezados: string[], filas: string[][], pieTotales: [string, number][], nombreArchivo: string) => {
-    const esc = (s: string) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const esc = escaparHTML; // ✅ V00535: también comillas (el atributo title/alt no se rompe)
     const html = `
       <div style="font-family: Arial, Helvetica, sans-serif; color: #111; padding: 8px;">
         <div style="display:flex; justify-content:space-between; align-items:baseline; border-bottom:2px solid #D84315; padding-bottom:8px; margin-bottom:12px;">

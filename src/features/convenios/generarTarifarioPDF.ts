@@ -6,8 +6,9 @@
 //   del convenio (entidad, moneda y crédito). Misma técnica que la Remisión:
 //   HTML temporal + html2pdf (carta, vertical) y el logo incrustado.
 // ---------------------------------------------------------------------------
-import html2pdf from 'html2pdf.js';
-import { LOGO_ROELCA_B64 } from '../facturacion/components/generarRemisionPDF';
+import { cargarHtml2pdf } from '../../shared/utils/pdf'; // ✅ V00534: html2pdf se carga al generar el PDF
+import { escaparHTML } from '../../shared/utils/html'; // ✅ V00535
+import { logoListo, RUTA_LOGO_ROELCA_CHICO } from '../../shared/utils/logo'; // ✅ V00534: el logo es un archivo
 
 export interface FilaTarifario {
   descripcion: string;
@@ -24,8 +25,7 @@ export interface TarifarioData {
   numeroConvenio?: string;
 }
 
-const esc = (t: any) =>
-  String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const esc = escaparHTML; // ✅ V00535: también comillas
 const money = (v: number | string) => {
   const n = Number(v);
   return isNaN(n) ? esc(v) : n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -94,7 +94,7 @@ export const generarTarifarioPDF = async (data: TarifarioData): Promise<void> =>
     </style>
 
     <div class="enc">
-      <div class="enc-logo"><img src="${LOGO_ROELCA_B64}" alt="Roelca" /></div>
+      <div class="enc-logo"><img src="${logoListo(RUTA_LOGO_ROELCA_CHICO)}" alt="Roelca" /></div>
       <div class="enc-datos">
         <div class="enc-nombre">ROELCAINC S.A. DE C.V.</div>
         <div class="enc-linea">Mar de las Antillas #947, Col. La Paz, C.P. 88290<br/>Nuevo Laredo, Tamaulipas, México.<br/>Tel. + 52 (867) 196 4690</div>
@@ -144,6 +144,7 @@ export const generarTarifarioPDF = async (data: TarifarioData): Promise<void> =>
       await new Promise((res) => { (img as HTMLImageElement).onload = () => res(null); (img as HTMLImageElement).onerror = () => res(null); });
     }
     const nombre = `Tarifario_${(data.entidadNombre || 'convenio').replace(/[^\w\sÁÉÍÓÚÑáéíóúñ-]+/g, '').trim().replace(/\s+/g, '_')}.pdf`;
+    const html2pdf = await cargarHtml2pdf();
     await html2pdf().set({
       margin: 0,
       filename: nombre,

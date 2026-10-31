@@ -13,7 +13,7 @@
 import { collection, doc, getDocs, query, updateDoc, where } from 'firebase/firestore';
 import { auth, db } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger';
-import { suscribirOperacionGuardada } from '../../../utils/operacionesBus';
+import { notificarOperacionesGuardadas, suscribirOperacionGuardada } from '../../../utils/operacionesBus';
 import { claveRefCliente, cuentaParaDuplicado, describirOp, resumenOp, variantesConsulta } from './refClienteDuplicado';
 import type { OpRefResumen } from './refClienteDuplicado';
 
@@ -92,7 +92,11 @@ export const operacionGuardadaEnRefs = (id: string, datos: Record<string, unknow
   }
   if (cambio) avisar();
 };
-if (typeof window !== 'undefined') suscribirOperacionGuardada(({ id, data }) => operacionGuardadaEnRefs(id, data));
+// ✅ V00536: un aviso con solo lo que cambió (lotes, sueldo, nómina…) y sin Ref Cliente no alcanza para decidir:
+//   se ignora (antes no llegaban esos avisos).
+const avisoParcialSinRef = (data: Record<string, unknown>, campos?: readonly string[]): boolean =>
+  !!campos && !('refCliente' in data) && Object.keys(data).every((k) => campos.includes(k));
+if (typeof window !== 'undefined') suscribirOperacionGuardada(({ id, data, campos }) => { if (!avisoParcialSinRef(data, campos)) operacionGuardadaEnRefs(id, data); });
 
 // Cola con tope de consultas simultáneas; `primero` (formulario) se adelanta a la cola.
 let activas = 0;
@@ -226,6 +230,7 @@ export const marcarNoDuplicado = async (
     const err = res.find((x) => x.status === 'rejected');
     throw (err && err.status === 'rejected' ? err.reason : new Error('No se pudo marcar'));
   }
+  notificarOperacionesGuardadas(hechas.map((r) => [r.id, datos] as const), 'ref-cliente-revisada'); // ✅ V00536
   const ids = new Set(hechas.map((r) => r.id));
   hechas.forEach((r) => {
     marcadas.set(r.id, clave);

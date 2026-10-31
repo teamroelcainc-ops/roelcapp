@@ -1,4 +1,5 @@
 import { doc, runTransaction, collection, query, where, getDocs } from 'firebase/firestore';
+import { hoyLocalISO } from '../../../../utils/fechaHoraLocal'; // ✅ V00535
 import { db } from '../../../../config/firebase';
 
 // ✅ Extrae el consecutivo (última parte numérica) de un folio existente.
@@ -15,7 +16,7 @@ export const guardarMttoSeguro = async (mttoData: any) => {
   // ✅ FECHA POR STRING (sin new Date('YYYY-MM-DD')): evita el desfase de zona
   //    horaria que en husos negativos (MX/US) regresaba el día ANTERIOR.
   //    Formato DDMMYY, idéntico al que muestra el formulario y el dashboard.
-  const fechaStr = String(dataLimpia.fecha || new Date().toISOString().slice(0, 10)).slice(0, 10);
+  const fechaStr = String(dataLimpia.fecha || hoyLocalISO()).slice(0, 10); // ✅ V00535: hoy local (antes UTC: el consecutivo salía con el día de mañana después de las 6 p. m.)
   const [yyyy = '', mm = '01', dd = '01'] = fechaStr.split('-');
   const dateString = `${dd.padStart(2, '0')}${mm.padStart(2, '0')}${String(yyyy).slice(-2)}`;
 

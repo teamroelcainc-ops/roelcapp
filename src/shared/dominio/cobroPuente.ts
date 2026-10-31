@@ -12,7 +12,7 @@
 import { STATUS_COMPLETADOS } from './constantes.js';
 import { monedaCanonica, nombreMoneda } from './moneda.js';
 import type { Moneda } from './moneda.js';
-import { fechaServicioDeOperacion } from './fechas.js';
+import { fechaServicioDeOperacion, hoyEnZona, ZONA_HORARIA_DOMINIO } from './fechas.js';
 
 type Datos = Record<string, unknown>;
 
@@ -78,7 +78,9 @@ export const aduanaDeOperacionCtx = (ctx: CtxCobroPuente, op: Datos): string => 
   return ctx.aduanas.get(v) || v;
 };
 
-const hoyUTC = (): string => new Date().toISOString().slice(0, 10);
+// ✅ V00535: "hoy" en la zona de las operaciones (antes, la fecha UTC: después de las 6 p. m. en
+//   Nuevo Laredo ya era mañana). La web y el servidor dan el mismo día.
+const hoyOperaciones = (): string => hoyEnZona(ZONA_HORARIA_DOMINIO);
 
 /**
  * ✅ V00469: ¿la operación YA tiene su caseta? Solo un monto mayor a 0 o el puente elegido a
@@ -95,7 +97,7 @@ export const puenteYaCobrado = (op: Datos): boolean => Number(op.saldoPuente) > 
  * antes, con aduana Colombia podía tomar una caseta de Nuevo Laredo de la tarifa), y la fecha de
  * servicio se convierte (Timestamp o d/m/aaaa de AppSheet ya no quedan como texto roto).
  */
-export const cobroPuenteDeOperacion = (ctx: CtxCobroPuente, op: Datos, evento = 'Asignado desde Referencias de Puentes', hoy = hoyUTC()): Datos => {
+export const cobroPuenteDeOperacion = (ctx: CtxCobroPuente, op: Datos, evento = 'Asignado desde Referencias de Puentes', hoy = hoyOperaciones()): Datos => {
   const fecha = fechaServicioDeOperacion(op) || hoy;
   const colombia = esAduanaColombia(aduanaDeOperacionCtx(ctx, op));
   const out: Datos = {};

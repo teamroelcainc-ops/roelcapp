@@ -22,6 +22,7 @@ import { normalizarNombreFlujo } from '../../../shared/dominio/flujos';
 import { registrarLog } from '../../../utils/logger';
 import type { CeldaExcel } from './excelOperaciones';
 import type { StatusD3 } from './revisionDatos';
+import { notificarOperacionesGuardadas } from '../../../utils/operacionesBus'; // ✅ V00536
 
 type Datos = Record<string, unknown>;
 
@@ -191,6 +192,7 @@ export const aplicarStatusD3 = async (plan: PlanD3, cuando: string, alAvanzar: (
     });
     if (!r) break;
     r.hechos.forEach(([id, campos]) => cambios.set(id, campos));
+    notificarOperacionesGuardadas(r.hechos, 'revision-d3'); // ✅ V00536
     omitidas.push(...r.fuera);
     alAvanzar(Math.min(i + TANDA, total), total);
   }

@@ -1,6 +1,7 @@
 // src/utils/pdfInstruccionesDiesel.ts
-import html2pdf from 'html2pdf.js';
-import { LOGO_DEFAULT, escaparTextos, getLogoPdf } from './pdfGenerator';
+import { cargarHtml2pdf } from '../shared/utils/pdf'; // ✅ V00534: html2pdf se carga al generar el PDF
+import { escaparTextos } from '../shared/utils/html';
+import { logoPdfPorDefecto } from '../shared/utils/logo'; // ✅ V00534: sin importar pdfGenerator
 
 // ============================================================================
 // INSTRUCCIONES DEL SERVICIO (DIESEL)
@@ -18,8 +19,7 @@ import { LOGO_DEFAULT, escaparTextos, getLogoPdf } from './pdfGenerator';
 // ============================================================================
 
 /** Resuelve el logo a usar (igual criterio que en pdfGenerator). */
-const resolverLogo = (logoBase64?: string) =>
-  logoBase64 || getLogoPdf() || LOGO_DEFAULT || '';
+const resolverLogo = (logoBase64?: string) => logoBase64 || logoPdfPorDefecto(); // ✅ V00534
 
 export interface DatosInstruccionesDiesel {
   referencia: string;          // Consecutivo de la referencia (DIESEL-...)
@@ -149,6 +149,7 @@ export const generarInstruccionesDieselPDF = (datosCrudos: DatosInstruccionesDie
       ? Promise.resolve()
       : new Promise<void>(res => { im.onload = () => res(); im.onerror = () => res(); })));
     try {
+      const html2pdf = await cargarHtml2pdf();
       await html2pdf().set(opt).from(elementoTemporal).save();
     } finally {
       if (elementoTemporal.parentNode) document.body.removeChild(elementoTemporal);

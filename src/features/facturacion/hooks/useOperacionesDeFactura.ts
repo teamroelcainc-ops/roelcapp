@@ -14,6 +14,9 @@ import { suscribirOperacionGuardada } from '../../../utils/operacionesBus';
 import { opsDeFactura } from '../services/diferenciaEnCargos';
 import type { OpDeFactura } from '../services/diferenciaEnCargos';
 
+/** ✅ V00536: campos de la operación que solo dicen en qué factura está. */
+const SOLO_LIGA_FACTURA = new Set(['facturaClienteId', 'facturaClienteInvoice', 'facturado', 'facturaProveedorId', 'facturaProveedorFolio', 'facturadoProveedor']);
+
 type Datos = Record<string, unknown>;
 
 interface Leidas { clave: string; ops: ReadonlyMap<string, Datos>; error: string }
@@ -49,6 +52,8 @@ export function useOperacionesDeFactura(fila: Datos | null, moneda: 'USD' | 'MXN
     // Una operación de esta factura se guardó en la app: se relee (1 lectura) para tener su costo de hoy.
     const baja = suscribirOperacionGuardada((d) => {
       if (!ids.includes(d.id)) return;
+      // ✅ V00536: un aviso que solo cambia la liga con la factura (folio, id, facturado) no cambia su costo: no se relee.
+      if (d.campos && d.campos.length > 0 && d.campos.every((c) => SOLO_LIGA_FACTURA.has(c))) return;
       void getDoc(doc(db, 'operaciones', d.id)).then((s) => {
         if (!vigente || !s.exists()) return;
         setLeidas((prev) => (prev.clave === clave ? { ...prev, ops: new Map(prev.ops).set(d.id, { id: s.id, ...(s.data() as Datos) }) } : prev));

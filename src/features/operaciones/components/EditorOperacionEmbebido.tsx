@@ -12,7 +12,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useCatalogo } from '../../../shared/data/catalogos';
 import { leerOperacionParaEditar } from '../services/lecturaOperacion';
-import { FormularioOperacion } from './FormularioOperacion';
+import FormularioOperacionDiferido from './FormularioOperacionDiferido'; // ✅ V00534: el formulario se carga aparte (quien abre este editor lo precarga)
 import './EditorOperacionEmbebido.css';
 
 interface Props {
@@ -38,7 +38,7 @@ export const EditorOperacionEmbebido: React.FC<Props> = ({ operacionId, operacio
       try {
         const snap = await leerOperacionParaEditar(String(operacionId));
         if (!activo) return;
-        if (snap.exists()) setOp({ id: snap.id, ...(snap.data() as any) });
+        if (snap.exists()) setOp({ id: snap.id, ...(snap.data() as any), _docId: snap.id }); // ✅ V00536: un `id` guardado pisaba al del documento y se perdía cuál es
         else if (!operacion) { setError('La operación ya no existe en la base de datos.'); return; }
         setLeida(true);
       } catch (e: any) {
@@ -64,7 +64,7 @@ export const EditorOperacionEmbebido: React.FC<Props> = ({ operacionId, operacio
     );
   }
   return (
-    <FormularioOperacion
+    <FormularioOperacionDiferido
       estado={estado}
       initialData={op}
       catalogosCacheados={catalogos}

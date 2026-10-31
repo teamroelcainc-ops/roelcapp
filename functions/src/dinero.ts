@@ -26,7 +26,7 @@ import { cambiosCanonicos, catalogoServidor, contextoServidor } from './canonico
 import { derivadosFactura, ErrorDinero } from './dominio/dinero.js';
 import type { ContextoCanonico } from './dominio/operacionCanonica.js';
 import {
-  empresaDeOperacion, idFacturaDeterminista, LADOS, lista, mismoFolio, monedaDeEmpresa, planAgregarOperacion, planEditarFactura,
+  empresaDeOperacion, idFacturaDeterminista, idsOperacionesDeGrupo, LADOS, lista, mismoFolio, monedaDeEmpresa, planAgregarOperacion, planEditarFactura,
   planEditarPago, planEliminarFacturas, planEliminarPago, planFacturar, planMoverOperacion, planQuitarOperacion,
   planRecalcularFactura, planRegistrarPago, variantesFolio,
 } from './dominio/facturacion.js';
@@ -218,10 +218,12 @@ export const editarFactura = callable(z.object({
     ]);
     // Mismo orden que pidió la pantalla (el total va al primero).
     const grupo = d.facturaIds.map((x) => grupoLeido.find((f) => f.id === x)).filter((f): f is DocLeido => !!f);
+    // ✅ V00536: sus operaciones, para escribirles el folio (las que ya no existen no se leen).
+    const ops = await leer(tx, idsOperacionesDeGrupo(grupo).map((x) => db.collection('operaciones').doc(x)));
     const empresaNombre = empresa?.exists ? String((empresa.data() as Datos).nombre ?? '') : undefined;
     const plan = planEditarFactura({
       ...d, empresaId: empresa?.exists ? d.empresaId : undefined, empresaNombre, ahoraISO: new Date().toISOString(), usuario,
-    }, grupo);
+    }, grupo, ops);
     ejecutarPlan(db, tx, plan);
     return respuesta(plan);
   });

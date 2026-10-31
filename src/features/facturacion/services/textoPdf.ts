@@ -4,14 +4,14 @@
 // su worker se descargan SOLO la primera vez que se revisa un PDF (import dinámico): no pesan en la
 // carga de la app. Devuelve cada pedazo de texto con su posición (lo lee leerFacturaPdf.ts).
 // ---------------------------------------------------------------------------
+import { cargarPdfjs } from '../../../shared/utils/pdf';
 import type { ItemPdf } from './leerFacturaPdf';
 
 /** Páginas que se leen como máximo (una factura cabe en una o dos). */
 const MAX_PAGINAS = 10;
 
 export const itemsDePdf = async (archivo: Blob): Promise<ItemPdf[][]> => {
-  const [pdfjs, worker] = await Promise.all([import('pdfjs-dist'), import('pdfjs-dist/build/pdf.worker.min.mjs?url')]);
-  if (!pdfjs.GlobalWorkerOptions.workerSrc) pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
+  const pdfjs = await cargarPdfjs(); // ✅ V00534: el cargador único de pdf.js (shared/utils/pdf.ts)
   const data = new Uint8Array(await archivo.arrayBuffer());
   const tarea = pdfjs.getDocument({ data });
   const doc = await tarea.promise;

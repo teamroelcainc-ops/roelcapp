@@ -50,7 +50,7 @@ import { ajusteConvenioAlCambiarStatus, avisarAjusteConvenio } from '../services
 import { cargarCtxCobroPuente, nombresAduana, normPuente } from '../../../utils/puenteColombia';
 import { avisarCrucePuente } from '../../puentes/services/crucePuente'; // ✅ V00470
 import { aduanaDeOperacionCtx, casetaDeElegido, casetaPrevista, casetasDeFlujo, cobroAlCambiarStatus, disparoCobroPuente, esAduanaColombia, puenteYaCobrado } from '../../../shared/dominio/cobroPuente'; // ✅ V00465 · V00469 · V00470 · V00473
-import { aFechaISO } from '../../../shared/dominio/fechas';
+import { aFechaISO, fechaCortaEs } from '../../../shared/dominio/fechas';
 import { mismaAduana, reglaPuenteDelPaso } from '../../../shared/dominio/flujos';
 import type { CtxCobroPuente, EventoStatusPuente } from '../../../shared/dominio/cobroPuente';
 import TagPuenteUnidad from '../../puentes/components/TagPuenteUnidad';
@@ -2719,7 +2719,7 @@ const FormularioOperacionBase = ({ estado, initialData, onClose, onMinimize, onR
       onUsarOficial={campoBloqueadoAut('tipoCambioAprobado') || tipoCambioDia === null ? undefined : () => { tcEditadoAMano.current = false; setFormData(prev => ({ ...prev, tipoCambioAprobado: tipoCambioDia })); }} />
   );
 
-  const fmtFecha = (f: string) => { if (!f) return ''; try { return new Date(f).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return f; } };
+  const fmtFecha = (f: string) => (f ? fechaCortaEs(f) || f : ''); // ✅ V00535: new Date('AAAA-MM-DD') mostraba el día anterior
 
   const opcionesTarifasRef = useMemo(() => {
     return (tarifas || [])
